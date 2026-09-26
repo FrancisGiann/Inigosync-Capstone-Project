@@ -396,32 +396,9 @@
                     </div>
                 </section>
 
-                <!-- ============================================================
-                     BOOKING MANAGEMENT PANEL — §5 of the feedback doc, D5 in
-                     implementation_plan.md. Rebuilt from "every field visible
-                     at once" into a 3-step guided wizard (Select Sport &
-                     Court -> Choose Date & Time -> Confirm), one step shown
-                     at a time with a visible step indicator and Back/Next
-                     controls, so the "older, non-tech-savvy users" audience
-                     the spec names never faces an information-heavy screen.
-                     The booking LOGIC itself is untouched: same
-                     bookingState, same updateSummary()/slotTo24h(), same
-                     sb.from('booking').insert({...}) payload with the same
-                     column comments in includes/Dashboard.js — only this
-                     markup's presentation/structure changed, so the row a
-                     submission creates is byte-for-byte identical to before
-                     this phase.
-
-                     Step 1 additionally gets a dynamic court preview image +
-                     per-unit combo box (§5 "Dynamic Court Preview"), built
-                     from the SAME window.InigoCourtsData.resolveCourtUnits()
-                     port the Overview panel's court cards already use
-                     (§4/D2) — see paintBookPreview() in
-                     includes/Dashboard.js. Picking a specific unit there is
-                     preview-only: it never changes what gets submitted
-                     (booking.courts stays the selected court/sport row's
-                     name, exactly as before), which is exactly why the
-                     inserted row doesn't change. -->
+                <!-- The booking wizard sends the selected inventory unit and
+                     time to one PayMongo checkout for the full cart. A verified
+                     payment creates the booking; the browser never inserts it. -->
                 <section class="dash-panel" data-dash-panel="booking">
                     <div class="dash-panel-head">
                         <div>
@@ -451,8 +428,8 @@
                     <div class="dash-book-cart" data-dash-book-cart hidden>
                         <div class="dash-book-cart-head"><strong>Booking list</strong><span data-dash-book-cart-count>0 items</span></div>
                         <ul data-dash-book-cart-items></ul>
-                        <p class="dash-form-hint">Each booking has its own court, date, and time. Online payments are handled separately from My Bookings.</p>
-                        <button type="button" class="dash-btn-save" data-dash-book-cart-submit>Save listed bookings</button>
+                        <p class="dash-form-hint">Pay for every listed court in one secure checkout. Your times become bookings after payment is confirmed.</p>
+                        <button type="button" class="dash-btn-save" data-dash-book-cart-submit>Pay for listed bookings</button>
                     </div>
 
                     <div class="dash-card dash-wizard-card">
@@ -576,34 +553,27 @@
                                              includes/Dashboard.js rewrites it to the
                                              real app_settings.downpayment_pct (or
                                              this same 50% fallback) once loaded. -->
-                                        <p data-dash-payment-desc="downpayment">No payment is collected with this request.</p>
+                                        <p data-dash-payment-desc="downpayment">Pay 50% now and the balance at check-in.</p>
                                     </label>
                                     <label class="dash-payment-option" data-dash-payment-option>
                                         <span class="dash-payment-option-head">
                                             <input type="radio" name="payment-option" data-dash-payment="full">
                                             Full Payment
                                         </span>
-                                        <p>No payment is collected with this request.</p>
+                                        <p>Pay the full court amount securely now.</p>
                                     </label>
                                 </div>
                             </div>
 
                             <div class="dash-form-group">
-                                <span class="dash-form-label">When to pay</span>
+                                <span class="dash-form-label">Secure payment</span>
                                 <div class="dash-payment-options">
                                     <label class="dash-payment-option is-selected" data-dash-pay-mode-option>
                                         <span class="dash-payment-option-head">
-                                            <input type="radio" name="booking-pay-mode" checked data-dash-pay-mode="venue">
-                                            Pay at the venue
-                                        </span>
-                                        <p>Submit your booking request without collecting payment online.</p>
-                                    </label>
-                                    <label class="dash-payment-option" data-dash-pay-mode-option>
-                                        <span class="dash-payment-option-head">
-                                            <input type="radio" name="booking-pay-mode" data-dash-pay-mode="online">
+                                            <input type="radio" name="booking-pay-mode" checked data-dash-pay-mode="online">
                                             <span data-dash-online-mode-label>Pay online now</span>
                                         </span>
-                                        <p data-dash-pay-mode-hint>Checkout by GCash or card when the court rate is available.</p>
+                                        <p data-dash-pay-mode-hint>Checkout securely with an available online method.</p>
                                     </label>
                                 </div>
                             </div>
@@ -642,7 +612,7 @@
                                     <span>Estimated payment</span>
                                     <span data-dash-summary-total>—</span>
                                 </div>
-                                <p class="dash-form-hint">Online checkout is available for courts with a confirmed hourly rate. You can also pay at the venue.</p>
+                                <p class="dash-form-hint">Your time is held during checkout and confirmed only after PayMongo confirms payment. Each bowling set reserves one hour on a lane.</p>
                                 <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Select a time range to continue</button>
                                 <button type="button" class="dash-btn-ghost" data-dash-book-add hidden>Add this booking and choose another</button>
                             </div>

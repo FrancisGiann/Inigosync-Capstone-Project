@@ -7,32 +7,19 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { "content-type": "application/json", "cache-control": "no-store" },
 });
 
-async function equalSecret(provided: string, expected: string): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(provided)),
-    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
-  ]);
-  const left = new Uint8Array(a);
-  const right = new Uint8Array(b);
-  let diff = 0;
-  for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
-  return diff === 0;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ message: "Method not allowed." }, 405);
-  const expected = Deno.env.get("PAYMONGO_EXPIRY_CRON_SECRET") || "";
   const supplied = req.headers.get("x-paymongo-cron-secret") || "";
-  if (!expected || !supplied || !await equalSecret(supplied, expected)) {
-    return json({ message: "Unauthorized." }, 401);
-  }
 
   const url = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const paymongoKey = Deno.env.get("PAYMONGO_SECRET_KEY");
   if (!url || !serviceKey || !paymongoKey) return json({ message: "Worker is not configured." }, 503);
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: authorized, error: authorizationError } = await admin.rpc("verify_paymongo_expiry_worker", {
+    p_token: supplied,
+  });
+  if (authorizationError || authorized !== true) return json({ message: "Unauthorized." }, 401);
   const { data: due, error: listError } = await admin.rpc("list_paymongo_checkouts_due_for_expiry");
   if (listError) {
     console.error("Could not list PayMongo sessions due for expiry", listError.message);

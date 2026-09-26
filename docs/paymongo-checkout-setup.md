@@ -1,38 +1,37 @@
-# PayMongo hosted checkout setup
+# PayMongo checkout setup and rollout
 
-IñigoSync uses PayMongo Checkout Sessions for customer online payments. The browser only sends a booking ID to `paymongo-checkout`; the function authenticates the Supabase user, computes the amount from the saved hourly court rate and payment preference, and creates a server-side session. Only the signed `checkout_session.payment.paid` webhook creates a `payment` row and confirms the booking.
+Customer bookings now start with a short physical-court hold. The browser sends the selected court or lane, time, and payment choice to `paymongo-checkout`; the server checks availability and rates, then creates **one PayMongo session for the cart**. A booking and calendar block are created only after a signed PayMongo payment event is verified. A redirect from PayMongo is never proof of payment. A cancelled or expired session keeps its hold until the provider confirms that the session has closed.
 
-## Required configuration
+## Required server configuration
 
-Configure these as Supabase Edge Function secrets for the project:
+Set these as Supabase Edge Function secrets for project `xrlwtnwamboucihsamrr`:
 
-| Secret | Value |
+| Secret | Purpose |
 | --- | --- |
-| `PAYMONGO_SECRET_KEY` | PayMongo **test** secret key for testing; use a separate live key only for a deliberate production launch. |
-| `PAYMONGO_WEBHOOK_SECRET` | Signing secret for the matching PayMongo webhook endpoint and mode. |
-| `APP_BASE_URL` | Exact customer app base URL, e.g. `http://127.0.0.1:5500` for local preview or the production HTTPS origin. |
-| `PAYMONGO_EXPIRY_CRON_SECRET` | A separate random secret used only by the scheduled expiry worker. Store the same value in Supabase Vault as `paymongo_expiry_cron_secret`. |
+| `PAYMONGO_SECRET_KEY` | PayMongo test secret key while validating checkout; use the corresponding live key only during a deliberate production launch. |
+| `PAYMONGO_WEBHOOK_SECRET` | Signing secret for the webhook in the same PayMongo mode. |
+| `APP_BASE_URL` | Exact origin of the customer and staff pages. Use a public HTTPS origin for a live deployment. A localhost origin is suitable only for local checkout tests. |
 
-Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Edge Functions. Never put PayMongo or service-role secrets in frontend files, git, or browser storage.
+Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Edge Functions. Keep all provider and service-role credentials off the browser, repository, and owner settings page. The owner page changes the deposit percentage and enabled payment methods in `app_settings`; it only **reports** PayMongo connection, webhook, and last confirmed payment status.
 
-The owner must also enter each court's confirmed hourly price in the Courts settings. Checkout intentionally rejects unknown prices and `/game` rates. Full payment charges the saved total. Downpayment charges the configured `app_settings.downpayment_pct`. The existing venue-payment flow remains available.
+The expiry worker's shared token is generated in Supabase Vault by migration `20260927025000_enable_checkout_expiry_cron.sql`. The scheduled job sends that token to `paymongo-expire-checkouts`; the worker validates it through a service-only database function. Do not copy the token into frontend code or a second secret.
 
-An enabled pg_cron job checks past reservations every minute. The worker explicitly expires unpaid PayMongo sessions so a customer cannot pay for a slot after its booking has been released. Until the separate worker secret is configured in both Edge secrets and Vault, this scheduled job remains inert and past online reservations stay held for staff reconciliation.
+## Webhook and payment behavior
 
-## Webhook
+Register a PayMongo endpoint at `https://xrlwtnwamboucihsamrr.supabase.co/functions/v1/paymongo-webhook` for `checkout_session.payment.paid`, then set its signing secret above. The handler verifies the raw-body signature, test/live mode, PHP gross amount, and session ID, and deduplicates the event. `paymongo-webhook` and the cron worker have Supabase JWT verification disabled because they use separate signed authentication. Customer and staff checkout functions require an authenticated Supabase JWT.
 
-Register one **test-mode** PayMongo endpoint at:
+The default deposit is 50%; the owner may change it and enable Cash, Card, and GCash. At least one online method must stay enabled. New checkouts snapshot their total and deposit charge, so later settings or court-rate edits cannot reprice them. Bowling uses `/set`: each set costs one set rate and reserves one hour on the selected lane.
 
-`https://xrlwtnwamboucihsamrr.supabase.co/functions/v1/paymongo-webhook`
+Staff may collect a deposit booking's remaining balance in Cash through the authenticated check-in action. For PayMongo, staff start a separate balance checkout. The webhook records that balance, then staff confirm attendance. Neither a successful browser redirect nor an unverified payment may increase `amount_paid`.
 
-Subscribe only to `checkout_session.payment.paid`, then save the endpoint's test signing secret as `PAYMONGO_WEBHOOK_SECRET`. The handler verifies PayMongo's HMAC signature over the unmodified body, checks event mode, validates the payment amount and session against the database, and deduplicates by event ID. Do not register a live endpoint until production keys, a public HTTPS app URL, rates, and an end-to-end production-readiness review are complete.
+## Rollout checks
 
-`paymongo-webhook` and `paymongo-expire-checkouts` are intentionally deployed with Supabase JWT verification disabled: PayMongo does not send a Supabase JWT, and the expiry worker authenticates with its separate shared secret. The webhook independently verifies PayMongo's signature before processing any payload.
+1. Configure the three secrets and verify the owner Payment Configuration page reports an API connection and ready webhook.
+2. Test a full-payment cart and a deposit cart with PayMongo test credentials. Confirm the bookings appear only after the signed webhook, and that one cart creates one checkout.
+3. Test cancellation and expiry; verify the hold is removed only after PayMongo reports the session expired. Check duplicate webhook delivery creates no extra payment or booking.
+4. Test two customers choosing the same physical court at the same time, two bowling sets on one lane, and Cash and PayMongo balance collection at staff check-in.
+5. Review any older unpaid pending bookings individually. Existing attempts remain eligible for provider reconciliation; do not delete or mark them paid without checking PayMongo.
 
-## Test flow
+If PayMongo credentials, webhook, or the app return origin are missing, **keep the revised customer checkout unpublished**. The database and Edge Functions may be deployed first; their missing-configuration responses prevent a customer from creating an unpaid booking. The scheduled worker also reports unconfigured until `PAYMONGO_SECRET_KEY` is present. Once checkout is configured, publish the frontend, test with PayMongo test mode, and only then plan a separate live-key launch.
 
-Use a PayMongo test key and test webhook secret. Select a future hourly reservation whose court has an owner-confirmed rate, choose full payment or downpayment, and choose “Pay online now.” PayMongo returns the customer to the dashboard; the dashboard checks the saved attempt status but does not treat the redirect as proof of payment. The webhook is authoritative. A missing webhook leaves the booking unpaid and should be reconciled from PayMongo's dashboard before staff take further action.
-
-The checkout attempt ID is reused as the PayMongo idempotency key so retrying the same booking does not create a second logical attempt. Attempt snapshots preserve the amount shown at checkout if a court price changes later.
-
-If checkout creation remains ambiguous for 23 hours without an attached session ID, automated retries stop and the attempt moves to staff review. Search the PayMongo dashboard using the attempt UUID (without hyphens) as the `reference_number`; verify whether a session exists and expire it before staff release or collect against that reservation. This fail-closed path avoids creating another session after PayMongo's idempotency window.
+An ambiguous checkout creation stays held for review. Search PayMongo by the attempt UUID without hyphens (`reference_number`) and close any provider session before releasing its court hold. The worker moves an unattached creating attempt to review after 23 hours rather than assuming it can safely expire it.

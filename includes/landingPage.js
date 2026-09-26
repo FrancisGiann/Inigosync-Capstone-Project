@@ -19,7 +19,9 @@
 const escapeHtml = window.escapeHtml;
 
 // ============================================================================
-// Original-photo slots. Decorative sport artwork is rendered separately.
+// Original-photo slots. Published database covers take precedence; the
+// individually cropped sport covers are an honest local fallback until a
+// shared database URL has been assigned to a listing.
 const SPORT_MONOGRAM = {
     'basketball': 'BB',
     'badminton': 'BD',
@@ -410,12 +412,8 @@ window.InigoContent = {
 // ============================================================================
 function renderCourtCard(court) {
     const monogram = monogramFor(court.sportSlug, court.name);
-    const artIndex = window.InigoVisuals?.sportIndex(court.sportSlug) ?? -1;
-    const coverHtml = court.imageUrl
-        ? renderMediaSlot({ imageUrl: court.imageUrl, alt: court.name, monogram })
-        : artIndex >= 0
-            ? `<div class="court-art" aria-hidden="true"><div class="court-art-image sport-art-${artIndex}"></div></div>`
-            : renderMediaSlot({ imageUrl: null, alt: court.name, monogram });
+    const coverUrl = court.imageUrl || window.InigoVisuals?.sportCover(court.sportSlug) || null;
+    const coverHtml = renderMediaSlot({ imageUrl: coverUrl, alt: court.name, monogram });
 
     // Prefer the verified per-unit rate schedule; listing-level legacy rates
     // remain a fallback for sports without a configured unit schedule.

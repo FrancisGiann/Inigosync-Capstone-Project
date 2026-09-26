@@ -23,6 +23,21 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         await page.goto(base+'/Pages/Index.html');
         await page.waitForFunction(()=>document.querySelectorAll('.court-card').length===8);
         await page.waitForFunction(()=>document.querySelectorAll('.hero-copy').length===4);
+        const coverAssets = ['basketball','badminton','bowling','billiards','lawn-tennis','pickleball','table-tennis','volleyball'];
+        const coverLoads = await page.evaluate(async sports => Promise.all(sports.map(slug => new Promise(resolve => {
+            const image = new Image();
+            image.onload = () => resolve({ slug, width: image.naturalWidth, height: image.naturalHeight });
+            image.onerror = () => resolve({ slug, width: 0, height: 0 });
+            image.src = window.InigoVisuals.sportCover(slug);
+        }))), coverAssets);
+        assert(coverLoads.every(image => image.width > 0 && image.height > 0), 'all eight exact sport cover crops load as individual images');
+        const databaseCoverCard = await page.evaluate(() => renderCourtCard({
+            sportSlug: 'basketball', name: 'Basketball', quantity: 1, unit: 'courts',
+            imageUrl: 'https://cdn.example.test/shared-basketball-cover.png', rate: null,
+            rateUnit: '/hr', rating: null,
+        }));
+        assert.match(databaseCoverCard, /shared-basketball-cover\.png/, 'landing cards prefer the shared public.court.image_url cover');
+        assert.doesNotMatch(await page.locator('.court-card').first().innerHTML(), /sports-equipment\.png|sport-art-/);
         assert.equal(await page.locator('.google-reviews-link,.map-external-link').count(),0);
         assert.match(await page.locator('.court-card[data-court-id="basketball"] .court-rate').innerText(),/From ₱700\/hr/);
         assert.match(await page.locator('.court-card[data-court-id="pickleball"] .court-rate').innerText(),/Rate TBA/);
@@ -31,8 +46,8 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         await page.locator('[data-court-id="basketball"]').click();
         await page.waitForSelector('[data-court-viewer][data-open]');
         assert(courtRequests>initialRequests,'Viewer must refetch live courts');
-        assert.equal(await page.locator('[data-court-viewer-media] img').count(),0,'unassigned court photos use the honest placeholder');
-        assert.match(await page.locator('[data-court-viewer-photo-status]').innerText(),/Original venue photo coming soon/);
+        assert.equal(await page.locator('[data-court-viewer-media] img').count(),1,'shared sport cover appears in the court viewer');
+        assert.match(await page.locator('[data-court-viewer-media] img').getAttribute('src'),/sports-covers\/basketball\.png/);
         assert.equal(await page.locator('[data-court-viewer-select] option').count(),2);
         assert.match(await page.locator('[data-court-viewer-rate]').innerText(),/₱700 day \/ ₱1,000 night per hour/);
         await page.locator('[data-court-viewer-select]').selectOption('1');

@@ -24,6 +24,7 @@
     // pre-migration session and a freshly-migrated, never-saved session look
     // identical to every dashboard reading this.
     const DEFAULT_SETTINGS = Object.freeze({
+        cardEnabled: true,
         gcashEnabled: true,
         cashEnabled: true,
         downpaymentPct: 50,
@@ -46,6 +47,7 @@
         if (!row) return { ...DEFAULT_SETTINGS };
         const pct = Number(row.downpayment_pct);
         return {
+            cardEnabled: row.card_enabled !== false,
             gcashEnabled: row.gcash_enabled !== false,
             cashEnabled: row.cash_enabled !== false,
             downpaymentPct: Number.isFinite(pct) ? pct : DEFAULT_SETTINGS.downpaymentPct,

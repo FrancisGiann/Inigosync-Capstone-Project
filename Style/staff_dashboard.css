@@ -757,6 +757,10 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    wizard's Step 3. */
 .staff-time-range { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 4px; }
 .staff-time-range .staff-form-group { margin-bottom: 0; }
+.staff-time-range.has-sets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.staff-time-range .staff-walkin-set-quantity { margin-bottom: 0; }
+.staff-time-range .staff-walkin-set-quantity[hidden],
+.staff-time-range [data-staff-walkin-to-wrap][hidden] { display: none; }
 
 .staff-payment-options { display: flex; gap: 10px; }
 
@@ -773,6 +777,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 13px 14px; border-radius: 10px;
     border: 1px solid var(--color-line); background: var(--color-bg-elevated); cursor: pointer; transition: border-color 0.2s;
 }
+.staff-payment-option[hidden] { display: none; }
 
 .staff-payment-option.is-selected { border-color: var(--color-primary); }
 

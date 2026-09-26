@@ -82,6 +82,12 @@
                     Media Manager
                 </button>
             </li>
+            <li>
+                <button type="button" class="admin-nav-link" data-admin-nav="payments">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M7 15h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    Payment Configuration
+                </button>
+            </li>
             <!-- Revision A3 (implementation_plan.md, decision C5) — new tab,
                  same star-based icon style as Style/Dashboard.css's own
                  feedback trigger; a chat-bubble/star combo was considered
@@ -228,8 +234,8 @@
                         <div class="admin-stat-icon">
                             <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </div>
-                        <span class="admin-stat-value" data-admin-stat="bookings-today">—</span>
-                        <span class="admin-stat-label">Bookings today</span>
+                        <span class="admin-stat-value" data-admin-stat="customer-accounts">—</span>
+                        <span class="admin-stat-label">Total customer accounts</span>
                     </div>
                     <div class="admin-stat-card">
                         <div class="admin-stat-icon">
@@ -295,19 +301,10 @@
                                 <button type="button" class="admin-btn-chip-secondary" data-admin-perf-run>Run check</button>
                             </div>
                         </div>
-                        <!-- "Like a pie graph" — a Chart.js doughnut (one
-                             equal slice per check, colored by that check's
-                             status) centered on top, the same 6 rows as a
-                             full-width legend below it; stacked at every
-                             width, one line per check (a side-by-side
-                             layout left the legend too narrow for that).
-                             See renderAdminPerfChart() in
-                             includes/owner_dashboard.js — falls back to the
-                             legend alone (.admin-perf-no-chart) if the
-                             Chart.js CDN didn't load. -->
+                        <!-- Plain-language measures from this owner's current browser and connection. -->
                         <div class="admin-perf-body" data-admin-perf-body>
                             <div class="admin-perf-chart-wrap" data-admin-perf-chart-wrap>
-                                <canvas data-admin-perf-chart role="img" aria-label="Website health status breakdown, 5 checks"></canvas>
+                                <canvas data-admin-perf-chart role="img" aria-label="Website performance status breakdown, 5 checks"></canvas>
                                 <div class="admin-perf-chart-center">
                                     <span class="admin-perf-chart-status" data-admin-perf-chart-status>—</span>
                                     <span class="admin-perf-chart-sub">5 checks</span>
@@ -348,13 +345,6 @@
                  ============================================================ -->
             <section class="admin-panel" data-admin-panel="staff">
                 <div class="admin-panel-head">
-                    <div>
-
-                        <!-- Revision A2 (implementation_plan.md, decision B4)
-                             — "…and configure payment settings" dropped now
-                             that the Payment Configuration card below is
-                             gone (see the comment where it used to live). -->
-                    </div>
                     <!-- Revision A2 (decision B3) — opens
                          [data-admin-staff-modal] (bottom of this document)
                          instead of toggling an inline .admin-add-panel
@@ -431,17 +421,6 @@
                     </nav>
                 </div>
 
-                <!-- Payment Configuration card — REMOVED (Revision A2,
-                     implementation_plan.md, decision B4). It used to live
-                     here and read/write `app_settings`
-                     (database/schema/007_app_settings.sql: gcash_enabled,
-                     cash_enabled, downpayment_pct) via
-                     window.InigoAppSettings. That table, its defaults, and
-                     every other reader of it (the customer booking wizard,
-                     the staff walk-in form) are untouched — only this admin
-                     UI for editing them is gone. See
-                     includes/owner_dashboard.js for the matching removal
-                     note. -->
             </section>
 
             <!-- ============================================================
@@ -478,13 +457,6 @@
                  MEDIA MANAGER PANEL
                  ============================================================ -->
             <section class="admin-panel" data-admin-panel="media">
-                <div class="admin-panel-head">
-                    <div class="owner-media-heading">
-                        <div><h2>Media Manager</h2><p class="admin-card-sub">Manage the photos and content shown in the featured slideshow.</p></div>
-                        <button type="button" class="admin-btn-primary" data-admin-slide-add>+ Add slide</button>
-                    </div>
-                </div>
-
                 <!-- Slides are loaded from public.event by owner-media.js.
                      The shared editor stages changes until Save, and the
                      cards support accessible drag and keyboard reordering. -->
@@ -494,12 +466,41 @@
                             <h3>Home featured slideshow</h3>
                             <p class="admin-card-sub" data-admin-slides-sub>Loading…</p>
                         </div>
+                        <button type="button" class="admin-btn-primary" data-admin-slide-add>+ Add slide</button>
                     </div>
 
                     <div class="admin-slide-grid" data-admin-slides>
                         <p class="admin-court-loading-note" style="color: var(--color-ink-faint); padding: 8px 4px;">Loading slides…</p>
                     </div>
 
+                </div>
+            </section>
+
+            <section class="admin-panel" data-admin-panel="payments">
+                <div class="admin-card">
+                    <div class="admin-card-head">
+                        <div><h3>Booking payment options</h3><p class="admin-card-sub">Set the deposit for online bookings and the payment methods available to customers and staff.</p></div>
+                    </div>
+                    <div class="owner-payment-config-grid">
+                        <label class="admin-form-group owner-payment-percent"><span class="admin-form-label">Down payment</span><span class="owner-payment-percent-input"><input type="number" class="admin-input" min="0.01" max="99.99" step="0.01" inputmode="decimal" data-owner-payment-percent aria-describedby="ownerPaymentPercentHint"><span>%</span></span><span class="admin-form-hint" id="ownerPaymentPercentHint">Customers pay this percentage to confirm a booking. Default: 50%.</span></label>
+                        <fieldset class="owner-payment-methods">
+                            <legend>Available payment methods</legend>
+                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="cash"><span><strong>Cash</strong><small>Staff counter and check-in payments</small></span></label>
+                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="card"><span><strong>Card</strong><small>Pay online with a card</small></span></label>
+                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="gcash"><span><strong>GCash</strong><small>Pay online with GCash</small></span></label>
+                            <p class="admin-form-hint owner-payment-method-hint">Keep at least one online method enabled so customers can confirm bookings.</p>
+                        </fieldset>
+                    </div>
+                    <p class="owner-payment-config-message" data-owner-payment-message role="status" aria-live="polite"></p>
+                    <div class="admin-form-actions"><button type="button" class="admin-btn-save" data-owner-payment-save>Save payment settings</button></div>
+                </div>
+                <div class="admin-card owner-paymongo-card">
+                    <div class="admin-card-head"><div><h3>PayMongo connection</h3><p class="admin-card-sub">Connection checks show whether the payment service is ready. Payment credentials stay protected on the server.</p></div><button type="button" class="admin-btn-ghost" data-owner-paymongo-refresh>Refresh status</button></div>
+                    <dl class="owner-paymongo-status">
+                        <div><dt>API connection</dt><dd data-owner-paymongo-api>Checking…</dd></div>
+                        <div><dt>Payment confirmation setup</dt><dd data-owner-paymongo-webhook>Checking…</dd></div>
+                        <div><dt>Last confirmed payment</dt><dd data-owner-paymongo-last-payment>Checking…</dd></div>
+                    </dl>
                 </div>
             </section>
 
@@ -529,10 +530,8 @@
                  ============================================================ -->
             <section class="admin-panel" data-admin-panel="notifications">
                 <div class="owner-notifications-layout">
-                    <div><div class="owner-notification-list" data-owner-notification-list aria-live="polite"></div>
-                        <nav class="owner-notification-pages" aria-label="Notification pages"><button type="button" class="admin-btn-ghost" data-owner-notification-prev>Previous</button><span data-owner-notification-page></span><button type="button" class="admin-btn-ghost" data-owner-notification-next>Next</button></nav>
-                    </div>
-                    <article class="admin-card owner-notification-detail" data-owner-notification-detail tabindex="-1"><p>Select a notification to view its details.</p></article>
+                    <div class="owner-notification-list" data-owner-notification-list aria-live="polite"></div>
+                    <nav class="owner-notification-pages" aria-label="Notification pages"><button type="button" class="admin-btn-ghost" data-owner-notification-prev>Previous</button><span data-owner-notification-page aria-live="polite"></span><button type="button" class="admin-btn-ghost" data-owner-notification-next>Next</button></nav>
                 </div>
             </section>
             <section class="admin-panel" data-admin-panel="settings">
@@ -861,6 +860,24 @@
     </div>
 </div>
 
+<div class="admin-modal-overlay" data-admin-staff-activity-modal hidden>
+    <section class="admin-modal owner-staff-activity-modal" role="dialog" aria-modal="true" aria-labelledby="ownerStaffActivityTitle" tabindex="-1" data-admin-staff-activity-dialog>
+        <button type="button" class="admin-modal-close" data-admin-staff-activity-close aria-label="Close staff activity"><span aria-hidden="true">×</span></button>
+        <h3 id="ownerStaffActivityTitle">Staff activity</h3>
+        <p class="admin-form-hint" data-admin-staff-activity-person></p>
+        <label class="admin-form-group owner-staff-activity-search"><span class="admin-form-label">Search this staff member’s activity</span><input type="search" class="admin-input" placeholder="Search actions, bookings, or customers…" data-admin-staff-activity-search></label>
+        <div class="owner-staff-activity-list" data-admin-staff-activity-list aria-live="polite" aria-busy="false"></div>
+        <nav class="admin-staff-pagination owner-staff-activity-pagination" data-admin-staff-activity-pagination aria-label="Staff activity pages" hidden><button type="button" class="admin-btn-ghost" data-admin-staff-activity-prev disabled>Previous</button><span data-admin-staff-activity-page-info aria-live="polite">Page 1 of 1</span><button type="button" class="admin-btn-ghost" data-admin-staff-activity-next disabled>Next</button></nav>
+    </section>
+</div>
+
+<div class="admin-modal-overlay" data-owner-notification-modal hidden>
+    <article class="admin-modal owner-notification-detail" role="dialog" aria-modal="true" aria-labelledby="ownerNotificationDetailTitle" tabindex="-1" data-owner-notification-detail>
+        <button type="button" class="admin-modal-close" data-owner-notification-close aria-label="Close notification details"><span aria-hidden="true">×</span></button>
+        <div data-owner-notification-detail-body><p>Select a notification to view its details.</p></div>
+    </article>
+</div>
+
 <!-- Sport editor: fields and local file selections stay in a client draft until Save Changes. -->
 <div class="ioc-overlay" data-ioc-editor-overlay hidden>
     <section class="ioc-dialog" role="dialog" aria-modal="true" aria-labelledby="iocEditorTitle" tabindex="-1" data-ioc-editor>
@@ -929,11 +946,9 @@
 <script src="../includes/courts-data.js"></script>
 <script src="../includes/courtsData.js"></script>
 
-<!-- includes/appSettings.js (Payment Configuration's old data layer) is no
-     longer loaded here — Revision A2 (implementation_plan.md, decision B4)
-     removed the only reader/writer of it on this page. The file itself,
-     its `app_settings` table, and its other consumers (the customer
-     booking wizard, the staff walk-in form) are untouched. -->
+<!-- Shared payment settings reader — the owner editor writes the same
+     singleton used by customer checkout and staff walk-in flows. -->
+<script src="../includes/appSettings.js"></script>
 
 <!-- Shared image downscale/crop helpers (Revision A1 decision A5/A6/A9;
      Revision A2 decision B6 adds openCropEditor) — Media Manager slides,
@@ -984,7 +999,7 @@
                 <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove photo</button>
                 <input type="file" accept="image/jpeg,image/png,image/webp" class="admin-visually-hidden" data-admin-avatar-file>
             </div>
-            <p class="admin-form-hint">Choose a JPG, PNG, or WebP image up to 5 MB. The photo is resized before saving.</p>
+            <p class="admin-form-hint">Choose a JPG, PNG, or WebP image up to 5 MB. Adjust the square crop preview before saving.</p>
         </div>
         <div class="admin-form-actions">
             <button type="button" class="admin-btn-ghost" data-admin-avatar-cancel>Cancel</button>

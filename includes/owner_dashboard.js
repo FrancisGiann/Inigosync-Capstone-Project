@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         staff: { title: 'Staff Management', subtitle: 'Add, update, or remove staff accounts.' },
         courts: { title: 'Court Listings', subtitle: 'Add new courts, update details, or activate/deactivate existing ones.' },
         media: { title: 'Media Manager', subtitle: "Whatever you upload here shows up on the website's home featured slideshow — both the landing page and the customer dashboard." },
+        payments: { title: 'Payment Configuration', subtitle: 'Set the deposit amount and payment methods for new bookings.' },
         // Revision A3 (implementation_plan.md, decision C5) — new tab, after
         // Media Manager in the sidebar.
         feedback: { title: 'Feedbacks & Reviews', subtitle: '' },
@@ -102,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         closeProfileMenu();
         closeAdminNotifMenu();
         document.dispatchEvent(new CustomEvent('inigosync:owner-panel', { detail: name }));
+        if (name === 'payments') { loadOwnerPaymentSettings(); refreshPayMongoHealth(); }
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -354,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const ADMIN_STAT_KEYS = ['bookings-month', 'bookings-today', 'sports-listed', 'active-staff'];
+    const ADMIN_STAT_KEYS = ['bookings-month', 'customer-accounts', 'sports-listed', 'active-staff'];
     function setAllAdminStatsUnknown() {
         ADMIN_STAT_KEYS.forEach((key) => setAdminStat(key, '—'));
     }
@@ -365,12 +367,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return { start, end };
     }
 
-    function dayRange(date = new Date()) {
-        const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-        return { start, end };
-    }
-
     async function refreshOverviewStats() {
         // window.sb missing leaves the tiles on Pages/owner_dashboard.html's
         // own markup default, which is "—" for exactly this reason (see
@@ -378,13 +374,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!window.sb) return;
 
         const { start: monthStart, end: monthEnd } = monthRange();
-        const { start: dayStart, end: dayEnd } = dayRange();
-
-        let monthRes, todayRes, staffRes, sports;
+        let monthRes, customersRes, staffRes, sports;
         try {
-            [monthRes, todayRes, staffRes, sports] = await Promise.all([
+            [monthRes, customersRes, staffRes, sports] = await Promise.all([
                 window.sb.rpc('admin_booking_overview', { p_from_at: monthStart.toISOString(), p_to_at: monthEnd.toISOString() }),
-                window.sb.rpc('admin_booking_overview', { p_from_at: dayStart.toISOString(), p_to_at: dayEnd.toISOString() }),
+                window.sb.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'customer'),
                 // Revision A3, decision C2 — staff ONLY now (.eq, not the old
                 // .in('role', ['staff', 'admin'])): this tile shares the
                 // data-admin-stat="active-staff" hook with the profile
@@ -420,7 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (monthRes.error) console.error('[admin] failed to load the bookings-this-month stat', monthRes.error);
-        if (todayRes.error) console.error('[admin] failed to load the bookings-today stat', todayRes.error);
+        if (customersRes.error) console.error('[admin] failed to load the total-customer-accounts stat', customersRes.error);
         if (staffRes.error) console.error('[admin] failed to load the active-staff stat', staffRes.error);
 
         // getSports() falls back to a static SPORTS_FALLBACK array when the
@@ -435,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
 
         setAdminStat('bookings-month', monthRes.error ? '—' : (monthRes.data?.length || 0));
-        setAdminStat('bookings-today', todayRes.error ? '—' : (todayRes.data?.length || 0));
+        setAdminStat('customer-accounts', customersRes.error ? '—' : (customersRes.count || 0));
         setAdminStat('sports-listed', sportsIsFallback ? '—' : (sports || []).length);
         setAdminStat('active-staff', staffRes.error ? '—' : (staffRes.count || 0));
 
@@ -456,13 +450,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // rendered as the SAME label + count + proportional-bar rows
     // (.admin-progress-*) the old fake card used.
     //
-    // Revision A3, decision C3 — trimmed to Pending/Completed/Unattended
-    // only; Confirmed and Cancelled are dropped from this render order (and
-    // from `counts` below, so nothing is even tallied for them any more —
-    // "counts still fetched for nothing else" per the plan). The derived
-    // Unattended rule itself (adminDisplayStatusFor()) is unchanged; bars
-    // stay proportional to the max of these 3 shown counts.
-    const ADMIN_STATUS_LABELS = { pending: 'Awaiting payment', booked: 'Booked', completed: 'Completed', no_show: 'No-show' };
+    // Checkout attempts are never bookings in this flow. The chart shows
+    // only reservation statuses, so pending/unpaid rows are omitted.
+    const ADMIN_STATUS_LABELS = { booked: 'Booked', completed: 'Completed', no_show: 'No-show' };
     let statusRange = 'month';
 
     function statusDateRange(range) {
@@ -495,12 +485,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const { data: rows, error } = await window.sb.rpc('admin_booking_overview', { p_from_at: start.toISOString(), p_to_at: end.toISOString() });
         if (error) { listRoot.innerHTML = '<p class="admin-form-hint">Could not load booking status.</p>'; return; }
-        const counts = { pending: 0, booked: 0, completed: 0, no_show: 0 };
+        const counts = { booked: 0, completed: 0, no_show: 0 };
         (rows || []).forEach(row => {
             const key = row.auto_cancelled_at || ['no_show', 'unattended'].includes(row.status) ? 'no_show'
                 : row.status === 'completed' ? 'completed'
                 : row.status === 'confirmed' && Number(row.amount_paid) > 0 ? 'booked'
-                : ['pending', 'confirmed'].includes(row.status) ? 'pending' : null;
+                : null;
             if (key) counts[key]++;
         });
 
@@ -531,12 +521,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // function is written to never reject (its own try/catch always
     // resolves to a row), so Promise.all below can't itself fail.
     // ------------------------------------------------------------------
-
-    // Supabase's free tier includes 1 GB of Storage — this is a plain
-    // display constant, not read from any API (Supabase doesn't expose a
-    // "your plan's included storage" endpoint to the client), so it has to
-    // be updated here by hand if the project's plan changes.
-    const MEDIA_STORAGE_LIMIT_BYTES = 1024 ** 3;
 
     // Safety cap on checkAdminPerfMediaStorage()'s recursive descent into
     // Storage "folders" (list() entries with no `metadata`) — a media
@@ -581,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function checkAdminPerfPageLoad() {
-        const LABEL = 'Website loading';
+        const LABEL = 'Page loading time';
         const ms = getAdminPerfPageLoadMs();
         if (ms === null) return adminPerfUnavailableRow(LABEL, 'The page is still finishing loading — try Run check again in a moment.');
         const status = ms < 2500 ? 'good' : ms < 5000 ? 'warn' : 'problem';
@@ -597,7 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // uploadToMedia()) so a not-yet-provisioned bucket reads as "Not set up"
     // rather than an error.
     async function checkAdminPerfMediaStorage() {
-        const LABEL = 'Photo and media space';
+        const LABEL = 'Photo storage used';
         if (!window.sb) return adminPerfUnavailableRow(LABEL, 'Not connected to the server yet.');
 
         let totalBytes = 0;
@@ -606,12 +590,20 @@ document.addEventListener('DOMContentLoaded', () => {
         let hardError = null;
 
         async function walk(prefix) {
-            if (hardError || bucketMissing || foldersVisited >= ADMIN_PERF_MAX_STORAGE_FOLDERS) return;
+            if (hardError || bucketMissing) return;
+            if (foldersVisited >= ADMIN_PERF_MAX_STORAGE_FOLDERS) {
+                hardError = new Error('The photo library is too large for this check.');
+                return;
+            }
             foldersVisited += 1;
             const { data, error } = await window.sb.storage.from('media').list(prefix, { limit: 1000 });
             if (error) {
                 if (isMediaBucketMissingError(error)) bucketMissing = true;
                 else hardError = error;
+                return;
+            }
+            if ((data || []).length === 1000) {
+                hardError = new Error('The photo library is too large for this check.');
                 return;
             }
             for (const entry of (data || [])) {
@@ -637,43 +629,27 @@ document.addEventListener('DOMContentLoaded', () => {
             return adminPerfUnavailableRow(LABEL, hardError.message || 'Could not read Storage.');
         }
 
-        const usedFraction = totalBytes / MEDIA_STORAGE_LIMIT_BYTES;
-        const status = usedFraction >= 0.95 ? 'problem' : usedFraction >= 0.80 ? 'warn' : 'good';
-        const pillText = status === 'good' ? 'Good' : status === 'warn' ? 'Warn' : 'Problem';
         return {
             label: LABEL,
-            value: `${formatAdminPerfBytes(totalBytes)} of ${formatAdminPerfBytes(MEDIA_STORAGE_LIMIT_BYTES)}`,
-            status,
-            pillText,
-            barPct: Math.max(0, Math.min(100, usedFraction * 100)),
+            value: formatAdminPerfBytes(totalBytes),
+            status: 'neutral',
+            pillText: 'Measured',
         };
     }
 
-    // (3) Saved bookings and customers — head counts. Purely informational (always
-    // "Good" once at least one count loads) — this row exists to show real
-    // scale, not to flag a problem, so it deliberately never contributes a
-    // warn/problem status (see worstAdminPerfStatus's own comment).
-    async function checkAdminPerfDatabaseRecords() {
-        const LABEL = 'Saved bookings and customers';
+    // Measure a lightweight authenticated request to the service so the
+    // owner sees a simple server response time rather than database internals.
+    async function checkAdminPerfServerResponse() {
+        const LABEL = 'Server response';
         if (!window.sb) return adminPerfUnavailableRow(LABEL, 'Not connected to the server yet.');
         try {
-            const [bookingsRes, walkinsRes, customersRes] = await Promise.all([
-                window.sb.from('booking').select('*', { count: 'exact', head: true }),
-                window.sb.from('walk_in_booking').select('*', { count: 'exact', head: true }),
-                window.sb.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'customer'),
-            ]);
-            const bookings = bookingsRes.error || walkinsRes.error ? null : (bookingsRes.count || 0) + (walkinsRes.count || 0);
-            const customers = customersRes.error ? null : (customersRes.count || 0);
-
-            if (bookings === null && customers === null) {
-                return adminPerfUnavailableRow(LABEL, 'Could not reach the database.');
-            }
-
-            const value = [
-                `${bookings === null ? '—' : bookings} booking${bookings === 1 ? '' : 's'}`,
-                `${customers === null ? '—' : customers} customer${customers === 1 ? '' : 's'}`,
-            ].join(' · ');
-            return { label: LABEL, value, status: 'good', pillText: 'Good' };
+            const startedAt = performance.now();
+            const { error } = await window.sb.from('profiles').select('id', { head: true }).limit(1);
+            if (error) return adminPerfUnavailableRow(LABEL, error.message || 'Could not contact the service.');
+            const ms = Math.max(0, Math.round(performance.now() - startedAt));
+            const status = ms < 500 ? 'good' : ms < 1500 ? 'warn' : 'problem';
+            const pillText = status === 'good' ? 'Fast' : status === 'warn' ? 'Taking longer' : 'Slow';
+            return { label: LABEL, value: `${ms} ms`, status, pillText };
         } catch (err) {
             return adminPerfUnavailableRow(LABEL, (err && err.message) || 'Could not reach the database.');
         }
@@ -902,7 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const rows = await Promise.all([
                 checkAdminPerfPageLoad(),
                 checkAdminPerfMediaStorage(),
-                checkAdminPerfDatabaseRecords(),
+                checkAdminPerfServerResponse(),
                 checkAdminPerfSessionErrors(),
                 checkAdminPerfConnection(),
             ]);
@@ -1111,6 +1087,114 @@ document.addEventListener('DOMContentLoaded', () => {
     const STAFF_PAGE_SIZE = 10;
     let staffProfiles = [];
     let staffPage = 1;
+    const staffActivityModal = document.querySelector('[data-admin-staff-activity-modal]');
+    const staffActivityDialog = document.querySelector('[data-admin-staff-activity-dialog]');
+    const staffActivityList = document.querySelector('[data-admin-staff-activity-list]');
+    const staffActivitySearch = document.querySelector('[data-admin-staff-activity-search]');
+    const staffActivityPagination = document.querySelector('[data-admin-staff-activity-pagination]');
+    const staffActivityPageInfo = document.querySelector('[data-admin-staff-activity-page-info]');
+    const staffActivityPrev = document.querySelector('[data-admin-staff-activity-prev]');
+    const staffActivityNext = document.querySelector('[data-admin-staff-activity-next]');
+    const STAFF_ACTIVITY_PAGE_SIZE = 10;
+    let staffActivityStaffId = null;
+    let staffActivityPage = 0;
+    let staffActivityGeneration = 0;
+    let staffActivitySearchTimer = null;
+
+    function humanizeStaffAction(value) {
+        const fixed = {
+            booking_confirmed: 'Booking confirmed', booking_declined: 'Booking declined',
+            booking_timed_in: 'Customer checked in', booking_timed_out: 'Customer checked out',
+            walkin_recorded: 'Walk-in booking recorded', payment_collected: 'Payment collected',
+            recorded_walk_in: 'Walk-in recorded', recorded_booking: 'Booking recorded',
+            checked_in: 'Customer checked in', collected_payment: 'Payment collected',
+            collected_online_balance: 'Online balance collected', booking_status_changed: 'Booking status changed',
+        };
+        const action = String(value || 'Staff action');
+        return fixed[action] || action.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+    }
+
+    function summarizeStaffActivityDetails(details, entityId) {
+        const source = details && typeof details === 'object' && !Array.isArray(details) ? details : {};
+        const money = value => value === undefined || value === null || value === '' || !Number.isFinite(Number(value))
+            ? '' : `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const fields = [
+            ['Customer', source.customerName || source.customer_name || source.customer],
+            ['Space', source.courtName || source.court_name || source.court],
+            ['Court or lane', source.unit],
+            ['Starts', source.starts_at ? formatActivityTime(source.starts_at) : ''],
+            ['Total', money(source.total)],
+            ['Paid', money(source.paid)],
+            ['Collected', money(source.cash_collected ?? source.amount ?? source.paymentAmount)],
+            ['Payment', source.method || source.paymentMethod || source.payment_method],
+            ['Status', source.to || source.status],
+        ].filter(([, value]) => value !== undefined && value !== null && String(value).trim());
+        if (entityId) fields.push(['Record', `#${entityId}`]);
+        return fields.map(([label, value]) => `<span><strong>${label}:</strong> ${window.escapeHtml(String(value))}</span>`).join('');
+    }
+
+    async function loadStaffActivity() {
+        if (!staffActivityList || !staffActivityStaffId || !window.sb) return;
+        const generation = ++staffActivityGeneration;
+        staffActivityList.setAttribute('aria-busy', 'true');
+        staffActivityList.innerHTML = '<p class="admin-form-hint">Loading activity…</p>';
+        if (staffActivityPagination) staffActivityPagination.hidden = true;
+        try {
+            const { data, error } = await window.sb.rpc('owner_staff_activity', {
+                p_staff_id: staffActivityStaffId,
+                p_search: staffActivitySearch?.value.trim() || '',
+                p_offset: staffActivityPage * STAFF_ACTIVITY_PAGE_SIZE,
+                p_limit: STAFF_ACTIVITY_PAGE_SIZE,
+            });
+            if (generation !== staffActivityGeneration) return;
+            if (error) throw error;
+            const rows = Array.isArray(data?.rows) ? data.rows : [];
+            const total = Math.max(0, Number(data?.total_count) || 0);
+            staffActivityList.innerHTML = rows.length ? rows.map(item => {
+                const dateText = formatActivityTime(item.created_at);
+                const summary = summarizeStaffActivityDetails(item.details, item.entity_id);
+                const typeLabel = ['walkin', 'walk_in_booking'].includes(item.entity_type) ? 'Walk-in' : item.entity_type === 'booking' ? 'Booking' : '';
+                return `<article class="owner-staff-activity-item"><div class="owner-staff-activity-item-head"><strong>${window.escapeHtml(humanizeStaffAction(item.action))}</strong><time datetime="${window.escapeHtml(item.created_at || '')}">${window.escapeHtml(dateText)}</time></div>${typeLabel ? `<span class="owner-staff-activity-type">${typeLabel}</span>` : ''}${summary ? `<div class="owner-staff-activity-summary">${summary}</div>` : '<p class="admin-form-hint">No additional booking details were recorded for this action.</p>'}</article>`;
+            }).join('') : '<p class="admin-form-hint">No recorded activity matches this search.</p>';
+            const pageCount = Math.max(1, Math.ceil(total / STAFF_ACTIVITY_PAGE_SIZE));
+            if (staffActivityPagination) staffActivityPagination.hidden = total <= STAFF_ACTIVITY_PAGE_SIZE;
+            if (staffActivityPageInfo) staffActivityPageInfo.textContent = `Page ${staffActivityPage + 1} of ${pageCount} · ${total} actions`;
+            if (staffActivityPrev) staffActivityPrev.disabled = staffActivityPage <= 0;
+            if (staffActivityNext) staffActivityNext.disabled = staffActivityPage + 1 >= pageCount;
+        } catch (error) {
+            if (generation !== staffActivityGeneration) return;
+            console.error('[admin] staff activity could not be loaded', error);
+            staffActivityList.innerHTML = '<p class="admin-form-hint">Staff activity could not be loaded. Please try again.</p>';
+        } finally {
+            if (generation === staffActivityGeneration) staffActivityList.setAttribute('aria-busy', 'false');
+        }
+    }
+
+    function openStaffActivity(profile) {
+        if (!staffActivityModal || !profile?.id) return;
+        staffActivityStaffId = profile.id;
+        staffActivityPage = 0;
+        if (staffActivitySearch) staffActivitySearch.value = '';
+        const person = staffActivityDialog?.querySelector('[data-admin-staff-activity-person]');
+        if (person) person.textContent = `${profile.full_name || 'Staff member'} · ${profile.position || 'Staff'}`;
+        window.InigoOwnerUI.open(staffActivityModal);
+        loadStaffActivity();
+    }
+
+    document.querySelectorAll('[data-admin-staff-activity-close]').forEach(button => button.addEventListener('click', () => window.InigoOwnerUI.close(staffActivityModal)));
+    staffActivityModal?.addEventListener('pointerdown', event => { staffActivityModal.dataset.backdropPressed = String(event.target === staffActivityModal); });
+    staffActivityModal?.addEventListener('click', event => {
+        if (event.target === staffActivityModal && staffActivityModal.dataset.backdropPressed === 'true') window.InigoOwnerUI.close(staffActivityModal);
+        delete staffActivityModal.dataset.backdropPressed;
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && staffActivityModal && !staffActivityModal.hidden) window.InigoOwnerUI.close(staffActivityModal); });
+    staffActivitySearch?.addEventListener('input', () => {
+        staffActivityPage = 0;
+        window.clearTimeout(staffActivitySearchTimer);
+        staffActivitySearchTimer = window.setTimeout(loadStaffActivity, 250);
+    });
+    staffActivityPrev?.addEventListener('click', () => { if (staffActivityPage > 0) { staffActivityPage -= 1; loadStaffActivity(); } });
+    staffActivityNext?.addEventListener('click', () => { staffActivityPage += 1; loadStaffActivity(); });
 
     if (staffSubmitBtn) {
         staffSubmitBtn.addEventListener('click', async () => {
@@ -1497,11 +1581,15 @@ document.addEventListener('DOMContentLoaded', () => {
             <td data-admin-staff-position-cell>${window.escapeHtml(profile.position) || '—'}</td>
             <td data-admin-staff-status-cell>${staffStatusBadge(profile.status)}</td>
             <td>
-                <div class="admin-table-actions">
-                    <select class="admin-select admin-staff-action-select" data-admin-staff-action-select aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">
-                        <option value="">Actions…</option><option value="view">View</option><option value="edit">Edit</option>
-                        <option value="reset">Send password reset</option><option value="toggle">${profile.status === 'disabled' ? 'Activate' : 'Deactivate'}</option>
-                    </select>
+                <div class="admin-table-actions admin-staff-action-wrap">
+                    <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
+                    <div class="admin-staff-action-menu" data-admin-staff-action-menu role="menu" hidden>
+                        <button type="button" role="menuitem" data-admin-staff-command="view">View staff details</button>
+                        <button type="button" role="menuitem" data-admin-staff-command="edit">Edit staff</button>
+                        <button type="button" role="menuitem" data-admin-staff-command="activity">View activity</button>
+                        <button type="button" role="menuitem" data-admin-staff-command="reset">Send password reset</button>
+                        <button type="button" role="menuitem" data-admin-staff-command="toggle">${profile.status === 'disabled' ? 'Activate account' : 'Deactivate account'}</button>
+                    </div>
                     <button type="button" hidden data-admin-view-staff>View</button>
                     <button type="button" hidden data-admin-reset-password>Reset Password</button>
                     <button type="button" hidden data-admin-edit-staff>Edit</button>
@@ -1613,16 +1701,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function wireStaffRowActions(scope) {
-        scope.querySelectorAll('[data-admin-staff-action-select]').forEach((select) => {
-            select.addEventListener('change', () => {
+        scope.querySelectorAll('[data-admin-staff-actions-trigger]').forEach(trigger => {
+            const menu = trigger.parentElement?.querySelector('[data-admin-staff-action-menu]');
+            trigger.addEventListener('click', event => {
+                event.stopPropagation();
+                const opening = menu?.hidden;
+                document.querySelectorAll('[data-admin-staff-action-menu]').forEach(item => { item.hidden = true; item.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.setAttribute('aria-expanded', 'false'); });
+                if (menu && opening) { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); menu.querySelector('[role="menuitem"]')?.focus(); }
+            });
+            menu?.addEventListener('click', event => {
+                const command = event.target.closest('[data-admin-staff-command]')?.dataset.adminStaffCommand;
+                if (!command) return;
+                menu.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+                if (command === 'activity') { openStaffActivity(scope.closest('tr')?.__staffProfile || fallbackProfileFromRow(scope.closest('tr'))); return; }
                 const target = {
-                    view: '[data-admin-view-staff]',
-                    edit: '[data-admin-edit-staff]',
-                    reset: '[data-admin-reset-password]',
+                    view: '[data-admin-view-staff]', edit: '[data-admin-edit-staff]', reset: '[data-admin-reset-password]',
                     toggle: scope.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
-                }[select.value];
-                select.value = '';
+                }[command];
                 if (target) scope.querySelector(target)?.click();
+                trigger.focus();
             });
         });
         // Never set a shared default password. The staff member receives a
@@ -1727,6 +1825,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.addEventListener('click', event => {
+        if (event.target.closest('.admin-staff-action-wrap')) return;
+        document.querySelectorAll('[data-admin-staff-action-menu]:not([hidden])').forEach(menu => {
+            menu.hidden = true;
+            menu.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.setAttribute('aria-expanded', 'false');
+        });
+    });
+    document.addEventListener('keydown', event => {
+        const openMenu = document.querySelector('[data-admin-staff-action-menu]:not([hidden])');
+        if (!openMenu) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            openMenu.hidden = true;
+            openMenu.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.focus();
+            openMenu.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.setAttribute('aria-expanded', 'false');
+        } else if (event.key === 'ArrowDown' && event.target.matches('[data-admin-staff-actions-trigger]')) {
+            event.preventDefault();
+            openMenu.querySelector('[role="menuitem"]')?.focus();
+        }
+    });
+
     // S6 (Revision A1 fix) — Pages/owner_dashboard.html ships a few static
     // demo <tr> rows in this table as its no-JS/pre-load baseline. Every
     // row refreshStaffList() itself renders gets wired via its own
@@ -1763,20 +1882,139 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // Payment Configuration — REMOVED (Revision A2, implementation_plan.md,
-    // decision B4). This used to be a card in Staff Management with two
-    // .admin-switch toggles (GCash/Cash) and a downpayment-percentage
-    // input, reading/writing the singleton `app_settings` row
-    // (database/schema/007_app_settings.sql) through
-    // window.InigoAppSettings (includes/appSettings.js). That table, its
-    // documented defaults (GCash + Cash on, 50% downpayment), and every
-    // other reader of it — the customer booking wizard, the staff walk-in
-    // form — are completely untouched; only this admin editing UI is gone.
-    // includes/appSettings.js is no longer even loaded on this page (see
-    // Pages/owner_dashboard.html's script-tag comment) since nothing here
-    // reads or writes it any more. Re-add a form here (or elsewhere) if the
-    // owner wants to edit these again — the data layer already supports it.
+    // Payment Configuration — owner-only controls for future bookings.
+    // The database's RLS protects writes; PayMongo secrets never reach this
+    // page. The payment-health function returns safe connection metadata.
     // ------------------------------------------------------------------
+    const ownerPaymentPercent = document.querySelector('[data-owner-payment-percent]');
+    const ownerPaymentSave = document.querySelector('[data-owner-payment-save]');
+    const ownerPaymentMessage = document.querySelector('[data-owner-payment-message]');
+    const ownerPaymongoApi = document.querySelector('[data-owner-paymongo-api]');
+    const ownerPaymongoWebhook = document.querySelector('[data-owner-paymongo-webhook]');
+    const ownerPaymongoLast = document.querySelector('[data-owner-paymongo-last-payment]');
+    const ownerPaymongoRefresh = document.querySelector('[data-owner-paymongo-refresh]');
+    const ownerPaymentInputs = Object.fromEntries(['cash', 'card', 'gcash'].map(method => [method,
+        document.querySelector(`[data-owner-payment-method="${method}"]`)]));
+    const ownerPaymentDefaults = { downpaymentPct: 50, cashEnabled: true, cardEnabled: false, gcashEnabled: true };
+    let ownerPaymentLoadGeneration = 0;
+
+    function setOwnerPaymentMessage(message, isError = false) {
+        if (!ownerPaymentMessage) return;
+        ownerPaymentMessage.textContent = message || '';
+        ownerPaymentMessage.classList.toggle('is-error', Boolean(isError));
+        ownerPaymentMessage.classList.toggle('is-success', Boolean(message) && !isError);
+    }
+
+    function paintOwnerPaymentSettings(settings) {
+        if (ownerPaymentPercent) ownerPaymentPercent.value = String(settings.downpaymentPct ?? 50);
+        if (ownerPaymentInputs.cash) ownerPaymentInputs.cash.checked = settings.cashEnabled !== false;
+        if (ownerPaymentInputs.card) ownerPaymentInputs.card.checked = settings.cardEnabled === true;
+        if (ownerPaymentInputs.gcash) ownerPaymentInputs.gcash.checked = settings.gcashEnabled !== false;
+    }
+
+    async function loadOwnerPaymentSettings() {
+        if (!ownerPaymentSave) return;
+        const generation = ++ownerPaymentLoadGeneration;
+        setOwnerPaymentMessage('Loading payment settings…');
+        ownerPaymentSave.disabled = true;
+        if (!window.sb) {
+            setOwnerPaymentMessage('Payment settings are unavailable until the server connection is ready.', true);
+            return;
+        }
+        try {
+            const { data, error } = await window.sb.from('app_settings')
+                .select('downpayment_pct,cash_enabled,card_enabled,gcash_enabled')
+                .eq('id', true).maybeSingle();
+            if (generation !== ownerPaymentLoadGeneration) return;
+            if (error) throw error;
+            if (data) {
+                paintOwnerPaymentSettings({
+                    downpaymentPct: Number(data.downpayment_pct),
+                    cashEnabled: data.cash_enabled,
+                    cardEnabled: data.card_enabled,
+                    gcashEnabled: data.gcash_enabled,
+                });
+                setOwnerPaymentMessage('Settings loaded. Changes apply to new checkouts.');
+            } else {
+                paintOwnerPaymentSettings(ownerPaymentDefaults);
+                setOwnerPaymentMessage('Using the default 50% deposit and enabled GCash and cash options.');
+            }
+            ownerPaymentSave.disabled = false;
+        } catch (error) {
+            if (generation !== ownerPaymentLoadGeneration) return;
+            console.error('[admin] payment settings could not be loaded', error);
+            setOwnerPaymentMessage('Payment settings could not be loaded. Try refreshing the page.', true);
+        }
+    }
+
+    async function saveOwnerPaymentSettings() {
+        if (!ownerPaymentSave || !window.sb) return;
+        const rawPercent = ownerPaymentPercent?.value.trim() || '';
+        const percent = Number(rawPercent);
+        if (!rawPercent || !Number.isFinite(percent) || percent <= 0 || percent >= 100 || !/^\d+(\.\d{1,2})?$/.test(rawPercent)) {
+            setOwnerPaymentMessage('Enter a down payment greater than 0% and less than 100%, using up to two decimal places.', true);
+            ownerPaymentPercent?.focus();
+            return;
+        }
+        const settings = {
+            downpayment_pct: percent,
+            cash_enabled: Boolean(ownerPaymentInputs.cash?.checked),
+            card_enabled: Boolean(ownerPaymentInputs.card?.checked),
+            gcash_enabled: Boolean(ownerPaymentInputs.gcash?.checked),
+        };
+        if (!settings.card_enabled && !settings.gcash_enabled) {
+            setOwnerPaymentMessage('Enable at least one online payment method (Card or GCash) for customer bookings.', true);
+            ownerPaymentInputs.card?.focus();
+            return;
+        }
+        if (window.inigosyncProfile?.role !== 'admin') {
+            setOwnerPaymentMessage('Only the owner can change payment settings.', true);
+            return;
+        }
+        ownerPaymentSave.disabled = true;
+        ownerPaymentSave.textContent = 'Saving…';
+        setOwnerPaymentMessage('Saving payment settings…');
+        try {
+            const { error } = await window.sb.from('app_settings').update(settings).eq('id', true);
+            if (error) throw error;
+            window.InigoAppSettings?.invalidateSettings();
+            await window.InigoAppSettings?.getSettings({ force: true });
+            setOwnerPaymentMessage('Payment settings saved. They apply to new checkouts; existing bookings keep their agreed amount.');
+        } catch (error) {
+            console.error('[admin] payment settings save failed', error);
+            setOwnerPaymentMessage(error.message || 'Payment settings could not be saved. Please try again.', true);
+        } finally {
+            ownerPaymentSave.disabled = false;
+            ownerPaymentSave.textContent = 'Save payment settings';
+        }
+    }
+
+    async function refreshPayMongoHealth() {
+        if (!ownerPaymongoApi) return;
+        [ownerPaymongoApi, ownerPaymongoWebhook, ownerPaymongoLast].forEach(el => { if (el) el.textContent = 'Checking…'; });
+        if (!window.sb?.functions) {
+            [ownerPaymongoApi, ownerPaymongoWebhook, ownerPaymongoLast].forEach(el => { if (el) el.textContent = 'Unavailable'; });
+            return;
+        }
+        if (ownerPaymongoRefresh) ownerPaymongoRefresh.disabled = true;
+        try {
+            const { data, error } = await window.sb.functions.invoke('payment-health');
+            if (error) throw error;
+            ownerPaymongoApi.textContent = data?.api_connected === true ? 'Connected' : data?.api_connected === false ? 'Not connected' : 'Unavailable';
+            ownerPaymongoWebhook.textContent = data?.webhook_configured === true ? 'Ready' : data?.webhook_configured === false ? 'Not set up' : 'Unavailable';
+            ownerPaymongoLast.textContent = data?.last_confirmed_payment_at
+                ? formatActivityTime(data.last_confirmed_payment_at)
+                : data?.last_confirmed_payment_at === null ? 'No confirmed payments yet' : 'Unavailable';
+        } catch (error) {
+            console.warn('[admin] PayMongo health check is unavailable', error);
+            [ownerPaymongoApi, ownerPaymongoWebhook, ownerPaymongoLast].forEach(el => { if (el) el.textContent = 'Unavailable'; });
+        } finally {
+            if (ownerPaymongoRefresh) ownerPaymongoRefresh.disabled = false;
+        }
+    }
+
+    ownerPaymentSave?.addEventListener('click', saveOwnerPaymentSettings);
+    ownerPaymongoRefresh?.addEventListener('click', refreshPayMongoHealth);
 
     // Court and media editors live in owner-courts.js and owner-media.js.
 
@@ -1788,6 +2026,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminNotifMarkAll = document.querySelector('[data-admin-notif-mark-all]');
     const notificationList = document.querySelector('[data-owner-notification-list]');
     const notificationDetail = document.querySelector('[data-owner-notification-detail]');
+    const notificationDetailBody = document.querySelector('[data-owner-notification-detail-body]');
+    const notificationModal = document.querySelector('[data-owner-notification-modal]');
     let notificationPage = 0;
     let selectedNotificationId = null;
     let notificationGeneration = 0;
@@ -1846,20 +2086,31 @@ document.addEventListener('DOMContentLoaded', () => {
     async function openNotification(id) {
         selectedNotificationId = id;
         setActivePanel('notifications');
-        notificationDetail.textContent = 'Loading notification…';
+        if (notificationDetailBody) notificationDetailBody.innerHTML = '<p class="admin-form-hint">Loading notification…</p>';
+        window.InigoOwnerUI.open(notificationModal);
         const { data, error } = await window.sb.from('owner_activity').select('id,title,detail,target_section,created_at,seen_at').eq('id', id).eq('owner_id', window.inigosyncProfile.id).single();
         if (selectedNotificationId !== id) return;
-        if (error) { notificationDetail.textContent = 'This notification could not be loaded.'; return; }
+        if (error) { if (notificationDetailBody) notificationDetailBody.innerHTML = '<p class="admin-form-hint">This notification could not be loaded.</p>'; return; }
         const seenResult = data.seen_at ? { error: null } : await window.sb.from('owner_activity').update({ seen_at: new Date().toISOString() }).eq('id', id).eq('owner_id', window.inigosyncProfile.id);
-        notificationDetail.innerHTML = `<h3>${window.escapeHtml(data.title)}</h3><time datetime="${window.escapeHtml(data.created_at)}">${window.escapeHtml(formatActivityTime(data.created_at))} · ${seenResult.error ? 'Unread' : 'Read'}</time><p>${window.escapeHtml(data.detail || 'This earlier notification contains only the activity title and date.')}</p><button type="button" class="admin-btn-secondary" data-notification-go>Open ${window.escapeHtml(panelMeta[data.target_section]?.title || 'Overview')}</button>`;
-        notificationDetail.querySelector('[data-notification-go]').onclick = () => setActivePanel(panelMeta[data.target_section] ? data.target_section : 'overview');
-        notificationDetail.focus();
+        if (notificationDetailBody) notificationDetailBody.innerHTML = `<h3 id="ownerNotificationDetailTitle">${window.escapeHtml(data.title)}</h3><time datetime="${window.escapeHtml(data.created_at)}">${window.escapeHtml(formatActivityTime(data.created_at))} · ${seenResult.error ? 'Unread' : 'Read'}</time><p>${window.escapeHtml(data.detail || 'This earlier notification contains only the activity title and date.')}</p><button type="button" class="admin-btn-secondary" data-notification-go>Open ${window.escapeHtml(panelMeta[data.target_section]?.title || 'Overview')}</button>`;
+        notificationDetailBody?.querySelector('[data-notification-go]')?.addEventListener('click', () => {
+            window.InigoOwnerUI.close(notificationModal);
+            setActivePanel(panelMeta[data.target_section] ? data.target_section : 'overview');
+        });
         refreshOwnerActivityNotifications();
     }
     [adminNotifList, notificationList].forEach(root => root?.addEventListener('click', event => {
         const item = event.target.closest('[data-owner-activity-id]');
         if (item) openNotification(item.dataset.ownerActivityId).catch(() => window.InigoToast?.show('Could not open notification.', true));
     }));
+    document.querySelectorAll('[data-owner-notification-close]').forEach(button => button.addEventListener('click', () => window.InigoOwnerUI.close(notificationModal)));
+    let notificationBackdropPressed = false;
+    notificationModal?.addEventListener('pointerdown', event => { notificationBackdropPressed = event.target === notificationModal; });
+    notificationModal?.addEventListener('click', event => {
+        if (event.target === notificationModal && notificationBackdropPressed) window.InigoOwnerUI.close(notificationModal);
+        notificationBackdropPressed = false;
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && notificationModal && !notificationModal.hidden) window.InigoOwnerUI.close(notificationModal); });
     adminNotifMarkAll?.addEventListener('click', async () => {
         if (!window.sb || !window.inigosyncProfile?.id) return;
         const { error } = await window.sb.from('owner_activity').update({ seen_at: new Date().toISOString() }).eq('owner_id', window.inigosyncProfile.id).is('seen_at', null);
@@ -1888,11 +2139,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Account Settings — avatar upload/remove (Revision A1, decision A9).
-    // Same pipeline as the customer dashboard's Profile Photo card
-    // (Pages/user_dashboard.html, includes/Dashboard.js), via the shared
-    // includes/imageTools.js: a 256×256 center-cropped JPEG data URL
-    // written straight into profiles.avatar_url — no Storage bucket needed
-    // for avatars (only Media Manager/Court photos use Storage).
+    // The owner gets a crop preview before a square JPEG data URL is staged
+    // in profiles.avatar_url. Cancelling the crop leaves the current draft
+    // untouched; only Save writes the resulting image.
     // ------------------------------------------------------------------
     const AVATAR_MAX_RAW_BYTES = 5 * 1024 * 1024;
     const AVATAR_OUTPUT_SIZE = 256;
@@ -1974,16 +2223,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const originalLabel = adminAvatarUploadBtn.textContent;
             adminAvatarUploadBtn.disabled = true;
-            adminAvatarUploadBtn.textContent = 'Uploading…';
+            adminAvatarUploadBtn.textContent = 'Preparing…';
 
             try {
-                const dataUrl = await window.InigoImageTools.downscaleImageToDataUrl(file, { size: AVATAR_OUTPUT_SIZE, quality: AVATAR_JPEG_QUALITY });
+                const croppedBlob = await window.InigoImageTools.openCropEditor(file, {
+                    aspect: 1,
+                    maxW: AVATAR_OUTPUT_SIZE,
+                    maxH: AVATAR_OUTPUT_SIZE,
+                    quality: AVATAR_JPEG_QUALITY,
+                });
+                if (!croppedBlob) return;
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('Could not finish processing the cropped photo.'));
+                    reader.readAsDataURL(croppedBlob);
+                });
                 stagedAvatarUrl = dataUrl;
                 const preview = adminAvatarModal?.querySelector('.admin-avatar-upload-preview');
                 if (preview) preview.innerHTML = `<img class="admin-avatar-img" src="${window.escapeHtml(dataUrl)}" alt="Profile photo preview">`;
                 if (adminAvatarRemoveBtn) adminAvatarRemoveBtn.hidden = false;
             } catch (err) {
-                console.error('[admin] avatar downscale failed', err);
+                console.error('[admin] avatar crop failed', err);
                 window.InigoToast?.show('Could not process that image. Please try a different file.', true);
             } finally {
                 adminAvatarUploadBtn.disabled = false;
@@ -2472,11 +2733,12 @@ document.addEventListener('DOMContentLoaded', () => {
             else {
                 const count = Number(summary.total_count || 0);
                 reviewSummary.classList.add('owner-review-summary');
-                const bins = [['five_star', 5], ['four_star', 4], ['three_star', 3], ['two_star', 2], ['one_star', 1]];
-                reviewSummary.innerHTML = `<strong class="owner-review-score">${count ? `${Number(summary.average_rating).toFixed(1)} / 5.0` : 'No reviews yet'}</strong><span>${count} customer review${count === 1 ? '' : 's'}</span><div class="owner-review-counts">${bins.map(([key, stars]) => `<span>${stars} ★ · ${Number(summary.star_counts?.[String(stars)] ?? summary[key] ?? 0)}</span>`).join('')}</div>`;
+            const score = count ? Number(summary.average_rating).toFixed(1) : '—';
+            const roundedStars = count ? Math.max(0, Math.min(5, Math.round(Number(summary.average_rating)))) : 0;
+            reviewSummary.innerHTML = `<strong class="owner-review-score">${score} / 5.0</strong>${count ? `<span class="owner-review-average-stars" aria-label="${roundedStars} out of 5 stars">${'★'.repeat(roundedStars)}${'☆'.repeat(5 - roundedStars)}</span>` : ''}`;
             }
         }
-        reviewList.innerHTML = data?.length ? data.map((review) => `<article class="admin-review-item"><div class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></div><p>${window.escapeHtml(review.comment || 'No written comment.')}</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></article>`).join('') : '<p class="admin-form-hint">No reviews for this rating yet.</p>';
+        reviewList.innerHTML = data?.length ? data.map((review) => `<article class="admin-review-item"><div class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></div><p>${window.escapeHtml(review.comment || 'No written comment.')}</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></article>`).join('') : '<p class="admin-form-hint">There are no reviews in this filter.</p>';
         const pages = Math.max(1, Math.ceil(total / REVIEW_PAGE_SIZE));
         if (reviewPager) reviewPager.hidden = total <= REVIEW_PAGE_SIZE;
         const info = document.querySelector('[data-admin-review-page-info]');

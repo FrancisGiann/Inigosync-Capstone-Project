@@ -1055,19 +1055,9 @@ button.admin-notif-item:focus-visible {
 }
 .admin-court-media svg { width: 44px; height: 44px; }
 
-/* Real court photo (image_url set) vs. the placeholder monogram (null) —
-   see includes/owner_dashboard.js's renderAdminCourtCard, same pattern as
-   includes/landingPage.js's .media-slot / .media-slot-monogram. */
+/* Owner court previews use the listing's shared image_url, matching the
+   landing card and the editable Court Listings cover. */
 .admin-court-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.admin-court-art { position: absolute; inset: 0; background-image: url('../assets/landing/sports-equipment.png'); background-size: 400% 200%; background-repeat: no-repeat; }
-.admin-court-art-0 { background-position: 0% 0%; }
-.admin-court-art-1 { background-position: 33.333333% 0%; }
-.admin-court-art-2 { background-position: 66.666667% 0%; }
-.admin-court-art-3 { background-position: 100% 0%; }
-.admin-court-art-4 { background-position: 0% 100%; }
-.admin-court-art-5 { background-position: 33.333333% 100%; }
-.admin-court-art-6 { background-position: 66.666667% 100%; }
-.admin-court-art-7 { background-position: 100% 100%; }
 .admin-court-monogram {
     /* Revision A2 (implementation_plan.md) — Oswald 700 steps down to
        --fw-semibold (600); Sora renders heavier at the same weight. */

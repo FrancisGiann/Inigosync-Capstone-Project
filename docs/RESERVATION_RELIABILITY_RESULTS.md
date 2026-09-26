@@ -1,8 +1,10 @@
 # Court reservation reliability
 
-Verified 2026-09-25 against the customer and staff booking flows and Supabase project `xrlwtnwamboucihsamrr`. The deployed design uses immutable listing/unit IDs, a shared physical-resource ledger, and a GiST exclusion constraint over physical resource and half-open time ranges. Customer and walk-in writes still pass through their existing RLS and payment rules.
+Verified 2026-09-25 against the then-current customer and staff booking flows and Supabase project `xrlwtnwamboucihsamrr`. The deployed design uses immutable listing/unit IDs, a shared physical-resource ledger, and a GiST exclusion constraint over physical resource and half-open time ranges. Since the 2026-09-27 payment revision, customer checkout creates temporary holds through a server function; only confirmed PayMongo payment creates a booking. Staff walk-ins remain subject to RLS and authoritative pricing.
 
-## Results
+The results below document the 2026-09-25 flow. The later paid-only cart flow and its current checks are recorded in [Owner portal revision verification](OWNER_PORTAL_REVISION_VERIFICATION.md); historical customer-save and retry results below do not describe the revised checkout.
+
+## Historical results (2026-09-25)
 
 | Check | Result |
 | --- | --- |

@@ -349,15 +349,19 @@
                         <div class="staff-wizard-panel" data-staff-walkin-step="3">
                             <h3 class="staff-wizard-panel-title">Time — today only</h3>
                             <p class="staff-form-hint">Walk-ins are recorded for today; choose a start and end time from what's still free.</p>
-                            <div class="staff-time-range">
+                            <div class="staff-time-range" data-staff-walkin-time-range>
                                 <div class="staff-form-group">
                                     <span class="staff-form-label">From</span>
                                     <select class="staff-select" data-staff-walkin-from></select>
                                 </div>
-                                <div class="staff-form-group">
+                                <div class="staff-form-group" data-staff-walkin-to-wrap>
                                     <span class="staff-form-label">To</span>
                                     <select class="staff-select" data-staff-walkin-to></select>
                                 </div>
+                                <label class="staff-form-group staff-walkin-set-quantity" data-staff-walkin-set-quantity-wrap hidden>
+                                    <span class="staff-form-label">Number of sets · 60 minutes each</span>
+                                    <input type="number" class="staff-input" min="1" max="100" step="1" value="1" data-staff-rate-quantity aria-label="Number of sets">
+                                </label>
                             </div>
                             <p class="staff-form-hint" data-staff-walkin-open-windows>Select a sport first.</p>
                         </div>
@@ -366,21 +370,15 @@
                         <div class="staff-wizard-panel" data-staff-walkin-step="4">
                             <h3 class="staff-wizard-panel-title">Payment method</h3>
                             <div class="staff-payment-options">
-                                <label class="staff-payment-option is-selected" data-staff-payment-option>
+                                <label class="staff-payment-option is-selected" data-staff-payment-option data-staff-walkin-cash-option>
                                     <span class="staff-payment-option-head">
                                         <input type="radio" name="staff-walkin-payment" checked data-staff-payment="cash">
                                         Cash
                                     </span>
                                     <p>Collected on-site by staff.</p>
                                 </label>
-                                <label class="staff-payment-option" data-staff-payment-option>
-                                    <span class="staff-payment-option-head">
-                                        <input type="radio" name="staff-walkin-payment" data-staff-payment="online">
-                                        Online payment
-                                    </span>
-                                    <p>Card / e-wallet checkout (coming soon).</p>
-                                </label>
                             </div>
+                            <p class="staff-form-hint" data-staff-walkin-cash-unavailable hidden>Cash collection is unavailable. Ask the owner to enable Cash in Payment Configuration.</p>
                         </div>
 
                         <!-- STEP 5 — Review & save -->
@@ -394,7 +392,6 @@
 
                                 <div class="staff-summary-divider"></div>
 
-                                <label class="staff-summary-row" data-staff-rate-quantity-wrap hidden><span>Number of sets</span><input type="number" min="1" max="100" step="1" value="1" data-staff-rate-quantity aria-label="Number of sets"></label>
                                 <div class="staff-summary-row"><span data-staff-walkin-summary-rate-label>Rate</span><strong data-staff-walkin-summary-rate>—</strong></div>
                                 <div class="staff-summary-row"><span>Payment method</span><strong data-staff-walkin-summary-payment>Cash</strong></div>
 
@@ -475,8 +472,7 @@
                  time-in log (bookings + walk-ins, union, newest first) for a
                  chosen date range, replacing the old `audit_log`-backed
                  confirm/decline trail (that table is no longer read here —
-                 see includes/staff_dashboard.js's writeAuditLog(), kept only
-                 as a best-effort write helper).
+                 Future activity attribution is written by trusted server-side actions.
                  ============================================================ -->
             <section class="staff-panel" data-staff-panel="transactions">
                 <div class="staff-panel-head">
@@ -794,8 +790,9 @@
      Transaction Records, both via includes/staff_dashboard.js's
      wireTimeInButtons()) instead of writing checked_in_at immediately —
      shows the booking/walk-in's Total/Paid so far/Balance due and, when a
-     balance is owed, requires picking Cash/Online payment before the
-     confirm button both collects it and times the customer in. Same
+     balance is owed, requires picking Cash/PayMongo before acting. Cash
+     collection and time-in use an authenticated server action; PayMongo
+     must be webhook-confirmed before staff confirms attendance. Same
      .staff-modal-overlay/.staff-modal shell + open/close idiom (Esc/backdrop
      mousedown+click/Cancel/×, focus management) as the owner dashboard's
      .admin-modal-overlay/.admin-modal, ported here since no modal shell
@@ -823,22 +820,23 @@
 
             <p class="staff-form-hint" data-staff-timein-note hidden></p>
 
-            <!-- Balance > 0 only — decision S11: no manual amount entry
-                 anywhere, just a required Cash / Online payment choice.
+            <!-- Balance > 0 only — no manual amount entry, just a required
+                 Cash / PayMongo payment choice.
                  Neither radio is preselected (unlike the walk-in wizard's
                  own Step 4, which defaults to Cash). -->
             <div class="staff-payment-options" data-staff-timein-payment-wrap hidden>
-                <label class="staff-payment-option" data-staff-payment-option>
+                <label class="staff-payment-option" data-staff-payment-option data-staff-timein-cash-option>
                     <span class="staff-payment-option-head">
                         <input type="radio" name="staff-timein-payment" data-staff-timein-method="Cash">
                         Cash
                     </span>
                 </label>
-                <label class="staff-payment-option" data-staff-payment-option>
+                <label class="staff-payment-option" data-staff-payment-option data-staff-timein-online-option>
                     <span class="staff-payment-option-head">
-                        <input type="radio" name="staff-timein-payment" data-staff-timein-method="Online payment">
-                        Online payment
+                        <input type="radio" name="staff-timein-payment" data-staff-timein-method="PayMongo">
+                        PayMongo
                     </span>
+                    <p>Pay the remaining balance securely with PayMongo.</p>
                 </label>
             </div>
         </div>

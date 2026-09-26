@@ -8,28 +8,70 @@
 .owner-photo-section [data-admin-avatar-edit] { flex: none; width: auto; min-height: 40px; padding: 9px 22px; }
 .owner-personal-section { min-width: 0; }
 .admin-settings-readonly dd { overflow-wrap: anywhere; }
-.owner-notifications-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 20px; }
+.owner-notifications-layout { display: block; width: 100%; }
 .owner-notification-list { display: grid; gap: 8px; }
 .owner-notification-row { display: grid; gap: 8px; text-align: left; padding: 16px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg-card); color: var(--color-ink); cursor: pointer; overflow-wrap: anywhere; }
 .owner-notification-row.is-selected { border-color: var(--color-orange, #ff782e); }
 .owner-notification-row:not(.is-seen) strong::before { content: '● '; color: var(--color-orange, #ff782e); }
 .owner-notification-row time { font-size: .8rem; color: var(--color-ink-muted); }
-.owner-notification-detail { align-self: start; overflow-wrap: anywhere; }
+.owner-notification-detail { position: relative; align-self: start; overflow-wrap: anywhere; }
 .owner-notification-detail p { white-space: pre-line; line-height: 1.6; }
+.owner-notification-detail time { display: block; color: var(--color-ink-muted); font-size: var(--fs-sm); margin: 0 0 16px; }
 .owner-notification-pages { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; }
-.owner-review-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-bottom: 20px; }
+.owner-review-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
 .owner-review-score { font-size: clamp(1.8rem, 4vw, 2.5rem); font-weight: 700; color: var(--color-ink); }
-.owner-review-counts { display: flex; flex-wrap: wrap; gap: 12px; }
-.owner-review-counts span { white-space: nowrap; }
+.owner-review-average-stars { color: var(--color-primary); font-size: var(--fs-lg); letter-spacing: 2px; }
 .admin-panel[data-admin-panel="staff"] .admin-panel-head { justify-content: flex-end; }
 .admin-panel[data-admin-panel="staff"] .admin-card-head { flex-wrap: wrap; gap: 16px; }
 .admin-form-group input[readonly] { opacity: .8; }
+
+.admin-staff-action-wrap { position: relative; }
+.admin-staff-actions-trigger { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; }
+.admin-staff-action-menu { position: absolute; z-index: 12; top: calc(100% + 6px); right: 0; min-width: 205px; display: grid; gap: 2px; padding: 6px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg-card); box-shadow: 0 12px 28px rgba(0,0,0,.18); }
+.admin-staff-action-menu[hidden] { display: none; }
+.admin-staff-action-menu button { border: 0; border-radius: 7px; padding: 10px 12px; background: transparent; color: var(--color-ink); text-align: left; font: inherit; cursor: pointer; }
+.admin-staff-action-menu button:hover, .admin-staff-action-menu button:focus-visible { background: color-mix(in srgb, var(--color-primary) 12%, transparent); outline: none; }
+.admin-staff-action-menu button:last-child { color: var(--color-alert); }
+
+.owner-staff-activity-modal { max-width: 760px; }
+.owner-staff-activity-search { margin: 14px 0 18px; }
+.owner-staff-activity-list { display: grid; gap: 10px; }
+.owner-staff-activity-item { min-width: 0; padding: 14px 0; border-top: 1px solid var(--color-line); overflow-wrap: anywhere; }
+.owner-staff-activity-item-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.owner-staff-activity-item-head time, .owner-staff-activity-type { color: var(--color-ink-muted); font-size: var(--fs-xs); }
+.owner-staff-activity-type { display: inline-block; margin-top: 6px; }
+.owner-staff-activity-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; color: var(--color-ink-muted); font-size: var(--fs-sm); }
+.owner-staff-activity-summary strong { color: var(--color-ink); }
+.owner-staff-activity-pagination { margin-top: 18px; }
+
+.owner-payment-config-grid { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(0, 1.4fr); gap: 28px; align-items: start; }
+.owner-payment-percent { max-width: 320px; }
+.owner-payment-percent-input { position: relative; display: block; }
+.owner-payment-percent-input input { padding-right: 42px; }
+.owner-payment-percent-input > span { position: absolute; top: 50%; right: 15px; color: var(--color-ink-muted); transform: translateY(-50%); }
+.owner-payment-methods { min-width: 0; display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.owner-payment-methods legend { margin-bottom: 10px; font-weight: 700; }
+.owner-payment-method { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 14px; border: 1px solid var(--color-line); border-radius: 10px; cursor: pointer; }
+.owner-payment-method input { width: 18px; height: 18px; accent-color: var(--color-primary); }
+.owner-payment-method span { display: grid; gap: 2px; }
+.owner-payment-method small { color: var(--color-ink-muted); }
+.owner-payment-method-hint { margin: 4px 0 0; }
+.owner-payment-config-message { min-height: 1.5em; margin: 14px 0 0; color: var(--color-ink-muted); font-size: var(--fs-sm); }
+.owner-payment-config-message.is-error { color: var(--color-alert); }
+.owner-payment-config-message.is-success { color: var(--color-court-green); }
+.owner-paymongo-card { margin-top: 18px; }
+.owner-paymongo-status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.owner-paymongo-status > div { min-width: 0; padding: 14px; border: 1px solid var(--color-line); border-radius: 10px; }
+.owner-paymongo-status dt { margin-bottom: 6px; color: var(--color-ink-muted); font-size: var(--fs-sm); }
+.owner-paymongo-status dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 @media (max-width: 680px) {
-    .owner-account-card, .owner-notifications-layout { grid-template-columns: minmax(0, 1fr); }
+    .owner-account-card { grid-template-columns: minmax(0, 1fr); }
     .owner-photo-section { border-right: 0; border-bottom: 1px solid var(--color-line); padding-bottom: 24px; }
     .admin-staff-filters { flex-wrap: wrap; }
     .admin-modal-overlay { padding: 12px; }
     .admin-modal { width: 100%; padding: 20px; max-height: 92dvh; }
+    .owner-payment-config-grid, .owner-paymongo-status { grid-template-columns: minmax(0, 1fr); }
+    .owner-payment-percent { max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) {
     .admin-modal-overlay, .admin-modal { transition: none; }

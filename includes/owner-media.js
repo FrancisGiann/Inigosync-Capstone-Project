@@ -70,7 +70,7 @@
     function formMarkup(slide, isNew) {
         const image = slide.image_url || '';
         return `<form class="owner-media-form" data-media-form novalidate>
-            <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="admin-btn-secondary" data-media-replace>Replace photo</button><input class="admin-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" data-media-file></div>
+            <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="admin-btn-secondary owner-media-replace" data-media-replace><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span data-media-replace-label>Replace photo</span></button><input class="admin-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" data-media-file><p class="owner-media-crop-hint">Choose a photo, adjust the 16:9 crop, then save to stage it.</p></div>
             <div class="owner-media-fields">
                 <label class="admin-form-group"><span class="admin-form-label">Title</span><input required maxlength="120" type="text" class="admin-input" data-media-title value="${escape(slide.title || '')}"></label>
                 <label class="admin-form-group"><span class="admin-form-label">Caption</span><textarea maxlength="500" class="admin-input owner-media-textarea" data-media-caption>${escape(slide.meta || '')}</textarea></label>
@@ -87,7 +87,7 @@
             meta: editor.querySelector('[data-media-caption]').value.trim(),
             tag: editor.querySelector('[data-media-tag]').value.trim(),
             is_published: editor.querySelector('[data-media-published]').getAttribute('aria-pressed') === 'true',
-            file: editor.querySelector('[data-media-file]').files?.[0] || null,
+            file: activeDraft?.croppedFile || null,
         };
     }
 
@@ -102,8 +102,7 @@
             const accepted = await confirm({ title: 'Discard slide changes?', message: 'Your unsaved slide details and selected photo will be lost.', confirmLabel: 'Discard changes', danger: true });
             if (!accepted) return;
         }
-        const preview = editor.querySelector('[data-media-preview] img');
-        if (preview?.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+        if (activeDraft?.previewUrl) URL.revokeObjectURL(activeDraft.previewUrl);
         modal.hidden = true;
         modal.removeAttribute('data-open');
         editor.replaceChildren();
@@ -115,7 +114,7 @@
         const source = id ? slides.find((slide) => String(slide.id) === String(id)) : null;
         if (id && !source) return;
         const original = source ? { ...source } : { id: null, title: '', meta: '', tag: '', image_url: '', is_published: false };
-        activeDraft = { original, isNew: !source };
+        activeDraft = { original, isNew: !source, croppedFile: null, previewUrl: null };
         previousFocus = document.activeElement;
         const heading = document.querySelector('[data-admin-slide-modal-title]');
         if (heading) heading.textContent = source ? 'Edit slide' : 'Add slide';
@@ -132,7 +131,7 @@
         const trigger = form.querySelector('[data-media-replace]');
         const published = form.querySelector('[data-media-published]');
         trigger.addEventListener('click', () => file.click());
-        file.addEventListener('change', () => {
+        file.addEventListener('change', async () => {
             const next = file.files?.[0];
             if (!next) return;
             if (!/^image\/(jpeg|png|webp)$/.test(next.type) || next.size > 8 * 1024 * 1024) {
@@ -140,12 +139,33 @@
                 toast('Choose a JPG, PNG, or WebP photo up to 8 MB.', true);
                 return;
             }
-            const preview = form.querySelector('[data-media-preview]');
-            const oldUrl = preview.querySelector('img')?.dataset.objectUrl;
-            if (oldUrl) URL.revokeObjectURL(oldUrl);
-            const objectUrl = URL.createObjectURL(next);
-            preview.innerHTML = `<img src="${objectUrl}" alt="Selected slideshow photo" data-object-url="${objectUrl}">`;
-            trigger.textContent = 'Choose another photo';
+            file.value = '';
+            trigger.disabled = true;
+            const label = trigger.querySelector('[data-media-replace-label]');
+            if (label) label.textContent = 'Opening crop…';
+            try {
+                if (!window.InigoImageTools?.openCropEditor) throw new Error('The photo crop tool is unavailable.');
+                const cropped = await window.InigoImageTools.openCropEditor(next, { aspect: 16 / 9, maxW: 1800, maxH: 1012, quality: 0.88 });
+                if (!cropped || !activeDraft) return;
+                const staged = new File([cropped], 'slideshow-photo.jpg', { type: 'image/jpeg' });
+                if (activeDraft.previewUrl) URL.revokeObjectURL(activeDraft.previewUrl);
+                const objectUrl = URL.createObjectURL(staged);
+                activeDraft.croppedFile = staged;
+                activeDraft.previewUrl = objectUrl;
+                const preview = form.querySelector('[data-media-preview]');
+                const img = document.createElement('img');
+                img.src = objectUrl;
+                img.alt = 'Cropped slideshow photo preview';
+                img.dataset.objectUrl = objectUrl;
+                preview.replaceChildren(img);
+                if (label) label.textContent = 'Replace photo';
+            } catch (error) {
+                toast(error.message || 'Could not crop this photo. Choose another image and try again.', true);
+            } finally {
+                trigger.disabled = false;
+                if (label && label.textContent === 'Opening crop…') label.textContent = 'Replace photo';
+                trigger.focus();
+            }
         });
         published.addEventListener('click', () => {
             const next = published.getAttribute('aria-pressed') !== 'true';

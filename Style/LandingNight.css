@@ -92,13 +92,9 @@
 .landing-night .court-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 20px; perspective: 1200px; }
 .landing-night .court-card { min-width: 0; border-radius: 12px; background: var(--surface-card); box-shadow: 0 6px 18px #0002; transition: border-color .25s,box-shadow .25s,background-color .25s; transform-style: preserve-3d; }
 .landing-night .court-card:hover { box-shadow: 0 16px 32px #0004; }
-.landing-night .court-art { width: 100%; aspect-ratio: 1.22; flex-shrink: 0; overflow: hidden; background: #151918; border-bottom: 1px solid var(--border-soft); }
-.landing-night .court-art-image { width: 100%; height: 100%; background-image: url('../assets/landing/sports-equipment.png'); background-size: 400% 200%; background-repeat: no-repeat; transition: transform .7s cubic-bezier(.2,.75,.25,1); }
-.landing-night .court-card:hover .court-art-image,.landing-night .court-card:focus-visible .court-art-image { transform: scale(1.065); }
-.sport-art-0 { background-position: 0% 0%; }.sport-art-1 { background-position: 33.333333% 0%; }
-.sport-art-2 { background-position: 66.666667% 0%; }.sport-art-3 { background-position: 100% 0%; }
-.sport-art-4 { background-position: 0% 100%; }.sport-art-5 { background-position: 33.333333% 100%; }
-.sport-art-6 { background-position: 66.666667% 100%; }.sport-art-7 { background-position: 100% 100%; }
+.landing-night .court-card .media-slot { width: 100%; aspect-ratio: 1.22; flex-shrink: 0; border-bottom: 1px solid var(--border-soft); }
+.landing-night .court-card .media-slot img { transition: transform .7s cubic-bezier(.2,.75,.25,1); }
+.landing-night .court-card:hover .media-slot img,.landing-night .court-card:focus-visible .media-slot img { transform: scale(1.065); }
 .landing-night .court-card-body { padding: 18px 20px 20px; }
 .landing-night .court-card h3 { font-size: 19px; line-height: 1.35; letter-spacing: -.03em; margin-bottom: 10px; }
 .landing-night .court-count { font-size: 13px; color: var(--color-ink-dim); gap: 5px; margin-bottom: 4px; }
@@ -195,7 +191,7 @@
     .landing-night .section-intro { font-size: 12px; margin-bottom: 22px; }
     .landing-night .court-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
     .landing-night .court-card { border-radius: 9px; }
-    .landing-night .court-art { aspect-ratio: 1.16; }
+    .landing-night .court-card .media-slot { aspect-ratio: 1.16; }
     .landing-night .court-card-body { padding: 12px; }
     .landing-night .court-card h3 { font-size: 15px; margin-bottom: 8px; }
     .landing-night .court-count,.landing-night .court-count-unit,.landing-night .court-rate,.landing-night .court-rate.is-tba { font-size: 11px; }
@@ -232,8 +228,8 @@
 }
 @media(prefers-reduced-motion:reduce) {
     :root[data-theme] .landing-night .nav-menu { transition: none; }
-    .landing-night .court-card,.landing-night .court-art-image { transition: none; }
-    .landing-night .court-card:hover,.landing-night .court-card:hover .court-art-image { transform: none; }
+    .landing-night .court-card,.landing-night .court-card .media-slot img { transition: none; }
+    .landing-night .court-card:hover,.landing-night .court-card:hover .media-slot img { transform: none; }
 }
 
 /* Decoration stays out of document flow and never receives pointer input. */

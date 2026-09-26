@@ -4,6 +4,11 @@
     const sports = ['basketball', 'badminton', 'bowling', 'billiards', 'lawn-tennis', 'pickleball', 'table-tennis', 'volleyball'];
     window.InigoVisuals = Object.freeze({
         sportIndex(slug) { return sports.indexOf(slug); },
+        sportCover(slug) {
+            if (!sports.includes(slug)) return null;
+            try { return new URL(`../assets/landing/sports-covers/${slug}.png`, document.baseURI).href; }
+            catch { return null; }
+        },
         venuePhoto(value) {
             if (!value || typeof value !== 'string') return null;
             try {

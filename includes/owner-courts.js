@@ -10,7 +10,6 @@
         const list = root.querySelector('[data-ioc-list]');
         const editor = overlay.querySelector('[data-ioc-editor]');
         const unitHost = editor.querySelector('[data-ioc-units]');
-        const resourceHost = editor.querySelector('[data-ioc-resources]');
         const title = editor.querySelector('[data-ioc-title]');
         const $ = (selector, scope = editor) => scope.querySelector(selector);
         const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -83,6 +82,7 @@
                     id: unit.id || null, label: String(unit.label || ''), photo_url: unit.photo_url || null,
                     photo_file: null, rate_day: unit.rate_day == null ? '' : String(unit.rate_day), rate_night: unit.rate_night == null ? '' : String(unit.rate_night),
                     rate_unit: unit.rate_unit || '/hr', resource_ids: Array.isArray(unit.resource_ids) ? unit.resource_ids.slice() : [],
+                    resource_search: '', resource_expanded: false, resource_open: false,
                     maintenance: Array.isArray(unit.maintenance) ? unit.maintenance.map((period) => ({ id: period.id || null, start_at: period.start_at || '', end_at: period.end_at || '', note: period.note || '' })) : [],
                 })),
                 resources: Array.isArray(data.resources) ? data.resources.map((resource) => ({ ...resource, id: String(resource.id), name: String(resource.name || 'Court space'), sport_names: Array.isArray(resource.sport_names) && resource.sport_names.length ? resource.sport_names.map(String) : [String(resource.sport_name || resource.sport?.name || 'Other spaces')] })) : [],
@@ -122,6 +122,10 @@
         function markDirty() { if (state.draft) state.draft.dirty = true; }
         function fillEditor() {
             const draft = state.draft;
+            // The former editor had one global resource search/list after all
+            // units. Connections are now managed per unit so this duplicate
+            // section is intentionally hidden without requiring a markup edit.
+            editor.querySelector('[aria-labelledby="iocConnectionsTitle"]')?.setAttribute('hidden', '');
             $('[data-ioc-name]').value = draft.listing.name || '';
             $('[data-ioc-description]').value = draft.listing.description || '';
             $('[data-ioc-unit-kind]').value = ['courts', 'lanes', 'tables'].includes(draft.listing.unit) ? draft.listing.unit : 'courts';
@@ -129,7 +133,6 @@
             $('[data-ioc-cover-file]').value = '';
             updateCoverPreview();
             renderUnits();
-            renderResourceGroups();
             editor.querySelector('[data-ioc-save]').disabled = false;
             setSavebarVisible(true);
         }
@@ -153,8 +156,8 @@
                 const preview = unit.photo_file ? '' : imageMarkup(unit.photo_url, `${unit.label} photo`);
                 return `<article class="ioc-unit-card" data-ioc-unit="${index}"><header class="ioc-unit-head"><div><span class="ioc-eyebrow">Unit ${index + 1}</span><h4>${esc(unit.label || `${unitNoun($('[data-ioc-unit-kind]').value)} ${index + 1}`)}</h4></div><button type="button" class="ioc-text-danger" data-ioc-remove-unit="${index}">Remove unit</button></header>
                     <div class="ioc-unit-top"><label class="ioc-field"><span>Unit label</span><input class="admin-input" maxlength="80" value="${esc(unit.label)}" data-ioc-unit-label="${index}"></label><div class="ioc-unit-photo"><div class="ioc-unit-preview" data-ioc-unit-preview="${index}">${preview}</div><label class="ioc-button ioc-button-secondary" for="ioc-unit-photo-${index}">Choose unit photo</label><input class="ioc-file-input" id="ioc-unit-photo-${index}" type="file" accept="image/jpeg,image/png,image/webp" data-ioc-unit-file="${index}"></div></div>
-                    <div class="ioc-rate-grid"><label class="ioc-field"><span>Day rate</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_day)}" placeholder="Not set" data-ioc-rate-day="${index}"></label><label class="ioc-field"><span>Night rate</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_night)}" placeholder="Same as day" data-ioc-rate-night="${index}"></label><label class="ioc-field"><span>Rate basis</span><select class="admin-select" data-ioc-rate-unit="${index}"><option value="/hr" ${unit.rate_unit === '/hr' ? 'selected' : ''}>Per hour</option><option value="/set" ${unit.rate_unit === '/set' ? 'selected' : ''}>Per set</option></select></label></div>
-                    <div class="ioc-unit-connections"><div class="ioc-subhead"><strong>Availability connections</strong><span>Shared spaces block together</span></div><div class="ioc-connection-list" data-ioc-unit-resources="${index}"></div></div>
+                    <div class="ioc-rate-grid ${unit.rate_unit === '/set' ? 'is-per-set' : ''}" data-ioc-rate-grid="${index}"><label class="ioc-field"><span data-ioc-day-label="${index}">${unit.rate_unit === '/set' ? 'Price per set' : 'Day rate'}</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_day)}" placeholder="Not set" data-ioc-rate-day="${index}"><small data-ioc-set-hint="${index}" ${unit.rate_unit === '/set' ? '' : 'hidden'}>One set reserves one 60-minute slot.</small></label><label class="ioc-field" data-ioc-night-field="${index}" ${unit.rate_unit === '/set' ? 'hidden' : ''}><span>Night rate</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_night)}" placeholder="Same as day" data-ioc-rate-night="${index}"></label><label class="ioc-field"><span>Rate basis</span><select class="admin-select" data-ioc-rate-unit="${index}"><option value="/hr" ${unit.rate_unit === '/hr' ? 'selected' : ''}>Per hour</option><option value="/set" ${unit.rate_unit === '/set' ? 'selected' : ''}>Per set (60 minutes)</option></select></label></div>
+                    <div class="ioc-unit-connections"><div class="ioc-subhead"><strong>Availability connections</strong><span data-ioc-connection-count="${index}"></span></div><label class="ioc-field ioc-resource-search"><span>Search shared spaces</span><input class="admin-input" type="search" maxlength="100" placeholder="Search by sport or space name…" value="${esc(unit.resource_search)}" data-ioc-resource-search="${index}"></label><div class="ioc-resource-selected" data-ioc-resource-selected="${index}"></div><details class="ioc-resource-details" data-ioc-resource-details="${index}" ${unit.resource_open ? 'open' : ''}><summary>Choose shared spaces</summary><div class="ioc-connection-list" data-ioc-unit-resources="${index}"></div></details></div>
                     <div class="ioc-maintenance"><div class="ioc-subhead"><strong>Scheduled maintenance</strong><button type="button" class="ioc-link-button" data-ioc-add-maintenance="${index}">+ Add period</button></div><div data-ioc-maintenance-list="${index}"></div></div>
                 </article>`;
             }).join('');
@@ -162,12 +165,17 @@
                 const index = Number(button.dataset.iocRemoveUnit); const unit = state.draft.units[index];
             const okay = await confirm({ title: 'Remove this unit?', message: `“${unit.label}” will be removed when you save. Units with booking history cannot be removed.`, confirmLabel: 'Remove unit', danger: true });
                 if (!okay) return;
-                state.draft.units.splice(index, 1); markDirty(); renderUnits(); renderResourceGroups();
+                state.draft.units.splice(index, 1); markDirty(); renderUnits();
             }));
             unitHost.querySelectorAll('[data-ioc-unit-label]').forEach((input) => input.addEventListener('input', () => { state.draft.units[Number(input.dataset.iocUnitLabel)].label = input.value; markDirty(); input.closest('.ioc-unit-card').querySelector('h4').textContent = input.value || 'Unit'; }));
             unitHost.querySelectorAll('[data-ioc-rate-day]').forEach((input) => input.addEventListener('input', () => { state.draft.units[Number(input.dataset.iocRateDay)].rate_day = input.value; markDirty(); }));
             unitHost.querySelectorAll('[data-ioc-rate-night]').forEach((input) => input.addEventListener('input', () => { state.draft.units[Number(input.dataset.iocRateNight)].rate_night = input.value; markDirty(); }));
-            unitHost.querySelectorAll('[data-ioc-rate-unit]').forEach((input) => input.addEventListener('change', () => { state.draft.units[Number(input.dataset.iocRateUnit)].rate_unit = input.value; markDirty(); }));
+            unitHost.querySelectorAll('[data-ioc-rate-unit]').forEach((input) => input.addEventListener('change', () => {
+                const index = Number(input.dataset.iocRateUnit); const unit = state.draft.units[index];
+                unit.rate_unit = input.value;
+                if (unit.rate_unit === '/set') unit.rate_night = '';
+                updateRateFields(index); markDirty();
+            }));
             unitHost.querySelectorAll('[data-ioc-unit-file]').forEach((input) => input.addEventListener('change', () => {
                 const unit = state.draft.units[Number(input.dataset.iocUnitFile)]; const file = input.files?.[0]; input.value = '';
                 if (!file) return; if (!validateImage(file)) return;
@@ -184,30 +192,79 @@
             return true;
         }
 
-        function filteredResources() {
-            const query = (editor.querySelector('[data-ioc-resource-search]').value || '').toLocaleLowerCase().trim();
-            const grouped = new Map();
-            state.draft.resources.filter((resource) => !query || `${resource.name} ${resource.sport_names.join(' ')}`.toLocaleLowerCase().includes(query)).forEach((resource) => {
-                resource.sport_names.forEach((sportName) => {
-                    if (!grouped.has(sportName)) grouped.set(sportName, []);
-                    grouped.get(sportName).push(resource);
-                });
+        function updateRateFields(index) {
+            const unit = state.draft?.units[index]; const card = unitHost.querySelector(`[data-ioc-unit="${index}"]`);
+            if (!unit || !card) return;
+            const perSet = unit.rate_unit === '/set';
+            card.querySelector(`[data-ioc-rate-grid="${index}"]`)?.classList.toggle('is-per-set', perSet);
+            const dayLabel = card.querySelector(`[data-ioc-day-label="${index}"]`);
+            if (dayLabel) dayLabel.textContent = perSet ? 'Price per set' : 'Day rate';
+            const setHint = card.querySelector(`[data-ioc-set-hint="${index}"]`);
+            if (setHint) setHint.hidden = !perSet;
+            const nightField = card.querySelector(`[data-ioc-night-field="${index}"]`);
+            if (nightField) nightField.hidden = perSet;
+            const nightInput = card.querySelector(`[data-ioc-rate-night="${index}"]`);
+            if (nightInput && perSet) nightInput.value = '';
+        }
+        function resourceLabel(resource) {
+            return String(resource?.name || 'Shared space');
+        }
+        function updateResourceSummary(index) {
+            const unit = state.draft?.units[index]; if (!unit) return;
+            const selected = unit.resource_ids.map((id) => state.draft.resources.find((resource) => String(resource.id) === String(id)) || { id, name: 'Previously selected space' });
+            const count = editor.querySelector(`[data-ioc-connection-count="${index}"]`);
+            const summary = editor.querySelector(`[data-ioc-resource-selected="${index}"]`);
+            if (count) count.textContent = `${selected.length} selected`;
+            if (summary) {
+                if (!selected.length) summary.textContent = 'No spaces selected yet.';
+                else {
+                    const shown = selected.slice(0, 3).map(resourceLabel);
+                    const more = selected.length - shown.length;
+                    summary.textContent = `Selected: ${shown.join(', ')}${more ? ` + ${more} more` : ''}`;
+                }
+            }
+        }
+        function renderResourceOptions(index, restoreFocusId = null, focusMoreButton = false) {
+            const unit = state.draft?.units[index]; const target = editor.querySelector(`[data-ioc-unit-resources="${index}"]`);
+            if (!unit || !target) return;
+            const selectedIds = new Set(unit.resource_ids.map(String));
+            const selected = unit.resource_ids.map((id) => state.draft.resources.find((resource) => String(resource.id) === String(id)) || { id, name: 'Previously selected space', sport_names: [] });
+            const query = unit.resource_search.trim().toLocaleLowerCase();
+            const matching = state.draft.resources.filter((resource) => !selectedIds.has(String(resource.id)) && `${resource.name} ${(resource.sport_names || []).join(' ')}`.toLocaleLowerCase().includes(query));
+            const visible = unit.resource_expanded ? matching : matching.slice(0, 6);
+            const option = (resource) => `<label class="ioc-resource-option"><input type="checkbox" value="${esc(resource.id)}" ${selectedIds.has(String(resource.id)) ? 'checked' : ''} data-ioc-resource="${index}"><span>${esc(resource.name)}${resource.sport_names?.length ? `<small>${esc(resource.sport_names.join(' · '))}</small>` : ''}</span></label>`;
+            const empty = '<span class="ioc-muted">No matching shared spaces.</span>';
+            target.innerHTML = `${selected.length ? `<fieldset class="ioc-resource-group ioc-resource-group-selected"><legend>Selected spaces</legend>${selected.map(option).join('')}</fieldset>` : ''}${visible.length ? `<fieldset class="ioc-resource-group"><legend>Available spaces${query ? ' matching search' : ''}</legend>${visible.map(option).join('')}</fieldset>` : (!selected.length ? empty : query ? '<span class="ioc-muted">No additional matching spaces.</span>' : '')}${matching.length > 6 ? `<button type="button" class="ioc-load-resources" data-ioc-load-resources="${index}">${unit.resource_expanded ? 'Show fewer spaces' : `Show ${matching.length - 6} more spaces`}</button>` : ''}`;
+            target.querySelectorAll('[data-ioc-resource]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+                const unitDraft = state.draft.units[index]; const id = checkbox.value;
+                if (checkbox.checked && !unitDraft.resource_ids.some((current) => String(current) === id)) unitDraft.resource_ids.push(id);
+                else if (!checkbox.checked) unitDraft.resource_ids = unitDraft.resource_ids.filter((current) => String(current) !== id);
+                markDirty(); updateResourceSummary(index); renderResourceOptions(index, id);
+            }));
+            target.querySelector('[data-ioc-load-resources]')?.addEventListener('click', (event) => {
+                unit.resource_expanded = !unit.resource_expanded; renderResourceOptions(index, null, true);
             });
-            return grouped;
+            if (restoreFocusId !== null) {
+                const checkbox = [...target.querySelectorAll('[data-ioc-resource]')].find((input) => input.value === String(restoreFocusId));
+                checkbox?.focus();
+            } else if (focusMoreButton) target.querySelector('[data-ioc-load-resources]')?.focus();
         }
         function renderResourceGroups() {
             if (!state.draft) return;
-            const groups = filteredResources();
             state.draft.units.forEach((unit, index) => {
                 const target = editor.querySelector(`[data-ioc-unit-resources="${index}"]`); if (!target) return;
-                if (!groups.size) { target.innerHTML = '<span class="ioc-muted">No matching shared spaces.</span>'; return; }
-                target.innerHTML = [...groups.entries()].map(([sportName, resources]) => `<fieldset class="ioc-resource-group"><legend>${esc(sportName)}</legend>${resources.map((resource) => `<label class="ioc-resource-option"><input type="checkbox" value="${esc(resource.id)}" ${unit.resource_ids.includes(resource.id) ? 'checked' : ''} data-ioc-resource="${index}"><span>${esc(resource.name)}</span></label>`).join('')}</fieldset>`).join('');
-                target.querySelectorAll('[data-ioc-resource]').forEach((checkbox) => checkbox.addEventListener('change', () => {
-                    const unitDraft = state.draft.units[Number(checkbox.dataset.iocResource)];
-                    if (checkbox.checked && !unitDraft.resource_ids.includes(checkbox.value)) unitDraft.resource_ids.push(checkbox.value);
-                    else if (!checkbox.checked) unitDraft.resource_ids = unitDraft.resource_ids.filter((id) => id !== checkbox.value);
-                    markDirty(); renderResourceGroups();
-                }));
+                updateResourceSummary(index);
+                const search = editor.querySelector(`[data-ioc-resource-search="${index}"]`);
+                search?.addEventListener('input', () => {
+                    unit.resource_search = search.value;
+                    unit.resource_expanded = false;
+                    const details = editor.querySelector(`[data-ioc-resource-details="${index}"]`);
+                    if (unit.resource_search.trim()) { unit.resource_open = true; details.open = true; }
+                    renderResourceOptions(index);
+                });
+                const details = editor.querySelector(`[data-ioc-resource-details="${index}"]`);
+                details?.addEventListener('toggle', () => { unit.resource_open = details.open; });
+                renderResourceOptions(index);
             });
         }
         function renderMaintenance() {
@@ -229,7 +286,8 @@
             const label = labelInput.value.trim() || `${unitNoun(kind)} ${state.draft.units.length + 1}`;
             if (state.draft.units.some((unit) => unit.label.toLocaleLowerCase() === label.toLocaleLowerCase())) { toast('Each unit needs a unique label.', true); labelInput.focus(); return; }
             state.draft.listing.unit = kind;
-            state.draft.units.push({ id: null, label, photo_url: null, photo_file: null, rate_day: '', rate_night: '', rate_unit: '/hr', resource_ids: defaultResources(), maintenance: [] });
+            const perSetSport = /bowling|duckpin|ten[ -]?pin/i.test(`${$('[data-ioc-name]').value} ${state.draft.listing.slug}`);
+            state.draft.units.push({ id: null, label, photo_url: null, photo_file: null, rate_day: '', rate_night: '', rate_unit: perSetSport ? '/set' : '/hr', resource_ids: defaultResources(), resource_search: '', resource_expanded: false, resource_open: false, maintenance: [] });
             labelInput.value = ''; markDirty(); renderUnits();
             unitHost.lastElementChild?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
         }
@@ -280,8 +338,8 @@
                     return { id: period.id, start_at: start, end_at: end, note: period.note.trim() || null };
                 });
                 const day = unit.rate_day === '' ? null : Number(unit.rate_day); const night = unit.rate_night === '' ? null : Number(unit.rate_night);
-                if ((day !== null && (!Number.isFinite(day) || day < 0)) || (night !== null && (!Number.isFinite(night) || night < 0))) throw new Error(`Enter a valid non-negative rate for ${unit.label}.`);
-                return { id: unit.id, label: unit.label.trim(), photo_url: uploaded.get(`unit:${index}`) || unit.photo_url || null, rate_day: day, rate_night: night, rate_unit: unit.rate_unit, resource_ids: unit.resource_ids, maintenance };
+                if ((day !== null && (!Number.isFinite(day) || day < 0)) || (unit.rate_unit !== '/set' && night !== null && (!Number.isFinite(night) || night < 0))) throw new Error(`Enter a valid non-negative rate for ${unit.label}.`);
+                return { id: unit.id, label: unit.label.trim(), photo_url: uploaded.get(`unit:${index}`) || unit.photo_url || null, rate_day: day, rate_night: unit.rate_unit === '/set' ? null : night, rate_unit: unit.rate_unit, resource_ids: unit.resource_ids, maintenance };
             });
             if (units.some((unit) => !unit.label)) throw new Error('Every court, lane, or table needs a label.');
             if (!units.length) throw new Error('Add at least one bookable unit.');
@@ -398,7 +456,6 @@
         editor.querySelector('[data-ioc-new-unit-label]').addEventListener('input', markDirty);
         editor.querySelector('[data-ioc-name]').addEventListener('input', markDirty);
         editor.querySelector('[data-ioc-description]').addEventListener('input', markDirty);
-        editor.querySelector('[data-ioc-resource-search]').addEventListener('input', renderResourceGroups);
         editor.querySelector('[data-ioc-cover-file]').addEventListener('change', (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (!file || !validateImage(file)) return; state.draft.cover_file = file; markDirty(); updateCoverPreview(); });
         editor.querySelector('[data-ioc-save]').addEventListener('click', save);
         editor.querySelector('[data-ioc-cancel]').addEventListener('click', () => closeEditor());

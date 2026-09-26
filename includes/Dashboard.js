@@ -710,7 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startHour: null,
         endHour: null,
         paymentType: 'downpayment',
-        paymentMode: 'venue',
+        paymentMode: 'online',
         gcashEnabled: true,
         // Overwritten once window.InigoAppSettings.getSettings() resolves
         // below — 50 is the same fallback that module itself uses when
@@ -840,6 +840,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = Math.max(1, Math.min(100, Number.parseInt(rateQuantityInput.value, 10) || 1));
         bookingState.rateQuantity = n;
         rateQuantityInput.value = String(n);
+        if (bookingState.rateUnit === '/set' && bookingState.startHour !== null) {
+            bookingState.endHour = bookingState.startHour + n - 1;
+            if (Array.from({ length: n }, (_, i) => bookingState.startHour + i).some((hour) =>
+                hour >= window.InigoBusinessHours.CLOSE_HOUR || slotHourStatus(hour) !== 'available')) {
+                bookingState.endHour = null;
+            }
+            renderTimePickers();
+        }
         updateSummary();
     });
 
@@ -991,7 +999,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // rather than left at its hardcoded "50%" (implementation_plan.md
         // E2, the same duplicated-hardcoded-50% defect Payment
         // Configuration was built to fix).
-        if (downpaymentDesc) downpaymentDesc.textContent = `${pct}% preference; no payment is collected with this request.`;
+        if (downpaymentDesc) downpaymentDesc.textContent = `Pay ${pct}% securely now; pay the remaining balance at check-in.`;
 
         if (bookSubmit) {
             // Revision 5, D3 — both From AND To required (not just
@@ -999,28 +1007,22 @@ document.addEventListener('DOMContentLoaded', () => {
             // above; Step 3 is unreachable without both already set, so
             // this is defensive belt-and-suspenders rather than a normally
             // reachable branch.
-            const ready = bookingState.startHour !== null && bookingState.endHour !== null && Boolean(bookingState.court);
+            const ready = bookingState.startHour !== null && bookingState.endHour !== null
+                && Boolean(bookingState.court) && Boolean(bookingState.unitId)
+                && Number.isFinite(baseAmount) && baseAmount > 0;
             bookSubmit.disabled = !ready;
             bookSubmit.textContent = ready
-                ? (bookingCart.length ? `Save ${bookingCart.length + 1} bookings` : (bookingState.paymentMode === 'online' ? 'Continue to secure checkout' : 'Request Booking'))
+                ? (bookingCart.length ? `Pay for ${bookingCart.length + 1} bookings` : 'Continue to secure checkout')
                 : 'Select a time range to continue';
         }
         const onlineCharge = baseAmount === null ? null : baseAmount * (isFull ? 1 : pct / 100);
-        const onlineAllowed = hasKnownRate() && bookingState.rateUnit === '/hr' && onlineCharge !== null && onlineCharge > 0;
+        const onlineAllowed = hasKnownRate() && ['/hr', '/set'].includes(bookingState.rateUnit) && onlineCharge !== null && onlineCharge > 0;
         paymentModeRadios.forEach((radio) => {
             if (radio.dataset.dashPayMode !== 'online') return;
             radio.disabled = !onlineAllowed;
-            if (!onlineAllowed && radio.checked) {
-                const venueRadio = document.querySelector('[data-dash-pay-mode="venue"]');
-                if (venueRadio) venueRadio.checked = true;
-                bookingState.paymentMode = 'venue';
-                paymentModeOptions.forEach((option) => option.classList.toggle('is-selected', option.contains(venueRadio)));
-            }
         });
         if (paymentModeHint && !onlineAllowed) {
-            paymentModeHint.textContent = bookingState.rateUnit === '/game'
-                ? 'Online checkout is available for hourly court reservations only.'
-                : 'Online checkout is unavailable until this court has an hourly rate.';
+            paymentModeHint.textContent = 'Online checkout is unavailable until this court or lane has a confirmed rate.';
         }
 
         // Re-gates the wizard's Next button and refreshes the step
@@ -1084,12 +1086,12 @@ document.addEventListener('DOMContentLoaded', () => {
     paymentModeRadios.forEach((radio) => {
         radio.addEventListener('change', () => {
             if (!radio.checked) return;
-            if (radio.dataset.dashPayMode === 'online' && (!hasKnownRate() || bookingState.rateUnit !== '/hr')) {
+            if (radio.dataset.dashPayMode === 'online' && (!hasKnownRate() || !['/hr', '/set'].includes(bookingState.rateUnit))) {
                 radio.checked = false;
-                window.InigoToast?.show('Online checkout is unavailable until this court has an hourly rate.', true);
+                window.InigoToast?.show('Online checkout requires a confirmed court rate.', true);
                 return;
             }
-            bookingState.paymentMode = radio.dataset.dashPayMode === 'online' ? 'online' : 'venue';
+            bookingState.paymentMode = 'online';
             paymentModeOptions.forEach((option) => option.classList.toggle('is-selected', option.contains(radio)));
             updateSummary();
         });
@@ -1338,7 +1340,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // From — every free hour, across every window, in order.
         const freeHours = [];
         windows.forEach((w) => {
-            for (let h = w.startHour; h < w.endHourExclusive; h++) freeHours.push(h);
+            for (let h = w.startHour; h < w.endHourExclusive; h++) {
+                if (bookingState.rateUnit !== '/set' || h + bookingState.rateQuantity <= w.endHourExclusive) freeHours.push(h);
+            }
         });
         if (bookingState.startHour !== null && !freeHours.includes(bookingState.startHour)) {
             // Defensive only — From's OWN change handler below already
@@ -1369,12 +1373,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const toPlaceholder = `<option value=""${bookingState.endHour === null ? ' selected' : ''} disabled>Select an end time</option>`;
             const toOptions = [];
-            for (let endExclusive = bookingState.startHour + 1; endExclusive <= runEndExclusive; endExclusive++) {
+            const firstEnd = bookingState.rateUnit === '/set' ? bookingState.startHour + bookingState.rateQuantity : bookingState.startHour + 1;
+            for (let endExclusive = firstEnd; endExclusive <= runEndExclusive; endExclusive++) {
+                if (bookingState.rateUnit === '/set' && endExclusive !== firstEnd) break;
                 const endHourValue = endExclusive - 1; // stored using the existing inclusive-hour convention
                 toOptions.push(`<option value="${endHourValue}"${endHourValue === bookingState.endHour ? ' selected' : ''}>${window.escapeHtml(fmt(endExclusive))}</option>`);
             }
             bookToSelect.innerHTML = toPlaceholder + toOptions.join('');
-            bookToSelect.disabled = false;
+            bookToSelect.disabled = bookingState.rateUnit === '/set';
         }
 
         if (bookOpenWindowsEl) {
@@ -1393,6 +1399,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // renderTimePickers() below) is simpler and safer than trying
             // to carry a possibly-invalid End forward.
             bookingState.endHour = null;
+            if (bookingState.rateUnit === '/set' && bookingState.startHour !== null) {
+                const end = bookingState.startHour + bookingState.rateQuantity - 1;
+                if (Array.from({ length: bookingState.rateQuantity }, (_, i) => bookingState.startHour + i)
+                    .every((hour) => hour < window.InigoBusinessHours.CLOSE_HOUR && slotHourStatus(hour) === 'available')) {
+                    bookingState.endHour = end;
+                }
+            }
             renderTimePickers();
             updateSummary();
         });
@@ -1442,7 +1455,7 @@ document.addEventListener('DOMContentLoaded', () => {
         slotGridBookings = { ok: result.ok, rows: result.rows.filter((row) => row.source === 'online') };
         // Maintenance shares the same occupancy snapshot and blocks selection
         // exactly like either reservation channel.
-        slotGridWalkins = { ok: result.ok, rows: result.rows.filter((row) => row.source === 'walkin' || row.source === 'maintenance') };
+        slotGridWalkins = { ok: result.ok, rows: result.rows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source)) };
         renderTimePickers();
     }
 
@@ -1507,17 +1520,14 @@ document.addEventListener('DOMContentLoaded', () => {
         bookCartPanel.hidden = bookingCart.length === 0;
         if (bookCartCountEl) bookCartCountEl.textContent = `${bookingCart.length} item${bookingCart.length === 1 ? '' : 's'}`;
         if (bookCartSubmit) bookCartSubmit.disabled = bookingCartSaving || bookingCart.length === 0;
-        if (onlineModeLabel) onlineModeLabel.textContent = bookingCart.length ? 'Pay online separately after saving' : 'Pay online now';
-        if (paymentModeHint) paymentModeHint.textContent = bookingCart.length
-            ? 'Each online item will use its own checkout from My Bookings after the list is saved.'
-            : (bookingState.gcashEnabled ? 'Pay securely with GCash or card on PayMongo.' : 'Pay securely by card on PayMongo.');
+        if (onlineModeLabel) onlineModeLabel.textContent = 'Pay online now';
+        if (paymentModeHint) paymentModeHint.textContent = 'Pay for the whole cart in one secure PayMongo checkout.';
         bookCartItemsEl.innerHTML = bookingCart.map((item) => {
             const unit = item.unit ? ` · ${item.unit}` : '';
             const time = `${window.InigoBusinessHours.formatHourLabel(item.startHour)} – ${window.InigoBusinessHours.formatHourLabel(item.endHour + 1)}`;
             const estimate = Number.isFinite(item.estimatedTotal) ? ` · ₱${item.estimatedTotal.toFixed(2)}` : ' · Rate TBA';
-            const payType = item.paymentType === 'full' ? 'Full payment preference' : 'Downpayment preference';
-            const payMode = item.paymentMode === 'online' ? 'Pay online separately' : 'Pay at venue';
-            return `<li><span><strong>${window.escapeHtml(item.court + unit)}</strong><br>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}${estimate}<br>${window.escapeHtml(payType)} · ${window.escapeHtml(payMode)}</span><button type="button" class="dash-btn-ghost" data-dash-book-cart-remove="${window.escapeHtml(item.key)}" aria-label="Remove booking item"${bookingCartSaving ? ' disabled' : ''}>Remove</button></li>`;
+            const payType = item.paymentType === 'full' ? 'Full payment' : 'Deposit';
+            return `<li><span><strong>${window.escapeHtml(item.court + unit)}</strong><br>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}${estimate}<br>${window.escapeHtml(payType)}</span><button type="button" class="dash-btn-ghost" data-dash-book-cart-remove="${window.escapeHtml(item.key)}" aria-label="Remove booking item"${bookingCartSaving ? ' disabled' : ''}>Remove</button></li>`;
         }).join('');
     }
 
@@ -1527,106 +1537,65 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingState.date = todayDateInputValue();
         bookingState.rateQuantity = 1;
         bookingState.paymentType = 'downpayment';
-        bookingState.paymentMode = 'venue';
+        bookingState.paymentMode = 'online';
         if (bookDate) bookDate.value = bookingState.date;
         if (rateQuantityInput) rateQuantityInput.value = '1';
         document.querySelector('[data-dash-payment="downpayment"]')?.click();
-        const venueRadio = document.querySelector('[data-dash-pay-mode="venue"]');
-        if (venueRadio) {
-            venueRadio.checked = true;
-            paymentModeOptions.forEach((option) => option.classList.toggle('is-selected', option.contains(venueRadio)));
-        }
+        const onlineRadio = document.querySelector('[data-dash-pay-mode="online"]');
+        if (onlineRadio) onlineRadio.checked = true;
         refreshTimePickers();
         updateSummary();
         goToBookStep(1);
     }
 
     async function submitBookingCart(includeCurrent) {
-        if (bookingCartSaving) return;
+        if (bookingCartSaving || !window.sb || !window.inigosyncProfile) return;
         const current = includeCurrent ? selectedBookingCartItem() : null;
-        const queuedCount = bookingCart.length;
-        const items = bookingCart.slice().concat(current ? [current] : []);
+        const items = [...bookingCart, ...(current ? [current] : [])];
         if (!items.length) return;
-        if (current && bookingCart.some((saved) => bookingCartItemsConflict(current, saved))) {
-            window.InigoToast?.show('Two items in your list use the same physical court at overlapping times. Change one date or time first.', true);
+        if (items.some((item) => !item.listingId || !item.unitId || !Number.isFinite(item.estimatedTotal) || item.estimatedTotal <= 0)) {
+            window.InigoToast?.show('This court needs a confirmed rate and lane before online checkout.', true);
             return;
+        }
+        if (items.some((item) => item.paymentType !== items[0].paymentType)) {
+            window.InigoToast?.show('Choose the same payment option for every item in this checkout.', true);
+            return;
+        }
+        for (let i = 0; i < items.length; i++) {
+            if (items.slice(i + 1).some((other) => bookingCartItemsConflict(items[i], other))) {
+                window.InigoToast?.show('Two items use the same physical court at overlapping times.', true);
+                return;
+            }
         }
         bookingCartSaving = true;
-        if (bookAddButton) bookAddButton.disabled = true;
+        if (bookSubmit) { bookSubmit.disabled = true; bookSubmit.textContent = 'Opening secure checkout…'; }
         renderBookingCart();
-        const originalLabel = bookSubmit ? bookSubmit.textContent : '';
-        if (bookSubmit) { bookSubmit.disabled = true; bookSubmit.textContent = 'Saving bookings…'; }
-        if (bookCartSubmit) bookCartSubmit.disabled = true;
-        let savedCount = 0;
-        let hasOnlinePreference = false;
-        let totalAdjusted = false;
-        let failure = null;
-
         try {
-          for (let index = 0; index < items.length; index += 1) {
-            const item = items[index];
-            const live = await fetchDayOccupancy(item.court, item.date);
-            if (!live.ok) { failure = 'Could not verify live availability. Your remaining list is still saved here.'; break; }
-            const windowRange = { start: new Date(item.startIso), end: new Date(item.endIso) };
-            const conflict = live.rows.some((row) => (row.source === 'maintenance' || ['pending', 'confirmed'].includes(String(row.status || '').toLowerCase()))
-                && courtUnitsOverlap(row.court_unit, item.unit)
-                && overviewWindowsOverlap(overviewBookingWindow(row), windowRange));
-            if (conflict) { failure = `${item.court} at ${formatDate(item.date)} ${window.InigoBusinessHours.formatHourLabel(item.startHour)} is no longer available. The remaining list is still available to edit.`; break; }
-
-            const payload = {
-                customer_id: window.inigosyncProfile.id,
-                sports: item.sport,
-                courts: item.court,
-                court_listing_id: item.listingId,
-                court_unit: item.unit,
-                court_unit_inventory_id: item.unitId,
-                time_date: item.startIso,
-                end_at: item.endIso,
-                duration_minutes: item.hours * 60,
-                status: 'pending',
-                payment_option: item.paymentType,
-                rate_quantity: item.rateQuantity,
-                amount_total: item.estimatedTotal,
-            };
-            const { data: saved, error } = await window.sb.from('booking').insert(payload).select('booking_id,amount_total').single();
-            if (error) {
-                failure = error.code === '23P01'
-                    ? `${item.court} at ${formatDate(item.date)} was just taken. The database protected the court; review your remaining list.`
-                    : `Could not save ${item.court}. Review the remaining list and try again.`;
-                break;
+            const { data, error } = await window.sb.functions.invoke('paymongo-checkout', {
+                body: {
+                    payment_option: items[0].paymentType,
+                    items: items.map((item) => ({
+                        listing_id: item.listingId,
+                        unit_id: item.unitId,
+                        starts_at: item.startIso,
+                        ends_at: item.endIso,
+                        rate_quantity: item.rateQuantity,
+                    })),
+                },
+            });
+            if (error || typeof data?.checkout_url !== 'string' || !data.checkout_url.startsWith('https://checkout.paymongo.com/')) {
+                throw new Error(data?.message || 'Secure checkout could not start. Please retry shortly.');
             }
-            const savedTotal = saved?.amount_total === null || saved?.amount_total === undefined ? null : Number(saved.amount_total);
-            if (Number.isFinite(savedTotal) && Number.isFinite(item.estimatedTotal) && Math.abs(savedTotal - item.estimatedTotal) > 0.009) totalAdjusted = true;
-            if (item.paymentMode === 'online') hasOnlinePreference = true;
-            savedCount += 1;
-            if (index < queuedCount) {
-                bookingCart.shift();
-                renderBookingCart();
-            }
-          }
+            window.location.assign(data.checkout_url);
         } catch (error) {
-            console.error('[dashboard] multi-item booking save failed', error);
-            failure = 'The save response was interrupted. Check My Bookings before retrying; unsaved items remain available.';
+            console.error('[dashboard] checkout could not start', error);
+            window.InigoToast?.show(error.message || 'Secure checkout could not start.', true);
         } finally {
             bookingCartSaving = false;
-        }
-        if (bookSubmit) { bookSubmit.disabled = false; bookSubmit.textContent = originalLabel; }
-        if (bookAddButton) bookAddButton.disabled = false;
-        renderBookingCart();
-        refreshMyBookings();
-        if (failure) {
+            if (bookSubmit) bookSubmit.disabled = false;
             updateSummary();
-            window.InigoToast?.show(`${savedCount ? `${savedCount} booking${savedCount === 1 ? '' : 's'} saved. ` : ''}${failure}`, true);
-            return;
+            renderBookingCart();
         }
-
-        bookingCart.length = 0;
-        renderBookingCart();
-        if (includeCurrent) resetCurrentBookingDraft();
-        const totalNote = totalAdjusted ? ' The saved total uses the current court rate; review My Bookings before paying.' : '';
-        window.InigoToast?.show(hasOnlinePreference
-            ? `${savedCount} booking${savedCount === 1 ? '' : 's'} saved. Start each online payment separately from My Bookings.${totalNote}`
-            : `${savedCount} booking${savedCount === 1 ? '' : 's'} saved — we’ll process them.${totalNote}`);
     }
 
     if (bookAddButton) {
@@ -1640,7 +1609,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bookingCart.push(item);
             renderBookingCart();
             resetCurrentBookingDraft();
-            window.InigoToast?.show('Booking added. Choose another court or save the list above.');
+            window.InigoToast?.show('Booking added. Choose another court or pay for the cart above.');
         });
     }
     if (bookCartItemsEl) {
@@ -1660,286 +1629,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (bookSubmit) {
         bookSubmit.addEventListener('click', async () => {
             if (bookSubmit.disabled) return;
-            if (!window.sb || !window.inigosyncProfile) {
-                window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
-                return;
-            }
-
-            // Revision 5, D3 — both From AND To are required now (see
-            // bookStepIsReady()/bookSubmit's own disabled-state check
-            // above); bookSubmit.disabled already guards this in normal use
-            // (the `if (bookSubmit.disabled) return;` line above), so this
-            // is defensive belt-and-suspenders, not a normally reachable
-            // branch.
             if (!bookingState.date || bookingState.startHour === null || bookingState.endHour === null) {
                 window.InigoToast?.show('Please select a date and time range.', true);
                 return;
             }
-            if (bookingCart.length) {
-                await submitBookingCart(true);
-                return;
-            }
-
-            const effectiveEnd = bookingState.endHour !== null ? bookingState.endHour : bookingState.startHour;
-            const hours = effectiveEnd - bookingState.startHour + 1;
-            const startIso = new Date(`${bookingState.date}T${String(bookingState.startHour).padStart(2, '0')}:00:00`).toISOString();
-            const endIso = new Date(`${bookingState.date}T${String(effectiveEnd + 1).padStart(2, '0')}:00:00`).toISOString();
-
-            const originalLabel = bookSubmit.textContent;
-            const requestedSelection = {
-                court: bookingState.court,
-                unit: bookingState.unit || '',
-                date: bookingState.date,
-                startHour: bookingState.startHour,
-                endHour: bookingState.endHour,
-                paymentType: bookingState.paymentType,
-            };
-            bookSubmit.disabled = true;
-            bookSubmit.textContent = 'Submitting…';
-
-            // Re-check availability immediately before inserting (D4,
-            // implementation_plan.md) — an app-level check ON TOP OF the
-            // database's shared reservation constraint. Refreshes
-            // slotGridBookings with the very latest data first so this
-            // isn't judging against whatever was fetched whenever Step 2
-            // last rendered, which could be stale by now. M2 fix (post-
-            // Revision-5 review) — re-fetches both channels in the same
-            // snapshot, with the shared database constraint handling any
-            // race after this UX check.
-            const recheck = await fetchDayOccupancy(requestedSelection.court, requestedSelection.date);
-            if (!recheck.ok) {
-                bookSubmit.disabled = false;
-                bookSubmit.textContent = originalLabel;
-                window.InigoToast?.show('Could not verify live availability. Please try again.', true);
-                refreshTimePickers();
-                return;
-            }
-            if (bookingState.court !== requestedSelection.court
-                || (bookingState.unit || '') !== requestedSelection.unit
-                || bookingState.date !== requestedSelection.date
-                || bookingState.startHour !== requestedSelection.startHour
-                || bookingState.endHour !== requestedSelection.endHour
-                || bookingState.paymentType !== requestedSelection.paymentType) {
-                bookSubmit.disabled = false;
-                bookSubmit.textContent = originalLabel;
-                window.InigoToast?.show('Your selection changed. Please review the updated time and submit again.', true);
-                refreshTimePickers();
-                return;
-            }
-            slotGridBookings = { ok: true, rows: recheck.rows.filter((row) => row.source === 'online') };
-            slotGridWalkins = { ok: true, rows: recheck.rows.filter((row) => row.source === 'walkin' || row.source === 'maintenance') };
-            let conflict = false;
-            if (slotGridBookings.ok && slotGridWalkins.ok) {
-                for (let h = bookingState.startHour; h <= effectiveEnd; h++) {
-                    if (isSlotHourBooked(h)) { conflict = true; break; }
-                }
-            }
-            if (conflict) {
-                window.InigoToast?.show('That time was just taken — please pick another time.', true);
-                bookSubmit.disabled = false;
-                bookSubmit.textContent = originalLabel;
-                bookingState.startHour = null;
-                bookingState.endHour = null;
-                renderTimePickers();
-                updateSummary();
-                return;
-            }
-
-            // Column facts verified against the LIVE database — read this
-            // before touching the payload below, so this bug doesn't come
-            // back:
-            //  - booking.sports is NOT NULL (text). It must be the court's
-            //    REAL related sport, not always a copy of `courts` — e.g.
-            //    the "Bowling — Duckpin" court's sport is "Bowling".
-            //    bookingState.sport is resolved from
-            //    window.InigoCourtsData's court.sportName and carried
-            //    through here via the Booking wizard's own <select>'s
-            //    data-sport attribute (see populateBookSelect() above —
-            //    same pattern already used to carry rate/rateUnit), falling
-            //    back to the court name if a court ever has no linked sport
-            //    row. It is never sent as null.
-            //  - booking.status has a CHECK constraint: only 'pending',
-            //    'confirmed', 'cancelled', or 'completed' are accepted;
-            //    anything else (e.g. 'declined'/'no_show'/'expired') fails
-            //    with Postgres code 23514. A brand-new booking always
-            //    starts 'pending'.
-            //  - `courts` is what the rest of this dashboard actually
-            //    reads back (getCourtRate(booking.courts), and the My
-            //    Bookings table's main cell), so it still carries the
-            //    customer's exact court selection. The shared reservation
-            //    ledger normalizes the name for cross-channel matching — this
-            //    insert is the ONLY place in the whole project that writes
-            //    booking.courts (confirmed by grepping every
-            //    `.from('booking')` call site), and it always sends
-            //    court.name verbatim (see populateBookSelect() above), so
-            //    case/whitespace variations cannot bypass overlap checks.
-            //    Staff walk-ins are covered by the same ledger constraint.
-            //  - court_unit (Part 3, D3) is the specific Court/Lane/Table
-            //    label the Step 1 preview resolved (bookingState.unit,
-            //    kept in sync by paintBookPreview() above) — null for a
-            //    court with nothing to disambiguate. This is what makes
-            //    availability/overlap PER UNIT instead of per sport. A
-            //    legacy row from before this column existed has
-            //    court_unit = NULL, which this feature's availability check
-            //    and the shared ledger treat as occupying every unit.
-            //  - end_at / duration_minutes (Part 3) — end_at is the real
-            //    exclusive end of the range picked in Step 2; duration_minutes
-            //    is kept in sync (hours * 60) rather than left at the old
-            //    always-60 default, so every OTHER duration-aware reader of
-            //    this table (the Overview peek widget below,
-            //    includes/staff_dashboard.js's Court Schedule) automatically
-            //    spans a multi-hour booking correctly with no changes of
-            //    their own. database/schema/012_booking_time_range.sql's
-            //    trigger fills in whichever of the two is missing, for any
-            //    OTHER insert path that doesn't supply both.
-            //  - customer_id attributes the booking to the signed-in
-            //    profile; time_date is the range's start timestamp.
-            //  - payment_id, booking_id, and created_at are deliberately
-            //    OMITTED here rather than sent as null: no payment record
-            //    exists yet for a brand-new booking (see the Receipts
-            //    panel below), booking_id is an autoincrement PK the DB
-            //    assigns, and created_at has a DB default. Explicitly
-            //    sending null for any of these would override that
-            //    default/PK instead of letting the DB fill it in — the
-            //    same class of bug as the `sports: null` 400 this comment
-            //    replaces.
-            // Revision S2 (implementation_plan.md, decisions S12/S13a) —
-            // payment_option (the wizard's Full/Downpayment radio,
-            // bookingState.paymentType — already exactly 'full'/
-            // 'downpayment', the two values database/schema/
-            // 017_booking_payment.sql expects) and amount_total (rate ×
-            // hours when hasKnownRate() above is true, else null — the same
-            // "Rate TBA" honesty rule this page already enforces everywhere
-            // else) only exist once that migration is applied. Tries the
-            // full payload first and, on a schema-mismatch error, retries
-            // with the pre-S2 payload — same "drop the unknown columns,
-            // never fake success" idiom this project already uses
-            // everywhere a column might not exist yet (isOverviewSchemaMismatch()
-            // below, e.g. fetchOverviewOccupancy()).
-            const displayedQuote = bookingState.rateUnit === '/set'
-                ? (typeof bookingState.rateDay === 'number' ? bookingState.rateDay * bookingState.rateQuantity : null)
-                : bookingHourlyAmount(hours);
-            const bookingPayload = {
-                customer_id: window.inigosyncProfile.id,
-                sports: bookingState.sport || bookingState.court,
-                courts: bookingState.court,
-                court_listing_id: (findBookCourt(bookingState.court) || {}).id || null,
-                court_unit: bookingState.unit || null,
-                court_unit_inventory_id: bookingState.unitId || null,
-                time_date: startIso,
-                end_at: endIso,
-                duration_minutes: hours * 60,
-                status: 'pending',
-                payment_option: bookingState.paymentType,
-                rate_quantity: bookingState.rateUnit === '/set' ? bookingState.rateQuantity : 1,
-                amount_total: displayedQuote,
-            };
-            const { data: createdBooking, error } = await window.sb.from('booking')
-                .insert(bookingPayload).select('booking_id,amount_total,rate_unit_snapshot,rate_quantity').single();
-
-            if (error) {
-                // Always log the full error (code/message/details) for
-                // diagnosis — that's how a NOT NULL (23502) or CHECK
-                // (23514) violation actually gets tracked down during a
-                // demo. The toast below stays friendly and never dumps the
-                // raw Postgres code/column names on the customer.
-                console.error('[dashboard] booking insert failed', error);
-
-                let friendlyMessage = 'Could not submit your booking. Please try again.';
-                if (error.code === '23502') {
-                    friendlyMessage = 'Your booking is missing required information. Please reselect the court and try again.';
-                } else if (error.code === '23514') {
-                    friendlyMessage = 'We couldn\'t process your booking. Please try again or contact staff for help.';
-                } else if (error.code === '23P01') {
-                    // exclusion_violation — database/schema/
-                    // 012_booking_time_range.sql's booking_no_overlap
-                    // constraint. THIS is the real double-booking guarantee
-                    // (D4, implementation_plan.md): the app-level recheck
-                    // above is only a UX convenience that can't see past
-                    // whatever RLS allows, but this rejection happens in the
-                    // database itself regardless of what this client could
-                    // see, so a race between two customers booking the same
-                    // hour at the same instant still can't produce an
-                    // overlap.
-                    friendlyMessage = 'That time was just taken by another booking — please pick another time.';
-                } else if (error.message) {
-                    friendlyMessage = error.message;
-                }
-
-                window.InigoToast?.show(friendlyMessage, true);
-                bookSubmit.disabled = false;
-                bookSubmit.textContent = originalLabel;
-                if (error.code === '23P01') {
-                    // The pickers we're showing are now known-stale —
-                    // someone else just took part of this range. Refresh
-                    // them so the customer can immediately see and pick
-                    // around the real conflict instead of retrying blind.
-                    bookingState.startHour = null;
-                    bookingState.endHour = null;
-                    refreshTimePickers();
-                    updateSummary();
-                }
-                return;
-            }
-
-            if (bookingState.paymentMode === 'online') {
-                const savedTotal = createdBooking && createdBooking.amount_total !== null && createdBooking.amount_total !== undefined
-                    ? Number(createdBooking.amount_total) : null;
-                if (!Number.isFinite(savedTotal) || savedTotal <= 0) {
-                    window.InigoToast?.show('Your booking was saved, but its rate is not ready for online payment. Please contact staff before paying.', true);
-                    refreshMyBookings();
-                    bookSubmit.disabled = false;
-                    bookSubmit.textContent = originalLabel;
-                    return;
-                }
-                if (Number.isFinite(displayedQuote) && Math.abs(savedTotal - displayedQuote) > 0.009) {
-                    const continueToPayment = window.confirm(`The saved reservation total is ₱${savedTotal.toFixed(2)} because the court rate changed while you were booking. Continue to secure checkout at this saved amount?`);
-                    if (!continueToPayment) {
-                        window.InigoToast?.show(`Booking saved at ₱${savedTotal.toFixed(2)}. No payment was started.`);
-                        refreshMyBookings();
-                        bookSubmit.disabled = false;
-                        bookSubmit.textContent = originalLabel;
-                        return;
-                    }
-                }
-                const { data: checkout, error: checkoutError } = await window.sb.functions.invoke('paymongo-checkout', {
-                    body: { booking_id: createdBooking.booking_id },
-                });
-                const checkoutUrl = checkout?.checkout_url;
-                if (checkoutError || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('https://checkout.paymongo.com/')) {
-                    console.error('[dashboard] PayMongo checkout creation failed', checkoutError || checkout);
-                    window.InigoToast?.show(checkout?.message || 'The booking was saved, but secure checkout could not start. Please contact staff before booking again.', true);
-                    refreshMyBookings();
-                    bookSubmit.disabled = false;
-                    bookSubmit.textContent = originalLabel;
-                    return;
-                }
-                window.location.assign(checkoutUrl);
-                return;
-            }
-
-            window.InigoToast?.show('Booking saved. PayMongo payments are confirmed automatically after payment is received.');
-            bookingState.startHour = null;
-            bookingState.endHour = null;
-            updateSummary();
-            // Refetches this court/date/unit's availability so a customer
-            // who immediately starts a second booking (before changing
-            // court, date, or unit — the only three triggers that would
-            // otherwise re-fetch) sees the booking they just made reflected
-            // as taken, not the pre-submit snapshot.
-            refreshTimePickers();
-            // D4 (implementation_plan.md, "Revision 5") — the Overview
-            // panel's peek strip reads the exact same occupancy the pickers
-            // above just refreshed for (same fetchDayOccupancy()-shaped
-            // query, same overlap primitives); without this it would keep
-            // showing the pre-submit snapshot until the customer manually
-            // changed its own date/unit.
-            refreshOverviewCourtWidget();
-            // Back to Step 1 so a customer who wants to book a second court
-            // right away starts the guided flow fresh instead of sitting on
-            // a Confirm step that just fired.
-            goToBookStep(1);
-            refreshMyBookings();
+            await submitBookingCart(true);
         });
     }
 
@@ -1963,9 +1657,9 @@ document.addEventListener('DOMContentLoaded', () => {
             bookingState.downpaymentPct = settings.downpaymentPct;
             bookingState.gcashEnabled = settings.gcashEnabled;
             bookingState.nightRateStartsAt = settings.nightRateStartsAt || null;
-            if (paymentModeHint) paymentModeHint.textContent = settings.gcashEnabled
+            if (paymentModeHint) paymentModeHint.textContent = settings.gcashEnabled && settings.cardEnabled
                 ? 'Pay securely with GCash or card on PayMongo.'
-                : 'Pay securely by card on PayMongo.';
+                : settings.gcashEnabled ? 'Pay securely with GCash on PayMongo.' : 'Pay securely by card on PayMongo.';
             updateSummary();
             refreshMyBookings();
         });
@@ -2714,7 +2408,7 @@ document.addEventListener('DOMContentLoaded', () => {
         overviewDataOk = !occupancyRes.error;
         const occupancyRows = overviewDataOk ? (occupancyRes.data || []) : [];
         overviewBookings = occupancyRows.filter((row) => row.source === 'online');
-        overviewWalkins = occupancyRows.filter((row) => row.source === 'walkin' || row.source === 'maintenance');
+        overviewWalkins = occupancyRows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source));
 
         renderOverviewCourtList();
     }
@@ -3163,17 +2857,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderReceiptCard(receipt) {
         const hasRate = receipt.rate !== null;
         const hasSavedTotal = Number.isFinite(receipt.total);
-        const hasHourlyEstimate = hasSavedTotal || (hasRate && receipt.rateUnit === '/hr');
-        const amount = hasSavedTotal ? receipt.total : (hasHourlyEstimate ? receipt.rate * receipt.hours : null);
+        const hasSetEstimate = receipt.rateUnit === '/set' && typeof receipt.rateDay === 'number';
+        const hasRateEstimate = (hasRate && receipt.rateUnit === '/hr') || hasSetEstimate;
+        const amount = hasSavedTotal ? receipt.total : hasSetEstimate
+            ? receipt.rateDay * receipt.rateQuantity : hasRateEstimate ? receipt.rate * receipt.hours : null;
         const rateLineLabel = hasSavedTotal
             ? 'Saved reservation total'
-            : hasHourlyEstimate
+            : hasRateEstimate
                 ? (receipt.rateUnit === '/set' && typeof receipt.rateDay === 'number' ? `₱${receipt.rateDay.toFixed(2)}/set × ${receipt.rateQuantity} set${receipt.rateQuantity === 1 ? '' : 's'}`
                     : (hasRate ? `₱${receipt.rate.toFixed(2)}/hr × ${receipt.hours} hr${receipt.hours === 1 ? '' : 's'}` : 'Saved reservation total'))
             : hasRate ? `₱${receipt.rate.toFixed(2)}/game`
             : 'Amount';
-        const rateLineAmount = hasHourlyEstimate ? `₱${amount.toFixed(2)}` : hasRate ? 'Games not recorded' : 'Rate TBA';
-        const totalAmount = hasHourlyEstimate ? `₱${amount.toFixed(2)}` : '—';
+        const rateLineAmount = hasSavedTotal || hasRateEstimate ? `₱${amount.toFixed(2)}` : hasRate ? 'Games not recorded' : 'Rate TBA';
+        const totalAmount = hasSavedTotal || hasRateEstimate ? `₱${amount.toFixed(2)}` : '—';
         const statusClass = window.escapeHtml(receipt.status);
         const statusLabel = window.escapeHtml(receipt.status ? receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1) : '—');
         const idAttr = window.escapeHtml(String(receipt.id));
@@ -4130,17 +3826,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (paymentReturnKind && paymentReturnAttempt && window.sb) {
         window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
         window.sb.functions.invoke('paymongo-checkout', {
-            body: { action: 'status', attempt_id: paymentReturnAttempt },
+            body: { action: paymentReturnKind === 'cancelled' ? 'cancel' : 'status', attempt_id: paymentReturnAttempt },
         }).then(({ data, error }) => {
             if (error || !data) {
-                window.InigoToast?.show('We could not confirm checkout yet. Refresh My Bookings shortly.', true);
+                window.InigoToast?.show('We could not confirm checkout yet. Please check again shortly.', true);
                 return;
             }
             if (data.status === 'paid') window.InigoToast?.show('Payment received. Your booking is confirmed.');
-            else if (paymentReturnKind === 'cancelled') window.InigoToast?.show('Checkout was not completed. Your booking request is still saved.', true);
+            else if (data.status === 'expired') window.InigoToast?.show('Checkout ended. The selected time is available again.', true);
+            else if (paymentReturnKind === 'cancelled') window.InigoToast?.show('Checkout cancellation is being confirmed. Your time remains held until PayMongo closes it.', true);
             else window.InigoToast?.show('Payment is still processing. We will update your booking when PayMongo confirms it.');
             refreshMyBookings();
-        }).catch(() => window.InigoToast?.show('We could not confirm checkout yet. Refresh My Bookings shortly.', true));
+        }).catch(() => window.InigoToast?.show('We could not confirm checkout yet. Please check again shortly.', true));
     }
 
     // ------------------------------------------------------------------
