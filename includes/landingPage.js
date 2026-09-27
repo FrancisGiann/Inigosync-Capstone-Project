@@ -6,7 +6,7 @@
 // ============================================================================
 // Escaping — the ONE place untrusted text is allowed to become HTML.
 // ============================================================================
-// Every court/event/testimonial field below can come from Supabase, which
+// Every court/event field below can come from Supabase, which
 // staff/admin accounts can write to (see the RLS policies in
 // database/schema/002_content_tables.sql). A court named
 // `<img onerror=alert(1)>` must render as literal text, not run — so every
@@ -77,15 +77,6 @@ function formatEventDate(date) {
 // chance to format the same event differently.
 function formatEventMeta(ev) {
     return [formatEventDate(ev.eventDate), ev.meta].filter(Boolean).join(' · ');
-}
-
-function pickRandom(list, count) {
-    const pool = list.slice();
-    for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, count);
 }
 
 // ============================================================================
@@ -334,15 +325,6 @@ function normalizeEventFromDb(row) {
     };
 }
 
-function normalizeTestimonialFromDb(row) {
-    return {
-        authorName: row.author_name || 'A guest',
-        rating: row.rating,
-        quote: row.quote || '',
-        sourceLabel: row.source_label || null,
-    };
-}
-
 // Live published content, with shared in-flight requests.
 const FETCH_TIMEOUT_MS = 10000;
 const contentRequests = new Map();
@@ -387,12 +369,6 @@ function getEvents({ force = false } = {}) {
         .select('*, sport(slug, name)').eq('is_published', true).order('display_order'),
         rows => rows.map(normalizeEventFromDb));
 }
-function getTestimonials({ force = false } = {}) {
-    return requestContent('testimonials', force, () => window.sb.from('testimonial')
-        .select('*').eq('is_published', true),
-        rows => pickRandom(rows.map(normalizeTestimonialFromDb), 3));
-}
-
 // Exposed for includes/home-showcase.js, which loads after this file (see
 // the <script> order in Pages/Index.html) and needs getEvents() + the same
 // escaping/monogram helpers to drive the hero from the same event data
@@ -404,7 +380,6 @@ window.InigoContent = {
     formatEventMeta,
     getCourts,
     getEvents,
-    getTestimonials,
 };
 
 // ============================================================================
@@ -450,21 +425,6 @@ function renderCourtCard(court) {
                 </span>
             </div>
         </button>
-    `;
-}
-
-function renderTestimonialCard(t) {
-    const stars = Math.min(5, Math.max(0, Math.round(Number(t.rating)) || 0));
-    const starGlyphs = '★'.repeat(stars) + '☆'.repeat(5 - stars);
-    return `
-        <article class="testimonial-card">
-            <p class="testimonial-quote">“${escapeHtml(t.quote)}”</p>
-            <div class="testimonial-meta">
-                <span class="testimonial-stars" aria-label="${stars} out of 5 stars">${starGlyphs}</span>
-                <span class="testimonial-author">${escapeHtml(t.authorName)}</span>
-                ${t.sourceLabel ? `<span class="testimonial-source">${escapeHtml(t.sourceLabel)}</span>` : ''}
-            </div>
-        </article>
     `;
 }
 
@@ -751,11 +711,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const courtGrid = document.querySelector('[data-court-grid]');
     const status = document.querySelector('[data-courts-status]');
-    const testimonialGrid = document.querySelector('[data-testimonial-grid]');
-    const onsiteReviewGrid = document.querySelector('[data-onsite-review-grid]');
-    const onsiteReviewMore = document.querySelector('[data-onsite-review-more]');
-    let onsiteReviewPage = 0;
-    const ONSITE_REVIEW_PAGE_SIZE = 6;
     let clickSequence = 0;
     const retryMarkup = (text, target) => '<p class="content-state" role="status">' + text + ' <button type="button" data-content-retry="' + target + '">Try again</button></p>';
 
@@ -775,36 +730,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (status) status.textContent = '';
         } finally { courtGrid.setAttribute('aria-busy', 'false'); }
     }
-    async function loadTestimonials(force = false) {
-        if (!testimonialGrid) return;
-        testimonialGrid.setAttribute('aria-busy', 'true');
-        if (!testimonialGrid.children.length) testimonialGrid.innerHTML = '<p class="content-state">Loading feedback…</p>';
-        try {
-            const rows = await getTestimonials({ force });
-            testimonialGrid.innerHTML = rows.length ? rows.map(renderTestimonialCard).join('') : '<p class="content-state">Feedback will appear here once published by Iñigos.</p>';
-        } catch { testimonialGrid.innerHTML = retryMarkup('Feedback could not be loaded.', 'feedback'); }
-        finally { testimonialGrid.setAttribute('aria-busy', 'false'); }
-    }
-    async function loadOnsiteReviews(reset = false) {
-        if (!onsiteReviewGrid || !window.sb) return;
-        if (reset) { onsiteReviewPage = 0; onsiteReviewGrid.innerHTML = ''; }
-        onsiteReviewGrid.setAttribute('aria-busy', 'true');
-        const start = onsiteReviewPage * ONSITE_REVIEW_PAGE_SIZE;
-        const { data, count, error } = await window.sb.from('public_booking_reviews')
-            .select('id,display_name,rating,comment,created_at', { count: 'exact' })
-            .order('created_at', { ascending: false }).range(start, start + ONSITE_REVIEW_PAGE_SIZE - 1);
-        onsiteReviewGrid.setAttribute('aria-busy', 'false');
-        if (error) {
-            onsiteReviewGrid.innerHTML = '<p class="content-state">Customer reviews are temporarily unavailable.</p>';
-            console.error('[landing] customer review feed unavailable', error);
-            return;
-        }
-        const cards = (data || []).map((review) => `<article class="onsite-review-card"><div class="onsite-review-card-head"><strong>${escapeHtml(review.display_name || 'Verified customer')}</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></div><p>${escapeHtml(review.comment || 'No written comment.')}</p><time datetime="${escapeHtml(review.created_at)}">${escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></article>`).join('');
-        if (start === 0 && !cards) onsiteReviewGrid.innerHTML = '<p class="content-state">Customer reviews will appear here after a completed paid booking.</p>';
-        else onsiteReviewGrid.insertAdjacentHTML('beforeend', cards);
-        onsiteReviewMore.hidden = start + (data || []).length >= (count || 0);
-    }
-    onsiteReviewMore?.addEventListener('click', () => { onsiteReviewPage += 1; loadOnsiteReviews(); });
     courtGrid?.addEventListener('click', async event => {
         const card = event.target.closest('.court-card');
         if (!card || !courtGrid.contains(card) || !courtViewer) return;
@@ -825,14 +750,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', event => {
         const target = event.target.closest('[data-content-retry]')?.dataset.contentRetry;
         if (target === 'courts') loadCourts(true);
-        if (target === 'feedback') loadTestimonials(true);
     });
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) { loadCourts(true); loadTestimonials(true); loadOnsiteReviews(true); }
+        if (!document.hidden) loadCourts(true);
     });
     loadCourts();
-    loadTestimonials();
-    loadOnsiteReviews();
 
     // ------------------------------------------------------------------
     // Theme toggle — includes/theme.js manages the data-theme attribute
@@ -965,6 +887,37 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', updateActiveLink);
     window.addEventListener('hashchange', updateActiveLink);
     updateActiveLink();
+
+    // Move the entire floating header, including its outer padding, as one unit.
+    const siteNav = document.querySelector('body.landing-night > .site-nav');
+    if (siteNav) {
+        let previousY = Math.max(0, window.scrollY);
+        let directionAnchor = previousY;
+        let previousDirection = 0;
+        let pending = false;
+        const syncHeader = () => {
+            pending = false;
+            const y = Math.max(0, window.scrollY);
+            const delta = y - previousY;
+            const direction = Math.sign(delta);
+            if (direction && direction !== previousDirection) {
+                directionAnchor = previousY;
+                previousDirection = direction;
+            }
+            const keepVisible = y < 96 || document.body.classList.contains('landing-menu-open') || siteNav.contains(document.activeElement);
+            if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) siteNav.classList.remove('is-hidden');
+            else if (direction > 0 && y - directionAnchor >= 12) siteNav.classList.add('is-hidden');
+            previousY = y;
+        };
+        window.addEventListener('scroll', () => {
+            if (!pending) { pending = true; requestAnimationFrame(syncHeader); }
+        }, { passive: true });
+        siteNav.addEventListener('focusin', () => siteNav.classList.remove('is-hidden'));
+        siteNav.addEventListener('focusout', () => requestAnimationFrame(syncHeader));
+        new MutationObserver(() => {
+            if (document.body.classList.contains('landing-menu-open')) siteNav.classList.remove('is-hidden');
+        }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
 
     // Close the off-canvas mobile menu whenever something inside it is
     // clicked (a nav link or the Log In / Sign Up button).

@@ -12,4 +12,4 @@
   rotation are applied by the application.
 
 The asset is self-hosted; visitors do not load a Sketchfab iframe or need an
-account. Keep this notice and the footer attribution when redistributing it.
+account. Keep this notice and the landing page's Asset credits link when redistributing it.

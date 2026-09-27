@@ -78,6 +78,8 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
             await page.setViewportSize({width,height:900});
             await page.locator('#location').scrollIntoViewIfNeeded();
             assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Overflow at '+width);
+            await page.evaluate(()=>scrollBy(0,-140));
+            await page.waitForFunction(()=>!document.querySelector('body > .site-nav').classList.contains('is-hidden'));
             assert(await page.locator('body > .site-nav').evaluate(el=>{const r=el.querySelector('.site-nav-pill').getBoundingClientRect();return el.contains(document.elementFromPoint(r.left+r.width/2,r.top+20));}),'Navbar obscured at '+width);
             for(const theme of ['light','dark']){
                 await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
@@ -87,6 +89,7 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
             }
         }
         await page.setViewportSize({width:390,height:844});
+        await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
         await page.getByRole('button',{name:'Open menu',exact:true}).click();
         assert(await page.locator('#landing-mobile-menu').evaluate(el=>!el.inert));
         assert(await page.locator('body > main').evaluate(el=>el.inert));

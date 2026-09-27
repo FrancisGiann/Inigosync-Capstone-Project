@@ -13,7 +13,7 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             await page.route('https://elfsightcdn.com/**', route => provider === 'blocked' ? route.abort() : route.fulfill({contentType:'application/javascript',body: provider === 'empty' ? '' : `document.querySelector('.elfsight-app-${uuid}').textContent='Provider fixture: 4.3 stars';`}));
             await page.route('**/rest/v1/**', route => {
                 const table = new URL(route.request().url()).pathname.split('/').pop();
-                const data = table === 'event' ? Array.from({length:count},(_,i)=>({title:'Feature '+(i+1),meta:'Venue event',tag:'Featured'})) : table === 'testimonial' ? [{author_name:'Test guest',quote:'Testimonial fixture',rating:5}] : [];
+                const data = table === 'event' ? Array.from({length:count},(_,i)=>({title:'Feature '+(i+1),meta:'Venue event',tag:'Featured',image_url:'../assets/landing/featured-tournament-placeholder.png'})) : [];
                 return route.fulfill({json:data});
             });
             await page.goto(base,{waitUntil:'domcontentloaded'});
@@ -40,10 +40,11 @@ const uuid = '11111111-2222-3333-4444-555555555555';
         });
         assert.equal(await active(),'Feature 4');
         assert(await page.locator('[data-home-pause]').isDisabled());
-        assert(await page.locator('[data-testimonial-grid]').isVisible());
+        assert.equal(await page.locator('[data-testimonial-grid], [data-onsite-review-grid]').count(),0);
         assert(await page.locator('[data-google-reviews]').isHidden());
+        assert(await page.locator('[data-google-reviews-fallback]').isVisible());
         assert.equal(await page.locator('script[src*="elfsightcdn"]').count(),0);
-        for (const width of [320,390,768,1024,1440]) {
+        for (const width of [320,390,768,1024,1440,1920]) {
             await page.setViewportSize({width,height:900});
             for (const theme of ['dark','light']) {
                 await page.evaluate(theme=>window.ThemeController.set(theme),theme);
@@ -64,7 +65,16 @@ const uuid = '11111111-2222-3333-4444-555555555555';
                 assert(await page.locator('img[alt="Elfsight"]').evaluate(img=>img.complete && img.naturalWidth>0));
             }
             await page.locator('[data-home-next]').scrollIntoViewIfNeeded();
+            assert(await page.locator('.hero-media-slide.is-active .hero-media-img').evaluate(img=>getComputedStyle(img).objectFit==='contain'), 'Featured photo must fit at '+width);
+            if(width>=1200) assert(await page.locator('.hero-media-slide.is-active .hero-media-img').evaluate(img=>Math.abs(img.getBoundingClientRect().height-document.querySelector('.hero-media').getBoundingClientRect().height+320)<1), 'Featured photo has the larger desktop height at '+width);
+            if(width<=768) assert(await page.locator('.hero-media-slide.is-active .hero-media-img').evaluate(img=>img.getBoundingClientRect().bottom<=document.querySelector('.hero-copy-wrap').getBoundingClientRect().top), 'Photo overlaps copy at '+width);
             assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth), 'Overflow at '+width);
+            assert(await page.locator('.footer-bottom').evaluate((footer,width)=>{
+                const [location,copyright,credits]=[...footer.children].map(el=>el.getBoundingClientRect());
+                const row=footer.getBoundingClientRect();
+                if(width<=768) return location.bottom<=copyright.top && copyright.bottom<=credits.top && [location,copyright,credits].every(r=>Math.abs(r.left+r.width/2-row.left-row.width/2)<1);
+                return location.right<copyright.left && copyright.right<credits.left && Math.abs(copyright.left+copyright.width/2-row.left-row.width/2)<1;
+            },width), 'Footer order and centering at '+width);
             assert(await page.evaluate(()=>{
                 const rect=s=>document.querySelector(s).getBoundingClientRect();
                 const group=rect('.hero-progress'),cta=rect('.cta-buttons'),prev=rect('[data-home-prev]'),next=rect('[data-home-next]'),pause=rect('[data-home-pause]');
@@ -79,8 +89,32 @@ const uuid = '11111111-2222-3333-4444-555555555555';
                 }), 'Obscured or overlapping control at '+width);
             }
         }
+        await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
+        await page.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
+        await page.evaluate(async()=>{ for(let i=0;i<70;i++){ scrollBy({top:2,behavior:'instant'}); await new Promise(requestAnimationFrame); } });
+        assert(await page.locator('.site-nav').evaluate(el=>el.classList.contains('is-hidden')),'Slow downward scrolling hides the header');
+        await page.evaluate(()=>scrollTo({top:600,behavior:'instant'}));
+        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+        await page.waitForFunction(()=>document.querySelector('.site-nav').classList.contains('is-hidden'));
+        await page.evaluate(()=>scrollBy({top:-120,behavior:'instant'}));
+        await page.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
+        await page.evaluate(()=>scrollBy({top:120,behavior:'instant'}));
+        await page.waitForFunction(()=>document.querySelector('.site-nav').classList.contains('is-hidden'));
+        await page.locator('.site-nav-actions .book-now').focus();
+        await page.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
+        assert.equal(await page.locator('.site-nav').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
+        assert(await page.locator('a[href="asset-credits.html"]').isVisible());
+        await page.locator('a[href="asset-credits.html"]').click();
+        assert.match(await page.locator('main').innerText(),/B1Blender/);
+        await page.goBack();
         await page.screenshot({path:'output/landing-controls-desktop.png'});
-        console.log('PASS controls, footer dimensions and themes at five widths');
+        await page.setViewportSize({width:390,height:844});
+        await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
+        await page.getByRole('button',{name:'Open menu'}).click();
+        await page.evaluate(()=>scrollBy({top:220,behavior:'instant'}));
+        assert(await page.locator('.site-nav').evaluate(el=>!el.classList.contains('is-hidden')),'Open menu keeps header visible');
+        await page.keyboard.press('Escape');
+        console.log('PASS controls, footer dimensions and themes at six widths');
         await page.setViewportSize({width:320,height:900});
         await page.locator('[data-home-next]').scrollIntoViewIfNeeded();
         await page.screenshot({path:'output/landing-controls-mobile.png'});
@@ -119,14 +153,23 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             const widget=await setup({id:uuid,provider});
             await widget.locator('#testimonials').scrollIntoViewIfNeeded();
             assert.equal(await widget.locator('.google-reviews-link,.map-external-link').count(),0);
-            assert(await widget.locator('[data-testimonial-grid]').isHidden());
-            assert(!/not a Google/.test(await widget.locator('[data-testimonial-disclosure]').innerText()));
-            if(provider==='loaded') assert.match(await widget.locator('[data-google-reviews]').innerText(),/4.3 stars/);
-            if(provider==='blocked') await widget.waitForFunction(()=>document.querySelector('[data-google-reviews-note]').textContent.includes('temporarily unavailable'));
+            assert.equal(await widget.locator('[data-testimonial-grid], [data-onsite-review-grid]').count(),0);
+            if(provider==='loaded') {
+                assert.match(await widget.locator('[data-google-reviews]').innerText(),/4.3 stars/);
+                assert(await widget.locator('[data-google-reviews-note]').isVisible());
+                assert(await widget.locator('[data-google-reviews-note]').evaluate(el=>{
+                    const note=el.getBoundingClientRect(),host=document.querySelector('[data-google-reviews]').getBoundingClientRect(),layout=document.querySelector('.google-reviews-layout').getBoundingClientRect();
+                    return note.top>=host.bottom && note.top-host.bottom<=12 && Math.abs(note.left-host.left)<1 && Math.abs(host.width-layout.width)<1;
+                }));
+                await widget.setViewportSize({width:390,height:844});
+                assert(await widget.locator('[data-google-reviews-note]').evaluate(el=>el.getBoundingClientRect().top>=document.querySelector('[data-google-reviews]').getBoundingClientRect().bottom));
+            }
+            if(provider!=='loaded') await widget.locator('[data-google-reviews-fallback]').waitFor({state:'visible',timeout:12000});
             await widget.close();
         }
         const invalid=await setup({id:'invalid-id'});
         assert.equal(await invalid.locator('script[src*="elfsightcdn"]').count(),0);
-        console.log('PASS arrows, wraparound, dots, keyboard, swipe, autoplay/pause, reduced motion, five widths, zero/one event, configured/missing/invalid widget and provider failure/empty response');
+        assert(await invalid.locator('[data-google-reviews-fallback]').isVisible());
+        console.log('PASS arrows, wraparound, dots, keyboard, swipe, autoplay/pause, reduced motion, six widths, zero/one event, configured/missing/invalid widget and provider failure/empty response');
     } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

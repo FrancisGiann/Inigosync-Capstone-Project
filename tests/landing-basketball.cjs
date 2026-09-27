@@ -60,17 +60,23 @@ fs.mkdirSync(out, { recursive: true });
                 for (const selector of ['#home', '#courts', '#about', '.site-footer', '.footer-bottom']) {
                     await page.locator(selector).evaluate(el => scrollTo({ top: el.getBoundingClientRect().top + scrollY, behavior: 'instant' }));
                     await page.waitForTimeout(200);
-                    assert.equal(await page.locator('.floating-basketball').evaluate(el => getComputedStyle(el).opacity), '1', `Ball hidden at ${selector}, ${width}, ${theme}`);
+                    assert(await page.locator('.floating-basketball').evaluate(el => {
+                        const ball = el.getBoundingClientRect(), footer = document.querySelector('.footer-bottom').getBoundingClientRect();
+                        const overlap = footer.left < ball.right && footer.right > ball.left && footer.top < ball.bottom && footer.bottom > ball.top;
+                        return getComputedStyle(el).opacity === (overlap ? '0' : '1');
+                    }), `Ball must clear footer credits at ${selector}, ${width}, ${theme}`);
                     if (selector.startsWith('.')) {
                         const active = await page.locator('.site-nav a.active').evaluateAll(links => links.map(a => a.getAttribute('href')));
                         assert(active.length > 0 && active.every(href => href === '#about'), `Footer must activate About: ${active}`);
                     }
                 }
+                await page.evaluate(() => scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'}));
+                await page.waitForFunction(() => document.querySelector('.floating-basketball').classList.contains('is-obscured'));
             }
         }
         // GPU output changes while scrolling, and returns to the same pose in reverse.
         await page.setViewportSize({ width: 1440, height: 900 });
-        await page.evaluate(() => scrollTo(0, 0));
+        await page.evaluate(() => scrollTo({top:0,behavior:'instant'}));
         await page.waitForFunction(() => !document.querySelector('.floating-basketball').classList.contains('is-obscured'));
         async function pose(y) {
             await page.evaluate(y => scrollTo(0, y), y); await page.waitForTimeout(700);
@@ -97,7 +103,8 @@ fs.mkdirSync(out, { recursive: true });
         await page.locator('#overlap-probe').evaluate(el => el.remove());
         await page.waitForFunction(() => !document.querySelector('.floating-basketball').classList.contains('is-obscured'));
         await page.setViewportSize({ width: 390, height: 900 });
-        await page.evaluate(() => scrollTo(0, 0));
+        await page.evaluate(() => scrollTo({top:0,behavior:'instant'}));
+        await page.waitForFunction(() => !document.querySelector('.site-nav').classList.contains('is-hidden'));
         await page.locator('[data-landing-menu]').click();
         await page.waitForFunction(() => document.querySelector('.floating-basketball').classList.contains('is-obscured'));
         await page.keyboard.press('Escape');

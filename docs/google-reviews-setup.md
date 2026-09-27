@@ -1,10 +1,10 @@
 # Connect the free Google reviews widget
 
 The landing page is connected to the published Elfsight Free widget in
-`Config/googleReviews.js`. It keeps the existing, honestly labelled testimonials
-only when no valid widget ID is supplied. The standalone Google links have been
-removed by design; reviews retain their own source links and the map retains
-its Get directions button. Loading failures display a plain status message.
+`Config/googleReviews.js`. It is the only review feed displayed on the landing
+page. Missing IDs and loading failures display a plain availability message;
+stored local feedback remains in the database. The map retains its Get
+directions button.
 
 1. Sign in to a free Elfsight account and create one Google Reviews widget.
    Do not add a payment method, select a paid plan, or start a paid upgrade.

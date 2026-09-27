@@ -42,7 +42,11 @@ async function startBasketball() {
             frame = 0;
             if (document.hidden) return;
             const modal = document.body.classList.contains('landing-menu-open') || [...document.querySelectorAll('[aria-modal="true"], dialog[open]')].some(el => !el.closest('[hidden]') && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
-            overlay.classList.toggle('is-obscured', modal);
+            const footerBottom = document.querySelector('.footer-bottom');
+            const footerRect = footerBottom?.getBoundingClientRect();
+            const ballRect = overlay.getBoundingClientRect();
+            const overFooterBottom = footerRect && footerRect.left < ballRect.right && footerRect.right > ballRect.left && footerRect.top < ballRect.bottom && footerRect.bottom > ballRect.top;
+            overlay.classList.toggle('is-obscured', modal || overFooterBottom);
             const progress = reduced.matches ? 0 : state.progress;
             pivot.rotation.set(.15 + Math.sin(progress * Math.PI * 2) * .28, progress * Math.PI * 4, -.18);
             renderer.render(scene, camera);

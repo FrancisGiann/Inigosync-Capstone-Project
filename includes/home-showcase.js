@@ -49,15 +49,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function render() {
         media.innerHTML = rows.map((row, i) => {
             const src = window.InigoVisuals.venuePhoto(row.imageUrl);
-            return src ? '<img class="hero-media-img" src="' + escapeHtml(src) + '" alt="' + escapeHtml(row.title) + '" data-home-slide="' + i + '" loading="' + (i ? 'lazy' : 'eager') + '">' : placeholder(i);
+            return src ? '<div class="hero-media-slide" data-home-slide="' + i + '"><img class="hero-media-backdrop" src="' + escapeHtml(src) + '" alt="" aria-hidden="true" loading="' + (i ? 'lazy' : 'eager') + '"><img class="hero-media-img" src="' + escapeHtml(src) + '" alt="' + escapeHtml(row.title) + '" loading="' + (i ? 'lazy' : 'eager') + '"></div>' : placeholder(i);
         }).join('');
-        media.querySelectorAll('img').forEach(img => img.addEventListener('error', () => {
+        media.querySelectorAll('.hero-media-img').forEach(img => img.addEventListener('error', () => {
+            const slide = img.closest('[data-home-slide]');
             const template = document.createElement('template');
-            template.innerHTML = placeholder(img.dataset.homeSlide, 'Photo temporarily unavailable');
+            template.innerHTML = placeholder(slide.dataset.homeSlide, 'Photo temporarily unavailable');
             const slot = template.content.firstElementChild;
-            slot.classList.toggle('is-active', img.classList.contains('is-active'));
-            slot.setAttribute('aria-hidden', img.getAttribute('aria-hidden'));
-            img.replaceWith(slot);
+            slot.classList.toggle('is-active', slide.classList.contains('is-active'));
+            slot.setAttribute('aria-hidden', slide.getAttribute('aria-hidden'));
+            slide.replaceWith(slot);
         }, {once:true}));
         copy.innerHTML = rows.map((row, i) => '<div class="hero-copy" data-home-slide="' + i + '"><span class="hero-tag">' + escapeHtml(row.tag || 'At Iñigos') + '</span><h2 class="hero-title">' + escapeHtml(row.title) + '</h2><p class="hero-meta">' + escapeHtml(formatEventMeta(row)) + '</p></div>').join('');
         dots.innerHTML = rows.map((row, i) => '<button type="button" class="hero-dot" data-home-slide-dot="' + i + '" aria-label="Show ' + escapeHtml(row.title) + '"></button>').join('');
