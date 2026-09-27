@@ -48,6 +48,15 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             await page.setViewportSize({width,height:900});
             for (const theme of ['dark','light']) {
                 await page.evaluate(theme=>window.ThemeController.set(theme),theme);
+                if(width<=768) {
+                    const firstScreen=await page.evaluate(()=>{
+                        const hero=document.querySelector('.hero').getBoundingClientRect();
+                        const courts=document.querySelector('.courts').getBoundingClientRect();
+                        return {heroHeight:hero.height,courtsTop:courts.top+scrollY,viewportHeight:innerHeight};
+                    });
+                    assert(firstScreen.heroHeight>=firstScreen.viewportHeight-1 && firstScreen.courtsTop>=firstScreen.viewportHeight-1,
+                        `Featured section must fill the first screen at ${width}px in ${theme} mode`);
+                }
                 const layout=await page.evaluate(()=>{
                     const rect=s=>document.querySelector(s).getBoundingClientRect();
                     const map=rect('.footer-map-frame'),card=rect('.map-location-card');
@@ -89,6 +98,18 @@ const uuid = '11111111-2222-3333-4444-555555555555';
                 }), 'Obscured or overlapping control at '+width);
             }
         }
+        for(const {width,height} of [{width:320,height:568},{width:390,height:844}]) {
+            await page.setViewportSize({width,height});
+            const fit=await page.evaluate(()=>{
+                const rect=s=>document.querySelector(s).getBoundingClientRect();
+                const hero=rect('.hero'),copy=rect('.hero-copy-wrap'),controls=rect('.hero-progress'),photo=rect('.hero-media-img');
+                return {heroHeight:hero.height,viewportHeight:innerHeight,contentFits:controls.bottom<=hero.bottom+1,
+                    photoClear:photo.bottom<=copy.top+1,noOverflow:document.documentElement.scrollWidth<=innerWidth};
+            });
+            assert(fit.heroHeight>=fit.viewportHeight-1 && fit.contentFits && fit.photoClear && fit.noOverflow,
+                `Featured content must remain readable and reachable at ${width}x${height}`);
+        }
+        await page.setViewportSize({width:1440,height:900});
         await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
         await page.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
         await page.evaluate(async()=>{ for(let i=0;i<70;i++){ scrollBy({top:2,behavior:'instant'}); await new Promise(requestAnimationFrame); } });
@@ -109,6 +130,13 @@ const uuid = '11111111-2222-3333-4444-555555555555';
         await page.goBack();
         await page.screenshot({path:'output/landing-controls-desktop.png'});
         await page.setViewportSize({width:390,height:844});
+        await page.evaluate(async()=>{ scrollTo({top:0,behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))); document.activeElement.blur(); });
+        await page.evaluate(()=>scrollTo({top:260,behavior:'instant'}));
+        await page.waitForFunction(()=>document.querySelector('.site-nav').classList.contains('is-hidden'));
+        assert(await page.locator('.site-nav').evaluate(el=>el.getBoundingClientRect().bottom<=0),'Reduced-motion mobile header hides upward');
+        await page.evaluate(()=>scrollBy({top:-100,behavior:'instant'}));
+        await page.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
+        assert(await page.locator('.site-nav').evaluate(el=>el.getBoundingClientRect().top>=0),'Reduced-motion mobile header returns from the top');
         await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
         await page.getByRole('button',{name:'Open menu'}).click();
         await page.evaluate(()=>scrollBy({top:220,behavior:'instant'}));
@@ -133,6 +161,12 @@ const uuid = '11111111-2222-3333-4444-555555555555';
         }), 'Extra dots must wrap within the compact group');
         await many.close();
         const animated=await setup({motion:'no-preference'});
+        await animated.setViewportSize({width:390,height:844});
+        await animated.evaluate(()=>scrollTo({top:260,behavior:'instant'}));
+        await animated.waitForFunction(()=>document.querySelector('.site-nav').classList.contains('is-hidden'));
+        await animated.evaluate(()=>scrollBy({top:-100,behavior:'instant'}));
+        await animated.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
+        await animated.setViewportSize({width:1440,height:1000});
         await animated.locator('[data-home-pause]').click();
         assert.equal(await animated.locator('[data-home-pause]').getAttribute('aria-pressed'),'true');
         await animated.locator('[data-home-next]').click();

@@ -161,7 +161,7 @@
     .landing-night .footer-inner { grid-template-columns: 1fr; }
 }
 @media(max-width:768px) {
-    .landing-night .hero { min-height: 0; }
+    .landing-night .hero { min-height: 100vh; min-height: 100dvh; }
     .landing-night .site-nav { padding: 14px 16px; }
     .landing-night .site-nav-pill { padding: 6px 10px 6px 14px; gap: 8px; }
     .landing-night :is(.site-nav,.footer-brand-main) .logo-text { font-size: 19px; }
@@ -180,7 +180,7 @@
     .landing-night .landing-menu-backdrop:not([hidden]) { display: block; position: fixed; inset: 0; height: 100dvh; width: 100%; background: #0009; border: 0; z-index: 2; cursor: pointer; backdrop-filter: blur(3px); }
     .landing-night .drawer-close { display: grid; place-items: center; position: absolute; top: 18px; right: 18px; width: 44px; height: 44px; background: transparent; border: 1px solid var(--border-card); border-radius: 50%; font-size: 26px; color: var(--color-ink); cursor: pointer; }
     .landing-night .nav-menu a.active { background: transparent; border-bottom: 2px solid var(--color-primary); color: var(--color-accent-text); }
-    .landing-night .hero-content { min-height: 0; padding: calc(110px + 56.25vw + 36px) 22px max(32px,env(safe-area-inset-bottom)); gap: 12px; }
+    .landing-night .hero-content { min-height: 100vh; min-height: 100dvh; padding: calc(110px + 56.25vw + 36px) 22px max(32px,env(safe-area-inset-bottom)); gap: 12px; }
     .landing-night .hero-media-img { top: 110px; width: 100%; height: 56.25vw; }
     .landing-night .hero-copy-wrap { width: 100%; max-width: 100%; }
     .landing-night .hero-title { font-size: clamp(24px,6vw,34px); letter-spacing: -.03em; line-height: 1.22; }
