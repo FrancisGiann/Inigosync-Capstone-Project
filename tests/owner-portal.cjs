@@ -38,6 +38,10 @@ function fixture() {
         app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true }],
         court: Array.from({ length: 24 }, (_, index) => ({ id: `court-${index + 1}`, sport_id: `sport-${index + 1}`, slug: `sport-${index + 1}`, name: index === 0 ? 'A long court listing title that must wrap without shifting other actions' : `Sport ${index + 1}`, quantity: index + 1, unit: 'courts', description: 'Responsive fixture', image_url: null, is_active: index !== 23, display_order: index + 1, sport: { id: `sport-${index + 1}`, name: `Sport ${index + 1}`, slug: `sport-${index + 1}` } })),
     };
+    if (window.__qaSavedCover) {
+        data.court.push({ id: '00000000-0000-4000-8000-000000000099', sport_id: '00000000-0000-4000-8000-000000000098', slug: 'qa-covered-sport', name: 'QA Covered Sport', quantity: 1, unit: 'courts', description: null, image_url: window.__qaSavedCover, is_active: true, display_order: 99, sport: { id: '00000000-0000-4000-8000-000000000098', name: 'QA Covered Sport', slug: 'qa-covered-sport' } });
+        data.court_unit_inventory = [{ id: '00000000-0000-4000-8000-000000000097', court_id: '00000000-0000-4000-8000-000000000099', label: 'Court 1', photo_url: window.__qaSavedUnitPhoto, rate_day: null, rate_night: null, rate_unit: '/hr', is_active: true, inventory_verified: true }];
+    }
     const result = (table, q) => {
         let rows = (data[table] || []).slice();
         if (q.filters) rows = rows.filter(row => Object.entries(q.filters).every(([key, value]) => row[key] == value));
@@ -69,6 +73,7 @@ function fixture() {
                 in() { return chain; }, gte() { return chain; }, gt() { return chain; }, lte() { return chain; }, lt() { return chain; }, or() { return chain; },
                 order(key, options = {}) { q.sort.push({ key, ascending: options.ascending !== false }); return chain; },
                 range(from, to) { q.range = [from, to]; return chain; }, limit(n) { q.limit = n; return chain; },
+                abortSignal() { return chain; },
                 insert(payload) { q.write = 'insert'; q.payload = payload; return chain; },
                 update(payload) { q.write = 'update'; q.payload = payload; return chain; },
                 delete() { q.write = 'delete'; return chain; },
@@ -81,8 +86,18 @@ function fixture() {
         },
         rpc: async (name, args) => {
             state.calls.push({ rpc: name, args });
-            if (name === 'admin_get_sport_editor') return { data: { version: 0, listing: null, units: [], resources: Array.from({ length: 8 }, (_, index) => ({ id: `resource-${index + 1}`, name: `Shared Space ${index + 1}`, sport_names: ['Basketball'] })), cutoff: '18:00:00' }, error: null };
-            if (name === 'admin_save_sport') return { data: null, error: { message: 'Simulated stale-save failure' } };
+            if (name === 'admin_get_sport_editor') return { data: { version: state.savedSport && args?.p_court_id === state.savedCourtId ? 1 : 0, listing: state.savedSport && args?.p_court_id === state.savedCourtId ? { ...state.savedSport, id: state.savedCourtId } : null, units: state.savedSport && args?.p_court_id === state.savedCourtId ? state.savedSport.units : [], resources: Array.from({ length: 8 }, (_, index) => ({ id: `resource-${index + 1}`, name: `Shared Space ${index + 1}`, sport_names: ['Basketball'] })), cutoff: '18:00:00' }, error: null };
+            if (name === 'admin_is_media_url_referenced') return { data: false, error: null };
+            if (name === 'admin_save_sport') {
+                if (!state.succeedSportSave) return { data: null, error: { message: 'Simulated stale-save failure' } };
+                const saved = args.p_payload;
+                const courtId = saved.court_id || '00000000-0000-4000-8000-000000000099';
+                state.savedCourtId = courtId;
+                state.savedSport = { ...saved, units: saved.units.map((unit, index) => ({ ...unit, id: unit.id || `00000000-0000-4000-8000-${String(97 + index).padStart(12, '0')}` })) };
+                const row = { id: courtId, sport_id: '00000000-0000-4000-8000-000000000098', slug: saved.slug, name: saved.name, quantity: saved.units.length, unit: saved.unit, description: saved.description, image_url: saved.image_url, is_active: true, display_order: 99, sport: { id: '00000000-0000-4000-8000-000000000098', name: saved.name, slug: saved.slug } };
+                data.court = [...data.court.filter(court => court.id !== courtId), row];
+                return { data: { court_id: courtId, version: 1 }, error: null };
+            }
             if (name === 'admin_reorder_slides') return state.failReorder ? { data: null, error: { message: 'Simulated reorder failure' } } : { data: args.p_ids, error: null };
             if (name === 'owner_review_summary') return { data: { average_rating: 4, total_count: 2, star_counts: { 1: 0, 2: 0, 3: 1, 4: 0, 5: 1 } }, error: null };
             if (name === 'owner_staff_activity') {
@@ -101,7 +116,7 @@ function fixture() {
             if (name === 'admin_get_sport_editor') return { data: { version: 0, listing: null, units: [], resources: [], cutoff: '18:00:00' }, error: null };
             return { data: [], error: null };
         },
-        storage: { from: () => ({ list: async () => ({ data: [], error: null }), upload: async () => ({ error: null }), remove: async () => ({ error: null }), getPublicUrl: path => ({ data: { publicUrl: `https://example.test/storage/v1/object/public/media/${path}` } }) }) },
+        storage: { from: () => ({ list: async () => ({ data: [], error: null }), upload: async (path, file) => { state.calls.push({ upload: path, type: file.type, size: file.size }); return { data: { path }, error: null }; }, remove: async paths => { state.calls.push({ remove: paths }); return { error: null }; }, getPublicUrl: path => ({ data: { publicUrl: `https://example.test/storage/v1/object/public/media/${path}` } }) }) },
         functions: { invoke: async name => name === 'payment-health' ? { data: { api_connected: true, webhook_configured: true, last_confirmed_payment_at: '2026-09-26T10:00:00Z' }, error: null } : { data: null, error: { message: 'Unknown function' } } },
         auth: {
             getSession: async () => ({ data: { session: { access_token: 'qa-token', user: { id: 'qa-owner', email: 'owner@example.test' } } } }),
@@ -110,7 +125,7 @@ function fixture() {
             signOut: async () => ({}),
         },
     };
-    window.SUPABASE_URL = 'https://qa.invalid';
+    window.SUPABASE_URL = 'https://example.test';
 }
 
 (async () => {
@@ -177,7 +192,22 @@ function fixture() {
                     // Staff age and supported position choices.
                     await page.locator('[data-admin-nav="staff"]').first().evaluate(el => el.click());
                     await page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' }).waitFor();
-                    await page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' }).locator('[data-admin-staff-actions-trigger]').click();
+                    const staffTrigger = page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' }).locator('[data-admin-staff-actions-trigger]');
+                    await staffTrigger.focus();
+                    await page.keyboard.press('Enter');
+                    const staffCard = page.locator('[data-admin-staff-action-card]');
+                    assert.equal(await staffCard.isVisible(), true, 'Enter opens the floating staff action card');
+                    assert.equal(await staffCard.evaluate(el => { const box = el.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight; }), true, 'staff actions remain in the viewport');
+                    assert.equal(await page.evaluate(() => document.activeElement?.dataset.adminStaffCommand), 'view');
+                    await page.keyboard.press('Tab');
+                    assert.equal(await page.evaluate(() => document.activeElement?.dataset.adminStaffCommand), 'edit');
+                    await page.keyboard.press('Escape');
+                    assert.equal(await staffCard.isVisible(), false);
+                    assert.equal(await staffTrigger.evaluate(el => document.activeElement === el), true, 'Escape returns focus to Actions');
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-panel="staff"] .admin-card-head').click();
+                    assert.equal(await staffCard.isVisible(), false, 'outside click closes staff actions');
+                    await staffTrigger.click();
                     await page.locator('[data-admin-staff-command="activity"]').click();
                     await page.locator('[data-admin-staff-activity-list]').getByText('Walk-in booking recorded').waitFor();
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_staff_activity').at(-1).args.p_staff_id), 'qa-staff');
@@ -264,17 +294,103 @@ function fixture() {
                     await spaceSearch.fill('No matching space name');
                     assert.equal(await page.locator('[data-ioc-unit-resources="0"] .ioc-resource-group-selected [data-ioc-resource="0"]').count(), 1, 'selected connections stay visible when search excludes them');
                     assert.equal(await page.locator('[data-ioc-unit-resources="0"] .ioc-resource-group-selected [data-ioc-resource="0"]').isChecked(), true);
+                    const courtFile = { name: 'court.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('qa image') };
+                    const coverBefore = await page.locator('[data-ioc-cover-preview]').innerHTML();
+                    const unitBefore = await page.locator('[data-ioc-unit-preview="0"]').innerHTML();
+                    await page.evaluate(() => {
+                        window.__courtCropOptions = [];
+                        window.InigoImageTools.openCropEditor = async (_file, options) => { window.__courtCropOptions.push(options); return null; };
+                    });
+                    await page.locator('[data-ioc-cover-file]').setInputFiles(courtFile);
+                    await page.locator('[data-ioc-unit-file="0"]').setInputFiles(courtFile);
+                    await page.waitForFunction(() => window.__courtCropOptions.length === 2);
+                    assert.equal(await page.locator('[data-ioc-cover-preview]').innerHTML(), coverBefore, 'cancelled cover crop keeps the prior preview');
+                    assert.equal(await page.locator('[data-ioc-unit-preview="0"]').innerHTML(), unitBefore, 'cancelled unit crop keeps the prior preview');
+                    await page.evaluate(() => {
+                        window.InigoImageTools.openCropEditor = async (_file, options) => { window.__courtCropOptions.push(options); return new Blob([new Uint8Array([255, 216, 255, 217])], { type: 'image/jpeg' }); };
+                    });
+                    await page.locator('[data-ioc-cover-file]').setInputFiles(courtFile);
+                    await page.locator('[data-ioc-unit-file="0"]').setInputFiles(courtFile);
+                    await page.locator('[data-ioc-cover-preview] img').waitFor();
+                    await page.locator('[data-ioc-unit-preview="0"] img').waitFor();
+                    assert.equal(await page.evaluate(() => window.__courtCropOptions.every(options => options.aspect === 16 / 9)), true);
+                    await page.locator('[data-ioc-add-maintenance="0"]').click();
+                    assert.equal(await page.locator('[data-ioc-unit-preview="0"] img').count(), 1, 'rerender keeps the staged unit crop preview');
+                    await page.locator('[data-ioc-remove-maintenance="0:0"]').click();
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.upload).length), 0, 'crop apply only stages photos');
+                    await page.evaluate(() => { const scroll = document.querySelector('.ioc-editor-scroll'); scroll.scrollTop = 60; scroll.dispatchEvent(new Event('scroll')); scroll.scrollTop = 0; scroll.dispatchEvent(new Event('scroll')); });
+                    assert.equal(await page.locator('[data-ioc-savebar]').getAttribute('aria-hidden'), 'true', 'whole action footer hides on upward scroll');
+                    assert.equal(await page.locator('[data-ioc-savebar]').evaluate(el => el.getBoundingClientRect().height), 0, 'hidden footer leaves no occupied height');
+                    assert.equal(await page.locator('[data-ioc-reveal]').isVisible(), true);
+                    await page.locator('[data-ioc-reveal]').click();
+                    assert.equal(await page.locator('[data-ioc-savebar]').getAttribute('aria-hidden'), 'false');
+                    await page.locator('[data-ioc-hide]').click();
+                    assert.equal(await page.locator('[data-ioc-reveal]').isVisible(), true, 'Hide actions leaves a compact reveal control');
+                    assert.equal(await page.evaluate(() => document.activeElement.matches('[data-ioc-reveal]')), true, 'hiding actions moves focus to Show actions');
+                    await page.keyboard.press('Enter');
+                    assert.equal(await page.locator('[data-ioc-savebar]').getAttribute('aria-hidden'), 'false', 'keyboard reopens actions');
+                    const dockSize = await page.locator('[data-ioc-action-dock]').evaluate(el => ({ height: el.getBoundingClientRect().height, bottom: el.getBoundingClientRect().bottom, dialogBottom: el.closest('.ioc-dialog').getBoundingClientRect().bottom }));
+                    assert.ok(dockSize.height <= 121 && Math.abs(dockSize.bottom - dockSize.dialogBottom) <= 1, 'action dock stays compact at the dialog bottom');
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'admin_save_sport').length), 0);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}/${theme} sport-editor overflow`);
-                    await page.locator('[data-ioc-reveal]').click();
                     await page.locator('[data-ioc-save]').click();
                     await page.locator('[data-confirm-yes]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.rpc === 'admin_save_sport'));
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.upload).length), 2, 'cover and unit crop files upload only on Save');
+                    const sportPayload = await page.evaluate(() => window.__ownerQa.calls.find(call => call.rpc === 'admin_save_sport').args.p_payload);
+                    assert.match(sportPayload.image_url, /\/cover-.*\.jpg$/);
+                    assert.match(sportPayload.units[0].photo_url, /\/unit-.*\.jpg$/);
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.remove).length), 2, 'failed save cleans up both newly uploaded photos');
                     assert.equal(await page.locator('[data-ioc-editor-overlay][data-open]').count(), 1, 'failed save must retain the draft');
                     assert.equal(await page.locator('[data-ioc-name]').inputValue(), 'Bowling');
                     await page.locator('[data-ioc-close]').evaluate(el => el.click());
                     await page.locator('[data-confirm-yes]').click();
                     await page.locator('[data-ioc-editor-overlay]').waitFor({ state: 'hidden' });
+
+                    // A successful cover save returns to the listing and reloads the persisted URL.
+                    await page.evaluate(() => { window.__ownerQa.succeedSportSave = true; });
+                    await page.locator('[data-ioc-add]').click();
+                    await page.locator('[data-ioc-name]').fill('QA Covered Sport');
+                    await page.locator('[data-ioc-new-unit-label]').fill('Court 1');
+                    await page.locator('[data-ioc-add-unit]').click();
+                    await page.locator('[data-ioc-cover-file]').setInputFiles(courtFile);
+                    await page.locator('[data-ioc-unit-file="0"]').setInputFiles(courtFile);
+                    await page.locator('[data-ioc-cover-preview] img').waitFor();
+                    await page.locator('[data-ioc-unit-preview="0"] img').waitFor();
+                    await page.locator('[data-ioc-save]').click();
+                    await page.locator('[data-confirm-yes]').click();
+                    await page.locator('[data-ioc-editor-overlay]').waitFor({ state: 'hidden' });
+                    const coveredCard = page.locator('[data-admin-panel="courts"] .ioc-listing-card').filter({ hasText: 'QA Covered Sport' });
+                    await coveredCard.locator('.ioc-listing-photo img').waitFor();
+                    const savedCover = await coveredCard.locator('.ioc-listing-photo img').getAttribute('src');
+                    assert.match(savedCover, /\/cover-.*\.jpg$/);
+                    const savedUnitPhoto = await page.evaluate(() => window.__ownerQa.savedSport.units[0].photo_url);
+                    assert.match(savedUnitPhoto, /\/unit-.*\.jpg$/);
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'admin_save_sport').length), 2);
+                    await context.addInitScript(({ cover, unit }) => { window.__qaSavedCover = cover; window.__qaSavedUnitPhoto = unit; }, { cover: savedCover, unit: savedUnitPhoto });
+                    const landing = await context.newPage();
+                    await landing.route(/^https:\/\//, route => route.abort());
+                    await landing.route('https://example.test/storage/v1/object/public/media/**', route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/+n8AAAAASUVORK5CYII=', 'base64') }));
+                    await landing.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})();` }));
+                    await landing.goto('http://127.0.0.1:4178/Pages/Index.html', { waitUntil: 'domcontentloaded' });
+                    const landingCover = landing.locator('[data-court-id="qa-covered-sport"] img');
+                    await landingCover.waitFor();
+                    assert.equal(await landingCover.getAttribute('src'), savedCover, 'landing page uses the saved cover URL');
+                    await landing.reload({ waitUntil: 'domcontentloaded' });
+                    await landingCover.waitFor();
+                    assert.equal(await landingCover.getAttribute('src'), savedCover, 'landing page still shows the cover after reload');
+                    await landing.locator('[data-court-id="qa-covered-sport"]').click();
+                    assert.equal(await landing.locator('[data-court-viewer-media] img').getAttribute('src'), savedUnitPhoto, 'court viewer uses the saved unit photo after reload');
+                    await landing.close();
+                    await coveredCard.locator('[data-ioc-edit]').click();
+                    assert.equal(await page.locator('[data-ioc-editor]').getAttribute('data-mode'), 'edit');
+                    assert.equal(await page.locator('[data-ioc-cover-preview] img').getAttribute('src'), savedCover, 'editor reloads the saved cover');
+                    assert.equal(await page.locator('[data-ioc-unit-preview="0"] img').getAttribute('src'), savedUnitPhoto, 'editor reloads the saved unit photo');
+                    await page.evaluate(() => { const scroll = document.querySelector('.ioc-editor-scroll'); scroll.scrollTop = 60; scroll.dispatchEvent(new Event('scroll')); scroll.scrollTop = 0; scroll.dispatchEvent(new Event('scroll')); });
+                    assert.equal(await page.locator('[data-ioc-savebar]').getAttribute('aria-hidden'), 'true', 'edit footer hides as one piece');
+                    await page.locator('[data-ioc-reveal]').click();
+                    assert.equal(await page.locator('[data-ioc-savebar]').getAttribute('aria-hidden'), 'false');
+                    await page.locator('[data-ioc-close]').click();
 
                     // Add slide crop cancellation preserves the preview; applying the crop stages until the Save action uploads it.
                     await page.locator('[data-admin-nav="media"]').first().evaluate(el => el.click());

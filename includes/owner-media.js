@@ -70,7 +70,7 @@
     function formMarkup(slide, isNew) {
         const image = slide.image_url || '';
         return `<form class="owner-media-form" data-media-form novalidate>
-            <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="admin-btn-secondary owner-media-replace" data-media-replace><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span data-media-replace-label>Replace photo</span></button><input class="admin-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" data-media-file><p class="owner-media-crop-hint">Choose a photo, adjust the 16:9 crop, then save to stage it.</p></div>
+            <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="owner-photo-choice owner-media-replace" data-media-replace><span data-media-replace-label>${isNew ? 'Choose photo' : 'Replace photo'}</span></button><input class="admin-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" data-media-file><p class="owner-media-crop-hint">Choose a photo, adjust the 16:9 crop, then save to stage it.</p></div>
             <div class="owner-media-fields">
                 <label class="admin-form-group"><span class="admin-form-label">Title</span><input required maxlength="120" type="text" class="admin-input" data-media-title value="${escape(slide.title || '')}"></label>
                 <label class="admin-form-group"><span class="admin-form-label">Caption</span><textarea maxlength="500" class="admin-input owner-media-textarea" data-media-caption>${escape(slide.meta || '')}</textarea></label>
@@ -134,9 +134,9 @@
         file.addEventListener('change', async () => {
             const next = file.files?.[0];
             if (!next) return;
-            if (!/^image\/(jpeg|png|webp)$/.test(next.type) || next.size > 8 * 1024 * 1024) {
+            if (!/^image\/(jpeg|png|webp)$/.test(next.type) || next.size > 5 * 1024 * 1024) {
                 file.value = '';
-                toast('Choose a JPG, PNG, or WebP photo up to 8 MB.', true);
+                toast('Choose a JPG, PNG, or WebP photo up to 5 MB.', true);
                 return;
             }
             file.value = '';
@@ -163,7 +163,7 @@
                 toast(error.message || 'Could not crop this photo. Choose another image and try again.', true);
             } finally {
                 trigger.disabled = false;
-                if (label && label.textContent === 'Opening crop…') label.textContent = 'Replace photo';
+                if (label && label.textContent === 'Opening crop…') label.textContent = activeDraft?.croppedFile || !activeDraft?.isNew ? 'Replace photo' : 'Choose photo';
                 trigger.focus();
             }
         });

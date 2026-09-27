@@ -712,6 +712,17 @@ button.admin-notif-item:focus-visible {
    the overall badge down (see worstAdminPerfStatus()'s own comment). */
 .admin-perf-pill-neutral { background: color-mix(in srgb, var(--color-ink-faint) 20%, transparent); color: var(--color-ink-faint); }
 
+/* Photo storage's neutral band (25–<50%) is gray and its warning band
+   (50–<70%) is yellow, matching the storage dot/chart slice and bar. */
+.admin-perf-item[data-admin-perf-storage] .admin-perf-pill-warn {
+    background: color-mix(in srgb, var(--color-perf-warn) 18%, transparent);
+    color: var(--color-perf-warn);
+}
+.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-good { background: var(--color-court-green); }
+.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-neutral { background: var(--color-ink-faint); }
+.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-warn { background: var(--color-perf-warn); }
+.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-problem { background: var(--color-alert); }
+
 /* "Like a pie graph" layout — a Chart.js doughnut on top, centered, plus
    the same 6 rows as a full-width legend below it (unchanged
    .admin-perf-list/-item rules above besides the added .admin-perf-dot).

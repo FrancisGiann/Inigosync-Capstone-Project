@@ -890,7 +890,7 @@
                 <label class="ioc-field"><span>Description</span><textarea class="admin-input" rows="2" maxlength="500" placeholder="A short description of this facility" data-ioc-description></textarea></label>
                 <div class="ioc-photo-feature">
                     <div class="ioc-photo-preview" data-ioc-cover-preview><span>Cover photo preview</span></div>
-                    <div class="ioc-photo-controls"><strong>Landing page cover photo</strong><p>Use a clear landscape photo. The preview keeps the image’s proportions.</p><label class="ioc-button ioc-button-secondary" for="ioc-cover-file">Choose cover photo</label><input class="ioc-file-input" id="ioc-cover-file" type="file" accept="image/jpeg,image/png,image/webp" data-ioc-cover-file></div>
+                    <div class="ioc-photo-controls"><strong>Landing page cover photo</strong><p>Choose a JPG, PNG, or WebP photo up to 10 MB. Adjust its 16:9 crop before saving.</p><label class="ioc-button ioc-button-secondary" for="ioc-cover-file">Choose cover photo</label><input class="ioc-file-input" id="ioc-cover-file" type="file" accept="image/jpeg,image/png,image/webp" data-ioc-cover-file></div>
                 </div>
             </section>
             <section class="ioc-editor-section" aria-labelledby="iocUnitsTitle">
@@ -904,11 +904,16 @@
                 <div class="ioc-resource-groups" data-ioc-resources></div>
             </section>
         </div>
-        <footer class="ioc-savebar" data-ioc-savebar>
-            <button type="button" class="ioc-savebar-reveal" data-ioc-reveal aria-label="Show save actions">↑</button>
-            <button type="button" class="ioc-button ioc-button-danger" data-ioc-archive hidden>Archive Sport</button>
-            <button type="button" class="ioc-button ioc-button-ghost" data-ioc-cancel>Cancel</button>
-            <button type="button" class="ioc-button ioc-button-primary" data-ioc-save>Save Changes</button>
+        <footer class="ioc-action-dock" data-ioc-action-dock>
+            <div class="ioc-savebar" id="ioc-save-actions" data-ioc-savebar>
+                <button type="button" class="ioc-savebar-toggle" data-ioc-hide aria-controls="ioc-save-actions" aria-expanded="true">↓ Hide actions</button>
+                <div class="ioc-savebar-buttons">
+                    <button type="button" class="ioc-button ioc-button-danger" data-ioc-archive hidden>Archive Sport</button>
+                    <button type="button" class="ioc-button ioc-button-ghost" data-ioc-cancel>Cancel</button>
+                    <button type="button" class="ioc-button ioc-button-primary" data-ioc-save>Save Changes</button>
+                </div>
+            </div>
+            <button type="button" class="ioc-savebar-reveal" data-ioc-reveal aria-controls="ioc-save-actions" aria-expanded="false" hidden>↑ Show actions</button>
         </footer>
     </section>
 </div>
@@ -995,7 +1000,7 @@
         <div class="admin-avatar-upload-row"><div class="admin-avatar admin-avatar-upload-preview">RD</div></div>
         <div class="admin-avatar-upload-controls">
             <div class="admin-avatar-upload-actions">
-                <button type="button" class="admin-btn-secondary" data-admin-avatar-upload-trigger>Choose photo</button>
+                <button type="button" class="owner-photo-choice" data-admin-avatar-upload-trigger>Choose new photo</button>
                 <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove photo</button>
                 <input type="file" accept="image/jpeg,image/png,image/webp" class="admin-visually-hidden" data-admin-avatar-file>
             </div>

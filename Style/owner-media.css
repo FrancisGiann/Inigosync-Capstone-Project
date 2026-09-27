@@ -17,8 +17,12 @@
 .owner-media-preview-wrap { min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
 .owner-media-preview { display: grid; place-items: center; width: 100%; min-height: 0; aspect-ratio: 16 / 9; max-height: 52vh; overflow: hidden; border: 1px solid var(--color-border, #ded9d1); border-radius: 14px; background: var(--color-surface-muted, #f3f0eb); }
 .owner-media-preview img { display: block; width: 100%; height: 100%; max-height: 52vh; object-fit: cover; }
-.owner-media-replace { display: inline-flex; align-items: center; justify-content: center; align-self: flex-start; gap: 9px; min-height: 46px; max-width: 100%; padding: 10px 15px; white-space: normal; text-align: center; }
-.owner-media-replace svg { width: 19px; height: 19px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.owner-photo-choice { display:inline-flex; align-items:center; justify-content:center; min-height:40px; max-width:100%; padding:9px 15px; border:1px solid var(--color-line); border-radius:10px; background:var(--color-bg-elevated); color:var(--color-ink); font:600 var(--fs-sm) var(--font-body); text-align:center; cursor:pointer; transition:border-color .16s ease,background .16s ease; }
+.owner-photo-choice:hover { border-color:var(--color-primary); background:var(--color-bg-card); }
+.owner-photo-choice:focus-visible { outline:3px solid color-mix(in srgb,var(--color-primary) 55%,transparent); outline-offset:2px; }
+.owner-photo-choice:disabled { opacity:.65; cursor:wait; }
+.owner-media-replace { align-self:flex-start; }
+.admin-avatar-upload-actions .owner-photo-choice { min-width:155px; }
 .owner-media-replace:disabled { opacity: .65; cursor: wait; }
 .owner-media-crop-hint { margin: 0; color: var(--color-ink-dim, #6f6b65); font-size: var(--fs-xs, 12px); line-height: 1.5; }
 .owner-media-fields { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -45,6 +49,9 @@
     .owner-media-actions [data-media-remove] { margin-right: 0; }
     .owner-media-actions [data-admin-slide-modal-close] { flex: 1; }
     .owner-media-actions [data-media-save] { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .owner-photo-choice { transition: none; }
 }
 @media (prefers-reduced-motion: reduce) {
     .owner-media-card, .owner-media-card * { scroll-behavior: auto !important; transition-duration: .01ms !important; }

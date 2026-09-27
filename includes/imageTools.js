@@ -29,21 +29,21 @@
 // includes/owner_dashboard.js (see the <script> order in
 // Pages/user_dashboard.html / Pages/owner_dashboard.html).
 (function () {
-    const MAX_RAW_BYTES = 5 * 1024 * 1024; // 5 MB raw file ceiling, both paths
+    const MAX_RAW_BYTES = 5 * 1024 * 1024; // Default raw-file ceiling; court cropping may opt into 10 MB.
     const STRICT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
     // `strict` true → only jpeg/png/webp (Media Manager/Court photo path,
     // A5/A6). `strict` false → any image/* (avatar path, unchanged from the
     // pre-existing customer dashboard behaviour this file now centralizes).
-    function assertValidImageFile(file, strict) {
+    function assertValidImageFile(file, strict, maxRawBytes = MAX_RAW_BYTES) {
         if (!file) throw new Error('No file selected.');
         const type = file.type || '';
         const typeOk = strict ? STRICT_TYPES.includes(type) : type.startsWith('image/');
         if (!typeOk) {
             throw new Error(strict ? 'Please choose a JPEG, PNG, or WEBP image.' : 'Please choose an image file.');
         }
-        if (file.size > MAX_RAW_BYTES) {
-            throw new Error('That image is too large — please choose one under 5 MB.');
+        if (file.size > maxRawBytes) {
+            throw new Error(`That image is too large — please choose one under ${maxRawBytes / (1024 * 1024)} MB.`);
         }
     }
 
@@ -134,7 +134,8 @@
     // resolves to a cropped/resized JPEG Blob, or `null` if the user backs
     // out (Cancel, the backdrop, the × button, or Esc). It DOES reject
     // (readable Error, via assertValidImageFile's own two checks) for an
-    // invalid file — wrong type or over 5 MB — before any UI is shown; an
+    // invalid file — wrong type or over the caller's raw-file limit (5 MB by
+    // default) — before any UI is shown; an
     // `async function` body means that throw becomes a rejected Promise
     // automatically, so callers can `await` either helper the same way.
     //
@@ -208,8 +209,8 @@
         return overlay;
     }
 
-    async function openCropEditor(file, { aspect = 16 / 10, maxW = 1600, maxH = 1000, quality = 0.85 } = {}) {
-        assertValidImageFile(file, true);
+    async function openCropEditor(file, { aspect = 16 / 10, maxW = 1600, maxH = 1000, quality = 0.85, maxRawBytes = MAX_RAW_BYTES } = {}) {
+        assertValidImageFile(file, true, maxRawBytes);
         const img = await loadImage(file);
 
         return new Promise((resolve) => {

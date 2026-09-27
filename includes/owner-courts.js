@@ -134,6 +134,8 @@
             updateCoverPreview();
             renderUnits();
             editor.querySelector('[data-ioc-save]').disabled = false;
+            editor.querySelector('.ioc-editor-scroll').scrollTop = 0;
+            state.scrollTop = 0;
             setSavebarVisible(true);
         }
 
@@ -144,8 +146,21 @@
             const holder = $('[data-ioc-cover-preview]');
             holder.innerHTML = state.draft.cover_file ? '' : imageMarkup(state.draft.listing.image_url, 'Sport cover');
             if (state.draft.cover_file) {
-                const img = document.createElement('img'); img.alt = 'Sport cover preview'; img.src = URL.createObjectURL(state.draft.cover_file); holder.replaceChildren(img);
+                const img = document.createElement('img'); img.alt = 'Sport cover preview';
+                const url = URL.createObjectURL(state.draft.cover_file);
+                img.onload = img.onerror = () => URL.revokeObjectURL(url);
+                img.src = url; holder.replaceChildren(img);
             }
+        }
+
+        function updateUnitPhotoPreview(unit, index) {
+            if (!unit.photo_file) return;
+            const holder = editor.querySelector(`[data-ioc-unit-preview="${index}"]`);
+            if (!holder) return;
+            const img = document.createElement('img'); img.alt = `${unit.label} photo preview`;
+            const url = URL.createObjectURL(unit.photo_file);
+            img.onload = img.onerror = () => URL.revokeObjectURL(url);
+            img.src = url; holder.replaceChildren(img);
         }
 
         function renderUnits() {
@@ -161,6 +176,7 @@
                     <div class="ioc-maintenance"><div class="ioc-subhead"><strong>Scheduled maintenance</strong><button type="button" class="ioc-link-button" data-ioc-add-maintenance="${index}">+ Add period</button></div><div data-ioc-maintenance-list="${index}"></div></div>
                 </article>`;
             }).join('');
+            units.forEach(updateUnitPhotoPreview);
             unitHost.querySelectorAll('[data-ioc-remove-unit]').forEach((button) => button.addEventListener('click', async () => {
                 const index = Number(button.dataset.iocRemoveUnit); const unit = state.draft.units[index];
             const okay = await confirm({ title: 'Remove this unit?', message: `“${unit.label}” will be removed when you save. Units with booking history cannot be removed.`, confirmLabel: 'Remove unit', danger: true });
@@ -176,10 +192,16 @@
                 if (unit.rate_unit === '/set') unit.rate_night = '';
                 updateRateFields(index); markDirty();
             }));
-            unitHost.querySelectorAll('[data-ioc-unit-file]').forEach((input) => input.addEventListener('change', () => {
-                const unit = state.draft.units[Number(input.dataset.iocUnitFile)]; const file = input.files?.[0]; input.value = '';
-                if (!file) return; if (!validateImage(file)) return;
-                unit.photo_file = file; markDirty(); const img = document.createElement('img'); img.alt = `${unit.label} photo preview`; img.src = URL.createObjectURL(file); $(`[data-ioc-unit-preview="${state.draft.units.indexOf(unit)}"]`).replaceChildren(img);
+            unitHost.querySelectorAll('[data-ioc-unit-file]').forEach((input) => input.addEventListener('change', async () => {
+                const draft = state.draft;
+                const unit = draft?.units[Number(input.dataset.iocUnitFile)]; const file = input.files?.[0]; input.value = '';
+                if (!file || !unit) return;
+                try {
+                    const cropped = await cropDraftPhoto(file);
+                    if (!cropped || state.draft !== draft || !draft.units.includes(unit)) return;
+                    unit.photo_file = cropped; markDirty();
+                    updateUnitPhotoPreview(unit, draft.units.indexOf(unit));
+                } catch (error) { toast(error.message || 'Could not prepare this unit photo.', true); }
             }));
             unitHost.querySelectorAll('[data-ioc-add-maintenance]').forEach((button) => button.addEventListener('click', () => {
                 const index = Number(button.dataset.iocAddMaintenance); state.draft.units[index].maintenance.push({ id: null, start_at: '', end_at: '', note: '' }); markDirty(); renderUnits();
@@ -187,9 +209,12 @@
             renderResourceGroups(); renderMaintenance();
         }
 
-        function validateImage(file) {
-            if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { toast('Choose a JPG, PNG, or WebP image under 10 MB.', true); return false; }
-            return true;
+        async function cropDraftPhoto(file) {
+            if (!window.InigoImageTools?.openCropEditor) throw new Error('The photo crop tool is unavailable. Refresh and try again.');
+            const blob = await window.InigoImageTools.openCropEditor(file, { aspect: 16 / 9, maxW: 1600, maxH: 900, quality: 0.85, maxRawBytes: 10 * 1024 * 1024 });
+            if (!blob) return null;
+            if (blob.size > 5 * 1024 * 1024) throw new Error('The cropped photo is too large. Try a different image.');
+            return new File([blob], 'court-photo.jpg', { type: 'image/jpeg' });
         }
 
         function updateRateFields(index) {
@@ -407,9 +432,19 @@
             } catch (error) { toast(error.message || 'Could not delete this sport.', true); }
         }
 
-        function setSavebarVisible(visible) {
-            state.barHidden = !visible; const bar = editor.querySelector('[data-ioc-savebar]');
-            bar.classList.toggle('is-hidden', !visible); bar.setAttribute('aria-hidden', 'false');
+        function setSavebarVisible(visible, explicit = false) {
+            const dock = editor.querySelector('[data-ioc-action-dock]');
+            const bar = editor.querySelector('[data-ioc-savebar]');
+            const reveal = editor.querySelector('[data-ioc-reveal]');
+            if (!visible && !explicit && bar.contains(document.activeElement)) return;
+            state.barHidden = !visible;
+            dock.classList.toggle('is-collapsed', !visible);
+            bar.classList.toggle('is-hidden', !visible);
+            bar.inert = !visible;
+            bar.setAttribute('aria-hidden', String(!visible));
+            reveal.hidden = visible;
+            reveal.setAttribute('aria-expanded', String(visible));
+            if (!visible && explicit) reveal.focus();
         }
         function closeEditor(force = false) {
             if (!force && state.draft?.dirty) {
@@ -456,18 +491,27 @@
         editor.querySelector('[data-ioc-new-unit-label]').addEventListener('input', markDirty);
         editor.querySelector('[data-ioc-name]').addEventListener('input', markDirty);
         editor.querySelector('[data-ioc-description]').addEventListener('input', markDirty);
-        editor.querySelector('[data-ioc-cover-file]').addEventListener('change', (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (!file || !validateImage(file)) return; state.draft.cover_file = file; markDirty(); updateCoverPreview(); });
+        editor.querySelector('[data-ioc-cover-file]').addEventListener('change', async (event) => {
+            const draft = state.draft; const file = event.target.files?.[0]; event.target.value = '';
+            if (!file || !draft) return;
+            try {
+                const cropped = await cropDraftPhoto(file);
+                if (!cropped || state.draft !== draft) return;
+                draft.cover_file = cropped; markDirty(); updateCoverPreview();
+            } catch (error) { toast(error.message || 'Could not prepare this cover photo.', true); }
+        });
         editor.querySelector('[data-ioc-save]').addEventListener('click', save);
         editor.querySelector('[data-ioc-cancel]').addEventListener('click', () => closeEditor());
         editor.querySelector('[data-ioc-close]').addEventListener('click', () => closeEditor());
         editor.querySelector('[data-ioc-archive]').addEventListener('click', archiveListing);
-        editor.querySelector('[data-ioc-reveal]').addEventListener('click', () => setSavebarVisible(true));
+        editor.querySelector('[data-ioc-reveal]').addEventListener('click', () => { setSavebarVisible(true, true); editor.querySelector('[data-ioc-save]')?.focus(); });
+        editor.querySelector('[data-ioc-hide]').addEventListener('click', () => setSavebarVisible(false, true));
         editor.querySelector('[data-ioc-savebar]').addEventListener('focusin', () => setSavebarVisible(true));
         editor.querySelector('.ioc-editor-scroll').addEventListener('scroll', (event) => {
             const top = event.currentTarget.scrollTop; if (top > state.scrollTop + 4) setSavebarVisible(true); else if (top < state.scrollTop - 4) setSavebarVisible(false); state.scrollTop = top;
         }, { passive: true });
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !overlay.hidden) closeEditor();
+            if (event.key === 'Escape' && !overlay.hidden && document.querySelector('.itools-crop-overlay:not([hidden])') === null) closeEditor();
             if (event.key === 'Escape' && !cutoffOverlay.hidden) closeCutoff();
         });
         overlay.addEventListener('mousedown', (event) => { overlay.dataset.downBackdrop = String(event.target === overlay); });

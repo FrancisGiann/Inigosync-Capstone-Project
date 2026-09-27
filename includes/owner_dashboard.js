@@ -533,17 +533,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return { label, value: '—', status: 'neutral', pillText: 'Unavailable', title: reason || 'This check could not run.' };
     }
 
-    // Human-friendly byte size — "12.4 MB", "1 GB" (whole GB reads cleaner
-    // than "1.0 GB" for the common case of a near-empty/near-fresh bucket
-    // limit), "930 KB". Self-contained rather than reusing any customer/
-    // staff-page helper, matching this file's existing convention (see
-    // isSchemaMismatchError's own comment near the top of this file).
+    // Decimal byte units match the 1 GB reference used by the percentage.
     function formatAdminPerfBytes(bytes) {
         const units = ['B', 'KB', 'MB', 'GB', 'TB'];
         let value = Math.max(0, Number(bytes) || 0);
         let unitIndex = 0;
-        while (value >= 1024 && unitIndex < units.length - 1) {
-            value /= 1024;
+        while (value >= 1000 && unitIndex < units.length - 1) {
+            value /= 1000;
             unitIndex += 1;
         }
         const rounded = (unitIndex === 0 || value >= 100) ? Math.round(value) : Math.round(value * 10) / 10;
@@ -609,6 +605,10 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const entry of (data || [])) {
                 if (hardError || bucketMissing) return;
                 if (entry.metadata && typeof entry.metadata.size === 'number') {
+                    if (!Number.isFinite(entry.metadata.size) || entry.metadata.size < 0) {
+                        hardError = new Error('Storage returned an invalid photo size.');
+                        return;
+                    }
                     totalBytes += entry.metadata.size;
                 } else if (!entry.metadata) {
                     await walk(prefix ? `${prefix}/${entry.name}` : entry.name);
@@ -629,11 +629,25 @@ document.addEventListener('DOMContentLoaded', () => {
             return adminPerfUnavailableRow(LABEL, hardError.message || 'Could not read Storage.');
         }
 
+        const referenceBytes = 1_000_000_000;
+        const usagePct = (totalBytes / referenceBytes) * 100;
+        const status = usagePct < 25 ? 'good'
+            : usagePct < 50 ? 'neutral'
+                : usagePct < 70 ? 'warn'
+                    : 'problem';
+        const pillText = usagePct < 25 ? 'Low use'
+            : usagePct < 50 ? 'Moderate'
+                : usagePct < 70 ? 'High use'
+                    : 'Very high';
+
         return {
             label: LABEL,
-            value: formatAdminPerfBytes(totalBytes),
-            status: 'neutral',
-            pillText: 'Measured',
+            value: `${formatAdminPerfBytes(totalBytes)} of 1 GB reference · ${usagePct.toFixed(1)}%`,
+            status,
+            pillText,
+            storageUsage: true,
+            barPct: Math.min(100, Math.max(0, usagePct)),
+            barValueText: `${usagePct.toFixed(1)}% of the 1 GB reference`,
         };
     }
 
@@ -716,10 +730,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // under the label/value/pill row (see .admin-perf-bar's own comment
         // in Style/owner_dashboard.css) rather than squeezed into that row.
         const barHtml = (typeof row.barPct === 'number')
-            ? `<div class="admin-progress-track admin-perf-bar"><div class="admin-progress-fill" style="width: ${row.barPct}%;"></div></div>`
+            ? `<div class="admin-progress-track admin-perf-bar" role="progressbar" aria-label="${window.escapeHtml(row.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.max(0, row.barPct))}" aria-valuetext="${window.escapeHtml(row.barValueText || `${row.barPct}%`)}"><div class="admin-progress-fill admin-perf-bar-fill-${window.escapeHtml(row.status || 'neutral')}" style="width: ${Math.min(100, Math.max(0, row.barPct))}%;"></div></div>`
             : '';
         return `
-            <div class="admin-perf-item">
+            <div class="admin-perf-item"${row.storageUsage ? ' data-admin-perf-storage' : ''}>
                 <div class="admin-perf-item-row">
                     <span class="admin-perf-item-label">${adminPerfDotHtml(row.status)}${window.escapeHtml(row.label)}</span>
                     <span class="admin-perf-item-value">${window.escapeHtml(row.value)}</span>
@@ -1582,14 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td data-admin-staff-status-cell>${staffStatusBadge(profile.status)}</td>
             <td>
                 <div class="admin-table-actions admin-staff-action-wrap">
-                    <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
-                    <div class="admin-staff-action-menu" data-admin-staff-action-menu role="menu" hidden>
-                        <button type="button" role="menuitem" data-admin-staff-command="view">View staff details</button>
-                        <button type="button" role="menuitem" data-admin-staff-command="edit">Edit staff</button>
-                        <button type="button" role="menuitem" data-admin-staff-command="activity">View activity</button>
-                        <button type="button" role="menuitem" data-admin-staff-command="reset">Send password reset</button>
-                        <button type="button" role="menuitem" data-admin-staff-command="toggle">${profile.status === 'disabled' ? 'Activate account' : 'Deactivate account'}</button>
-                    </div>
+                    <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="adminStaffActionCard" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
                     <button type="button" hidden data-admin-view-staff>View</button>
                     <button type="button" hidden data-admin-reset-password>Reset Password</button>
                     <button type="button" hidden data-admin-edit-staff>Edit</button>
@@ -1702,25 +1709,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function wireStaffRowActions(scope) {
         scope.querySelectorAll('[data-admin-staff-actions-trigger]').forEach(trigger => {
-            const menu = trigger.parentElement?.querySelector('[data-admin-staff-action-menu]');
             trigger.addEventListener('click', event => {
                 event.stopPropagation();
-                const opening = menu?.hidden;
-                document.querySelectorAll('[data-admin-staff-action-menu]').forEach(item => { item.hidden = true; item.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.setAttribute('aria-expanded', 'false'); });
-                if (menu && opening) { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); menu.querySelector('[role="menuitem"]')?.focus(); }
-            });
-            menu?.addEventListener('click', event => {
-                const command = event.target.closest('[data-admin-staff-command]')?.dataset.adminStaffCommand;
-                if (!command) return;
-                menu.hidden = true;
-                trigger.setAttribute('aria-expanded', 'false');
-                if (command === 'activity') { openStaffActivity(scope.closest('tr')?.__staffProfile || fallbackProfileFromRow(scope.closest('tr'))); return; }
-                const target = {
-                    view: '[data-admin-view-staff]', edit: '[data-admin-edit-staff]', reset: '[data-admin-reset-password]',
-                    toggle: scope.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
-                }[command];
-                if (target) scope.querySelector(target)?.click();
-                trigger.focus();
+                if (staffActionCardTrigger === trigger) {
+                    closeStaffActionCard();
+                    return;
+                }
+                openStaffActionCard(trigger);
             });
         });
         // Never set a shared default password. The staff member receives a
@@ -1825,26 +1820,117 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.addEventListener('click', event => {
-        if (event.target.closest('.admin-staff-action-wrap')) return;
-        document.querySelectorAll('[data-admin-staff-action-menu]:not([hidden])').forEach(menu => {
-            menu.hidden = true;
-            menu.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.setAttribute('aria-expanded', 'false');
-        });
+    const staffActionCard = document.createElement('div');
+    staffActionCard.id = 'adminStaffActionCard';
+    staffActionCard.className = 'admin-staff-action-card';
+    staffActionCard.dataset.adminStaffActionCard = '';
+    staffActionCard.setAttribute('role', 'dialog');
+    staffActionCard.setAttribute('aria-label', 'Staff account actions');
+    staffActionCard.hidden = true;
+    staffActionCard.innerHTML = `
+        <button type="button" data-admin-staff-command="view">View staff details</button>
+        <button type="button" data-admin-staff-command="edit">Edit staff</button>
+        <button type="button" data-admin-staff-command="activity">View activity</button>
+        <button type="button" data-admin-staff-command="reset">Send password reset</button>
+        <button type="button" data-admin-staff-command="toggle">Deactivate account</button>
+    `;
+    document.body.appendChild(staffActionCard);
+
+    let staffActionCardTrigger = null;
+
+    function positionStaffActionCard() {
+        if (!staffActionCardTrigger || staffActionCard.hidden) return;
+        const anchor = staffActionCardTrigger.getBoundingClientRect();
+        const cardRect = staffActionCard.getBoundingClientRect();
+        const margin = 8;
+        const maxLeft = Math.max(margin, window.innerWidth - cardRect.width - margin);
+        const left = Math.min(maxLeft, Math.max(margin, anchor.right - cardRect.width));
+        const below = anchor.bottom + margin;
+        const above = anchor.top - cardRect.height - margin;
+        const top = below + cardRect.height <= window.innerHeight - margin
+            ? below
+            : Math.max(margin, above);
+        staffActionCard.style.left = `${left}px`;
+        staffActionCard.style.top = `${top}px`;
+    }
+
+    function closeStaffActionCard(restoreFocus = false) {
+        if (!staffActionCard || staffActionCard.hidden) return;
+        const previousTrigger = staffActionCardTrigger;
+        staffActionCard.hidden = true;
+        staffActionCardTrigger = null;
+        previousTrigger?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus && previousTrigger && document.contains(previousTrigger)) previousTrigger.focus();
+    }
+
+    function openStaffActionCard(trigger) {
+        const row = trigger.closest('tr');
+        if (!row) return;
+        closeStaffActionCard();
+        staffActionCardTrigger = trigger;
+        const toggle = staffActionCard.querySelector('[data-admin-staff-command="toggle"]');
+        const isDisabled = row.querySelector('[data-admin-activate-staff]') !== null;
+        if (toggle) {
+            toggle.textContent = isDisabled ? 'Activate account' : 'Deactivate account';
+            toggle.dataset.danger = isDisabled ? 'false' : 'true';
+        }
+        staffActionCard.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        positionStaffActionCard();
+        staffActionCard.querySelector('button')?.focus({ preventScroll: true });
+    }
+
+    staffActionCard.addEventListener('click', event => {
+        const command = event.target.closest('[data-admin-staff-command]')?.dataset.adminStaffCommand;
+        if (!command || !staffActionCardTrigger) return;
+        event.stopPropagation();
+        const trigger = staffActionCardTrigger;
+        const row = trigger.closest('tr');
+        closeStaffActionCard(true);
+        if (!row) return;
+        if (command === 'activity') {
+            openStaffActivity(row.__staffProfile || fallbackProfileFromRow(row));
+            return;
+        }
+        const target = {
+            view: '[data-admin-view-staff]',
+            edit: '[data-admin-edit-staff]',
+            reset: '[data-admin-reset-password]',
+            toggle: row.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
+        }[command];
+        if (target) row.querySelector(target)?.click();
     });
-    document.addEventListener('keydown', event => {
-        const openMenu = document.querySelector('[data-admin-staff-action-menu]:not([hidden])');
-        if (!openMenu) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            openMenu.hidden = true;
-            openMenu.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.focus();
-            openMenu.parentElement?.querySelector('[data-admin-staff-actions-trigger]')?.setAttribute('aria-expanded', 'false');
-        } else if (event.key === 'ArrowDown' && event.target.matches('[data-admin-staff-actions-trigger]')) {
-            event.preventDefault();
-            openMenu.querySelector('[role="menuitem"]')?.focus();
+
+    document.addEventListener('click', event => {
+        if (!staffActionCard.hidden
+            && !event.target.closest('[data-admin-staff-action-card]')
+            && !event.target.closest('[data-admin-staff-actions-trigger]')) {
+            closeStaffActionCard(staffActionCard.contains(document.activeElement));
         }
     });
+    document.addEventListener('keydown', event => {
+        if (staffActionCard.hidden) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeStaffActionCard(true);
+        }
+    });
+    // Keep the floating card beside the row when the viewport changes or
+    // scrolls. Close it only when its anchor has scrolled out of view.
+    window.addEventListener('resize', positionStaffActionCard);
+    window.addEventListener('scroll', event => {
+        if (!staffActionCardTrigger || event.target === staffActionCard) return;
+        const anchor = staffActionCardTrigger.getBoundingClientRect();
+        const tableClip = staffActionCardTrigger.closest('.admin-table-wrap')?.getBoundingClientRect();
+        const anchorVisible = anchor.bottom > 0 && anchor.top < window.innerHeight
+            && anchor.right > 0 && anchor.left < window.innerWidth
+            && (!tableClip || (anchor.bottom > tableClip.top && anchor.top < tableClip.bottom));
+        if (!anchorVisible) {
+            closeStaffActionCard(staffActionCard.contains(document.activeElement));
+            return;
+        }
+        positionStaffActionCard();
+    }, true);
 
     // S6 (Revision A1 fix) — Pages/owner_dashboard.html ships a few static
     // demo <tr> rows in this table as its no-JS/pre-load baseline. Every

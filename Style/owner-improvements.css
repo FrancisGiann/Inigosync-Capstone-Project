@@ -27,11 +27,32 @@
 
 .admin-staff-action-wrap { position: relative; }
 .admin-staff-actions-trigger { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; }
-.admin-staff-action-menu { position: absolute; z-index: 12; top: calc(100% + 6px); right: 0; min-width: 205px; display: grid; gap: 2px; padding: 6px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg-card); box-shadow: 0 12px 28px rgba(0,0,0,.18); }
-.admin-staff-action-menu[hidden] { display: none; }
-.admin-staff-action-menu button { border: 0; border-radius: 7px; padding: 10px 12px; background: transparent; color: var(--color-ink); text-align: left; font: inherit; cursor: pointer; }
-.admin-staff-action-menu button:hover, .admin-staff-action-menu button:focus-visible { background: color-mix(in srgb, var(--color-primary) 12%, transparent); outline: none; }
-.admin-staff-action-menu button:last-child { color: var(--color-alert); }
+.admin-staff-action-card {
+    position: fixed; z-index: 130; width: min(232px, calc(100vw - 16px));
+    max-height: calc(100vh - 16px); overflow: auto; display: grid; gap: 6px;
+    padding: 8px; border: 1px solid var(--color-line); border-radius: 13px;
+    background: var(--color-bg-card); box-shadow: 0 14px 34px rgba(0,0,0,.22);
+}
+.admin-staff-action-card[hidden] { display: none !important; }
+.admin-staff-action-card button {
+    display: flex; align-items: center; width: 100%; min-height: 40px; padding: 9px 12px;
+    border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-bg-elevated);
+    color: var(--color-ink); text-align: left; font: inherit; cursor: pointer;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+.admin-staff-action-card button:hover,
+.admin-staff-action-card button:focus-visible {
+    border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));
+    outline: 2px solid color-mix(in srgb, var(--color-primary) 50%, transparent); outline-offset: 1px;
+}
+.admin-staff-action-card button[data-danger="true"] { color: var(--color-alert); }
+.admin-staff-action-card button[data-danger="true"]:hover,
+.admin-staff-action-card button[data-danger="true"]:focus-visible {
+    border-color: var(--color-alert); background: color-mix(in srgb, var(--color-alert) 10%, var(--color-bg-elevated));
+}
+@media (prefers-reduced-motion: reduce) {
+    .admin-staff-action-card button { transition: none; }
+}
 
 .owner-staff-activity-modal { max-width: 760px; }
 .owner-staff-activity-search { margin: 14px 0 18px; }
