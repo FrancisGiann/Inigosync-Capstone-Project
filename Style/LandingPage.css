@@ -510,7 +510,7 @@ nav ul li a.active {
 }
 
 /* ==========================================================================
-   Hero — full-bleed rotating photo carousel with the floating pill navbar
+   Hero — rotating featured-event photos with the floating pill navbar
    and bottom-left caption overlaid on top
    ========================================================================== */
 .hero {
@@ -537,7 +537,6 @@ nav ul li a.active {
 }
 
 .hero-media-slide { overflow: hidden; }
-.hero-media-backdrop { position: absolute; inset: -8%; width: 116%; height: 116%; object-fit: cover; filter: blur(24px) brightness(.55); }
 .hero-media-img { position: absolute; left: 50%; top: 110px; transform: translateX(-50%); width: calc(100% - 48px); height: calc(100% - 390px); object-fit: contain; }
 
 @media (min-width: 1200px) {

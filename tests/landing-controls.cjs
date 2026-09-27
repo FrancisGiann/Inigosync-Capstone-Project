@@ -21,6 +21,7 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             return page;
         }
         const page = await setup();
+        assert.equal(await page.locator('.hero-media-backdrop').count(),0,'Event photos do not double as a blurred background');
         const active = () => page.locator('.hero-copy.is-active .hero-title').innerText();
         await page.getByRole('button',{name:'Previous featured event'}).click();
         assert.equal(await active(),'Feature 4');
@@ -48,6 +49,9 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             await page.setViewportSize({width,height:900});
             for (const theme of ['dark','light']) {
                 await page.evaluate(theme=>window.ThemeController.set(theme),theme);
+                const format=width<=768?'portrait':'landscape';
+                const background=await page.locator('.hero').evaluate(el=>getComputedStyle(el).backgroundImage);
+                assert(background.includes(`featured-bg-${theme}-${format}.jpg`),`Featured background must use the ${theme} ${format} image at ${width}px`);
                 if(width<=768) {
                     const firstScreen=await page.evaluate(()=>{
                         const hero=document.querySelector('.hero').getBoundingClientRect();

@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function render() {
         media.innerHTML = rows.map((row, i) => {
             const src = window.InigoVisuals.venuePhoto(row.imageUrl);
-            return src ? '<div class="hero-media-slide" data-home-slide="' + i + '"><img class="hero-media-backdrop" src="' + escapeHtml(src) + '" alt="" aria-hidden="true" loading="' + (i ? 'lazy' : 'eager') + '"><img class="hero-media-img" src="' + escapeHtml(src) + '" alt="' + escapeHtml(row.title) + '" loading="' + (i ? 'lazy' : 'eager') + '"></div>' : placeholder(i);
+            return src ? '<div class="hero-media-slide" data-home-slide="' + i + '"><img class="hero-media-img" src="' + escapeHtml(src) + '" alt="' + escapeHtml(row.title) + '" loading="' + (i ? 'lazy' : 'eager') + '"></div>' : placeholder(i);
         }).join('');
         media.querySelectorAll('.hero-media-img').forEach(img => img.addEventListener('error', () => {
             const slide = img.closest('[data-home-slide]');
