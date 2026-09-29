@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /database/
+Disallow: /supabase/
+Disallow: /scripts/
+
+Sitemap: https://iñigos.com/sitemap.xml
