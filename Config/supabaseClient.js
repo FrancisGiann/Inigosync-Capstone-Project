@@ -7,7 +7,7 @@
 // only grants what the database's row level security policies allow. Never
 // put the service_role key here or anywhere in frontend code.
 (function () {
-    const SUPABASE_URL = 'https://iñigos.com';
+    const SUPABASE_URL = 'https://xrlwtnwamboucihsamrr.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'xrlwtnwamboucihsamrr';
 
     if (!window.supabase || typeof window.supabase.createClient !== 'function') {
