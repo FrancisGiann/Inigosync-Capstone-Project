@@ -111,7 +111,7 @@
 .ioc-resource-option small { color:var(--color-ink-faint); font-size:10px; font-weight:400; }
 .ioc-load-resources { justify-self:start; border:0; padding:7px 3px; color:var(--color-primary); background:none; font:700 var(--fs-xs) var(--font-body); cursor:pointer; }
 .ioc-load-resources:focus-visible,.ioc-resource-details summary:focus-visible { outline:3px solid color-mix(in srgb,var(--color-primary) 55%,transparent); outline-offset:2px; }
-.ioc-maintenance-row { display:grid; grid-template-columns:1fr 1fr minmax(120px,.8fr) auto; align-items:end; gap:9px; padding:10px 0; border-top:1px dashed var(--color-line); }
+.ioc-maintenance-row { display:grid; grid-template-columns:1fr 1fr minmax(210px,1.2fr) minmax(120px,.8fr) auto; align-items:end; gap:9px; padding:10px 0; border-top:1px dashed var(--color-line); }
 .ioc-action-dock { flex:0 0 auto; align-self:stretch; width:100%; max-height:120px; overflow:hidden; border-top:1px solid var(--color-line); background:var(--color-bg-card); box-shadow:0 -9px 26px rgba(0,0,0,.1); transition:max-height .22s ease; }
 .ioc-action-dock.is-collapsed { max-height:37px; }
 .ioc-savebar { display:flex; align-items:center; justify-content:space-between; gap:12px; box-sizing:border-box; max-height:120px; overflow:hidden; padding:12px 30px; opacity:1; transition:max-height .22s ease,padding .22s ease,opacity .18s ease; }

@@ -149,19 +149,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------
-    // Footer (D9, implementation_plan.md "Revision 5") — the "Operating
-    // hours" line is filled here from window.InigoBusinessHours (the exact
-    // same source Step 2's From/To pickers and the Overview peek strip
-    // read), so it can never quietly drift from the real bookable window if
-    // OPEN_HOUR/CLOSE_HOUR ever change again — see includes/businessHours.js.
-    // Visibility itself (D8) is handled inside setActivePanel() above, not
-    // here — this only ever needs to run once, at setup.
+    // Footer: opening hours vary by date and come from the same server rules
+    // used by booking availability. Avoid presenting the fallback defaults
+    // as a daily schedule here.
     // ------------------------------------------------------------------
     const dashFooterHoursEl = document.querySelector('[data-dash-footer-hours]');
-    if (dashFooterHoursEl && window.InigoBusinessHours) {
-        const { OPEN_HOUR, CLOSE_HOUR, formatHourLabel } = window.InigoBusinessHours;
-        dashFooterHoursEl.textContent = `${formatHourLabel(OPEN_HOUR)} – ${formatHourLabel(CLOSE_HOUR)} daily`;
-    }
+    if (dashFooterHoursEl) dashFooterHoursEl.textContent = 'Hours vary by day. Check the selected date before booking.';
 
     // ------------------------------------------------------------------
     // Overview — featured hero banner (auto-rotating, same interval /
@@ -373,23 +366,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Logout is wired in includes/authGuard.js (real Supabase sign-out).
 
     // ------------------------------------------------------------------
-    // Notifications dropdown (§3, D6 — implementation_plan.md). Same
-    // toggle/outside-click/Escape idiom as the profile dropdown above, but
-    // this one never navigates: clicking the bell just opens a popup
-    // listing the signed-in customer's own real `booking` rows — upcoming
-    // reservations plus cancelled/completed status alerts — newest first,
-    // capped at 10 (§3's limit). Populated by renderNotifications() below,
-    // called from refreshMyBookings() once that fetch resolves (reusing its
-    // data — no second query against `booking`). No `notification` table
-    // exists on purpose: nothing in this project would ever write to one,
-    // so it would ship guaranteed-empty (D6) — this is derived data
-    // instead, same "no fabricated data" rule as the rest of this file.
+    // Notifications come from the account-scoped server feed so every item
+    // has durable read state. Booking refreshes also refresh this feed.
     // ------------------------------------------------------------------
     const notif = document.querySelector('[data-dash-notif]');
     const notifTrigger = document.querySelector('[data-dash-notif-trigger]');
     const notifList = document.querySelector('[data-dash-notif-list]');
     const notifDot = document.querySelector('[data-dash-notif-dot]');
+    const notifSearch = document.querySelector('[data-dash-notif-search]');
+    const notifUnread = document.querySelector('[data-dash-notif-unread]');
+    const notifPagination = document.querySelector('[data-dash-notif-pagination]');
+    const notifPageLabel = document.querySelector('[data-dash-notif-page]');
     const NOTIF_LIMIT = 10;
+    let notifPage = 0;
+    let notifTotalCount = 0;
+    let notifSearchTimer = null;
+    let notifGeneration = 0;
 
     function closeNotifMenu() {
         if (notif) notif.removeAttribute('data-open');
@@ -408,6 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 notif.setAttribute('data-open', '');
                 notifTrigger.setAttribute('aria-expanded', 'true');
+                loadCustomerNotifications();
             }
         });
 
@@ -420,118 +413,95 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Bounded to NOTIF_LIMIT (§3's "maximum of 10") and rendered in
-    // whatever order `bookings` already arrives in — refreshMyBookings()
-    // below fetches with `.order('time_date', { ascending: false })`, so
-    // this is already "newest first" without a second sort here. Every
-    // booking row becomes exactly one notification describing its CURRENT
-    // status; there's no change-log to read from (booking has no
-    // updated_at this repo can see), so "cancelled/completed status
-    // alerts" means "a booking that IS cancelled/completed", not "just
-    // changed to" — an honest, available-today interpretation rather than
-    // an invented one.
-    const NOTIF_STATUS_TITLES = {
-        pending: 'Booking requested',
-        confirmed: 'Booking confirmed',
-        completed: 'Booking completed',
-        cancelled: 'Booking cancelled',
-    };
-
-    // R4-3 (implementation_plan.md, "Revision 4") — each item is a real
-    // <button>, not the inert <div> it used to be, carrying the booking's
-    // own booking_id in data-dash-notif-booking so a click can find and jump
-    // to that exact booking's receipt card (data-dash-receipt-card, keyed by
-    // the SAME id — see renderReceiptCard() further below). The inner
-    // .dash-notif-item-body wrapper is a <span>, not a <div>, so this stays
-    // valid phrasing content inside a <button> — display:flex below (see
-    // Style/Dashboard.css) lays it out identically to the old <div> either
-    // way, so nothing about how this actually looks changes.
-    function renderNotificationItem(item) {
-        const bookingIdAttr = window.escapeHtml(String(item.bookingId));
-        return `
-            <button type="button" class="dash-notif-item" data-dash-notif-booking="${bookingIdAttr}">
-                <span class="dash-notif-dot ${window.escapeHtml(item.statusClass)}"></span>
-                <span class="dash-notif-item-body">
-                    <strong>${window.escapeHtml(item.title)}</strong>
-                    <span>${window.escapeHtml(item.body)}</span>
-                </span>
-            </button>
-        `;
+    function renderNotifications() {
+        loadCustomerNotifications();
     }
 
-    function renderNotifications(bookings) {
-        if (!notifList) return;
-
-        const items = (bookings || []).slice(0, NOTIF_LIMIT).map((booking) => {
-            const status = String(booking.status || 'pending');
-            const court = booking.courts || 'Court';
-            const when = `${formatBookingDate(booking.time_date)} · ${formatBookingTime(booking.time_date, booking.end_at)}`;
-            return {
-                bookingId: booking.booking_id,
-                title: NOTIF_STATUS_TITLES[status] || 'Booking update',
-                body: `${court} — ${when}`,
-                statusClass: status,
-            };
-        });
-
-        notifList.innerHTML = items.length
-            ? items.map(renderNotificationItem).join('')
-            : '<p class="dash-notif-empty">No notifications yet.</p>';
-
-        // "The existing static red .dash-badge-dot should only show when
-        // there's ≥1 notification" (§3) — starts `hidden` in the markup, so
-        // it never flashes on before we actually know the count.
-        if (notifDot) notifDot.hidden = items.length === 0;
+    function notificationTime(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.valueOf()) ? 'Date unavailable' : date.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
     }
 
-    // R4-3 (implementation_plan.md, "Revision 4") — clicking a notification
-    // closes the dropdown, opens Receipts, and scrolls to/briefly highlights
-    // the matching receipt card. Delegated on notifList itself rather than
-    // wired per-item: renderNotifications() above replaces notifList's whole
-    // innerHTML on every refresh (a new booking, a status change, etc.), so a
-    // per-button listener would need re-wiring after every render — the same
-    // pattern wireReceiptDownloads()/wireOverviewCourtList() use further
-    // below for their own dynamically rendered scopes. Listening on the one
-    // container that is never itself replaced avoids that entirely, and only
-    // needs to be attached once, here, at setup time.
-    const NOTIF_RECEIPT_SCROLL_DELAY_MS = 60;
-    const NOTIF_RECEIPT_HIGHLIGHT_MS = 2000;
+    async function loadCustomerNotifications() {
+        if (!notifList || !window.sb || !window.inigosyncProfile) return;
+        const generation = ++notifGeneration;
+        notifList.innerHTML = '<p class="dash-notif-empty">Loading notifications…</p>';
+        try {
+            const { data, error } = await window.sb.rpc('customer_list_notifications', {
+                p_search: notifSearch?.value.trim() || '',
+                p_offset: notifPage * NOTIF_LIMIT,
+                p_limit: NOTIF_LIMIT,
+            });
+            if (generation !== notifGeneration) return;
+            if (error) throw error;
+            const result = Array.isArray(data) ? data[0] : data;
+            if (!result || !Array.isArray(result.rows)) throw new Error('The notifications response is incomplete.');
+            notifTotalCount = Number(result.total_count) || 0;
+            const persistentItems = result.rows.map(item => ({
+                key: String(item.key || ''), title: String(item.title || 'Notification'), body: String(item.body || ''),
+                category: String(item.category || 'Update'), created_at: item.created_at || null,
+                read_at: item.read_at || null, href: item.href || '',
+            }));
+            const persistentHtml = persistentItems.map(item => `<button type="button" class="dash-notif-item dash-notif-persistent${item.read_at ? ' is-read' : ' is-unread'}" data-dash-notif-key="${window.escapeHtml(item.key)}" data-dash-notif-href="${window.escapeHtml(item.href)}"><span class="dash-notif-dot ${window.escapeHtml(item.category.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}" aria-hidden="true"></span><span class="dash-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(item.body)}</span><small>${window.escapeHtml(item.category)} · ${window.escapeHtml(notificationTime(item.created_at))} · ${item.read_at ? 'Read' : 'Unread'}</small></span></button>`).join('');
+            notifList.innerHTML = persistentHtml || '<p class="dash-notif-empty">No notifications match your search.</p>';
+            const unreadCount = Number(result.unread_count) || 0;
+            if (notifUnread) notifUnread.textContent = unreadCount ? `${unreadCount} unread` : '';
+            if (notifDot) notifDot.hidden = unreadCount === 0;
+            if (notifPagination) notifPagination.hidden = notifTotalCount <= NOTIF_LIMIT;
+            if (notifPageLabel) notifPageLabel.textContent = `Page ${notifPage + 1} of ${Math.max(1, Math.ceil(notifTotalCount / NOTIF_LIMIT))}`;
+            const prev = document.querySelector('[data-dash-notif-prev]');
+            const next = document.querySelector('[data-dash-notif-next]');
+            if (prev) prev.disabled = notifPage === 0;
+            if (next) next.disabled = (notifPage + 1) * NOTIF_LIMIT >= notifTotalCount;
+        } catch (error) {
+            if (generation !== notifGeneration) return;
+            console.error('[dashboard] notifications could not be loaded', error);
+            notifList.innerHTML = '<p class="dash-notif-empty">Notifications could not be loaded. Try again.</p>';
+            if (notifDot) notifDot.hidden = true;
+        }
+    }
+
+    notifSearch?.addEventListener('input', () => {
+        if (notifSearchTimer) window.clearTimeout(notifSearchTimer);
+        notifPage = 0;
+        notifSearchTimer = window.setTimeout(loadCustomerNotifications, 250);
+    });
+    document.querySelector('[data-dash-notif-prev]')?.addEventListener('click', () => { if (notifPage > 0) { notifPage -= 1; loadCustomerNotifications(); } });
+    document.querySelector('[data-dash-notif-next]')?.addEventListener('click', () => { if ((notifPage + 1) * NOTIF_LIMIT < notifTotalCount) { notifPage += 1; loadCustomerNotifications(); } });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCustomerNotifications(); });
+    document.addEventListener('inigosync:profile-ready', loadCustomerNotifications);
+    window.setInterval(() => { if (!document.hidden) loadCustomerNotifications(); }, 60000);
 
     if (notifList) {
         notifList.addEventListener('click', (e) => {
-            const item = e.target.closest('[data-dash-notif-booking]');
-            if (!item) return;
-
-            const bookingId = item.dataset.dashNotifBooking;
-            closeNotifMenu();
-            // setActivePanel() (declared at the very top of this file) is a
-            // hoisted function declaration — safe to call from here
-            // regardless of source order, same reasoning this file already
-            // documents for closeNotifMenu's own forward reference above.
-            setActivePanel('receipts');
-
-            // setActivePanel() itself just ran window.scrollTo({top:0, ...})
-            // as part of every panel switch — deferred by a beat so THIS
-            // scroll (to the actual receipt) is the one the page settles on,
-            // instead of racing it back to the top of the page.
-            window.setTimeout(() => {
-                // Matched by reading each card's dataset directly (not by
-                // interpolating bookingId into a CSS attribute-selector
-                // string) — same reasoning wireReceiptDownloads() already
-                // reads btn.dataset.dashReceiptDownload directly rather than
-                // building a selector out of it.
-                const card = Array.from(document.querySelectorAll('[data-dash-receipt-card]'))
-                    .find((el) => el.dataset.dashReceiptCard === bookingId);
-                // Receipts hasn't rendered this card yet (e.g. still
-                // loading) — the panel is already open regardless, so this
-                // is never a dead click; there's just nothing to scroll to
-                // or highlight on top of it.
-                if (!card) return;
-
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                card.classList.add('is-highlighted');
-                window.setTimeout(() => card.classList.remove('is-highlighted'), NOTIF_RECEIPT_HIGHLIGHT_MS);
-            }, NOTIF_RECEIPT_SCROLL_DELAY_MS);
+            const persistent = e.target.closest('[data-dash-notif-key]');
+            if (persistent) {
+                const key = persistent.dataset.dashNotifKey;
+                persistent.disabled = true;
+                window.sb.rpc('mark_notification_read', { p_key: key }).then(({ data, error }) => {
+                    if (error || data === false) throw error || new Error('Notification could not be marked read.');
+                    const href = persistent.dataset.dashNotifHref || '';
+                    void loadCustomerNotifications();
+                    if (href) {
+                        try {
+                            const target = new URL(href, window.location.href);
+                            if (target.origin === window.location.origin) {
+                                const panelName = target.searchParams.get('panel') || target.hash.replace(/^#/, '');
+                                const hasPanel = Array.from(document.querySelectorAll('[data-dash-panel]')).some(panel => panel.dataset.dashPanel === panelName);
+                                if (panelName && hasPanel) setActivePanel(panelName);
+                                else if (target.href !== window.location.href) window.location.assign(target.href);
+                            }
+                        } catch (navigationError) {
+                            console.warn('[dashboard] notification link could not be opened', navigationError);
+                        }
+                    }
+                }).catch(error => {
+                    persistent.disabled = false;
+                    console.error('[dashboard] notification read state could not be saved', error);
+                    window.InigoToast?.show('Could not mark notification as read.', true);
+                });
+                return;
+            }
         });
     }
 
@@ -843,7 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bookingState.rateUnit === '/set' && bookingState.startHour !== null) {
             bookingState.endHour = bookingState.startHour + n - 1;
             if (Array.from({ length: n }, (_, i) => bookingState.startHour + i).some((hour) =>
-                hour >= window.InigoBusinessHours.CLOSE_HOUR || slotHourStatus(hour) !== 'available')) {
+                slotHourStatus(hour) !== 'available')) {
                 bookingState.endHour = null;
             }
             renderTimePickers();
@@ -1112,10 +1082,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // bookingTimeRangeLabel(), updateSummary(), and the insert payload
     // further below all keep working exactly as before.
     //
-    // Bookable hours: window.InigoBusinessHours.hoursRange() —
-    // [OPEN_HOUR, CLOSE_HOUR) from includes/businessHours.js, the same
-    // source OVERVIEW_SLOT_HOURS further below and includes/
-    // staff_dashboard.js's SCHEDULE_SLOTS now read.
+    // Bookable hours come from booking_rules_for_date() through
+    // window.InigoBusinessHours.getForDate(); the selected day's exact
+    // opening window drives both this picker and the Overview peek below.
     //
     // Availability comes from court_occupancy(), the database's
     // privacy-limited view over the shared reservation ledger. It includes
@@ -1150,6 +1119,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // reader that already checks slotGridBookings.ok can check this one the
     // same way.
     let slotGridWalkins = { ok: true, rows: [] };
+    // The selected date's owner-managed hours, shared by the booking
+    // pickers and their checkout preflight. The server revalidates every
+    // checkout, but the customer should see the same daily window first.
+    let bookingRules = null;
     // Bumped on every refreshTimePickers() call so a slow, now-superseded
     // fetch (rapid court/date/unit changes) can detect it's stale and drop
     // its own result instead of overwriting a newer render. Both this and
@@ -1203,6 +1176,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return start.getTime() < Date.now();
     }
 
+    function hoursRangeForRules(rules) {
+        if (!rules || !rules.authoritative || rules.isClosed) return [];
+        const open = Number(rules.openHour);
+        const close = Number(rules.closeHour);
+        if (!Number.isInteger(open) || !Number.isInteger(close) || open < 0 || close > 24 || close <= open) return [];
+        return Array.from({ length: close - open }, (_, index) => open + index);
+    }
+
+    function bookingHoursRange() {
+        return hoursRangeForRules(bookingRules);
+    }
+
+    function bookingRangeFitsRules(item, rules) {
+        const open = Number(rules?.openHour);
+        const close = Number(rules?.closeHour);
+        return Boolean(rules?.authoritative) && rules.isClosed !== true
+            && Number.isInteger(open) && Number.isInteger(close)
+            && item.startHour >= open && item.endHour + 1 <= close;
+    }
+
     // True when an active reservation overlaps this court and selected
     // unit. A missing/blank unit is a wildcard for either source, matching
     // the shared database constraint.
@@ -1225,6 +1218,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function slotHourStatus(hour) {
+        if (!bookingHoursRange().includes(hour)) return 'closed';
         if (isSlotHourPast(hour)) return 'past';
         if (isSlotHourBooked(hour)) return 'booked';
         return 'available';
@@ -1244,8 +1238,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // started; it closes the moment a non-free hour interrupts it, or at
     // CLOSE_HOUR if it reaches the end of the day still open.
     function computeFreeWindows() {
-        if (!window.InigoBusinessHours) return [];
-        const hours = window.InigoBusinessHours.hoursRange();
+        const hours = bookingHoursRange();
+        if (!hours.length) return [];
         const windows = [];
         let runStart = null;
 
@@ -1258,7 +1252,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         if (runStart !== null) {
-            windows.push({ startHour: runStart, endHourExclusive: window.InigoBusinessHours.CLOSE_HOUR });
+            windows.push({ startHour: runStart, endHourExclusive: hours[hours.length - 1] + 1 });
         }
         return windows;
     }
@@ -1291,6 +1285,37 @@ document.addEventListener('DOMContentLoaded', () => {
             bookFromSelect.disabled = true;
             bookToSelect.disabled = true;
             if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Select a court first.';
+            return;
+        }
+
+        if (!bookingRules) {
+            bookFromSelect.innerHTML = '<option value="">Checking opening hours…</option>';
+            bookToSelect.innerHTML = '<option value="">Checking opening hours…</option>';
+            bookFromSelect.disabled = true;
+            bookToSelect.disabled = true;
+            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Checking opening hours…';
+            return;
+        }
+
+        if (!bookingRules.authoritative) {
+            bookFromSelect.innerHTML = '<option value="">Opening hours unavailable</option>';
+            bookToSelect.innerHTML = '<option value="">Opening hours unavailable</option>';
+            bookFromSelect.disabled = true;
+            bookToSelect.disabled = true;
+            bookingState.startHour = null;
+            bookingState.endHour = null;
+            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Could not check opening hours. Refresh the page and try again.';
+            return;
+        }
+
+        if (bookingRules.isClosed) {
+            bookFromSelect.innerHTML = '<option value="">Closed</option>';
+            bookToSelect.innerHTML = '<option value="">Closed</option>';
+            bookFromSelect.disabled = true;
+            bookToSelect.disabled = true;
+            bookingState.startHour = null;
+            bookingState.endHour = null;
+            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'This facility is closed on the selected date.';
             return;
         }
 
@@ -1329,7 +1354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // least one hour is genuinely 'booked'; otherwise the day
                 // just ran out.
                 const isToday = bookingState.date === todayDateInputValue();
-                const noneBooked = window.InigoBusinessHours.hoursRange().every((h) => slotHourStatus(h) !== 'booked');
+                const noneBooked = bookingHoursRange().every((h) => slotHourStatus(h) !== 'booked');
                 bookOpenWindowsEl.textContent = (isToday && noneBooked)
                     ? 'No more times available today.'
                     : 'Fully booked on this date.';
@@ -1402,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bookingState.rateUnit === '/set' && bookingState.startHour !== null) {
                 const end = bookingState.startHour + bookingState.rateQuantity - 1;
                 if (Array.from({ length: bookingState.rateQuantity }, (_, i) => bookingState.startHour + i)
-                    .every((hour) => hour < window.InigoBusinessHours.CLOSE_HOUR && slotHourStatus(hour) === 'available')) {
+                    .every((hour) => slotHourStatus(hour) === 'available')) {
                     bookingState.endHour = end;
                 }
             }
@@ -1429,7 +1454,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Part 3's renderSlotGrid() (Revision 5, D3) now that there's no grid
     // left to paint — repaints via renderTimePickers() above instead of the
     // deleted paintSlotGrid().
-    async function refreshTimePickers() {
+    async function refreshTimePickers(forceRules = false) {
         if (!bookFromSelect || !bookToSelect) return;
         const mySeq = ++slotGridRequestSeq;
 
@@ -1444,14 +1469,26 @@ document.addEventListener('DOMContentLoaded', () => {
         bookToSelect.disabled = true;
         if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Checking availability…';
 
+        if (!window.InigoBusinessHours?.getForDate) {
+            slotGridBookings = { ok: false, rows: [] };
+            slotGridWalkins = { ok: false, rows: [] };
+            bookingRules = null;
+            renderTimePickers();
+            return;
+        }
+
         // M2 fix — fetched together (Promise.all) so a walk-in fetched a
         // request apart from its booking counterpart can't itself become a
         // second, separately-racing source of staleness.
-        const result = await fetchDayOccupancy(bookingState.court, bookingState.date);
+        const [result, rules] = await Promise.all([
+            fetchDayOccupancy(bookingState.court, bookingState.date),
+            window.InigoBusinessHours.getForDate(bookingState.date, { force: forceRules }),
+        ]);
         // A newer refresh started while this one was in flight — that newer
         // call already owns the pickers, so this stale response is dropped
         // instead of flashing outdated availability.
         if (mySeq !== slotGridRequestSeq) return;
+        bookingRules = rules;
         slotGridBookings = { ok: result.ok, rows: result.rows.filter((row) => row.source === 'online') };
         // Maintenance shares the same occupancy snapshot and blocks selection
         // exactly like either reservation channel.
@@ -1566,6 +1603,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.InigoToast?.show('Two items use the same physical court at overlapping times.', true);
                 return;
             }
+        }
+        if (!window.InigoBusinessHours?.getForDate) {
+            window.InigoToast?.show('Opening hours could not be checked. Refresh the page and try again.', true);
+            return;
+        }
+        const rulesByDate = new Map();
+        await Promise.all([...new Set(items.map((item) => item.date))].map(async (date) => {
+            rulesByDate.set(date, await window.InigoBusinessHours.getForDate(date, { force: true }));
+        }));
+        const outsideRules = items.find((item) => !bookingRangeFitsRules(item, rulesByDate.get(item.date)));
+        if (outsideRules) {
+            window.InigoToast?.show(`Opening hours for ${formatDate(outsideRules.date)} have changed or the facility is closed. Review available times and try again.`, true);
+            if (outsideRules.date === bookingState.date) {
+                bookingRules = rulesByDate.get(outsideRules.date);
+                resetTimeSelectionAndRender();
+                updateSummary();
+            }
+            return;
         }
         bookingCartSaving = true;
         if (bookSubmit) { bookSubmit.disabled = true; bookSubmit.textContent = 'Opening secure checkout…'; }
@@ -1801,15 +1856,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const overviewCourtList = document.querySelector('[data-dash-overview-court-list]');
     const overviewSortSelect = document.querySelector('[data-dash-overview-sort]');
 
-    // Hourly, [OPEN_HOUR, CLOSE_HOUR) — includes/businessHours.js (Part 3,
-    // implementation_plan.md). Used to be its own hardcoded [8..20] literal
-    // that happened to match today's operating hours by coincidence, not by
-    // reference — Step 2's From/To pickers (refreshTimePickers() above) and
-    // includes/staff_dashboard.js's SCHEDULE_SLOTS now read the exact same
-    // source. Literal fallback here only for the "should never happen"
-    // case the guard above already logs — keeps this widget rendering
-    // SOMETHING sensible instead of an empty peek strip.
-    const OVERVIEW_SLOT_HOURS = window.InigoBusinessHours ? window.InigoBusinessHours.hoursRange() : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    // Overview slot pills use the same server-returned date rules as the
+    // Booking pickers, so closed days and shorter/longer opening windows
+    // stay aligned across both customer views.
+    function overviewSlotHours() {
+        return hoursRangeForRules(overviewRules);
+    }
     // Kept equal to database/schema/004_staff_module.sql's
     // booking.duration_minutes DEFAULT, same reasoning as
     // includes/staff_dashboard.js's own DEFAULT_DURATION_MINUTES.
@@ -1849,6 +1901,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let overviewWalkins = [];
     let overviewDataOk = true;
     let overviewDateBase = null;
+    let overviewRules = null;
     // M3 fix (post-Revision-5 review) — same stale-response race guard as
     // Step 2's slotGridRequestSeq above: refreshOverviewCourtWidget() is
     // re-entrant (date change, unit change, the profile-ready event, and
@@ -2110,11 +2163,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderOverviewPeekContent(court, unitLabel) {
+        if (!overviewRules) {
+            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">Opening hours are unavailable right now.</p>';
+        }
+        if (overviewRules.isClosed) {
+            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">Closed on this date.</p>';
+        }
+        const hours = overviewSlotHours();
+        if (!hours.length) {
+            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">No bookable hours are configured for this date.</p>';
+        }
         if (!overviewDataOk) {
             return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">Live slot status unavailable right now.</p>';
         }
         const isToday = overviewDateIsToday();
-        return OVERVIEW_SLOT_HOURS.map((hour) => {
+        return hours.map((hour) => {
             const isPast = isToday && isOverviewHourPast(hour);
             return renderOverviewSlotPill(court, hour, unitLabel, isPast);
         }).join('');
@@ -2369,7 +2432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function refreshOverviewCourtWidget() {
+    async function refreshOverviewCourtWidget(forceRules = false) {
         if (!overviewCourtList || !window.InigoCourtsData) return;
 
         // M3 fix (post-Revision-5 review) — see overviewRequestSeq's own
@@ -2385,8 +2448,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const occupancyPromise = window.sb
             ? fetchOverviewOccupancy(start, end)
             : Promise.resolve({ data: null, error: new Error('Supabase client unavailable') });
+        const rulesPromise = window.InigoBusinessHours?.getForDate
+            ? window.InigoBusinessHours.getForDate(overviewDate, { force: forceRules })
+            : Promise.resolve(null);
 
-        const [courts, occupancyRes] = await Promise.all([courtsPromise, occupancyPromise]);
+        const [courts, occupancyRes, rules] = await Promise.all([courtsPromise, occupancyPromise, rulesPromise]);
 
         // M3 fix — a slower, now-superseded call (e.g. the date was changed
         // again before this one resolved) must not overwrite state a newer,
@@ -2397,6 +2463,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         overviewDateBase = start;
         overviewCourts = courts || [];
+        overviewRules = rules;
 
         if (occupancyRes.error) console.error('[dashboard] failed to load court occupancy for the court peek', occupancyRes.error);
 
@@ -2405,7 +2472,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // honest "unavailable" note instead of pills. Court rows themselves
         // still render regardless, since overviewCourts came from
         // window.InigoCourtsData independently of these two queries.
-        overviewDataOk = !occupancyRes.error;
+        overviewDataOk = !occupancyRes.error && rules?.authoritative === true;
         const occupancyRows = overviewDataOk ? (occupancyRes.data || []) : [];
         overviewBookings = occupancyRows.filter((row) => row.source === 'online');
         overviewWalkins = occupancyRows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source));
@@ -2414,7 +2481,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshOverviewCourtWidget();
-    document.addEventListener('inigosync:profile-ready', refreshOverviewCourtWidget);
+    document.addEventListener('inigosync:profile-ready', () => {
+        refreshOverviewCourtWidget(true);
+        refreshTimePickers(true);
+    });
 
     // ------------------------------------------------------------------
     // My Bookings — real data, fetched once the signed-in profile is ready
@@ -2596,6 +2666,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // uses elsewhere (e.g. the Overview peek widget): show the
             // honest empty state, never a stale or fabricated list.
             if (receiptsGrid) receiptsGrid.innerHTML = RECEIPT_EMPTY_HTML;
+            loadWalkinAcknowledgments();
             return;
         }
 
@@ -2767,12 +2838,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // pointed at a data: URL for a large image. This mechanism is unchanged
     // from Phase 2 — only the empty-forever data source above it changed.
     // ------------------------------------------------------------------
-    const receiptsGrid = document.querySelector('.dash-receipt-grid');
-    const RECEIPT_EMPTY_HTML = '<p style="color: var(--color-ink-faint); padding: 24px 4px;">No booking summaries yet.</p>';
+    const receiptsGrid = document.querySelector('[data-dash-booking-receipts]');
+    const walkinReceiptsGrid = document.querySelector('[data-dash-walkin-receipts]');
+    const walkinReceiptPages = document.querySelector('[data-dash-walkin-receipt-pages]');
+    const walkinReceiptPageLabel = document.querySelector('[data-dash-walkin-receipts-page]');
+    const RECEIPT_EMPTY_HTML = '<p class="dash-notif-empty">No booking payment acknowledgments yet.</p>';
+    let receiptRenderGeneration = 0;
+    let walkinReceiptPage = 0;
+    let walkinReceiptCount = 0;
+    const WALKIN_RECEIPT_PAGE_SIZE = 8;
 
-    if (receiptsGrid) {
-        receiptsGrid.innerHTML = '<p style="color: var(--color-ink-faint); padding: 24px 4px;">Loading your booking summaries…</p>';
-    }
+    if (receiptsGrid) receiptsGrid.innerHTML = '<p class="dash-notif-empty">Loading confirmed booking payments…</p>';
 
     // booking row -> the small, honest subset of fields a receipt card can
     // actually show today: nothing here is invented. `sport` is
@@ -2836,6 +2912,54 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         return Math.max(1, Math.round((Number(booking.duration_minutes) || 60) / 60));
+    }
+
+    function acknowledgmentAmount(value) {
+        if (value === null || value === undefined || value === '') return '—';
+        const amount = Number(value);
+        return Number.isFinite(amount) ? `₱${amount.toFixed(2)}` : '—';
+    }
+
+    function acknowledgmentMoney(major, minor) {
+        if (major !== null && major !== undefined && major !== '') return acknowledgmentAmount(major);
+        if (minor !== null && minor !== undefined && minor !== '') return acknowledgmentAmount(Number(minor) / 100);
+        return '—';
+    }
+
+    function renderPaymentAcknowledgment(acknowledgment, cardKey) {
+        const items = Array.isArray(acknowledgment.items) ? acknowledgment.items : [];
+        const safeKey = window.escapeHtml(String(cardKey || acknowledgment.receipt_id || acknowledgment.receipt_number || 'payment'));
+        const receiptNo = window.escapeHtml(String(acknowledgment.receipt_number || acknowledgment.receipt_id || 'Payment acknowledgment'));
+        const paymentStatus = String(acknowledgment.payment_status || 'confirmed').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const statusLabel = window.escapeHtml(String(acknowledgment.payment_status || 'Confirmed').replace(/[_-]+/g, ' '));
+        const itemRows = items.length ? items.map(item => {
+            const place = [item.sport, item.court, item.unit].filter(Boolean).map(value => window.escapeHtml(String(value))).join(' · ') || 'Court access';
+            const when = `${window.escapeHtml(formatBookingDate(item.starts_at))} · ${window.escapeHtml(formatBookingTime(item.starts_at, item.ends_at))}`;
+            return `<div class="dash-ack-item"><strong>${place}</strong><span>${when}</span><span class="dash-ack-item-amount">${window.escapeHtml(acknowledgmentMoney(item.subtotal, item.subtotal_minor))}</span></div>`;
+        }).join('') : '<p class="dash-receipt-thanks">Saved item details are unavailable.</p>';
+        const method = String(acknowledgment.payment_method || '—').replace(/[_-]+/g, ' ');
+        const issuedAt = acknowledgment.issued_at ? notificationTime(acknowledgment.issued_at) : '—';
+        const disclaimer = acknowledgment.disclaimer || 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
+        return `<article class="dash-receipt-card dash-payment-ack-card" data-dash-receipt-card="${safeKey}">
+            <div class="dash-receipt-brand"><span class="dash-receipt-brand-name">IñigoSync</span><span class="dash-receipt-brand-tag">Payment acknowledgment and entry pass</span></div>
+            <p class="dash-receipt-no">Acknowledgment #${receiptNo}</p>
+            <div class="dash-receipt-divider"></div>
+            <div class="dash-receipt-top"><h4>${window.escapeHtml(String(acknowledgment.customer_name || 'Customer'))}</h4><span class="dash-status ${window.escapeHtml(paymentStatus)}">${statusLabel}</span></div>
+            <div class="dash-receipt-meta"><div class="dash-summary-row"><span>Mobile</span><strong>${window.escapeHtml(String(acknowledgment.mobile || '—'))}</strong></div><div class="dash-summary-row"><span>Issued</span><strong>${window.escapeHtml(issuedAt)}</strong></div><div class="dash-summary-row"><span>Payment method</span><strong>${window.escapeHtml(method)}</strong></div></div>
+            <div class="dash-receipt-divider"></div>
+            <div class="dash-ack-items">${itemRows}</div>
+            <div class="dash-receipt-divider"></div>
+            <div class="dash-receipt-meta"><div class="dash-summary-row"><span>Subtotal</span><strong>${window.escapeHtml(acknowledgmentMoney(acknowledgment.subtotal, acknowledgment.subtotal_minor))}</strong></div><div class="dash-summary-row"><span>Processing fee</span><strong>${window.escapeHtml(acknowledgmentMoney(acknowledgment.fee, acknowledgment.fee_minor))}</strong></div></div>
+            <div class="dash-receipt-total"><span>Total paid</span><span>${window.escapeHtml(acknowledgmentMoney(acknowledgment.total, acknowledgment.gross_minor))}</span></div>
+            <div class="dash-receipt-divider"></div>
+            <p class="dash-receipt-thanks">${window.escapeHtml(disclaimer)}</p>
+            <div class="dash-receipt-actions"><button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button></div>
+        </article>`;
+    }
+
+    function renderAcknowledgmentUnavailable(id) {
+        const safeId = window.escapeHtml(String(id));
+        return `<article class="dash-receipt-card" data-dash-receipt-card="${safeId}"><h3>Booking #${safeId}</h3><p class="dash-receipt-thanks">A payment is recorded, but its saved acknowledgment could not be loaded. Refresh and try again.</p></article>`;
     }
 
     // Store-receipt/ticket redesign (Revision 5, D7 — implementation_plan.md):
@@ -2993,8 +3117,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // render idiom wireOverviewCourtList() above already uses for its own
     // dynamically rendered scope.
     function wireReceiptDownloads() {
-        if (!receiptsGrid) return;
-        receiptsGrid.querySelectorAll('[data-dash-receipt-download]').forEach((btn) => {
+        document.querySelectorAll('.dash-receipt-grid [data-dash-receipt-download]').forEach((btn) => {
+            if (btn.dataset.dashReceiptDownloadBound === 'true') return;
+            btn.dataset.dashReceiptDownloadBound = 'true';
             btn.addEventListener('click', async () => {
                 const card = btn.closest('[data-dash-receipt-card]');
                 if (!card) return;
@@ -3017,17 +3142,97 @@ document.addEventListener('DOMContentLoaded', () => {
     // RECEIPT_EMPTY_HTML itself when its shared query fails, same fail-safe
     // convention Phase 2's refreshReceipts() used to use on its own error
     // branch).
-    function renderReceipts(bookings) {
+    async function renderReceipts(bookings) {
         if (!receiptsGrid) return;
+        const generation = ++receiptRenderGeneration;
 
         if (!bookings || bookings.length === 0) {
             receiptsGrid.innerHTML = RECEIPT_EMPTY_HTML;
+            await loadWalkinAcknowledgments();
             return;
         }
 
-        receiptsGrid.innerHTML = bookings.map(normalizeReceipt).map(renderReceiptCard).join('');
+        receiptsGrid.innerHTML = '<p class="dash-notif-empty">Loading saved payment acknowledgments…</p>';
+        const paidBookings = bookings.filter(booking => Number(booking.amount_paid || 0) > 0);
+        const acknowledgments = new Map();
+        const failedAcknowledgments = new Set();
+        for (let offset = 0; offset < paidBookings.length; offset += 5) {
+            const batch = paidBookings.slice(offset, offset + 5);
+            const results = await Promise.all(batch.map(async booking => {
+                const id = String(booking.booking_id);
+                try {
+                    const { data, error } = await window.sb.rpc('get_payment_acknowledgment', { p_source: 'booking', p_id: Number(booking.booking_id) });
+                    if (error) throw error;
+                    const acknowledgment = Array.isArray(data) ? data[0] : data;
+                    if (!acknowledgment || !acknowledgment.receipt_id) throw new Error('No saved acknowledgment was returned.');
+                    return [id, acknowledgment, null];
+                } catch (error) {
+                    console.error('[dashboard] saved booking acknowledgment could not be loaded', error);
+                    return [id, null, error];
+                }
+            }));
+            results.forEach(([id, acknowledgment, error]) => {
+                if (acknowledgment) acknowledgments.set(id, acknowledgment);
+                else if (error) failedAcknowledgments.add(id);
+            });
+        }
+        if (generation !== receiptRenderGeneration) return;
+        receiptsGrid.innerHTML = bookings.map(booking => {
+            const id = String(booking.booking_id);
+            const acknowledgment = acknowledgments.get(id);
+            if (acknowledgment) return renderPaymentAcknowledgment(acknowledgment, id);
+            if (failedAcknowledgments.has(id)) return renderAcknowledgmentUnavailable(id);
+            return renderReceiptCard(normalizeReceipt(booking));
+        }).join('');
         wireReceiptDownloads();
+        await loadWalkinAcknowledgments();
     }
+
+    async function loadWalkinAcknowledgments() {
+        if (!walkinReceiptsGrid || !window.sb || !window.inigosyncProfile) return;
+        walkinReceiptsGrid.innerHTML = '<p class="dash-notif-empty">Loading linked walk-in visits…</p>';
+        try {
+            const { data, error } = await window.sb.rpc('customer_list_walkin_acknowledgments', {
+                p_offset: walkinReceiptPage * WALKIN_RECEIPT_PAGE_SIZE,
+                p_limit: WALKIN_RECEIPT_PAGE_SIZE,
+            });
+            if (error) throw error;
+            const result = Array.isArray(data) ? data[0] : data;
+            const rows = Array.isArray(result?.rows) ? result.rows : [];
+            walkinReceiptCount = Number(result?.total_count) || 0;
+            if (!rows.length) {
+                walkinReceiptsGrid.innerHTML = '<p class="dash-notif-empty">No linked walk-in visits with payment acknowledgments yet.</p>';
+            } else {
+                walkinReceiptsGrid.innerHTML = rows.map(row => {
+                    const snapshot = row.payload && typeof row.payload === 'object' ? row.payload : {};
+                    const acknowledgment = {
+                        ...snapshot,
+                        receipt_id: row.receipt_id || snapshot.receipt_id,
+                        receipt_number: row.receipt_number || snapshot.receipt_number,
+                        issued_at: row.issued_at || snapshot.issued_at,
+                    };
+                    return renderPaymentAcknowledgment(acknowledgment, `walkin-${row.order_id || row.receipt_id}`);
+                }).join('');
+            }
+            if (walkinReceiptPages) walkinReceiptPages.hidden = walkinReceiptCount <= WALKIN_RECEIPT_PAGE_SIZE;
+            if (walkinReceiptPageLabel) walkinReceiptPageLabel.textContent = `Page ${walkinReceiptPage + 1} of ${Math.max(1, Math.ceil(walkinReceiptCount / WALKIN_RECEIPT_PAGE_SIZE))}`;
+            const prev = document.querySelector('[data-dash-walkin-receipts-prev]');
+            const next = document.querySelector('[data-dash-walkin-receipts-next]');
+            if (prev) prev.disabled = walkinReceiptPage === 0;
+            if (next) next.disabled = (walkinReceiptPage + 1) * WALKIN_RECEIPT_PAGE_SIZE >= walkinReceiptCount;
+            wireReceiptDownloads();
+        } catch (error) {
+            console.error('[dashboard] linked walk-in acknowledgments could not be loaded', error);
+            walkinReceiptsGrid.innerHTML = '<p class="dash-notif-empty">Linked walk-in acknowledgments could not be loaded. Try again.</p>';
+        }
+    }
+
+    document.querySelector('[data-dash-walkin-receipts-prev]')?.addEventListener('click', () => {
+        if (walkinReceiptPage > 0) { walkinReceiptPage -= 1; loadWalkinAcknowledgments(); }
+    });
+    document.querySelector('[data-dash-walkin-receipts-next]')?.addEventListener('click', () => {
+        if ((walkinReceiptPage + 1) * WALKIN_RECEIPT_PAGE_SIZE < walkinReceiptCount) { walkinReceiptPage += 1; loadWalkinAcknowledgments(); }
+    });
 
     // ------------------------------------------------------------------
     // Profile + Settings — prefill from the real signed-in profile, and
@@ -3035,7 +3240,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // to a real Supabase call. Personal Information no longer has a save
     // button of its own as of Revision 5 (implementation_plan.md) — names/
     // email are read-only, and the mobile number's only write path is the
-    // OTP-gated flow above, not this data-dash-settings-save family.
+    // provider-validated contact flow, not this save-button family.
     // ------------------------------------------------------------------
 
     // Shared by the Mobile number field's load-time display (below) and its
@@ -3284,450 +3489,182 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------
-    // Account Settings — Mobile number verification (Revision 5, D6 —
-    // implementation_plan.md). Names/email are now read-only (see the
-    // profile-save handler further below, which no longer writes either),
-    // but the mobile number can still change — gated behind a REAL SMS OTP
-    // round trip instead of a plain Save, exactly like the email OTP this
-    // project already uses at signup/login/password-reset (includes/auth.js),
-    // just over Supabase Auth's Phone provider instead of Email. Flow:
-    // validate -> sb.auth.updateUser({ phone }) sends the code -> this
-    // dialog collects it -> sb.auth.verifyOtp({ phone, token, type:
-    // 'phone_change' }) confirms it -> ONLY THEN does profiles.contact_num
-    // get written (with profiles.phone_verified = true alongside it). There
-    // is NO fake/client-generated code anywhere in this path — a hard
-    // constraint of this revision (implementation_plan.md's "Revision 5"
-    // section) — every step above is a real Supabase Auth call. Until the
-    // owner enables the Phone provider (docs/OWNER_ACTION_LIST.md, item E5),
-    // updateUser({ phone }) errors and friendlyPhoneProviderError() below
-    // turns that into a clear, actionable toast instead of a raw error or a
-    // silently-broken button.
-    //
-    // Reuses the SAME generic .dash-modal-overlay/.dash-modal shell the
-    // Feedback dialog above does (open/close fade timing ported verbatim —
-    // see openFeedbackModal()/closeFeedbackModal() further above for why
-    // this exact 250ms/offsetWidth-flush idiom exists), and the 6-box
-    // auto-advance/paste/Resend-with-cooldown behavior is ported from
-    // Pages/Index.html's own email OTP panel (includes/auth.js) under
-    // dash-otp-* names, since Style/Auth.css itself is not linked here.
+    // Account Settings — contact number format/type validation.
+    // Validation is provider-backed by an authenticated Edge Function; it
+    // does not establish ownership. A successful response creates a one-use
+    // proof consumed by the database trigger when contact_num is updated.
     // ------------------------------------------------------------------
-    const mobileVerifyBtn = document.querySelector('[data-dash-mobile-verify]');
-    const mobileVerifiedBadge = document.querySelector('[data-dash-mobile-verified]');
-    const mobileOtpOverlay = document.querySelector('[data-dash-mobile-otp-overlay]');
-    const mobileOtpDialog = document.querySelector('[data-dash-mobile-otp-dialog]');
-    const mobileOtpPhoneEl = document.querySelector('[data-dash-mobile-otp-phone]');
-    const mobileOtpBoxes = mobileOtpOverlay ? Array.from(mobileOtpOverlay.querySelectorAll('[data-dash-otp-box]')) : [];
-    const mobileOtpError = document.querySelector('[data-dash-mobile-otp-error]');
-    const mobileOtpResendBtn = document.querySelector('[data-dash-mobile-otp-resend]');
-    const mobileOtpTimerEl = document.querySelector('[data-dash-mobile-otp-timer]');
-    const mobileOtpConfirmBtn = document.querySelector('[data-dash-mobile-otp-confirm]');
+    const mobileValidateBtn = document.querySelector('[data-dash-mobile-validate]');
+    const mobileRemoveBtn = document.querySelector('[data-dash-mobile-remove]');
+    const mobileStatus = document.querySelector('[data-dash-mobile-status]');
 
-    // Matches Supabase's real (not just this UI's displayed) SMS resend
-    // floor — same 60s this project's OWNER_ACTION_LIST.md already
-    // documents as the email-OTP gotcha ("the Resend code button re-enables
-    // after 30 seconds, but Supabase only accepts a new request... after
-    // 60"). Set to the REAL floor here instead of repeating that mismatch.
-    const MOBILE_OTP_RESEND_SECONDS = 60;
-    const MOBILE_OTP_CLOSE_DELAY_MS = 250;
+    function setMobileStatus(message, isError = false) {
+        if (!mobileStatus) return;
+        mobileStatus.textContent = message;
+        mobileStatus.classList.toggle('is-error', isError);
+    }
 
-    let mobileOtpTimerId = null;
-    let mobileOtpHideTimer = null;
-    let mobileOtpIsOpen = false;
-    let mobileOtpLastFocused = null;
-    // The number currently awaiting a code, in both forms this flow needs:
-    // E.164 (what Supabase Auth's phone OTP calls require) and local
-    // 09XXXXXXXXX (what actually gets written to profiles.contact_num).
-    // Both null whenever no verification is in flight.
-    let mobileOtpPendingE164 = null;
-    let mobileOtpPendingLocal = null;
-
-    // Maps a real Supabase Auth error to a customer-facing message. "SMS
-    // provider not configured" is by far the most likely failure during
-    // development/a thesis demo (docs/OWNER_ACTION_LIST.md, item E5) — the
-    // exact wording GoTrue uses for this has shifted across versions
-    // ("Unsupported phone provider", "phone signups are disabled", "sms
-    // provider not configured", etc.), so this matches on a PAIR of
-    // substrings (a phone/sms mention AND a provider/disabled/unsupported
-    // mention) rather than one exact string — loose enough to catch the
-    // real variants, tight enough not to swallow an unrelated error that
-    // merely mentions "phone" (e.g. "Invalid phone number format" should
-    // still show verbatim, not this generic message). Same defensive
-    // "match on signals, not one exact string" idea as
-    // isOverviewSchemaMismatch() above.
-    function friendlyPhoneProviderError(error) {
-        const message = String(error?.message || '').toLowerCase();
-        const mentionsPhone = message.includes('phone') || message.includes('sms');
-        const mentionsProviderIssue = message.includes('provider') || message.includes('disabled')
-            || message.includes('not enabled') || message.includes('unsupported') || message.includes('not allowed');
-        if (mentionsPhone && mentionsProviderIssue) {
-            return "SMS verification isn't set up yet — ask the owner to enable Phone sign-in in Supabase.";
+    function renderMobileStatus(profile) {
+        const mobileInput = document.querySelector('[data-dash-settings-mobile]');
+        const savedNumber = profile.contact_num || '';
+        const parsed = savedNumber ? window.validatePhMobile?.(savedNumber) : null;
+        if (mobileInput && !mobileInput.dataset.dirty) {
+            mobileInput.value = parsed?.valid ? parsed.normalized : savedNumber;
         }
-        return error?.message || 'Could not send a verification code. Please try again.';
-    }
-
-    function resetMobileOtpBoxes() {
-        mobileOtpBoxes.forEach((box) => {
-            box.value = '';
-            box.classList.remove('is-filled');
-        });
-        if (mobileOtpError) mobileOtpError.classList.remove('is-visible');
-    }
-
-    function startMobileOtpResendCountdown() {
-        if (mobileOtpTimerId) window.clearInterval(mobileOtpTimerId);
-        let remaining = MOBILE_OTP_RESEND_SECONDS;
-        if (mobileOtpResendBtn) mobileOtpResendBtn.disabled = true;
-
-        const tick = () => {
-            if (mobileOtpTimerEl) mobileOtpTimerEl.textContent = `Resend available in ${remaining}s`;
-            if (remaining <= 0) {
-                window.clearInterval(mobileOtpTimerId);
-                mobileOtpTimerId = null;
-                if (mobileOtpTimerEl) mobileOtpTimerEl.textContent = '';
-                if (mobileOtpResendBtn) mobileOtpResendBtn.disabled = false;
-                return;
-            }
-            remaining -= 1;
-        };
-        tick();
-        mobileOtpTimerId = window.setInterval(tick, 1000);
-    }
-
-    function openMobileOtpModal(invoker) {
-        if (!mobileOtpOverlay || !mobileOtpDialog) return;
-        mobileOtpLastFocused = invoker || document.activeElement;
-
-        if (mobileOtpHideTimer) {
-            window.clearTimeout(mobileOtpHideTimer);
-            mobileOtpHideTimer = null;
+        if (mobileRemoveBtn) mobileRemoveBtn.hidden = !savedNumber;
+        if (mobileStatus && !mobileInput?.dataset.dirty) {
+            mobileStatus.textContent = !savedNumber
+                ? 'A contact number is optional. We check Philippine format, mobile type, and active status, not ownership.'
+                : profile.contact_num_validated
+                    ? `Validated as an active Philippine mobile number${formatPhoneValidationDate(profile.contact_num_validated_at)}. This does not confirm ownership or guarantee reachability.`
+                    : 'This saved number has not been validated for format, mobile type, and active status.';
+            mobileStatus.classList.remove('is-error');
         }
-
-        if (mobileOtpPhoneEl) mobileOtpPhoneEl.textContent = mobileOtpPendingLocal || 'your mobile number';
-        resetMobileOtpBoxes();
-
-        mobileOtpOverlay.hidden = false;
-        // Force a synchronous layout flush so the browser commits the
-        // hidden->visible state before [data-open] flips opacity to 1 —
-        // same trick openFeedbackModal() above uses (ported from
-        // includes/landingPage.js's court viewer originally).
-        void mobileOtpOverlay.offsetWidth;
-        mobileOtpOverlay.setAttribute('data-open', '');
-        mobileOtpIsOpen = true;
-        if (mobileOtpBoxes[0]) {
-            mobileOtpBoxes[0].focus();
-        } else {
-            mobileOtpDialog.focus();
-        }
-        startMobileOtpResendCountdown();
     }
 
-    function closeMobileOtpModal() {
-        if (!mobileOtpIsOpen) return;
-        mobileOtpIsOpen = false;
-
-        mobileOtpOverlay.removeAttribute('data-open');
-        if (mobileOtpHideTimer) window.clearTimeout(mobileOtpHideTimer);
-        mobileOtpHideTimer = window.setTimeout(() => {
-            mobileOtpOverlay.hidden = true;
-            mobileOtpHideTimer = null;
-        }, MOBILE_OTP_CLOSE_DELAY_MS);
-
-        if (mobileOtpTimerId) {
-            window.clearInterval(mobileOtpTimerId);
-            mobileOtpTimerId = null;
-        }
-        if (mobileOtpTimerEl) mobileOtpTimerEl.textContent = '';
-
-        // L4 fix (post-Revision-5 review) — clear the in-flight phone-change
-        // state on EVERY path that closes this modal (Cancel, Escape,
-        // backdrop click, and both branches of the Confirm handler below),
-        // not just the two call sites that used to null these out by hand
-        // right after calling close(). A caller that still needs the
-        // pending value once verifyOtp() succeeds (the profiles.update()
-        // below) must read it into a local BEFORE calling this function.
-        mobileOtpPendingE164 = null;
-        mobileOtpPendingLocal = null;
-
-        if (mobileOtpLastFocused && typeof mobileOtpLastFocused.focus === 'function' && document.contains(mobileOtpLastFocused)) {
-            mobileOtpLastFocused.focus();
-        }
-        mobileOtpLastFocused = null;
+    function formatPhoneValidationDate(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        return ` on ${date.toLocaleDateString('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' })}`;
     }
 
-    document.querySelectorAll('[data-dash-mobile-otp-cancel]').forEach((btn) => {
-        btn.addEventListener('click', closeMobileOtpModal);
-    });
-
-    if (mobileOtpOverlay) {
-        // Backdrop click only — same `e.target === root` guard as the
-        // This overlay has its own backdrop listener.
-        mobileOtpOverlay.addEventListener('click', (e) => {
-            if (e.target === mobileOtpOverlay) closeMobileOtpModal();
-        });
-    }
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && mobileOtpIsOpen) closeMobileOtpModal();
-    });
-
-    // Auto-advance/backspace/paste — ported verbatim from
-    // Pages/Index.html's email OTP boxes (includes/auth.js) under
-    // dash-otp-* names.
-    mobileOtpBoxes.forEach((box, index) => {
-        box.addEventListener('input', () => {
-            box.value = box.value.replace(/[^0-9]/g, '').slice(0, 1);
-            box.classList.toggle('is-filled', box.value.length === 1);
-            if (box.value && mobileOtpBoxes[index + 1]) mobileOtpBoxes[index + 1].focus();
-        });
-
-        box.addEventListener('keydown', (e) => {
-            if (e.key === 'Backspace' && !box.value && mobileOtpBoxes[index - 1]) {
-                mobileOtpBoxes[index - 1].focus();
-            }
-            // Nit (post-Revision-5 review) — Enter anywhere in the 6 boxes
-            // submits the code the same way clicking Confirm does, once all
-            // 6 digits are filled. Delegates to the real button (instead of
-            // duplicating its handler) so disabled/in-flight state is
-            // respected automatically.
-            if (e.key === 'Enter') {
-                const code = mobileOtpBoxes.map((b) => b.value).join('');
-                if (code.length === 6 && mobileOtpConfirmBtn && !mobileOtpConfirmBtn.disabled) {
-                    mobileOtpConfirmBtn.click();
-                }
-            }
-        });
-
-        box.addEventListener('paste', (e) => {
-            const clipboard = e.clipboardData || window.clipboardData;
-            if (!clipboard) return;
-            const pasted = clipboard.getData('text').replace(/[^0-9]/g, '');
-            if (!pasted) return;
-            e.preventDefault();
-            pasted.split('').slice(0, mobileOtpBoxes.length).forEach((digit, i) => {
-                if (mobileOtpBoxes[i]) {
-                    mobileOtpBoxes[i].value = digit;
-                    mobileOtpBoxes[i].classList.add('is-filled');
-                }
-            });
-            const next = mobileOtpBoxes[Math.min(pasted.length, mobileOtpBoxes.length - 1)];
-            if (next) next.focus();
-        });
-    });
-
-    if (mobileVerifyBtn) {
-        mobileVerifyBtn.addEventListener('click', async () => {
-            if (!window.sb || !window.inigosyncProfile) {
-                window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
-                return;
-            }
-
-            const settingsPanel = document.querySelector('[data-dash-panel="settings"]');
-            const mobileInput = settingsPanel ? settingsPanel.querySelector('[data-dash-settings-mobile]') : null;
-
-            const mobileCheck = window.validatePhMobile(mobileInput?.value || '');
-            if (!mobileCheck.valid) {
-                window.InigoToast?.show(mobileCheck.message, true);
-                mobileInput?.focus();
-                return;
-            }
-
-            // Re-verifying the SAME number that's already proven is a
-            // no-op, not a fresh OTP round trip — "already verified" only
-            // ever means THIS EXACT number previously completed
-            // verifyOtp() successfully (see database/schema/
-            // 013_profile_phone_verified.sql's own header note on why
-            // contact_num and phone_verified are always written together,
-            // so this comparison can never point at a stale pairing).
-            if (window.inigosyncProfile.phone_verified && mobileCheck.normalized === window.inigosyncProfile.contact_num) {
-                window.InigoToast?.show('This number is already verified.');
-                return;
-            }
-
-            // E.164 for Supabase Auth's phone OTP calls — PH mobile numbers
-            // are always +63 followed by the 10 digits after the leading 0
-            // (validatePhMobile()'s `normalized` is always exactly 11
-            // digits starting with "09").
-            const e164 = `+63${mobileCheck.normalized.slice(1)}`;
-
-            const originalLabel = mobileVerifyBtn.textContent;
-            mobileVerifyBtn.disabled = true;
-            mobileVerifyBtn.textContent = 'Sending code…';
-
-            const { data, error } = await window.sb.auth.updateUser({ phone: e164 });
-
-            mobileVerifyBtn.disabled = false;
-            mobileVerifyBtn.textContent = originalLabel;
-
-            if (error) {
-                console.error('[dashboard] updateUser({ phone }) failed', error);
-                window.InigoToast?.show(friendlyPhoneProviderError(error), true);
-                return;
-            }
-
-            // M1 fix (post-Revision-5 review) — GoTrue only queues a real
-            // `phone_change` OTP (surfaced here as `data.user.new_phone`)
-            // when the Phone provider's "Enable phone confirmations"
-            // setting is ON. With it off, updateUser({ phone }) resolves
-            // with NO error and NO code sent — silently succeeding while
-            // leaving the customer staring at a modal that can never
-            // complete. `data.user.new_phone === e164` is the only signal
-            // GoTrue gives back that a code was actually queued, so it
-            // gates whether the OTP modal even opens (docs/
-            // OWNER_ACTION_LIST.md item E5).
-            if (!data?.user?.new_phone || data.user.new_phone !== e164) {
-                console.error('[dashboard] updateUser({ phone }) queued no pending change — phone confirmations are likely OFF', data);
-                window.InigoToast?.show('No verification code was sent — the owner needs to turn on phone confirmations in Supabase.', true);
-                return;
-            }
-
-            mobileOtpPendingE164 = e164;
-            mobileOtpPendingLocal = mobileCheck.normalized;
-            openMobileOtpModal(mobileVerifyBtn);
-        });
-    }
-
-    if (mobileOtpResendBtn) {
-        mobileOtpResendBtn.addEventListener('click', async () => {
-            if (!window.sb || !mobileOtpPendingE164) return;
-            mobileOtpResendBtn.disabled = true;
+    async function mobileFunctionErrorMessage(error) {
+        const context = error?.context;
+        if (context && typeof context.clone === 'function') {
             try {
-                const { data, error } = await window.sb.auth.updateUser({ phone: mobileOtpPendingE164 });
-                if (error) throw error;
-                // M1 fix — same pending-change guard as Verify above; without
-                // it, resending into a provider with phone confirmations off
-                // would restart the 60s cooldown around a code that was
-                // never actually sent.
-                if (!data?.user?.new_phone || data.user.new_phone !== mobileOtpPendingE164) {
-                    window.InigoToast?.show('No verification code was sent — the owner needs to turn on phone confirmations in Supabase.', true);
-                    mobileOtpResendBtn.disabled = false;
-                    return;
-                }
-                startMobileOtpResendCountdown();
-            } catch (err) {
-                console.error('[dashboard] resend phone OTP failed', err);
-                window.InigoToast?.show(friendlyPhoneProviderError(err), true);
-                mobileOtpResendBtn.disabled = false;
-            }
-        });
+                const body = await context.clone().json();
+                if (body?.message) return body.message;
+            } catch (_) { /* Use the SDK fallback. */ }
+        }
+        return error?.message || 'Phone validation is temporarily unavailable.';
     }
 
-    if (mobileOtpConfirmBtn) {
-        mobileOtpConfirmBtn.addEventListener('click', async () => {
-            if (!window.sb || !window.inigosyncProfile || !mobileOtpPendingE164 || !mobileOtpPendingLocal) return;
+    function validationReasonMessage(reason) {
+        if (reason === 'not_mobile') return 'Enter a Philippine mobile number.';
+        if (reason === 'inactive') return 'The provider reports that this number is not active.';
+        if (reason === 'status_unknown') return 'The provider could not confirm the number status. Try again later.';
+        return 'Enter a valid Philippine mobile number.';
+    }
 
-            const code = mobileOtpBoxes.map((box) => box.value).join('');
-            if (code.length !== 6) {
-                if (mobileOtpError) mobileOtpError.classList.add('is-visible');
-                return;
-            }
+    mobileValidateBtn?.addEventListener('click', async () => {
+        const mobileInput = document.querySelector('[data-dash-settings-mobile]');
+        const profile = window.inigosyncProfile;
+        if (!window.sb?.functions || !profile || !mobileInput) {
+            setMobileStatus('Phone validation is unavailable. Please try again later.', true);
+            return;
+        }
+        const check = window.validatePhMobile?.(mobileInput.value || '');
+        if (!check?.valid) {
+            setMobileStatus(check?.message || 'Enter a valid Philippine mobile number.', true);
+            mobileInput.focus();
+            return;
+        }
+        const current = window.validatePhMobile?.(profile.contact_num || '');
+        if (current?.valid && current.normalized === check.normalized) {
+            setMobileStatus(profile.contact_num_validated
+                ? 'This number is already validated; no provider lookup was used.'
+                : 'This saved number is unchanged; no provider lookup was used.');
+            mobileInput.dataset.dirty = '';
+            return;
+        }
 
-            // L4 fix (post-Revision-5 review) — closeMobileOtpModal() now
-            // nulls mobileOtpPendingE164/mobileOtpPendingLocal itself (so
-            // Cancel/Escape/backdrop-close also clear them), so anything
-            // below that still needs the pending phone must read it into a
-            // local BEFORE the modal is closed.
-            const pendingE164 = mobileOtpPendingE164;
-            const pendingLocal = mobileOtpPendingLocal;
-
-            const originalLabel = mobileOtpConfirmBtn.textContent;
-            mobileOtpConfirmBtn.disabled = true;
-            mobileOtpConfirmBtn.textContent = 'Verifying…';
-
-            // THE real verification — no fake/client-generated code exists
-            // anywhere in this file (a hard constraint of this revision).
-            const { error: verifyError } = await window.sb.auth.verifyOtp({
-                phone: pendingE164,
-                token: code,
-                type: 'phone_change',
+        mobileValidateBtn.disabled = true;
+        mobileValidateBtn.textContent = 'Validating…';
+        setMobileStatus('Checking Philippine format, mobile type, and active status…');
+        try {
+            const { data, error } = await window.sb.functions.invoke('validate-contact-phone', {
+                body: { phone: check.normalized },
             });
-
-            mobileOtpConfirmBtn.disabled = false;
-            mobileOtpConfirmBtn.textContent = originalLabel;
-
-            if (verifyError) {
-                console.error('[dashboard] verifyOtp(phone_change) failed', verifyError);
-                if (mobileOtpError) mobileOtpError.classList.add('is-visible');
-                resetMobileOtpBoxes();
-                if (mobileOtpBoxes[0]) mobileOtpBoxes[0].focus();
-                return;
+            if (error) throw new Error(await mobileFunctionErrorMessage(error));
+            if (data?.valid !== true) throw new Error(validationReasonMessage(data?.reason));
+            if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
+                || data.normalized !== `+63${check.normalized.slice(1)}`) {
+                throw new Error('The provider returned an unsupported validation result. Try again later.');
             }
 
-            // Only NOW — after a real confirmed code — is it safe to
-            // persist the new number. Schema-mismatch retry (same idiom as
-            // every other profiles.update() in this file) — phone_verified
-            // only exists once database/schema/013_profile_phone_verified.sql
-            // is applied; the number itself still saves either way.
-            let { error: saveError } = await window.sb
-                .from('profiles')
-                .update({ contact_num: pendingLocal, phone_verified: true })
-                .eq('id', window.inigosyncProfile.id);
+            const { error: saveError } = await window.sb.from('profiles')
+                .update({ contact_num: data.normalized }).eq('id', profile.id);
+            if (saveError) throw saveError;
+            profile.contact_num = data.normalized;
+            profile.contact_num_validated = true;
+            profile.contact_num_validated_at = new Date().toISOString();
+            delete mobileInput.dataset.dirty;
+            renderProfile(profile);
+            setMobileStatus('Validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.');
+            window.InigoToast?.show('Contact number validated and saved.');
+        } catch (error) {
+            console.error('[dashboard] contact number validation failed', error);
+            setMobileStatus(error.message || 'Could not validate the number. Try again.', true);
+        } finally {
+            mobileValidateBtn.disabled = false;
+            mobileValidateBtn.textContent = 'Validate & save';
+        }
+    });
 
-            if (saveError && isOverviewSchemaMismatch(saveError)) {
-                ({ error: saveError } = await window.sb
-                    .from('profiles')
-                    .update({ contact_num: pendingLocal })
-                    .eq('id', window.inigosyncProfile.id));
+    mobileRemoveBtn?.addEventListener('click', async () => {
+        const profile = window.inigosyncProfile;
+        if (!window.sb || !profile?.id || !profile.contact_num) return;
+        if (!window.confirm('Remove the contact number from your account?')) return;
+        mobileRemoveBtn.disabled = true;
+        try {
+            const { error } = await window.sb.from('profiles').update({ contact_num: null }).eq('id', profile.id);
+            if (error) throw error;
+            profile.contact_num = null;
+            profile.contact_num_validated = false;
+            profile.contact_num_validated_at = null;
+            const mobileInput = document.querySelector('[data-dash-settings-mobile]');
+            if (mobileInput) {
+                mobileInput.value = '';
+                delete mobileInput.dataset.dirty;
             }
+            renderProfile(profile);
+            setMobileStatus('Contact number removed. You can add one later.');
+            window.InigoToast?.show('Contact number removed.');
+        } catch (error) {
+            console.error('[dashboard] contact number removal failed', error);
+            setMobileStatus(error.message || 'Could not remove the contact number.', true);
+        } finally {
+            mobileRemoveBtn.disabled = false;
+        }
+    });
 
-            if (saveError) {
-                console.error('[dashboard] contact_num update after verifyOtp failed', saveError);
-                window.InigoToast?.show(saveError.message || 'Verified, but could not save your new number. Please try again.', true);
-                closeMobileOtpModal();
-                return;
-            }
+    document.querySelector('[data-dash-settings-mobile]')?.addEventListener('input', event => {
+        const input = event.currentTarget;
+        input.dataset.dirty = 'true';
+        const current = window.validatePhMobile?.(window.inigosyncProfile?.contact_num || '');
+        const typed = window.validatePhMobile?.(input.value || '');
+        if (current?.valid && typed?.valid && current.normalized === typed.normalized) {
+            delete input.dataset.dirty;
+            renderMobileStatus(window.inigosyncProfile);
+        } else {
+            if (mobileRemoveBtn) mobileRemoveBtn.hidden = !window.inigosyncProfile?.contact_num;
+            setMobileStatus('Use Validate & save to check and save this number.');
+        }
+    });
 
-            window.inigosyncProfile.contact_num = pendingLocal;
-            window.inigosyncProfile.phone_verified = true;
-            renderProfile(window.inigosyncProfile);
-            window.InigoToast?.show('Mobile number verified.');
-            closeMobileOtpModal();
-        });
-    }
-
-    // Loads phone_verified in a request of its own — same reasoning as
-    // fetchProfileNameParts() above: asking includes/authGuard.js's shared
-    // login-gate `profiles` select for a column that doesn't exist yet
-    // (013_profile_phone_verified.sql not applied) would fail that ENTIRE
-    // select with Postgres 42703 and sign every customer out. Scoping this
-    // to Account Settings means a missing column only ever means "the
-    // Verified badge never shows", never a broken login.
-    async function fetchProfilePhoneVerified(profileId) {
+    let contactValidationFetchFor = null;
+    async function fetchContactValidation(profileId) {
         if (!window.sb || !profileId) return null;
-        const { data, error } = await window.sb
-            .from('profiles')
-            .select('phone_verified')
-            .eq('id', profileId)
-            .maybeSingle();
+        const { data, error } = await window.sb.from('profiles')
+            .select('contact_num_validated, contact_num_validated_at')
+            .eq('id', profileId).maybeSingle();
         if (error) {
-            if (!isOverviewSchemaMismatch(error)) {
-                console.error('[dashboard] failed to load phone_verified', error);
-            }
+            if (!isOverviewSchemaMismatch(error)) console.error('[dashboard] failed to load contact validation status', error);
             return null;
         }
         return data;
     }
 
-    // Shows/hides the "Verified" badge next to the mobile number field.
-    // profile.phone_verified is undefined until fetchProfilePhoneVerified()
-    // below resolves at least once (it isn't part of includes/authGuard.js's
-    // shared profile fetch) — the badge simply starts hidden and is only
-    // ever shown once a real `true` is known, never assumed.
-    function renderMobileVerifiedBadge(profile) {
-        if (!mobileVerifiedBadge) return;
-        mobileVerifiedBadge.hidden = !profile.phone_verified;
-    }
-
-    // Paints whatever's already known immediately (same "show something
-    // honest now, refine when the real data arrives" pattern as
-    // populateSettingsNameFields() above), then upgrades once the scoped
-    // fetch resolves.
-    function populateMobileVerifiedBadge(profile) {
-        renderMobileVerifiedBadge(profile);
-        fetchProfilePhoneVerified(profile.id).then((data) => {
-            if (!data) return;
-            profile.phone_verified = Boolean(data.phone_verified);
-            renderMobileVerifiedBadge(profile);
-        });
+    function populateContactValidation(profile) {
+        renderMobileStatus(profile);
+        if (contactValidationFetchFor === profile.id) return;
+        contactValidationFetchFor = profile.id;
+        fetchContactValidation(profile.id).then(data => {
+            if (!data || window.inigosyncProfile?.id !== profile.id) return;
+            Object.assign(profile, data);
+            renderMobileStatus(profile);
+        }).catch(error => console.error('[dashboard] contact validation status request failed', error));
     }
 
     function renderProfile(profile) {
@@ -3762,7 +3699,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const metaItems = document.querySelectorAll('[data-dash-panel="profile"] .dash-profile-meta-item');
         if (metaItems[0]) metaItems[0].querySelector('span:last-child').textContent = profile.email || '—';
-        if (metaItems[1]) metaItems[1].querySelector('span:last-child').textContent = profile.contact_num || '—';
+        if (metaItems[1]) { const phone = window.validatePhMobile?.(profile.contact_num || ''); metaItems[1].querySelector('span:last-child').textContent = phone?.valid ? phone.normalized : (profile.contact_num || '—'); }
 
         // Member since ([2]) — from the AUTH session's created_at, not a
         // `profiles` column. There is no schema file for `profiles` in this
@@ -3791,15 +3728,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // 09XXXXXXXXX form — so this is a defensive strip for any value
             // that got into the database another way, not a fix for
             // anything either write path produces today.
-            if (mobileInput) mobileInput.value = digitsOnly(profile.contact_num).slice(0, 11);
+            if (mobileInput && !mobileInput.dataset.dirty) { const savedPhone = window.validatePhMobile?.(profile.contact_num || ''); mobileInput.value = savedPhone?.valid ? savedPhone.normalized : (profile.contact_num || ''); }
 
             // First/Middle/Surname (§9, D3) — see populateSettingsNameFields()
             // above for the full_name-parsing fallback.
             populateSettingsNameFields(profile);
 
-            // Mobile "Verified" badge (Revision 5, D6) — see
-            // populateMobileVerifiedBadge() above.
-            populateMobileVerifiedBadge(profile);
+            // Provider validation state is scoped to Account Settings and
+            // loaded separately from authGuard's shared profile projection.
+            populateContactValidation(profile);
         }
     }
 
@@ -3905,9 +3842,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // "Save Changes"/"Cancel" pair and the profile-save handler that used to
     // live here are GONE, not merely disabled: names and email are
     // read-only now (Pages/user_dashboard.html no longer renders either
-    // button), and the mobile number's only write path is the OTP-gated
-    // flow above (mobileOtpConfirmBtn's click handler), which writes
-    // contact_num itself once a real code is confirmed. There is nothing
+    // button), and the mobile number's only write path is the validated
+    // contact-number flow above, which saves only after the authenticated
+    // provider check succeeds. There is nothing
     // left on this card for a Save button to do, so removing the handler
     // outright — rather than leaving it attached to a button that no longer
     // exists — is the "no dead listeners" cleanup this revision calls for.

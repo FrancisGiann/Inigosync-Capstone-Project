@@ -297,8 +297,8 @@ function courtDataFixture(options = {}) {
             await page.locator('[data-staff-walkin-sport="3"]').click();
             await page.locator('[data-staff-walkin-unit-select]').selectOption('Court 2');
             await page.locator('[data-staff-walkin-next]').click();
-            await page.waitForFunction(() => !document.querySelector('[data-staff-walkin-from]').disabled);
-            assert.equal((await values(page.locator('[data-staff-walkin-from]'))).includes('10'), false, 'staff sees Basketball Court 2 block its linked Pickleball zones');
+            await page.locator('[data-staff-walkin-hour="10"]').waitFor({ state: 'attached' });
+            assert.equal(await page.locator('[data-staff-walkin-hour="10"]').isDisabled(), true, 'staff sees Basketball Court 2 block its linked Pickleball zones');
             assert.deepEqual(errors, [], 'staff shared resource: browser errors');
             await context.close();
         }

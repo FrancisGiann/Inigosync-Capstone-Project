@@ -1,7 +1,7 @@
 // Run against scripts/preview.cjs. Provider data is mocked; no widget views used.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
-const base = 'http://127.0.0.1:4178/Pages/Index.html';
+const base = 'http://127.0.0.1:4178/index.html';
 const uuid = '11111111-2222-3333-4444-555555555555';
 (async () => {
     const browser = await chromium.launch({channel:'msedge',headless:true});

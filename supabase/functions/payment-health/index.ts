@@ -27,14 +27,15 @@ Deno.serve(async (req: Request) => {
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) return json({ message: "Sign in again." }, 401, origin);
   const { data: profile } = await admin.from("profiles").select("role,status").eq("id", authData.user.id).maybeSingle();
-  if (profile?.role !== "admin" || profile?.status === "disabled") return json({ message: "Owner access is required." }, 403, origin);
+  if (profile?.role !== "admin" || profile?.status !== "active") return json({ message: "Owner access is required." }, 403, origin);
   const { data: last } = await admin.from("payment").select("created_at").eq("payment_method", "PayMongo")
     .gt("paid", 0).order("created_at", { ascending: false }).limit(1).maybeSingle();
   const key = Deno.env.get("PAYMONGO_SECRET_KEY") || "";
+  const keyMode = key.startsWith("sk_test_") ? "test" : key.startsWith("sk_live_") ? "live" : "unknown";
   const webhookSecret = Deno.env.get("PAYMONGO_WEBHOOK_SECRET") || "";
   let apiConnected: boolean | null = null;
   let webhookConfigured: boolean | null = webhookSecret ? null : false;
-  if (key.startsWith("sk_test_") || key.startsWith("sk_live_")) {
+  if (key.startsWith("sk_test_")) {
     try {
       const response = await fetch("https://api.paymongo.com/v1/webhooks", {
         headers: { authorization: `Basic ${btoa(`${key}:`)}` }, signal: AbortSignal.timeout(8000),
@@ -51,9 +52,9 @@ Deno.serve(async (req: Request) => {
         webhookConfigured = Boolean(webhookSecret && configured);
       }
     } catch { apiConnected = null; }
-  } else {
+  } else if (!key) {
     apiConnected = false;
   }
-  return json({ api_connected: apiConnected, webhook_configured: webhookConfigured,
+  return json({ key_mode: keyMode, api_connected: apiConnected, webhook_configured: webhookConfigured,
     last_confirmed_payment_at: last?.created_at || null }, 200, origin);
 });

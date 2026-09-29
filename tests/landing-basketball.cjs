@@ -25,7 +25,7 @@ fs.mkdirSync(out, { recursive: true });
                 const get = HTMLCanvasElement.prototype.getContext;
                 HTMLCanvasElement.prototype.getContext = function (type, ...args) { return type.startsWith('webgl') ? null : get.call(this, type, ...args); };
             });
-            await page.goto('http://127.0.0.1:4178/Pages/Index.html', { waitUntil: 'load' });
+            await page.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'load' });
             return page;
         }
         const page = await setup();

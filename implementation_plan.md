@@ -1,5 +1,10 @@
 # Staff Portal — Revision S3 (staff personal details)
 
+> **Current phone decision:** The 2026-09-29 amendment at the end of this
+> document replaces all SMS and phone OTP requirements below with Abstract
+> Phone Intelligence validation. See
+> [phone-validation-setup.md](docs/phone-validation-setup.md).
+
 Adds `profiles.address, birthdate, gender, emergency_contact_name, emergency_contact_number` (migration 018). Staff edit them in Account Settings and see them (with computed age) in View Profile; the owner's Staff Management shows "Age · Gender" under each name, has View / Edit modals with every field, and Add New Staff collects them (saved right after the invite-staff edge function creates the profile row, via `profiles.update().eq('email', …)`). Also S2 (Time-In payment popup, migration 017) and the staff profile photo card are logged here.
 
 
@@ -864,3 +869,19 @@ bucket is preferred instead, that changes R4-4's write path only, not its UI.
   notification -> receipt jump against real booking rows. Both were exercised
   through the real code paths with a stubbed `window.sb` query chain, but need
   a signed-in browser pass to be considered confirmed.
+# Current decision: contact number validation (2026-09-29)
+
+The project manager replaced the SMS phone ownership verification described in
+earlier revisions above. The current staff portal rollout uses Abstract Phone
+Validation for optional customer, staff, and owner contact numbers. An
+authenticated Edge Function calls Abstract with a secret kept in Supabase;
+after a valid Philippine mobile result, it creates a short-lived, one-use proof
+that the database requires when a changed number is saved. There is no SMS,
+OTP dialog, Supabase Phone Auth requirement, or demo code. A successful check
+means **number validated**, not ownership or current reachability. Email OTP
+used for account authentication is unaffected. The project uses application
+limits to stay under Abstract's free allowance. Setup and limitations are in
+[docs/phone-validation-setup.md](docs/phone-validation-setup.md). All phone
+instructions in older revisions of this document are superseded by this section.
+
+\n

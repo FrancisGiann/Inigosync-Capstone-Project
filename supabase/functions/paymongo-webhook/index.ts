@@ -60,6 +60,8 @@ Deno.serve(async (req: Request) => {
     p_session_id: sessionId,
     p_payment_id: paidPayment.paymentId,
     p_amount_minor: paidPayment.amountMinor,
+    p_fee_minor: paidPayment.feeMinor,
+    p_net_minor: paidPayment.netMinor,
   });
   if (error) {
     console.error("Could not record PayMongo payment", error.message);

@@ -20,7 +20,7 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         const errors=[];page.on('pageerror',error=>errors.push(error.message));
         let courtRequests=0;
         page.on('request',request=>{if(request.url().includes('/rest/v1/court?'))courtRequests++;});
-        await page.goto(base+'/Pages/Index.html');
+        await page.goto(base+'/index.html');
         await page.waitForFunction(()=>document.querySelectorAll('.court-card').length===8);
         await page.waitForFunction(()=>document.querySelectorAll('.hero-copy').length===4);
         const coverAssets = ['basketball','badminton','bowling','billiards','lawn-tennis','pickleball','table-tennis','volleyball'];
@@ -121,13 +121,13 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         // Failures and an empty database must never resurrect demonstration rows.
         const empty=await browser.newPage();
         await empty.route('**/rest/v1/**',route=>route.fulfill({json:[]}));
-        await empty.goto(base+'/Pages/Index.html');
+        await empty.goto(base+'/index.html');
         await empty.waitForSelector('.court-grid .content-state');
         assert.equal(await empty.locator('.court-card').count(),0);
         assert.match(await empty.locator('.court-grid').innerText(),/No courts/);
         const failed=await browser.newPage();
         await failed.route('**/rest/v1/**',route=>route.fulfill({status:503,json:{message:'Test outage'}}));
-        await failed.goto(base+'/Pages/Index.html');
+        await failed.goto(base+'/index.html');
         await failed.waitForSelector('[data-content-retry="courts"]');
         assert.equal(await failed.locator('.court-card').count(),0);
         await failed.unroute('**/rest/v1/**');
@@ -135,7 +135,7 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         await failed.waitForSelector('.court-card');
         console.log('PASS empty-state behavior, outage state and retry recovery');
         const animated=await browser.newPage({viewport:{width:1440,height:900},reducedMotion:'no-preference'});
-        await animated.goto(base+'/Pages/Index.html');
+        await animated.goto(base+'/index.html');
         await animated.waitForSelector('.court-card');
         const runtime=await animated.evaluate(()=>({gsap:typeof gsap,scrollTriggers:ScrollTrigger.getAll().length}));
         assert.equal(runtime.gsap,'object');assert(runtime.scrollTriggers>0);

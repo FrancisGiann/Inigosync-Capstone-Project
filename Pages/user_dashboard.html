@@ -132,31 +132,23 @@
                         </svg>
                     </button>
 
-                    <!-- Notifications (§3, D6) — clicking the bell opens a
-                         dropdown (never navigates), same [data-open]
-                         toggle/outside-click/Escape idiom as .dash-profile
-                         below, wired in includes/Dashboard.js. Populated
-                         from the signed-in customer's own real `booking`
-                         rows (reusing refreshMyBookings()'s fetch — no
-                         redundant query), max 10, newest first. No
-                         `notification` table exists on purpose (D6): nothing
-                         in this project would ever write to one, so it would
-                         ship guaranteed-empty — this is derived data
-                         instead, same "no fabricated data" rule as the rest
-                         of this page. The badge dot starts `hidden` and is
-                         only revealed once there's a real notification to
-                         show. -->
+                    <!-- Customer notifications are loaded from the account-scoped
+                         notification API, including announcements and maintenance
+                         notices. Search, pagination, and read state all belong to
+                         the signed-in customer. -->
                     <div class="dash-notif" data-dash-notif>
-                        <button type="button" class="dash-icon-btn" data-dash-notif-trigger aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+                        <button type="button" class="dash-icon-btn" data-dash-notif-trigger aria-label="Notifications" aria-expanded="false">
                             <svg viewBox="0 0 24 24" fill="none"><path d="M18 8.5c0-3.5-2.7-6-6-6s-6 2.5-6 6c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.7 19a2.3 2.3 0 0 0 4.6 0" stroke="currentColor" stroke-width="1.7"/></svg>
                             <span class="dash-badge-dot" data-dash-notif-dot hidden></span>
                         </button>
 
-                        <div class="dash-notif-menu" data-dash-notif-menu role="menu" aria-label="Notifications">
-                            <div class="dash-notif-menu-head">Notifications</div>
+                        <div class="dash-notif-menu" data-dash-notif-menu role="region" aria-label="Notifications">
+                            <div class="dash-notif-menu-head"><span>Notifications</span><span data-dash-notif-unread aria-live="polite"></span></div>
+                            <label class="dash-notif-search"><span class="dash-sr-only">Search notifications</span><input type="search" placeholder="Search notifications…" autocomplete="off" data-dash-notif-search></label>
                             <div class="dash-notif-list" data-dash-notif-list>
                                 <p class="dash-notif-empty">Loading…</p>
                             </div>
+                            <div class="dash-notif-pagination" data-dash-notif-pagination hidden><button type="button" class="dash-mini-btn" data-dash-notif-prev>Previous</button><span data-dash-notif-page aria-live="polite"></span><button type="button" class="dash-mini-btn" data-dash-notif-next>Next</button></div>
                         </div>
                     </div>
 
@@ -521,7 +513,7 @@
                                  line below them. -->
                             <div class="dash-form-group">
                                 <span class="dash-form-label">Time range</span>
-                                <p class="dash-form-hint">Choose a start and end time (8:00 AM – 8:00 PM, whole hours).</p>
+                                <p class="dash-form-hint">Choose a start and end time within the selected date’s opening hours.</p>
                                 <div class="dash-time-range">
                                     <div class="dash-form-group">
                                         <span class="dash-form-label">From</span>
@@ -757,8 +749,8 @@
                 <section class="dash-panel" data-dash-panel="receipts">
                     <div class="dash-panel-head">
                         <div>
-                            <h2>Booking summaries</h2>
-                            <p>Download your booking details. This is not proof of payment.</p>
+                            <h2>Payment acknowledgments</h2>
+                            <p>View confirmed booking payments and linked walk-in visits. These acknowledgments confirm payment and entry only; they are not BIR invoices or official receipts.</p>
                         </div>
                     </div>
 
@@ -779,7 +771,12 @@
                          against `booking`. The empty state above only
                          appears for a customer with genuinely zero
                          bookings. -->
-                    <div class="dash-receipt-grid"></div>
+                    <div class="dash-receipt-grid" data-dash-booking-receipts aria-live="polite"></div>
+                    <div class="dash-walkin-receipts">
+                        <div class="dash-panel-head"><div><h3>Walk-in visits</h3><p>Payment acknowledgments for walk-ins linked to your account.</p></div></div>
+                        <div class="dash-receipt-grid dash-walkin-receipt-grid" data-dash-walkin-receipts aria-live="polite"><p class="dash-notif-empty">Loading linked walk-in visits…</p></div>
+                        <nav class="dash-walkin-receipt-pages" data-dash-walkin-receipt-pages aria-label="Walk-in acknowledgment pages" hidden><button type="button" class="dash-mini-btn" data-dash-walkin-receipts-prev>Previous</button><span data-dash-walkin-receipts-page aria-live="polite"></span><button type="button" class="dash-mini-btn" data-dash-walkin-receipts-next>Next</button></nav>
+                    </div>
                 </section>
 
                 <!-- ============================================================
@@ -913,11 +910,10 @@
                          parsing full_name when those are absent/undefined) —
                          only the Save/Cancel pair and the write path behind
                          them are gone, since there is nothing left on this
-                         card to save. Mobile number is the one exception:
-                         still editable, but now gated behind real SMS OTP
-                         (D6) instead of a plain Save — see the Verify button
-                         below and the OTP dialog near the end of this
-                         file. -->
+                         card to save. Mobile is editable after the
+                         authenticated provider validates Philippine format,
+                         mobile type, and active status. This does not verify
+                         ownership. -->
                     <div class="dash-card">
                         <div class="dash-card-head">
                             <h3>Personal Information</h3>
@@ -943,37 +939,24 @@
                                 <input type="email" class="dash-input" value="juan.delacruz@email.com" disabled data-dash-settings-email>
                             </div>
                             <div class="dash-form-group">
-                                <span class="dash-form-label">Mobile number</span>
+                                <span class="dash-form-label">Mobile number · optional</span>
                                 <!-- Digits only, capped at 11 (increment 13) — same
                                      [data-digits-only] pattern includes/auth.js uses for
                                      signup's mobile field (see its wiring comment), reused
                                      rather than reimplemented; wired in includes/Dashboard.js.
                                      inputmode/maxlength are the declarative half only — the
-                                     JS filter is the actual enforcement. Demo value is
-                                     digits-only for the same reason: contact_num is always
-                                     stored spaceless (window.validatePhMobile's `normalized`
-                                     is always the local 09XXXXXXXXX form), so a spaced demo
-                                     value would be the one thing on this page that could
-                                     never actually come from the database.
-
-                                     Revision 5, D6 (implementation_plan.md) — this field is
-                                     still editable (unlike the name/email fields above), but
-                                     typing a new number no longer saves anything by itself:
-                                     Verify sends a real SMS OTP (Supabase Auth's Phone
-                                     provider) to the new number and only writes
-                                     profiles.contact_num once that code is confirmed — see
-                                     includes/Dashboard.js. The badge next to the field shows
-                                     once the number on file has been proven this way
-                                     (profiles.phone_verified). -->
+                                     JS filter is the actual enforcement. The saved value
+                                     is loaded from the signed-in profile; new values are
+                                     validated by the authenticated Edge Function before
+                                     the profile is updated. Validation does not verify
+                                     ownership or guarantee reachability. -->
                                 <div class="dash-mobile-verify-row">
-                                    <input type="tel" class="dash-input" placeholder="09XX XXX XXXX" value="09123456789"
+                                    <input type="tel" class="dash-input" placeholder="09XX XXX XXXX"
                                            inputmode="numeric" maxlength="11" data-digits-only data-dash-settings-mobile>
-                                    <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-verify>Verify</button>
+                                    <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-validate>Validate &amp; save</button>
+                                    <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-mobile-remove hidden>Remove</button>
                                 </div>
-                                <span class="dash-mobile-verified-badge" data-dash-mobile-verified hidden>
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                                    Verified
-                                </span>
+                                <span class="dash-mobile-status" data-dash-mobile-status role="status">A contact number is optional. We check Philippine format, mobile type, and active status, not ownership or guaranteed reachability.</span>
                             </div>
                         </div>
                     </div>
@@ -1104,19 +1087,14 @@
                         <a href="tel:+639281546876">+63 928 154 6876</a>
                         <a href="mailto:itsrosem8@gmail.com">itsrosem8@gmail.com</a>
                         <span>Iñigos Sports Center, Brgy. Bocohan, Diversion Road, Lucena City</span>
-                        <!-- Filled by includes/Dashboard.js from
-                             window.InigoBusinessHours (OPEN_HOUR/CLOSE_HOUR)
-                             so this text can never quietly drift from the
-                             real bookable window (D1) the way a hand-typed
-                             string could. -->
-                        <span>Operating hours: <span data-dash-footer-hours>8:00 AM – 8:00 PM daily</span></span>
+                        <span data-dash-footer-hours>Hours vary by day. Check the selected date before booking.</span>
                         <a href="https://www.google.com/maps?q=I%C3%B1igos%20Sports%20Center%20Brgy.%20Bocohan%20Lucena%20City&z=15" target="_blank" rel="noopener noreferrer">Get directions</a>
                     </div>
 
                     <div class="dash-footer-col">
                         <h4>Policies</h4>
                         <a href="terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
-                        <span>You cannot cancel a booking yourself. A booking without check-in after the 30-minute grace period is cancelled as a no-show; completed payments are non-refundable.</span>
+                        <span>You cannot cancel a booking yourself. A booking without check-in after the posted grace period is marked unattended; payments follow the agreed terms.</span>
                         <a href="https://www.facebook.com/profile.php?id=100064109438955" target="_blank" rel="noopener noreferrer" class="dash-footer-social">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 22v-8.5h2.8l.4-3.2h-3.2V4.3c0-.9.3-1.6 1.6-1.6h1.7V.1c-.3 0-1.3-.1-2.4-.1-2.4 0-4.1 1.5-4.1 4.2v2.4H7.2v3.2h2.8V22h3.5z"/></svg>
                             Facebook
@@ -1128,55 +1106,6 @@
                     <span>© 2026 IñigoSync · Iñigos Sports Center, Lucena City. All rights reserved.</span>
                 </div>
             </footer>
-        </div>
-    </div>
-
-    <!-- ================================================================
-         MOBILE NUMBER VERIFICATION (OTP) DIALOG — Revision 5, D6
-         (implementation_plan.md). Reuses the SAME generic
-         .dash-modal-overlay/.dash-modal shell as the Feedback dialog above,
-         rather than a second implementation. Opened by Account Settings'
-         "Verify" button (data-dash-mobile-verify) only AFTER
-         sb.auth.updateUser({ phone }) has actually sent a real code — this
-         is never opened speculatively, and the code typed here is never
-         checked against anything generated client-side (see
-         includes/Dashboard.js; "no fake verification path" is a hard
-         constraint of this revision). The 6 boxes / auto-advance / paste /
-         Resend-with-cooldown behavior mirrors Pages/Index.html's own email
-         OTP panel (data-otp-box, includes/auth.js) under dash-otp-* names —
-         Style/Auth.css itself is intentionally NOT linked on this page, so
-         that sizing is ported into Style/Dashboard.css's own .dash-otp-box
-         rule instead of sharing the class across stylesheets. -->
-    <div class="dash-modal-overlay" data-dash-mobile-otp-overlay hidden>
-        <div class="dash-modal" role="dialog" aria-modal="true" aria-labelledby="dashMobileOtpTitle" tabindex="-1" data-dash-mobile-otp-dialog>
-            <button type="button" class="dash-modal-close" data-dash-mobile-otp-cancel aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
-
-            <h3 id="dashMobileOtpTitle">Verify your mobile number</h3>
-            <p class="dash-modal-sub">Enter the 6-digit code we sent to <strong data-dash-mobile-otp-phone>your mobile number</strong>.</p>
-
-            <div class="dash-otp-row">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-otp-box" data-dash-otp-box aria-label="Digit 1">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-otp-box" data-dash-otp-box aria-label="Digit 2">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-otp-box" data-dash-otp-box aria-label="Digit 3">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-otp-box" data-dash-otp-box aria-label="Digit 4">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-otp-box" data-dash-otp-box aria-label="Digit 5">
-                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-otp-box" data-dash-otp-box aria-label="Digit 6">
-            </div>
-
-            <p class="dash-otp-error" data-dash-mobile-otp-error>That code didn't match. Please try again.</p>
-
-            <p class="dash-form-hint">
-                Didn't get a code?
-                <button type="button" class="dash-link-btn" data-dash-mobile-otp-resend>Resend code</button>
-                <span data-dash-mobile-otp-timer></span>
-            </p>
-
-            <div class="dash-form-actions">
-                <button type="button" class="dash-btn-ghost" data-dash-mobile-otp-cancel>Cancel</button>
-                <button type="button" class="dash-btn-save" data-dash-mobile-otp-confirm>Confirm</button>
-            </div>
         </div>
     </div>
 

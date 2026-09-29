@@ -83,7 +83,7 @@
                     photo_file: null, rate_day: unit.rate_day == null ? '' : String(unit.rate_day), rate_night: unit.rate_night == null ? '' : String(unit.rate_night),
                     rate_unit: unit.rate_unit || '/hr', resource_ids: Array.isArray(unit.resource_ids) ? unit.resource_ids.slice() : [],
                     resource_search: '', resource_expanded: false, resource_open: false,
-                    maintenance: Array.isArray(unit.maintenance) ? unit.maintenance.map((period) => ({ id: period.id || null, start_at: period.start_at || '', end_at: period.end_at || '', note: period.note || '' })) : [],
+                    maintenance: Array.isArray(unit.maintenance) ? unit.maintenance.map((period) => ({ id: period.id || null, start_at: period.start_at || '', end_at: period.end_at || '', note: period.note || '', publish_at: period.publish_at || null })) : [],
                 })),
                 resources: Array.isArray(data.resources) ? data.resources.map((resource) => ({ ...resource, id: String(resource.id), name: String(resource.name || 'Court space'), sport_names: Array.isArray(resource.sport_names) && resource.sport_names.length ? resource.sport_names.map(String) : [String(resource.sport_name || resource.sport?.name || 'Other spaces')] })) : [],
                 cutoff: data.cutoff || null,
@@ -204,7 +204,7 @@
                 } catch (error) { toast(error.message || 'Could not prepare this unit photo.', true); }
             }));
             unitHost.querySelectorAll('[data-ioc-add-maintenance]').forEach((button) => button.addEventListener('click', () => {
-                const index = Number(button.dataset.iocAddMaintenance); state.draft.units[index].maintenance.push({ id: null, start_at: '', end_at: '', note: '' }); markDirty(); renderUnits();
+                const index = Number(button.dataset.iocAddMaintenance); state.draft.units[index].maintenance.push({ id: null, start_at: '', end_at: '', note: '', publish_at: null }); markDirty(); renderUnits();
             }));
             renderResourceGroups(); renderMaintenance();
         }
@@ -295,10 +295,15 @@
         function renderMaintenance() {
             state.draft.units.forEach((unit, index) => {
                 const target = editor.querySelector(`[data-ioc-maintenance-list="${index}"]`); if (!target) return;
-                target.innerHTML = unit.maintenance.length ? unit.maintenance.map((period, periodIndex) => `<div class="ioc-maintenance-row" data-ioc-maintenance="${index}:${periodIndex}"><label class="ioc-field"><span>Starts · Manila time</span><input class="admin-input" type="datetime-local" value="${esc(period.start_input || timeToManilaInput(period.start_at))}" data-ioc-maint-start="${index}:${periodIndex}"></label><label class="ioc-field"><span>Ends · Manila time</span><input class="admin-input" type="datetime-local" value="${esc(period.end_input || timeToManilaInput(period.end_at))}" data-ioc-maint-end="${index}:${periodIndex}"></label><label class="ioc-field"><span>Note</span><input class="admin-input" maxlength="160" value="${esc(period.note)}" placeholder="Optional" data-ioc-maint-note="${index}:${periodIndex}"></label><button type="button" class="ioc-text-danger" data-ioc-remove-maintenance="${index}:${periodIndex}">Remove</button></div>`).join('') : '<p class="ioc-muted">No maintenance scheduled.</p>';
-                target.querySelectorAll('[data-ioc-maint-start],[data-ioc-maint-end],[data-ioc-maint-note]').forEach((input) => input.addEventListener('input', () => {
-                    const [u, p] = input.dataset.iocMaintStart?.split(':') || input.dataset.iocMaintEnd?.split(':') || input.dataset.iocMaintNote?.split(':'); const period = state.draft.units[Number(u)].maintenance[Number(p)];
-                    if (input.dataset.iocMaintStart) period.start_input = input.value; else if (input.dataset.iocMaintEnd) period.end_input = input.value; else period.note = input.value; markDirty();
+                target.innerHTML = unit.maintenance.length ? unit.maintenance.map((period, periodIndex) => `<div class="ioc-maintenance-row" data-ioc-maintenance="${index}:${periodIndex}"><label class="ioc-field"><span>Starts · Manila time</span><input class="admin-input" type="datetime-local" value="${esc(period.start_input ?? timeToManilaInput(period.start_at))}" data-ioc-maint-start="${index}:${periodIndex}"></label><label class="ioc-field"><span>Ends · Manila time</span><input class="admin-input" type="datetime-local" value="${esc(period.end_input ?? timeToManilaInput(period.end_at))}" data-ioc-maint-end="${index}:${periodIndex}"></label><label class="ioc-field"><span>Notice publication · Manila time</span><input class="admin-input" type="datetime-local" value="${esc(period.publish_input ?? timeToManilaInput(period.publish_at))}" aria-label="Maintenance notice publication time" data-ioc-maint-publish="${index}:${periodIndex}"><small>Leave blank to notify customers and staff immediately.</small></label><label class="ioc-field"><span>Note</span><input class="admin-input" maxlength="160" value="${esc(period.note)}" placeholder="Optional" data-ioc-maint-note="${index}:${periodIndex}"></label><button type="button" class="ioc-text-danger" data-ioc-remove-maintenance="${index}:${periodIndex}">Remove</button></div>`).join('') : '<p class="ioc-muted">No maintenance scheduled.</p>';
+                target.querySelectorAll('[data-ioc-maint-start],[data-ioc-maint-end],[data-ioc-maint-publish],[data-ioc-maint-note]').forEach((input) => input.addEventListener('input', () => {
+                    const key = ['iocMaintStart', 'iocMaintEnd', 'iocMaintPublish', 'iocMaintNote'].find(name => input.dataset[name] !== undefined);
+                    const [u, p] = input.dataset[key].split(':'); const period = state.draft.units[Number(u)].maintenance[Number(p)];
+                    if (key === 'iocMaintStart') period.start_input = input.value;
+                    else if (key === 'iocMaintEnd') period.end_input = input.value;
+                    else if (key === 'iocMaintPublish') period.publish_input = input.value;
+                    else period.note = input.value;
+                    markDirty();
                 }));
                 target.querySelectorAll('[data-ioc-remove-maintenance]').forEach((button) => button.addEventListener('click', () => {
                     const [u, p] = button.dataset.iocRemoveMaintenance.split(':'); state.draft.units[Number(u)].maintenance.splice(Number(p), 1); markDirty(); renderMaintenance();
@@ -355,12 +360,15 @@
         function buildPayload(uploaded) {
             const draft = state.draft;
             const units = draft.units.map((unit, index) => {
-                const inputStart = unit.maintenance.map((p) => p.start_input || timeToManilaInput(p.start_at));
-                const inputEnd = unit.maintenance.map((p) => p.end_input || timeToManilaInput(p.end_at));
+                const inputStart = unit.maintenance.map((p) => p.start_input ?? timeToManilaInput(p.start_at));
+                const inputEnd = unit.maintenance.map((p) => p.end_input ?? timeToManilaInput(p.end_at));
                 const maintenance = unit.maintenance.map((period, periodIndex) => {
                     const start = manilaInputToISO(inputStart[periodIndex]); const end = manilaInputToISO(inputEnd[periodIndex]);
                     if (!start || !end || new Date(start) >= new Date(end)) throw new Error(`Check the maintenance dates for ${unit.label}. End time must be after start time.`);
-                    return { id: period.id, start_at: start, end_at: end, note: period.note.trim() || null };
+                    const publicationInput = period.publish_input !== undefined ? period.publish_input : timeToManilaInput(period.publish_at);
+                    const publishAt = publicationInput ? manilaInputToISO(publicationInput) : null;
+                    if (publicationInput && !publishAt) throw new Error(`Check the notice publication time for ${unit.label}.`);
+                    return { id: period.id, start_at: start, end_at: end, note: period.note.trim() || null, publish_at: publishAt };
                 });
                 const day = unit.rate_day === '' ? null : Number(unit.rate_day); const night = unit.rate_night === '' ? null : Number(unit.rate_night);
                 if ((day !== null && (!Number.isFinite(day) || day < 0)) || (unit.rate_unit !== '/set' && night !== null && (!Number.isFinite(night) || night < 0))) throw new Error(`Enter a valid non-negative rate for ${unit.label}.`);

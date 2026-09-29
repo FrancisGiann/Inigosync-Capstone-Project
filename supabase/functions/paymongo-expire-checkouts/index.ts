@@ -32,9 +32,45 @@ Deno.serve(async (req: Request) => {
   const basic = btoa(`${paymongoKey}:`);
   for (const item of Array.isArray(due) ? due : []) {
     const attemptId = item?.attempt_id;
-    const sessionId = item?.session_id;
-    if (typeof attemptId !== "string" || typeof sessionId !== "string") { deferred++; continue; }
+    let sessionId = item?.session_id;
+    if (typeof attemptId !== "string") { deferred++; continue; }
     try {
+      if (typeof sessionId !== "string") {
+        if (item?.should_abandon === true || !item?.checkout_request
+            || typeof item.checkout_request !== "object" || Array.isArray(item.checkout_request)) {
+          const { data: abandoned, error } = await admin.rpc("mark_paymongo_checkout_abandoned", {
+            p_attempt_id: attemptId,
+          });
+          if (error || abandoned !== true) deferred++;
+          else expired++;
+          continue;
+        }
+
+        // The original create call may have timed out after PayMongo created a
+        // session. Replay the exact stored request with its original key; the
+        // key is abandoned locally before its documented 24-hour lifetime.
+        const createResponse = await fetch("https://api.paymongo.com/v2/checkout_sessions", {
+          method: "POST",
+          headers: { authorization: `Basic ${basic}`, "content-type": "application/json",
+            "Idempotency-Key": attemptId },
+          body: JSON.stringify({ data: { attributes: item.checkout_request } }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const created = await createResponse.json().catch(() => null);
+        sessionId = created?.data?.id;
+        const checkoutUrl = created?.data?.attributes?.checkout_url;
+        const expectedLivemode = paymongoKey.startsWith("sk_live_");
+        if (!createResponse.ok || typeof sessionId !== "string" || typeof checkoutUrl !== "string"
+            || created?.data?.attributes?.livemode !== expectedLivemode) {
+          deferred++;
+          continue;
+        }
+        const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_checkout", {
+          p_attempt_id: attemptId, p_session_id: sessionId, p_checkout_url: checkoutUrl,
+        });
+        if (attachError || attached !== true) { deferred++; continue; }
+      }
+
       const getResponse = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
         headers: { authorization: `Basic ${basic}` },
         signal: AbortSignal.timeout(10000),
@@ -56,6 +92,8 @@ Deno.serve(async (req: Request) => {
           p_session_id: sessionId,
           p_payment_id: payment.paymentId,
           p_amount_minor: payment.amountMinor,
+          p_fee_minor: payment.feeMinor,
+          p_net_minor: payment.netMinor,
         });
         if (error || !["paid", "duplicate", "review"].includes(recorded)) {
           console.error("Could not reconcile paid PayMongo session", error?.message || recorded);

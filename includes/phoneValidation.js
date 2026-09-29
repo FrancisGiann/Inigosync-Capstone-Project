@@ -24,8 +24,8 @@
     }
 
     // Returns { valid, normalized, message }. normalized is always the
-    // local 09XXXXXXXXX form — one consistent stored format regardless of
-    // which accepted format the customer typed.
+    // local 09XXXXXXXXX form for UI/Edge-function input. The Edge Function
+    // returns the canonical +639… value stored after provider validation.
     function validatePhMobile(raw) {
         const cleaned = stripSeparators(raw);
 

@@ -372,7 +372,7 @@ function fixture() {
                     await landing.route(/^https:\/\//, route => route.abort());
                     await landing.route('https://example.test/storage/v1/object/public/media/**', route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/+n8AAAAASUVORK5CYII=', 'base64') }));
                     await landing.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})();` }));
-                    await landing.goto('http://127.0.0.1:4178/Pages/Index.html', { waitUntil: 'domcontentloaded' });
+                    await landing.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'domcontentloaded' });
                     const landingCover = landing.locator('[data-court-id="qa-covered-sport"] img');
                     await landingCover.waitFor();
                     assert.equal(await landingCover.getAttribute('src'), savedCover, 'landing page uses the saved cover URL');

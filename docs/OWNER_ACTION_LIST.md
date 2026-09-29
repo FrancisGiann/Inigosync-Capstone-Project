@@ -1,9 +1,16 @@
 # IñigoSync — Owner Action List
 
-Everything here needs **your** credentials, your card-free signup, or an
-account I have no access to. Nothing on this list can be done by me or by any
-agent, because it requires either the `service_role` key (deliberately absent
-from this repo) or a third-party account in your name.
+> **2026-09-29 phone-plan update:** The earlier SMS and OTP instructions in
+> historical project notes are superseded. Current owner action **E5** uses
+> Abstract Phone Validation with an Edge Function secret. The project manager
+> has removed SMS phone ownership verification from scope. See
+> [current setup](phone-validation-setup.md). Some older items below document
+> the prior deployment state and should not be read as the new staff portal rollout.
+
+This file includes historical setup notes. The current task has authorized
+Supabase project access and PayMongo test-account access, so the earlier
+statements about agent access may no longer apply. Never place API keys in the
+repository or chat.
 
 Ordered by priority. Each item says **why it's blocked**, **what to do**, and
 **what unblocks** once it's done.
@@ -11,6 +18,10 @@ Ordered by priority. Each item says **why it's blocked**, **what to do**, and
 ---
 
 ## A. Run the SQL migrations *(highest value, ~5 minutes total)*
+
+> This section records the older manual rollout. The current staff portal uses
+> timestamped `supabase/migrations/20260928*.sql` files, which must be applied
+> in order and verified before the new screens are considered operational.
 
 I can write SQL but cannot execute it — the app only ever holds the publishable
 (anon) key, and DDL requires elevated access. Every file below is **idempotent**:
@@ -26,7 +37,7 @@ paste the file's contents → **Run**.
 | A3 | `database/schema/005_session_security.sql` | Creates the `active_session` table + RLS for one-device-at-a-time enforcement | Single-session silently no-ops. Login and dashboards work normally. |
 | A4 | `database/schema/006_court_unit_images.sql` | Adds a nullable `unit_images` jsonb column to `court`, so one sport can carry a photo per individual court/lane/table | The landing page's court viewer still lists every unit (Court 1–9, Duckpin/Ten-Pin, Table 1–2) — they just all share the sport's single photo. Nothing breaks. |
 | A5 | `database/schema/007_app_settings.sql` | Creates the single-row `app_settings` table + RLS (admin read/write, staff/customer read-only), seeded with today's defaults (GCash + Cash on, 50% downpayment) | The owner dashboard's Payment Configuration Save button fails with a clear "needs a database update" message instead of a fake success toast; the customer booking and staff walk-in screens keep using the hardcoded 50%/GCash+Cash-on defaults exactly as they do today. Nothing breaks. |
-| A6 | `database/schema/013_profile_phone_verified.sql` | Adds a `phone_verified boolean not null default false` column to `profiles` | The customer dashboard's new mobile-number OTP verification (Account Settings) can still complete `verifyOtp()` and save the new number, but the "Verified" badge next to it never appears (the write silently drops just that one column — see item E5 below for the other half of this feature). Nothing breaks. |
+| A6 | `database/schema/013_profile_phone_verified.sql` | Historical column from the superseded SMS design. The new migration resets this untrusted flag, adds separate server-enforced validation state, and keeps existing phone numbers; follow E5 for current setup. | No SMS OTP setup is needed. |
 | A7 | `database/schema/014_admin_reset_staff_password.sql` | Adds a `admin_reset_staff_password(target_id)` function (SECURITY DEFINER) that resets a staff/admin account's password to the fixed default **`12345678`**. Requires `pgcrypto` (added automatically if missing). | The owner dashboard's Staff Management → **Reset Password** button fails with "needs a database update" instead of resetting anything. Nothing breaks — the old email-link reset path is gone either way (see below). |
 | A8 | `database/schema/015_media_bucket.sql` | Creates a **public** Storage bucket named `media` (5 MB/file limit, JPEG/PNG/WEBP only) plus row-level-security policies so **anyone can view** what's in it but **only an active admin can upload/replace/delete**. | Media Manager's "Upload photo" / "Replace photo" buttons (slideshow + Court Listings) show "Media storage isn't set up yet — run database/schema/015_media_bucket.sql" instead of uploading. Pasting a plain `https://` image URL into Court Listings still works either way — only file uploads need this. |
 | A9 | `database/schema/016_walkin_checkin.sql` | Adds `court_unit` / `end_at` / `payment_method` / `checked_in_at` columns to `walk_in_booking`, backfills `end_at` for existing rows, and adds UPDATE policies (`booking_staff_checkin`, `walkin_staff_checkin`) so staff can set `checked_in_at` on a `booking` or `walk_in_booking` row they don't own | Staff Time-In (Booking Overview / Transaction Records) fails with "Ask the owner to run 004 and 016." instead of persisting; the Walk-In wizard still records a walk-in, but drops the specific court/unit, real end time, and payment method (schema-mismatch retry), so Court Schedule/Transaction Records show sport-wide availability and no payment method for those rows. Nothing breaks. |
@@ -374,54 +385,25 @@ straight in the customer dashboard.
 
 ---
 
-## E5. Enable the Phone provider (SMS OTP) *(REQUIRED — mobile-number verification will otherwise show a friendly error)*
+## E5. Configure Abstract Phone Validation *(REQUIRED for saving a changed optional contact number)*
 
-**Why it's blocked:** it's a provider toggle in the Supabase dashboard, same
-place as the email templates above but a different provider (Phone, not
-Email).
+The project manager removed SMS verification from scope. Do not enable
+Supabase Phone Auth, an SMS provider, or test OTP numbers for this feature.
+Abstract validates number format and mobile type; it does not prove ownership.
 
-**Why this exists.** Account Settings' mobile number field now requires proof
-you actually control the new number before it's saved: the app calls
-`sb.auth.updateUser({ phone: '+63…' })` to send a 6-digit code, then
-`sb.auth.verifyOtp({ phone, token, type: 'phone_change' })` to confirm it —
-exactly the same code/verify shape as the email OTP flows above, just over
-SMS instead of email. **This is real, not a demo stub** — no code is ever
-generated or checked client-side (see implementation_plan.md's "Revision 5"
-section, D6). Until the Phone provider is turned on, `updateUser({ phone })`
-fails and the UI shows "SMS verification isn't set up yet — ask the owner to
-enable Phone sign-in in Supabase" instead of crashing or pretending it
-worked.
+1. Sign in to [Abstract](https://app.abstractapi.com/dashboard), open **Phone Intelligence** under Your products, and copy that product's API key.
+2. In the Supabase project's **Edge Functions → Secrets**, add
+   `ABSTRACT_PHONE_VALIDATION_API_KEY`. Enter the value directly in Supabase,
+   never in chat or source code.
+3. Deploy the `validate-contact-phone` Edge Function and the database migration
+   that enforces its short-lived, one-use validation proof.
+4. In a test account, validate a Philippine mobile number in Account Settings.
+   Confirm that invalid/non-mobile numbers, provider failure, and exhausted
+   quota leave the old number unchanged. The UI should say **Validated number**.
 
-**What to do (zero-cost demo path — no SMS provider account needed):**
-1. Supabase Dashboard → **Authentication → Providers → Phone** → enable it.
-   Also go to **Authentication → Settings** (User Signups) and switch **Enable
-   phone confirmations** ON — this is a separate toggle from the provider
-   switch above. With the provider enabled but this toggle OFF,
-   `updateUser({ phone: '+63…' })` returns **success with no error and no
-   code queued**, so the app's OTP dialog would have nothing to confirm and
-   could never complete. The app detects that "no pending change" case and
-   shows "No verification code was sent — the owner needs to turn on phone
-   confirmations in Supabase" instead of opening a dead-end dialog — but the
-   feature only actually works once this toggle is ON.
-2. Supabase will ask for an SMS provider (Twilio, MessageBird, Vonage, etc.)
-   to actually send text messages — **skip that for now.** Scroll to
-   **Phone → Test phone numbers and OTPs** (sometimes labelled
-   `auth.sms.test_otp` in older dashboard versions) and add one or more
-   fake numbers with fixed codes, e.g. `+639171234567` → `123456`. No SMS is
-   sent and nothing costs money; typing that exact number and code in the
-   app's Verify dialog completes real `verifyOtp()` calls end-to-end.
-3. Run item **A6** above (`013_profile_phone_verified.sql`) so the
-   "Verified" badge has somewhere to persist.
-4. **Later, for real customers:** add a real SMS provider under the same
-   Phone provider screen (Twilio Verify is the one Supabase's docs walk
-   through in the most detail). This is a paid, per-message service — no
-   need to set it up before the thesis defense, only before real mobile
-   numbers need real codes.
-
-**How to test:** Account Settings → change the mobile number to one of your
-test numbers → **Verify** → a 6-box code dialog opens → type the fixed test
-code → **Confirm**. The number should save and a "Verified" badge should
-appear next to it.
+See [phone validation setup](phone-validation-setup.md) for limitations and the
+free-tier budget. The older `013_profile_phone_verified.sql` column is historical;
+the new server-enforced validation flow replaces the old SMS badge semantics.
 
 ---
 
@@ -544,7 +526,7 @@ Get the real answers and I'll drop them in, or edit the file directly.
 | **E2** (Magic Link template) | **Required** — first-login OTP is unusable without it, for all three roles |
 | **E3** (Reset Password template) | **Required** — "Forgot password?" cannot be completed without the code |
 | **E4** (Confirm signup template) | **Required** — new sign-ups cannot get past the verify screen without it |
-| **E5** (Phone provider + test OTP numbers) | **Required** — Account Settings' mobile-number verification cannot send/verify a code without it |
+| **E5** (Abstract API key in Edge Function secrets) | **Required** — changed optional contact numbers cannot be validated and saved without it |
 | **E6** (Invite user template) | Recommended, not required — branded staff-invite email instead of Supabase's generic default, and makes explicit that the invite (and every future notice) goes to the account's own **personal** email |
 | **F** (court rates) | Replaces every "Rate TBA" with real pricing |
 | **G** (T&C values) | Completes the Terms & Conditions page |
@@ -554,8 +536,8 @@ templates, not two. That's roughly fifteen minutes of copy-paste in the Supabase
 dashboard and it activates most of what's already built and sitting dormant —
 including log-in, sign-up and password reset, all three of which are *currently
 broken* on a default Supabase project because none of the default templates
-contain `{{ .Token }}`. Add **E5** (five more minutes, no SMS account needed —
-just the free test-OTP numbers) to light up mobile-number verification too.
+contain `{{ .Token }}`. Complete **E5** separately to validate and save changed
+optional contact numbers through Abstract; it requires no SMS provider.
 If you're about to onboard real staff, add **E6** as well — not required
 (Supabase's default Invite user template already has a working link), but it's
 another five minutes, and — because it's the one auth email in this project

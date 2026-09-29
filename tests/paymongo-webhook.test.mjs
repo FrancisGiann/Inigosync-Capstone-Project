@@ -37,11 +37,19 @@ test('rejects stale signatures and malformed digest values', async () => {
 });
 
 for (const [name, parse] of [['webhook', webhookPayment], ['expiry reconciliation', expiryPayment]]) {
-    test(`${name} validates gross PHP amount instead of PayMongo net proceeds`, () => {
+    test(`${name} extracts gross, provider fee, and net amounts for reconciliation`, () => {
         const result = parse({ payments: [{ id: 'pay_test_1', attributes: {
-            status: 'paid', amount: 10000, net_amount: 9700, currency: 'PHP',
+            status: 'paid', amount: 10000, fee: 300, net_amount: 9700, currency: 'PHP',
         } }] });
-        assert.deepEqual(result, { paymentId: 'pay_test_1', amountMinor: 10000 });
+        assert.deepEqual(result, {
+            paymentId: 'pay_test_1', amountMinor: 10000, feeMinor: 300, netMinor: 9700,
+        });
+    });
+
+    test(`${name} rejects inconsistent provider fee reconciliation`, () => {
+        assert.equal(parse({ payments: [{ id: 'pay_test_1', attributes: {
+            status: 'paid', amount: 10000, fee: 301, net_amount: 9700, currency: 'PHP',
+        } }] }), null);
     });
 
     test(`${name} ignores unpaid, invalid, and non-PHP payment records`, () => {

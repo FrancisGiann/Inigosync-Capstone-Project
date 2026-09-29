@@ -364,6 +364,22 @@ document.addEventListener('DOMContentLoaded', () => {
         await registerActiveSession(session.user.id);
         markDeviceTrusted(session.user.id);
 
+        // This is an observed app sign-in, not a claim about when every Auth
+        // session started. The database RPC attributes and deduplicates it
+        // using the signed-in customer's JWT. Logging is best effort so an
+        // activity-feed outage cannot lock a customer out of the dashboard.
+        if (profile.role === 'customer' && typeof window.sb.rpc === 'function') {
+            try {
+                const eventResult = await Promise.race([
+                    window.sb.rpc('record_customer_session_event', { p_kind: 'sign_in' }),
+                    new Promise(resolve => window.setTimeout(resolve, 1800)),
+                ]);
+                if (eventResult?.error) throw eventResult.error;
+            } catch (error) {
+                console.warn('[auth] customer sign-in event was not recorded', error);
+            }
+        }
+
         closeModal();
         const redirectUrl = new URL(DASHBOARD_BY_ROLE[profile.role], window.location.href);
         window.location.assign(redirectUrl.toString());
@@ -1735,10 +1751,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 if (mode === 'signup') {
-                    // PH mobile validation (spec: registration must validate
-                    // the mobile number). Normalized to the local
-                    // 09XXXXXXXXX form regardless of which accepted format
-                    // was typed, so contact_num is stored one consistent way.
+                    // Check the local input shape before signup. The actual
+                    // provider format/type validation and profile write happen
+                    // after email confirmation and an active profile exists.
                     const mobileCheck = data.mobile?.trim() ? window.validatePhMobile(data.mobile) : { valid: true, normalized: null };
                     if (!mobileCheck.valid) {
                         setAuthNotice(mobileCheck.message, true);
@@ -1751,8 +1766,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         password: data.password,
                         options: {
                             data: {
-                                full_name: data.fullname,
-                                contact_num: mobileCheck.normalized
+                                full_name: data.fullname
                             }
                         }
                     });

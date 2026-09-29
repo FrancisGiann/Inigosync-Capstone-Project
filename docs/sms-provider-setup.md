@@ -1,5 +1,11 @@
 # SMS activation for InigoSync
 
+> **Superseded on 2026-09-29.** The project manager removed SMS phone
+> ownership verification from scope. Do not follow the activation steps below
+> for the current staff portal rollout. Use [Abstract phone validation
+> setup](phone-validation-setup.md). The rest of this file records the earlier
+> proposal only.
+
 ## Current capstone mode: free simulation
 
 `Config/phoneVerification.js` selects `simulation` for the signup phone panel.

@@ -1,4 +1,4 @@
-# Customer access and optional phone verification
+# Customer access and optional phone validation
 
 ## Early email availability
 
@@ -35,49 +35,39 @@ first-device email OTP. Existing remembered staff/admin sessions still resume
 their own dashboard.
 
 The signup phone field is optional. Blank numbers are submitted as `null`;
-entered numbers must pass the existing PH mobile validator. After email
-confirmation (or immediate signup when confirmation is disabled), customers
-who supplied a number can choose **Verify** beside their number or **Skip for now**.
-The signup-step button explains that verification follows email confirmation.
-After a confirmed SMS code, the button shows **Verified** and **Continue** finishes login.
-Skipping leaves the number unverified and lets Account Settings handle it later.
+entered numbers must pass the local PH mobile format check. The signup
+request does not persist a new contact number before server validation. After
+email confirmation (or immediate signup when confirmation is disabled), a
+customer who entered a number can validate and save it through the authenticated
+`validate-contact-phone` Edge Function, or skip and add it later in Account
+Settings. A failed validation leaves the saved number unchanged.
 
 Email availability uses a compact label beside the email heading and green/red
 field borders. Status changes reserve the same space, so the card does not resize.
 
-The SMS flow calls `auth.updateUser({ phone })`, confirms that a pending phone
-change exists, and verifies the supplied code with `type: 'phone_change'`.
-It then checks the server-returned user ID, confirmed phone and confirmation
-timestamp before saving `contact_num` and `phone_verified` together. No code is
-generated locally. A missing SMS provider never produces a success state.
-The existing profile verification flag is display metadata, not an authorization
-claim; roles continue to come from the protected profile role.
+The Edge Function calls Abstract's Phone Intelligence API using a server-side
+secret. On a valid PH mobile response it creates a short-lived, one-use proof
+bound to the account and number. The database consumes that proof when a changed
+`profiles.contact_num` is saved. The database records
+`contact_num_validated` and `contact_num_validated_at`; browser code cannot set
+them or bypass the proof. The older client-writable `phone_verified` flag is
+reset to false during migration; existing contact numbers remain saved but
+start with the new validation state false. Supabase
+Phone Auth and SMS delivery are not used for this
+feature. See [owner setup](phone-validation-setup.md).
 
-## Delivery setup still needed
-
-For the capstone, signup now defaults to an explicitly labelled free SMS demo
-via `Config/phoneVerification.js`. The displayed test code is 123456 (60-second
-expiry); successful simulation says Demo passed and does not save phone_verified.
-The live API flow described above remains available only with mode set to live.
-
-On 2026-09-19, the project's public Auth settings report `external.phone: false`.
-Phone authentication and an SMS provider with phone confirmations enabled are
-required for actual delivery. No provider was enabled or purchased by this change.
-Provider fees/trial limits are separate from the application. Test-number codes
-do not send text messages and must not be represented as real SMS delivery.
-
-Official reference: https://supabase.com/docs/guides/auth/phone-login
-
-The branded SMS template is now saved in the hosted project. See
-[SMS activation guide](sms-provider-setup.md) for the remaining provider account,
-credentials, billing review and real-delivery check. Run
-`node scripts/check-sms-readiness.cjs` for a read-only configuration preflight.
+The displayed state is **Validated number**. It means the provider classified
+the number as valid, Philippine, mobile, and active. It does not establish
+ownership, guaranteed current reachability, or delivery. It is never an
+authorization claim; account roles still come from the protected profile
+role. Email OTP for signup and login is
+unchanged.
 
 ## Verification
 
-`tests/auth-account-flows.cjs` uses mocked Auth responses; it creates no real
-accounts and sends no emails/SMS. It covers rejected Google roles, successful
-customer OAuth, optional and malformed phone values, both email-confirmation
-paths, invalid codes, cooldown, verified-only persistence, unavailable sending,
-mismatched confirmed numbers and skipping. Real SMS delivery remains unverified
-until a provider is configured.
+`tests/auth-account-flows.cjs` uses mocked Auth and validation responses; it
+creates no real accounts or provider requests. It covers rejected Google roles,
+successful customer OAuth, optional and malformed phone values, both
+email-confirmation paths, successful validation, rejection, unavailable provider,
+and skipping. Live Abstract validation needs a configured secret and a test
+account; mocked tests alone do not prove provider behavior.

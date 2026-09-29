@@ -3,8 +3,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 function mockClient(options) {
     const user = { id: 'fixture-user', identities: [{ provider: 'email' }] };
-    let session = options.oauth ? { user } : null;
-    let phone = '';
+    let session = options.oauth || options.dashboard ? { user } : null;
     const record = (kind, data) => {
         const calls = JSON.parse(sessionStorage.getItem('fixture-calls') || '[]');
         calls.push({ kind, data }); sessionStorage.setItem('fixture-calls', JSON.stringify(calls));
@@ -31,29 +30,46 @@ function mockClient(options) {
                 session = options.emailConfirmation ? null : { user }; return { data: { user, session } };
             },
             updateUser: async data => {
-                record('sendSms', data); phone = data.phone;
-                if (options.providerOff) return { error: { message: 'Phone provider is disabled' } };
-                return { data: { user: { ...user, new_phone: options.noPending ? null : phone.replace('+', '') } } };
+                record('updateUser', data);
+                return {};
             },
             verifyOtp: async data => {
                 record('verifyOtp', data);
                 if (data.type === 'signup') { session = { user }; return {}; }
                 return data.token === '123456' ? {} : { error: { message: 'Token expired' } };
             },
-            getUser: async () => ({ data: { user: { ...user, phone: options.mismatch ? '639999999999' : phone, phone_confirmed_at: new Date().toISOString() } } }),
+            getUser: async () => ({ data: { user } }),
             signInWithOAuth: async data => { record('oauth', data); return { error: { message: 'Fixture stopped redirect' } }; }
+        },
+        functions: {
+            invoke: async (name, args) => {
+                record('function', { name, body: args?.body });
+                if (name !== 'validate-contact-phone') return { data: {}, error: null };
+                if (options.validationError) {
+                    const message = options.validationError === true ? 'Phone validation is unavailable.' : options.validationError;
+                    return { data: null, error: { message, context: new Response(JSON.stringify({ message }), { status: options.validationStatus || 503, headers: { 'content-type': 'application/json' } }) } };
+                }
+                if (options.validationReason) return { data: { valid: false, reason: options.validationReason }, error: null };
+                return { data: { valid: true, normalized: options.validationNormalized || '+639171234567', phone_type: options.phoneType || 'mobile' }, error: null };
+            }
         },
         from: table => {
             let write = false;
             const query = {
-                select() { return query; }, eq() { return query; },
+                select() { return query; }, eq() { return query; }, order() { return query; }, limit() { return query; },
+                in() { return query; }, gte() { return query; }, lte() { return query; }, is() { return query; }, not() { return query; }, or() { return query; },
                 update(data) { record('profileWrite', data); write = true; return query; },
                 upsert: async data => { record('sessionWrite', data); return {}; },
-                single: async () => write ? { data: { id: user.id } } : { data: { role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active' } }
+                single: async () => write ? { data: { id: user.id } } : profile(),
+                maybeSingle: async () => write ? { data: { id: user.id } } : profile(),
+                then(resolve, reject) { return Promise.resolve(write ? { data: null, error: null } : { data: [], error: null }).then(resolve, reject); }
             };
             return query;
         }
     };
+    function profile() {
+        return { data: { id: user.id, role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null } };
+    }
 }
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -63,11 +79,19 @@ function mockClient(options) {
             page.setDefaultTimeout(10000);
             await page.route(/^https:\/\//, r => r.abort());
             await page.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify(options)})` }));
-            if (!options.simulation) await page.route('**/Config/phoneVerification.js', r => r.fulfill({ contentType: 'application/javascript', body: "window.InigoPhoneVerification = {mode:'live'};" }));
             await page.route('**/includes/landingPage.js', r => r.fulfill({ contentType: 'application/javascript', body: '' }));
             await page.route('https://elfsightcdn.com/**', r => r.abort());
             await page.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
-            await page.goto('http://127.0.0.1:4178/Pages/Index.html', { waitUntil: 'domcontentloaded' });
+            await page.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'domcontentloaded' });
+            return page;
+        }
+        async function setupDashboard(options = {}) {
+            const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+            page.setDefaultTimeout(10000);
+            await page.route(/^https:\/\//, r => r.abort());
+            await page.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ dashboard: true, ...options })})` }));
+            await page.goto('http://127.0.0.1:4178/Pages/user_dashboard.html', { waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => window.inigosyncProfile?.id === 'fixture-user');
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
@@ -171,16 +195,20 @@ function mockClient(options) {
         }
         const blank = await setup(); await signup(blank);
         await blank.waitForURL('**/user_dashboard.html');
-        assert.equal((await calls(blank)).find(c => c.kind === 'signUp').data.options.data.contact_num, null);
-        assert(!(await calls(blank)).some(c => c.kind === 'sendSms')); await blank.close();
+        const blankSignup = (await calls(blank)).find(c => c.kind === 'signUp');
+        assert.equal(Object.hasOwn(blankSignup.data.options.data, 'contact_num'), false, 'signup metadata must not persist an unvalidated number');
+        assert(!(await calls(blank)).some(c => c.kind === 'function'));
+        await blank.close();
+
         const invalid = await setup(); await signup(invalid, '0912');
         assert(!(await calls(invalid)).some(c => c.kind === 'signUp')); await invalid.close();
         for (const registrationRace of ['error', 'identities']) {
             const page = await setup({ registrationRace }); await signup(page);
             await page.locator('[data-signup-step="1"].is-active').waitFor();
             assert.match(await page.locator('[data-signup-error-for="email"]').innerText(), /already registered/);
-            assert(page.url().includes('Index.html')); await page.close();
+            assert(page.url().includes('index.html')); await page.close();
         }
+
         for (const emailConfirmation of [false, true]) {
             const page = await setup({ emailConfirmation });
             await page.setViewportSize({ width: emailConfirmation ? 320 : 390, height: 844 });
@@ -191,70 +219,75 @@ function mockClient(options) {
                 await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
             }
             await page.locator('[data-auth-panel="phone"].is-active').waitFor();
-            const numberBox = await page.locator('[data-signup-phone-number]').boundingBox();
-            const verifyBox = await page.locator('[data-signup-phone-send]').boundingBox();
-            assert.equal(numberBox.y, verifyBox.y);
-            assert(verifyBox.x >= numberBox.x + numberBox.width);
-            assert(verifyBox.x + verifyBox.width <= page.viewportSize().width);
-            assert(!(await calls(page)).some(c => c.kind === 'sendSms'));
-            await page.locator('[data-signup-phone-send]').click();
-            await page.locator('[data-signup-phone-code]').fill('000000');
-            await page.locator('[data-signup-phone-confirm]').click();
-            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('incorrect'));
-            assert(!(await calls(page)).some(c => c.kind === 'profileWrite'));
-            assert(await page.locator('[data-signup-phone-send]').isDisabled());
-            await page.locator('[data-signup-phone-code]').fill('123456');
-            await page.locator('[data-signup-phone-confirm]').click();
-            await page.waitForFunction(() => document.querySelector('[data-signup-phone-send]').textContent === 'Verified');
-            assert(await page.locator('[data-signup-phone-send]').isDisabled());
-            await page.screenshot({ path: require('node:path').join(require('node:os').tmpdir(), 'inigosync-phone-verified.png') });
+            assert.equal(await page.locator('[data-signup-phone-validate]').innerText(), 'Validate and save');
+            await page.locator('[data-signup-phone-validate]').click();
+            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('Validated as an active'));
+            const currentCalls = await calls(page);
+            const validationCall = currentCalls.find(c => c.kind === 'function');
+            assert.equal(validationCall.data.name, 'validate-contact-phone');
+            assert.deepEqual(validationCall.data.body, { phone: '09171234567' });
+            const profileWrite = currentCalls.find(c => c.kind === 'profileWrite');
+            assert.deepEqual(profileWrite.data, { contact_num: '+639171234567' });
+            assert.equal(Object.hasOwn(profileWrite.data, 'phone_verified'), false);
+            assert.match(await page.locator('[data-signup-phone-status]').innerText(), /does not confirm ownership/);
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html');
-            assert.deepEqual((await calls(page)).find(c => c.kind === 'profileWrite').data, { contact_num: '09171234567', phone_verified: true });
             await page.close();
         }
-        for (const options of [{ providerOff: true }, { noPending: true }, { mismatch: true }]) {
-            const page = await setup(options); await signup(page, '09171234567');
-            await page.locator('[data-signup-phone-send]').click();
-            if (options.mismatch) {
-                await page.locator('[data-signup-phone-code]').fill('123456');
-                await page.locator('[data-signup-phone-confirm]').click();
-                await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('could not confirm'));
-            } else {
-                await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('unavailable'));
-                assert(await page.locator('[data-signup-phone-code]').isHidden());
-            }
+
+        for (const validationReason of ['invalid', 'not_mobile', 'inactive', 'status_unknown']) {
+            const page = await setup({ validationReason }); await signup(page, '09171234567');
+            await page.locator('[data-signup-phone-validate]').click();
+            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.length > 0);
+            assert(!(await calls(page)).some(c => c.kind === 'profileWrite'), validationReason);
+            await page.locator('[data-signup-phone-skip]').click();
+            await page.waitForURL('**/user_dashboard.html'); await page.close();
+        }
+        for (const validationError of ['budget exceeded', 'provider unavailable']) {
+            const page = await setup({ validationError, validationStatus: validationError === 'budget exceeded' ? 429 : 503 });
+            await signup(page, '09171234567');
+            await page.locator('[data-signup-phone-validate]').click();
+            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('unavailable') || document.querySelector('[data-signup-phone-status]').textContent.includes('budget'));
             assert(!(await calls(page)).some(c => c.kind === 'profileWrite'));
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html'); await page.close();
         }
-        const demo = await setup({ simulation: true }); await signup(demo, '09171234567');
-        await demo.locator('[data-signup-phone-send]').click();
-        assert.match(await demo.locator('[data-signup-phone-description]').innerText(), /Capstone SMS demo/);
-        assert.match(await demo.locator('[data-signup-phone-status]').innerText(), /123456/);
-        await demo.locator('[data-signup-phone-code]').fill('000000');
-        await demo.locator('[data-signup-phone-confirm]').click();
-        assert.match(await demo.locator('[data-signup-phone-status]').innerText(), /incorrect/);
-        await demo.evaluate(() => { const now = Date.now(); Date.now = () => now + 61000; });
-        await demo.locator('[data-signup-phone-code]').fill('123456');
-        await demo.locator('[data-signup-phone-confirm]').click();
-        assert.match(await demo.locator('[data-signup-phone-status]').innerText(), /expired/);
-        await demo.locator('[data-signup-phone-send]').click();
-        await demo.locator('[data-signup-phone-code]').fill('123456');
-        await demo.locator('[data-signup-phone-confirm]').click();
-        assert.equal(await demo.locator('[data-signup-phone-send]').innerText(), 'Demo passed');
-        assert(!(await calls(demo)).some(c => ['sendSms', 'profileWrite', 'verifyOtp'].includes(c.kind)));
-        await demo.locator('[data-signup-phone-skip]').click();
-        await demo.waitForURL('**/user_dashboard.html'); await demo.close();
-        console.log('PASS free simulation: invalid/expired code, resend, demo success, zero SMS/OTP/profile writes');
+
         const cancelled = await setup(); await signup(cancelled, '09171234567');
         await cancelled.locator('[data-auth-panel="phone"].is-active').waitFor();
         await cancelled.locator('[data-auth-close]').click();
         await cancelled.waitForFunction(() => document.querySelector('[data-auth-overlay]').hidden);
-        assert(cancelled.url().includes('Index.html'));
-        assert(!(await calls(cancelled)).some(c => ['profileWrite', 'sessionWrite', 'sendSms'].includes(c.kind)));
+        assert(cancelled.url().includes('index.html'));
+        assert(!(await calls(cancelled)).some(c => ['profileWrite', 'sessionWrite', 'function'].includes(c.kind)));
         await cancelled.close();
+
+        const dashboard = await setupDashboard();
+        await dashboard.locator('[data-dash-nav="settings"]').click();
+        const mobileInput = dashboard.locator('[data-dash-settings-mobile]');
+        await mobileInput.fill('09171234567');
+        await dashboard.locator('[data-dash-mobile-validate]').click();
+        await dashboard.waitForFunction(() => (JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').filter(c => c.kind === 'function').length) === 1);
+        await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'profileWrite'));
+        const dashboardCalls = await calls(dashboard);
+        assert.deepEqual(dashboardCalls.find(c => c.kind === 'function').data, { name: 'validate-contact-phone', body: { phone: '09171234567' } });
+        assert.deepEqual(dashboardCalls.find(c => c.kind === 'profileWrite').data, { contact_num: '+639171234567' });
+        assert.equal(dashboardCalls.filter(c => c.kind === 'function').length, 1, 'one click must cause exactly one provider lookup');
+        assert.match(await dashboard.locator('[data-dash-mobile-status]').innerText(), /does not confirm ownership/);
+        await dashboard.locator('[data-dash-mobile-validate]').click();
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('already validated'));
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'unchanged number must not use provider quota');
+        await dashboard.close();
+
+        const rejectedDashboard = await setupDashboard({ validationReason: 'inactive' });
+        await rejectedDashboard.locator('[data-dash-nav="settings"]').click();
+        await rejectedDashboard.locator('[data-dash-settings-mobile]').fill('09171234567');
+        await rejectedDashboard.locator('[data-dash-mobile-validate]').click();
+        await rejectedDashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('not active'));
+        assert(!(await calls(rejectedDashboard)).some(c => c.kind === 'profileWrite'));
+        await rejectedDashboard.close();
+
+        console.log('PASS signup and customer contact number validation: no unproved signup metadata, active provider result required, failures do not save, unchanged values avoid provider quota, and one UI click makes one authenticated lookup');
         console.log('PASS early email checks: taken/available, edit recovery, stale responses, network failure, rate limit and final-signup races');
-        console.log('PASS OAuth role/disabled rejections, customer OAuth, optional/invalid phone, email-confirmed and immediate signup, real API contract, invalid OTP, cooldown, verified-only save, disabled provider, missing challenge, mismatched number and skip');
+        console.log('PASS OAuth role/disabled rejections, customer OAuth, email-confirmed and immediate signup, optional/invalid number, validation failure, and no SMS or Auth phone OTP');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

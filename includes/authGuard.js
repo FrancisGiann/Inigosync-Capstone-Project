@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (reason) {
             try { sessionStorage.setItem(AUTH_NOTICE_STORAGE_KEY, reason); } catch (_) { /* ignore */ }
         }
-        window.location.assign(new URL('../Pages/Index.html', window.location.href).toString());
+        window.location.assign(new URL('../index.html', window.location.href).toString());
     }
 
     const { data: { session } } = await window.sb.auth.getSession();
@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (requiredRole && profile.role !== requiredRole) {
         const redirectUrl = dashboardByRole[profile.role];
-        window.location.assign(new URL(redirectUrl || '../Pages/Index.html', window.location.href).toString());
+        window.location.assign(new URL(redirectUrl || '../index.html', window.location.href).toString());
         return;
     }
 
@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let idleCheckIntervalId = null;
     let idleWarningTickId = null;
     let sessionCheckIntervalId = null;
+    let signOutInProgress = false;
 
     function clearSessionSecurityTimers() {
         if (idleCheckIntervalId) { window.clearInterval(idleCheckIntervalId); idleCheckIntervalId = null; }
@@ -123,7 +124,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function signOutAndGoToLogin(reason) {
+        if (signOutInProgress) return;
+        signOutInProgress = true;
         clearSessionSecurityTimers();
+        // A browser close cannot be observed reliably. Record only exits the
+        // app actually performs, while the customer JWT is still valid.
+        if (profile.role === 'customer' && typeof window.sb.rpc === 'function') {
+            try {
+                const eventResult = await Promise.race([
+                    window.sb.rpc('record_customer_session_event', { p_kind: 'sign_out' }),
+                    new Promise(resolve => window.setTimeout(resolve, 1200)),
+                ]);
+                if (eventResult?.error) throw eventResult.error;
+            } catch (error) {
+                console.warn('[authGuard] customer sign-out event was not recorded', error);
+            }
+        }
         try {
             await window.sb.auth.signOut();
         } catch (_) {

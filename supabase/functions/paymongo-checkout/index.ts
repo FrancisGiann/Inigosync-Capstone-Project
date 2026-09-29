@@ -110,17 +110,23 @@ Deno.serve(async (req: Request) => {
   const cancel = new URL("/Pages/user_dashboard.html", base);
   cancel.searchParams.set("paymongo", "cancelled"); cancel.searchParams.set("attempt", id);
   const reference = id.replaceAll("-", "");
+  const checkoutAttributes = {
+    line_items: [{ name: label, amount: Number(attempt.amount_minor), currency: "PHP", quantity: 1 }],
+    payment_method_types: methods, success_url: success.toString(), cancel_url: cancel.toString(),
+    reference_number: reference, description: `IñigoSync reservation ${reference.slice(0, 12)}`,
+    pass_on_fees: true, send_email_receipt: false,
+  };
+  const { data: requestRegistered, error: requestError } = await admin.rpc("register_paymongo_checkout_request", {
+    p_attempt_id: id, p_request: checkoutAttributes,
+  });
+  if (requestError || requestRegistered !== true)
+    return json({ message: "Could not safely prepare this checkout. Refresh and try again." }, 409, origin);
   let response: Response;
   try {
     response = await fetch("https://api.paymongo.com/v2/checkout_sessions", {
       method: "POST", headers: { authorization: `Basic ${btoa(`${secretKey}:`)}`, "content-type": "application/json",
         "Idempotency-Key": id },
-      body: JSON.stringify({ data: { attributes: {
-        line_items: [{ name: label, amount: Number(attempt.amount_minor), currency: "PHP", quantity: 1 }],
-        payment_method_types: methods, success_url: success.toString(), cancel_url: cancel.toString(),
-        reference_number: reference, description: `IñigoSync reservation ${reference.slice(0, 12)}`,
-        pass_on_fees: false, send_email_receipt: false,
-      } } }), signal: AbortSignal.timeout(12000),
+      body: JSON.stringify({ data: { attributes: checkoutAttributes } }), signal: AbortSignal.timeout(12000),
     });
   } catch (error) {
     console.error("PayMongo checkout creation uncertain", error instanceof Error ? error.message : "network error");

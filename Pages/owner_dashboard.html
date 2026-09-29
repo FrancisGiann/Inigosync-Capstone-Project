@@ -77,6 +77,12 @@
                 </button>
             </li>
             <li>
+                <button type="button" class="admin-nav-link" data-admin-nav="booking-rules">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M7.5 3v3M16.5 3v3M4 9h16M8 13h3m-3 3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                    Booking Rules
+                </button>
+            </li>
+            <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="media">
                     <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 16l5-5 4 4 3-3 6 6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="15.5" cy="9.5" r="1.5" fill="currentColor"/></svg>
                     Media Manager
@@ -159,12 +165,12 @@
 
                 <!-- Owner activity notifications only; bookings and ratings do not appear here. -->
                 <div class="admin-notif" data-admin-notif>
-                    <button type="button" class="admin-icon-btn" data-admin-notif-trigger aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+                    <button type="button" class="admin-icon-btn" data-admin-notif-trigger aria-label="Notifications" aria-expanded="false">
                         <svg viewBox="0 0 24 24" fill="none"><path d="M18 8.5c0-3.5-2.7-6-6-6s-6 2.5-6 6c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.7 19a2.3 2.3 0 0 0 4.6 0" stroke="currentColor" stroke-width="1.7"/></svg>
                         <span class="admin-badge-dot" data-admin-notif-dot hidden></span>
                     </button>
 
-                    <div class="admin-notif-menu" data-admin-notif-menu role="menu" aria-label="Notifications">
+                    <div class="admin-notif-menu" data-admin-notif-menu role="region" aria-label="Notifications">
                         <div class="admin-notif-menu-head">Notifications <button type="button" class="admin-notif-mark-all" data-admin-notif-mark-all>Mark all as seen</button></div>
                         <div class="admin-notif-list" data-admin-notif-list>
                             <p class="admin-notif-empty">Loading…</p>
@@ -476,6 +482,35 @@
                 </div>
             </section>
 
+            <section class="admin-panel" data-admin-panel="booking-rules">
+                <div class="admin-card owner-booking-rules-card">
+                    <div class="admin-card-head">
+                        <div><h3>Opening hours and no-show grace period</h3><p class="admin-card-sub">These hours control customer booking, staff walk-ins, and the shared availability schedule. Changes take effect from the selected date.</p></div>
+                    </div>
+                    <div class="owner-booking-rules-meta">
+                        <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required></label>
+                        <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
+                        <p class="admin-form-hint owner-rules-timezone" data-owner-rules-timezone>Times are shown in Asia/Manila.</p>
+                    </div>
+                    <div class="owner-rules-table-wrap">
+                        <table class="owner-rules-table">
+                            <thead><tr><th scope="col">Day</th><th scope="col">Opening time</th><th scope="col">Closing time</th><th scope="col">Closed</th></tr></thead>
+                            <tbody data-owner-rules-weekdays>
+                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><input type="time" class="admin-input" aria-label="Monday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Monday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><input type="time" class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><input type="time" class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><input type="time" class="admin-input" aria-label="Thursday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Thursday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><input type="time" class="admin-input" aria-label="Friday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Friday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><input type="time" class="admin-input" aria-label="Saturday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Saturday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><input type="time" class="admin-input" aria-label="Sunday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Sunday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="owner-rules-message" data-owner-rules-message role="status" aria-live="polite"></p>
+                    <div class="admin-form-actions"><button type="button" class="admin-btn-save" data-owner-rules-save>Save booking rules</button></div>
+                </div>
+            </section>
+
             <section class="admin-panel" data-admin-panel="payments">
                 <div class="admin-card">
                     <div class="admin-card-head">
@@ -529,6 +564,24 @@
                  ACCOUNT SETTINGS PANEL
                  ============================================================ -->
             <section class="admin-panel" data-admin-panel="notifications">
+                <div class="admin-card owner-announcement-card">
+                    <div class="admin-card-head"><div><h3>Customer and staff announcements</h3><p class="admin-card-sub">Publish an update now or schedule it for a later time. Maintenance notices are published from the Court Listings editor.</p></div></div>
+                    <form class="owner-announcement-form" data-owner-announcement-form>
+                        <label class="admin-form-group"><span class="admin-form-label">Title</span><input type="text" class="admin-input" maxlength="120" autocomplete="off" data-owner-announcement-title required></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Message</span><textarea class="admin-input" rows="4" maxlength="2000" data-owner-announcement-body required></textarea></label>
+                        <div class="owner-announcement-options">
+                            <label class="admin-form-group"><span class="admin-form-label">Audience</span><select class="admin-input" data-owner-announcement-audience><option value="both">Customers and staff</option><option value="customers">Customers only</option><option value="staff">Staff only</option></select></label>
+                            <label class="admin-form-group"><span class="admin-form-label">Publish time · Manila time</span><input type="datetime-local" class="admin-input" data-owner-announcement-publish-at><span class="admin-form-hint">Leave blank to publish immediately.</span></label>
+                        </div>
+                        <p class="owner-announcement-message" data-owner-announcement-message role="status" aria-live="polite"></p>
+                        <div class="admin-form-actions"><button type="submit" class="admin-btn-save" data-owner-announcement-submit>Publish announcement</button></div>
+                    </form>
+                    <div class="owner-announcement-list-wrap">
+                        <div class="owner-announcement-list-head"><h4>Published and scheduled</h4><button type="button" class="admin-btn-ghost" data-owner-announcement-refresh>Refresh</button></div>
+                        <div class="owner-announcement-list" data-owner-announcement-list aria-live="polite"><p class="admin-form-hint">Open Notifications to load announcements.</p></div>
+                        <nav class="owner-announcement-pages" aria-label="Announcement pages" data-owner-announcement-pages hidden><button type="button" class="admin-btn-ghost" data-owner-announcement-prev>Previous</button><span data-owner-announcement-page aria-live="polite"></span><button type="button" class="admin-btn-ghost" data-owner-announcement-next>Next</button></nav>
+                    </div>
+                </div>
                 <div class="owner-notifications-layout">
                     <div class="owner-notification-list" data-owner-notification-list aria-live="polite"></div>
                     <nav class="owner-notification-pages" aria-label="Notification pages"><button type="button" class="admin-btn-ghost" data-owner-notification-prev>Previous</button><span data-owner-notification-page aria-live="polite"></span><button type="button" class="admin-btn-ghost" data-owner-notification-next>Next</button></nav>
@@ -819,8 +872,9 @@
             </div>
         </div>
         <div class="admin-form-group">
-            <span class="admin-form-label">Mobile number</span>
-            <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-edit-mobile>
+            <span class="admin-form-label">Mobile number · staff verified</span>
+            <input type="tel" class="admin-input" placeholder="Not provided" data-admin-staff-edit-mobile readonly aria-describedby="adminStaffMobileReadOnlyHint">
+            <span class="admin-form-hint" id="adminStaffMobileReadOnlyHint">Staff manage and verify their own mobile number in Account Settings.</span>
         </div>
         <div class="admin-form-group">
             <span class="admin-form-label">Address</span>
@@ -950,6 +1004,7 @@
      Listings needs. Both must load before owner_dashboard.js. -->
 <script src="../includes/courts-data.js"></script>
 <script src="../includes/courtsData.js"></script>
+<script src="../includes/businessHours.js"></script>
 
 <!-- Shared payment settings reader — the owner editor writes the same
      singleton used by customer checkout and staff walk-in flows. -->
@@ -977,7 +1032,7 @@
         <div class="admin-settings-grid">
             <label class="admin-form-group"><span class="admin-form-label">Full name</span><input type="text" class="admin-input" autocomplete="name" data-admin-settings-name></label>
             <div class="admin-form-group"><span class="admin-form-label">Email address</span><p class="admin-input admin-readonly-email" data-admin-settings-email>—</p><span class="admin-form-hint">Your sign-in email cannot be changed.</span></div>
-            <label class="admin-form-group"><span class="admin-form-label">Mobile number</span><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" data-admin-settings-mobile></label>
+            <div class="admin-form-group owner-mobile-verification"><span class="admin-form-label">Mobile number · optional</span><div class="owner-mobile-edit-row"><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" data-admin-settings-mobile><button type="button" class="admin-btn-secondary" data-admin-mobile-validate>Validate &amp; save</button><button type="button" class="admin-btn-secondary" data-admin-mobile-remove hidden>Remove</button></div><span class="admin-form-hint" data-admin-mobile-message role="status">We check Philippine format, mobile type, and active status. This does not confirm ownership or guarantee reachability.</span></div>
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>

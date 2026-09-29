@@ -1767,3 +1767,57 @@ button.admin-notif-item:focus-visible {
 .admin-modal .admin-form-hint + .admin-form-row {
     margin-top: 14px;
 }
+
+.owner-booking-rules-meta {
+    display: grid;
+    grid-template-columns: minmax(190px, .7fr) minmax(240px, 1fr);
+    gap: 16px 22px;
+    align-items: end;
+    margin: 4px 0 20px;
+}
+.owner-rules-grace-input { display: flex; align-items: center; gap: 10px; }
+.owner-rules-grace-input .admin-input { max-width: 150px; }
+.owner-rules-grace-input > span { color: var(--color-ink-dim); font-size: var(--fs-sm); }
+.owner-rules-timezone { grid-column: 1 / -1; margin-top: -9px; }
+.owner-rules-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--color-line); border-radius: 12px; }
+.owner-rules-table { width: 100%; min-width: 580px; border-collapse: collapse; }
+.owner-rules-table th,.owner-rules-table td { padding: 11px 13px; border-bottom: 1px solid var(--color-line); text-align: left; }
+.owner-rules-table thead th { color: var(--color-ink-faint); background: color-mix(in srgb, var(--color-bg) 55%, transparent); font-size: var(--fs-xs); font-weight: 700; }
+.owner-rules-table tbody th { width: 24%; color: var(--color-ink); font-size: var(--fs-sm); font-weight: 600; }
+.owner-rules-table tbody tr:last-child > * { border-bottom: 0; }
+.owner-rules-table .admin-input { min-width: 130px; }
+.owner-rules-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--color-primary); }
+.owner-rules-table tr.is-closed th { color: var(--color-ink-faint); }
+.owner-rules-message,.owner-announcement-message { min-height: 1.5em; margin-top: 12px; color: var(--color-ink-dim); font-size: var(--fs-sm); }
+.owner-rules-message.is-error,.owner-announcement-message.is-error { color: var(--color-alert); }
+.owner-announcement-card { margin-bottom: 20px; }
+.owner-announcement-form { display: grid; gap: 14px; }
+.owner-announcement-form textarea { min-height: 110px; resize: vertical; }
+.owner-announcement-options { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,1fr); gap: 16px; }
+.owner-announcement-list-wrap { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); }
+.owner-announcement-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.owner-announcement-list-head h4 { font: 600 var(--fs-base) var(--font-display); }
+.owner-announcement-list { display: grid; gap: 9px; }
+.owner-announcement-row { min-width: 0; padding: 14px 16px; border: 1px solid var(--color-line); border-radius: 11px; background: var(--color-bg-elevated); }
+.owner-announcement-row-head,.owner-announcement-row-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.owner-announcement-row-head { margin-bottom: 8px; }
+.owner-announcement-row h5 { min-width: 0; overflow-wrap: anywhere; font: 600 var(--fs-sm) var(--font-display); }
+.owner-announcement-row > p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.5; }
+.owner-announcement-row-meta { margin-top: 11px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.owner-announcement-status { flex: 0 0 auto; padding: 4px 8px; border-radius: 99px; background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-ink); font-size: var(--fs-xs); text-transform: capitalize; }
+.owner-announcement-pages { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.owner-announcement-pages[hidden] { display: none; }
+.owner-mobile-edit-row { display: flex; align-items: center; gap: 9px; }
+.owner-mobile-edit-row .admin-input { min-width: 0; flex: 1 1 auto; }
+.owner-mobile-edit-row .admin-btn-secondary { flex: 0 0 auto; }
+.owner-mobile-verification [data-admin-mobile-message] { min-height: 1.5em; margin-top: 7px; }
+.owner-mobile-verification [data-admin-mobile-message].is-error { color: var(--color-alert); }
+.owner-mobile-verification [data-admin-mobile-validate] { min-height: 42px; }
+
+@media (max-width: 640px) {
+    .owner-booking-rules-meta,.owner-announcement-options { grid-template-columns: minmax(0,1fr); }
+    .owner-mobile-edit-row { align-items: stretch; flex-direction: column; }
+    .owner-mobile-edit-row .admin-btn-secondary { align-self: flex-start; }
+    .owner-rules-timezone { grid-column: auto; margin-top: 0; }
+    .owner-announcement-row-head,.owner-announcement-row-meta { align-items: flex-start; flex-direction: column; }
+}

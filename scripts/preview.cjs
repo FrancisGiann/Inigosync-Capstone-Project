@@ -7,8 +7,8 @@ const types = {'.glb':'model/gltf-binary','.html':'text/html; charset=utf-8','.j
 http.createServer((req,res) => {
     if (!['GET','HEAD'].includes(req.method)) { res.writeHead(405);res.end();return; }
     let file;
-    try { const pathname = new URL(req.url,'http://localhost').pathname; file = path.resolve(root,'.'+decodeURIComponent(pathname === '/' ? '/Pages/Index.html' : pathname)); }
+    try { const pathname = new URL(req.url,'http://localhost').pathname; file = path.resolve(root,'.'+decodeURIComponent(pathname === '/' ? '/index.html' : pathname)); }
     catch { res.writeHead(400);res.end();return; }
     if (!file.startsWith(root+path.sep) || !types[path.extname(file).toLowerCase()]) { res.writeHead(403);res.end();return; }
     fs.readFile(file,(err,body) => { if(err){res.writeHead(404);res.end('Not found');return;}res.writeHead(200,{'Content-Type':types[path.extname(file).toLowerCase()],'Cache-Control':'no-store'});res.end(req.method==='HEAD'?undefined:body); });
-}).listen(4178,'127.0.0.1',()=>console.log('Preview: http://127.0.0.1:4178/Pages/Index.html'));
+}).listen(4178,'127.0.0.1',()=>console.log('Preview: http://127.0.0.1:4178/index.html'));

@@ -288,12 +288,23 @@ body.dash-body {
 }
 
 .dash-notif-menu-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     font-family: var(--font-display);
     font-weight: 600;
     font-size: var(--fs-md);
     padding: 8px 10px 10px;
     color: var(--color-ink);
 }
+.dash-notif-menu-head [data-dash-notif-unread] { color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); }
+.dash-notif-search { display: block; padding: 0 10px 8px; }
+.dash-notif-search input { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-bg-elevated); color: var(--color-ink); font: 400 var(--fs-sm) var(--font-body); }
+.dash-notif-search input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.dash-notif-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.dash-notif-pagination[hidden] { display: none; }
+.dash-notif-pagination .dash-mini-btn { min-height: 32px; padding: 5px 9px; }
 
 /* R4-3 (implementation_plan.md, "Revision 4") — .dash-notif-item is now a
    real <button> (renderNotificationItem(), includes/Dashboard.js), not the
@@ -348,6 +359,12 @@ body.dash-body {
     font-size: var(--fs-xs);
     color: var(--color-ink-faint);
 }
+.dash-notif-item-body small { color: var(--color-ink-faint); font-size: 10px; }
+.dash-notif-persistent.is-read { opacity: .76; }
+.dash-notif-persistent.is-unread .dash-notif-item-body strong::after { content: ' · New'; color: var(--color-primary); font: 600 10px var(--font-body); }
+.dash-notif-dot.announcement { background: var(--color-primary); }
+.dash-notif-dot.maintenance { background: var(--color-alert); }
+.dash-notif-dot.payment { background: var(--color-court-green); }
 
 /* Per-item status dot — separate from .dash-badge-dot (the bell's own
    always-red unread marker) since each notification's dot is colored by
@@ -2017,6 +2034,24 @@ body.dash-body {
     gap: 12px;
     transition: outline-color 0.3s ease;
 }
+.dash-payment-ack-card { width: 100%; max-width: 80mm; justify-self: center; padding: 14px; gap: 8px; border-radius: 7px; }
+.dash-payment-ack-card .dash-receipt-brand-name { font-size: var(--fs-md); }
+.dash-payment-ack-card .dash-receipt-brand-tag { line-height: 1.35; }
+.dash-payment-ack-card .dash-receipt-no { font-size: var(--fs-xs); }
+.dash-ack-items { display: grid; gap: 8px; }
+.dash-ack-item { padding-bottom: 8px; border-bottom: 1px dashed var(--color-line); }
+.dash-ack-item:last-child { padding-bottom: 0; border-bottom: 0; }
+.dash-ack-item strong { display: block; color: var(--color-ink); font-size: var(--fs-xs); }
+.dash-ack-item span { display: block; color: var(--color-ink-faint); font-size: 10px; line-height: 1.45; }
+.dash-ack-item .dash-ack-item-amount { margin-top: 3px; color: var(--color-ink); font: 600 var(--fs-xs) var(--font-numeric); text-align: right; }
+.dash-payment-ack-card .dash-receipt-total { margin-top: 0; padding: 9px 0; }
+.dash-payment-ack-card .dash-receipt-actions { margin-top: 2px; }
+.dash-payment-ack-card .dash-receipt-actions button { width: 100%; }
+.dash-walkin-receipts { margin-top: 26px; }
+.dash-walkin-receipts > .dash-panel-head { margin-bottom: 14px; }
+.dash-walkin-receipts > .dash-panel-head h3 { font: 600 var(--fs-lg) var(--font-display); }
+.dash-walkin-receipt-pages { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.dash-walkin-receipt-pages[hidden] { display: none; }
 
 /* R4-3 (implementation_plan.md, "Revision 4") — brief highlight flashed by
    a notification click (includes/Dashboard.js's notifList click delegate)
@@ -2315,83 +2350,16 @@ body.dash-body {
     padding: 12px 20px;
 }
 
-/* "Verified" badge — shown once profiles.phone_verified is true for the
-   number currently on file (renderProfile()/populateMobileVerifiedBadge()
-   in includes/Dashboard.js). --color-court-green matches the same "this
-   succeeded" green .dash-status.confirmed already uses. */
-.dash-mobile-verified-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-top: 8px;
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    color: var(--color-court-green);
-}
-
-/* H1 fix (post-Revision-5 review) — the `display: inline-flex` above is an
-   author rule, which beats the UA `[hidden] { display: none }` rule at
-   equal specificity because it comes later in the cascade. Without this
-   restatement every customer saw a green "Verified" badge regardless of
-   profiles.phone_verified, since renderMobileVerifiedBadge() (Dashboard.js)
-   only toggles the `hidden` IDL property. Mirrors the same pattern already
-   used for .dash-modal-overlay[hidden] above. */
-.dash-mobile-verified-badge[hidden] {
-    display: none;
-}
-
-.dash-mobile-verified-badge svg {
-    flex-shrink: 0;
-}
-
-/* Mobile verification OTP dialog (Revision 5, D6) — 6-box code entry,
-   ported from Pages/Index.html's own email OTP panel
-   (.auth-otp-row/.auth-otp-box/.auth-otp-error in Style/Auth.css) under
-   dash-otp-* names, since Style/Auth.css itself is not linked on this
-   page. */
-.dash-otp-row {
-    display: flex;
-    gap: 10px;
-    justify-content: space-between;
-    margin-bottom: 16px;
-}
-
-.dash-otp-box {
-    width: 100%;
-    aspect-ratio: 1;
-    text-align: center;
-    /* Revision A2 (implementation_plan.md) — a single OTP digit, so it takes
-       --font-numeric (tabular-nums) instead of the removed --font-mono. */
-    font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--fs-xl);
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-    color: var(--color-ink);
-    transition: border-color 0.2s, transform 0.15s;
-}
-
-.dash-otp-box:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    transform: translateY(-1px);
-}
-
-.dash-otp-box.is-filled {
-    border-color: var(--color-primary-dim);
-}
-
-.dash-otp-error {
-    display: none;
-    font-size: var(--fs-sm);
-    color: var(--color-alert-text);
-    margin: -8px 0 16px;
-}
-
-.dash-otp-error.is-visible {
+/* Provider format/type/active-status result. It does not establish ownership. */
+.dash-mobile-status {
     display: block;
+    margin-top: 8px;
+    color: var(--color-ink-faint);
+    font-size: var(--fs-xs);
+    line-height: 1.5;
 }
+.dash-mobile-status.is-error { color: var(--color-alert-text); }
+.dash-mobile-verify-row [hidden] { display: none; }
 
 .dash-input-wrap {
     position: relative;

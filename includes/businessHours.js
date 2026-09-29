@@ -45,6 +45,61 @@
     // was 21/9 PM before this revision). Never treat this as a valid start
     // hour.
     const CLOSE_HOUR = 20;
+    const TIMEZONE = 'Asia/Manila';
+    const DEFAULT_GRACE_MINUTES = 30;
+    const CACHE_MS = 60 * 1000;
+    const rulesByDate = new Map();
+
+    function dateInManila(value = new Date()) {
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+        const date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) throw new Error('Invalid booking date.');
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(date);
+        const part = type => parts.find(item => item.type === type)?.value;
+        return `${part('year')}-${part('month')}-${part('day')}`;
+    }
+
+    function normalizeRules(row, authoritative) {
+        const source = Array.isArray(row) ? row[0] : row;
+        const openHour = Number(source?.open_hour);
+        const closeHour = Number(source?.close_hour);
+        const graceMinutes = Number(source?.grace_minutes);
+        const isClosed = source?.is_closed === true;
+        return {
+            openHour: Number.isInteger(openHour) && openHour >= 0 && openHour < 24 ? openHour : OPEN_HOUR,
+            closeHour: Number.isInteger(closeHour) && closeHour > 0 && closeHour <= 24 ? closeHour : CLOSE_HOUR,
+            isClosed,
+            graceMinutes: Number.isInteger(graceMinutes) && graceMinutes >= 0 ? graceMinutes : DEFAULT_GRACE_MINUTES,
+            timezone: source?.timezone || TIMEZONE,
+            authoritative,
+        };
+    }
+
+    // The server is authoritative for booking validation. This reader gives
+    // all dashboards the same date-specific view, while retaining the prior
+    // hours only when a pre-migration server cannot provide the RPC.
+    async function getForDate(value = new Date(), { force = false } = {}) {
+        const date = dateInManila(value);
+        const cached = rulesByDate.get(date);
+        if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.promise;
+        const promise = (async () => {
+            if (!window.sb || typeof window.sb.rpc !== 'function') return normalizeRules(null, false);
+            try {
+                const { data, error } = await window.sb.rpc('booking_rules_for_date', { p_date: date });
+                if (error || !data) throw error || new Error('No booking rules returned.');
+                return normalizeRules(data, true);
+            } catch (error) {
+                console.warn('[businessHours] using fallback hours', error);
+                return normalizeRules(null, false);
+            }
+        })();
+        rulesByDate.set(date, { at: Date.now(), promise });
+        return promise;
+    }
+
+    function invalidateRules() { rulesByDate.clear(); }
 
     // "8:00 AM" / "6:00 PM" — the long form used by the customer dashboard
     // (Booking Step 2's From/To time pickers, the Overview peek widget).
@@ -113,6 +168,10 @@
     window.InigoBusinessHours = {
         OPEN_HOUR,
         CLOSE_HOUR,
+        TIMEZONE,
+        dateInManila,
+        getForDate,
+        invalidateRules,
         formatHourLabel,
         formatHourLabelShort,
         formatHourRangeLabel,

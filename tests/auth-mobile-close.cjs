@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
     try {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
         await page.route('https://elfsightcdn.com/**', r => r.abort());
-        await page.goto('http://127.0.0.1:4178/Pages/Index.html');
+        await page.goto('http://127.0.0.1:4178/index.html');
         for (const width of [320, 390, 480, 768]) {
             await page.setViewportSize({ width, height: 844 });
             for (const theme of ['light', 'dark']) {
