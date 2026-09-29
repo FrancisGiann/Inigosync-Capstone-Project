@@ -111,9 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let authIsOpen = false;
 
     const DASHBOARD_BY_ROLE = {
-        customer: 'user_dashboard.html',
-        staff: 'staff_dashboard.html',
-        admin: 'owner_dashboard.html'
+        customer: 'Pages/user_dashboard.html',
+        staff: 'Pages/staff_dashboard.html',
+        admin: 'Pages/owner_dashboard.html'
     };
 
     // Per-user (not per-browser) localStorage markers — see this repo's
