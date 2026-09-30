@@ -1,0 +1,13 @@
+{
+  "name": "inigosync-capstone-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static frontend for IñigoSync",
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "preview": "node scripts/preview.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
