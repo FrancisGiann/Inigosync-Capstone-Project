@@ -2156,6 +2156,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('GCash checkout is currently unavailable.', true);
             return;
         }
+        if (walkinState.items.some((item) => !Number.isFinite(item.subtotal)
+            || item.subtotal <= 0 || !Number.isSafeInteger(Math.round(item.subtotal * 100)))) {
+            window.InigoToast?.show('A court price is unavailable. Refresh availability and review the order again.', true);
+            return;
+        }
         if (walkinState.payment === 'paymongo' && !window.confirm('You will be redirected to PayMongo to complete the online payment. Continue?')) return;
 
         button.disabled = true;
@@ -2168,10 +2173,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             starts_at: item.startsAt,
             ends_at: item.endsAt,
             rate_quantity: item.rateQuantity,
+            quoted_minor: Math.round(item.subtotal * 100),
         }));
         let create;
         try {
-            create = await window.sb.rpc('staff_create_walkin_order', {
+            create = await window.sb.rpc('staff_create_walkin_order_quoted', {
                 p_customer_id: walkinState.customerId || null,
                 p_guest_name: walkinState.customerId ? null : walkinState.name,
                 p_guest_mobile: walkinState.mobile || null,

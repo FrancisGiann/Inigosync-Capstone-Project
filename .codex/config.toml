@@ -1,9 +1,27 @@
 model = "gpt-6-sol"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 
 [agents]
 enabled = true
-max_concurrent_threads_per_session = 3
+max_concurrent_threads_per_session = 2
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "medium"
+
+[agents.coder]
+description = "InigoSync programmer for implementing scoped changes, fixing bugs, and verifying the affected behavior."
+config_file = "agents/coder.toml"
+
+[agents.researcher]
+description = "Read-only InigoSync researcher for thesis sources, technical documentation, and codebase investigations."
+config_file = "agents/researcher.toml"
+
+[agents.browser_debugger]
+description = "Reproduce browser and runtime bugs and collect evidence."
+config_file = "agents/browser_debugger.toml"
+
+[agents.reviewer]
+description = "Independent reviewer for correctness, security, and regressions. Read-only; reports findings without fixes."
+config_file = "agents/reviewer.toml"
 
 [mcp_servers.playwright]
 command = "npx"

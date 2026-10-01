@@ -72,7 +72,7 @@ function fixture(config) {
                 ? { data: null, error: { message: 'rules unavailable in fixture' } }
                 : { data: { open_hour: 8, close_hour: 20, is_closed: false, grace_minutes: config.graceMinutes ?? 30, timezone: 'Asia/Manila' }, error: null };
             if (name === 'court_occupancy') return { data: [], error: null };
-            if (name === 'staff_create_walkin_order') {
+            if (name === 'staff_create_walkin_order_quoted') {
                 qa.createdItems = args.p_items;
                 return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', status: args.p_payment_method === 'cash' ? 'paid' : 'pending', base_minor: config.orderBaseMinor ?? 35000, amount_total: 350 }, error: null };
             }
@@ -199,13 +199,16 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await page.locator('[data-staff-walkin-save]').click();
         await page.locator('[data-staff-walkin-receipt]').getByText('Payment acknowledgment and entry pass').waitFor();
         const saved = await page.evaluate(() => ({
-            createCalls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order'),
+            createCalls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted'),
+            legacyCalls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order'),
             ackCalls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'get_walkin_order_acknowledgment'),
             writes: window.__walkinQa.calls.filter(call => call.table === 'walk_in_booking' && ['insert', 'update'].includes(call.kind)),
             items: window.__walkinQa.createdItems,
         }));
         assert.equal(saved.createCalls.length, 1, 'one atomic RPC must create the whole multi-line order');
+        assert.equal(saved.legacyCalls.length, 0, 'the browser must not call the legacy RPC without the reviewed price check');
         assert.equal(saved.items.length, 2);
+        assert.deepEqual(saved.items.map(item => item.quoted_minor), [20000, 15000], 'each line sends the price shown at review in minor units');
         assert.deepEqual(saved.items.map(item => item.starts_at), ['2026-09-27T01:00:00.000Z', '2026-09-27T04:00:00.000Z'], 'slot timestamps should use Manila wall time even when device timezone is Honolulu');
         assert.equal(saved.ackCalls.length, 1, 'cash receipt is fetched from the canonical acknowledgment RPC');
         assert.deepEqual(saved.writes, [], 'the browser must not write walk_in_booking rows directly');
@@ -227,7 +230,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await online.page.locator('[data-staff-walkin-next]').click();
         await online.page.locator('[data-staff-walkin-save]').click();
         await online.page.waitForURL('https://checkout.paymongo.com/qa-walkin');
-        assert.ok(onlineCalls.some(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order' && call.args.p_payment_method === 'paymongo'));
+        assert.ok(onlineCalls.some(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted' && call.args.p_payment_method === 'paymongo'));
         assert.ok(onlineCalls.some(call => call.kind === 'function' && call.name === 'staff-walkin-checkout' && call.options.body.order_id === 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526'));
         assert.equal(onlineCalls.some(call => call.kind === 'rpc' && call.name === 'get_walkin_order_acknowledgment'), false, 'online redirect must not fabricate a paid acknowledgment');
         await online.context.close();
@@ -254,7 +257,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         assert.match(await qrPage.locator('[data-staff-walkin-qr-card], .staff-walkin-qr-card').innerText(), /PayMongo shows any processing fee/);
         assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /not a direct wallet transfer/);
         const qrSetup = await qrPage.evaluate(() => ({
-            create: window.__walkinQa.calls.find(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order'),
+            create: window.__walkinQa.calls.find(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted'),
             checkout: window.__walkinQa.calls.find(call => call.kind === 'function' && call.name === 'staff-walkin-checkout'),
             acknowledgments: window.__walkinQa.acknowledgmentAttempts,
             svgHasPath: Boolean(document.querySelector('[data-staff-walkin-qr-image] svg path')),
