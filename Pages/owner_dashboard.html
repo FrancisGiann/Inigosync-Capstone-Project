@@ -83,7 +83,7 @@
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="booking-rules">
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M7.5 3v3M16.5 3v3M4 9h16M8 13h3m-3 3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-                    Booking Rules
+                    Working Time Schedule
                 </button>
             </li>
             <li>
@@ -109,10 +109,16 @@
                     Feedbacks &amp; Reviews
                 </button>
             </li>
+            <li>
+                <button type="button" class="admin-nav-link" data-admin-nav="audit">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4.5h12a2 2 0 0 1 2 2v13H4v-13a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7"/><path d="M8 9h8M8 12.5h8M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                    Audit Trail
+                </button>
+            </li>
 
             <div class="admin-nav-divider"></div>
 
-            <li><button type="button" class="admin-nav-link" data-admin-nav="notifications"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5l-2 3Zm5 3h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Notifications</button></li>
+            <li><button type="button" class="admin-nav-link" data-admin-nav="announcement"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 13 4 0 10 5V6L8 11H4v2Zm4 0 1.5 6h3L10.5 13M18 9.5a4 4 0 0 1 0 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Announcement</button></li>
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="settings">
                     <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
@@ -497,29 +503,29 @@
             <section class="admin-panel" data-admin-panel="booking-rules">
                 <div class="admin-card owner-booking-rules-card">
                     <div class="admin-card-head">
-                        <div><h3>Opening hours and no-show grace period</h3><p class="admin-card-sub">These hours control customer booking, staff walk-ins, and the shared availability schedule. Changes take effect from the selected date.</p></div>
+                        <div><h3>Working Time Schedule</h3><p class="admin-card-sub">These hours control customer booking, staff walk-ins, and the shared availability schedule. Changes take effect from the selected date.</p></div>
                     </div>
                     <div class="owner-booking-rules-meta">
-                        <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required></label>
-                        <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
+                        <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required disabled><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
                         <p class="admin-form-hint owner-rules-timezone" data-owner-rules-timezone>Times are shown in Asia/Manila.</p>
                     </div>
                     <div class="owner-rules-table-wrap">
                         <table class="owner-rules-table">
                             <thead><tr><th scope="col">Day</th><th scope="col">Opening time</th><th scope="col">Closing time</th><th scope="col">Closed</th></tr></thead>
                             <tbody data-owner-rules-weekdays>
-                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><input type="time" class="admin-input" aria-label="Monday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Monday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed></td></tr>
-                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><input type="time" class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed></td></tr>
-                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><input type="time" class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed></td></tr>
-                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><input type="time" class="admin-input" aria-label="Thursday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Thursday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed></td></tr>
-                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><input type="time" class="admin-input" aria-label="Friday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Friday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed></td></tr>
-                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><input type="time" class="admin-input" aria-label="Saturday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Saturday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed></td></tr>
-                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><input type="time" class="admin-input" aria-label="Sunday opening time" data-owner-rules-open></td><td><input type="time" class="admin-input" aria-label="Sunday closing time" data-owner-rules-close></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed></td></tr>
+                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><input type="time" class="admin-input" aria-label="Monday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Monday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><input type="time" class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><input type="time" class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><input type="time" class="admin-input" aria-label="Thursday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Thursday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><input type="time" class="admin-input" aria-label="Friday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Friday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><input type="time" class="admin-input" aria-label="Saturday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Saturday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><input type="time" class="admin-input" aria-label="Sunday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Sunday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed disabled></td></tr>
                             </tbody>
                         </table>
                     </div>
                     <p class="owner-rules-message" data-owner-rules-message role="status" aria-live="polite"></p>
-                    <div class="admin-form-actions"><button type="button" class="admin-btn-save" data-owner-rules-save>Save booking rules</button></div>
+                    <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-secondary" data-owner-rules-edit hidden>Edit Working Time Schedule</button><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Working Time Schedule</button></div>
                 </div>
             </section>
 
@@ -575,7 +581,7 @@
             <!-- ============================================================
                  ACCOUNT SETTINGS PANEL
                  ============================================================ -->
-            <section class="admin-panel" data-admin-panel="notifications">
+            <section class="admin-panel" data-admin-panel="announcement">
                 <div class="admin-card owner-announcement-card">
                     <div class="admin-card-head"><div><h3>Customer and staff announcements</h3><p class="admin-card-sub">Publish an update now or schedule it for a later time. Maintenance notices are published from the Court Listings editor.</p></div></div>
                     <form class="owner-announcement-form" data-owner-announcement-form>
@@ -590,13 +596,33 @@
                     </form>
                     <div class="owner-announcement-list-wrap">
                         <div class="owner-announcement-list-head"><h4>Published and scheduled</h4><button type="button" class="admin-btn-ghost" data-owner-announcement-refresh>Refresh</button></div>
-                        <div class="owner-announcement-list" data-owner-announcement-list aria-live="polite"><p class="admin-form-hint">Open Notifications to load announcements.</p></div>
+                        <div class="owner-announcement-list" data-owner-announcement-list aria-live="polite"><p class="admin-form-hint">Open Announcement to load announcements.</p></div>
                         <nav class="owner-announcement-pages" aria-label="Announcement pages" data-owner-announcement-pages hidden><button type="button" class="admin-btn-ghost" data-owner-announcement-prev>Previous</button><span data-owner-announcement-page aria-live="polite"></span><button type="button" class="admin-btn-ghost" data-owner-announcement-next>Next</button></nav>
                     </div>
                 </div>
-                <div class="owner-notifications-layout">
-                    <div class="owner-notification-list" data-owner-notification-list aria-live="polite"></div>
-                    <nav class="owner-notification-pages" aria-label="Notification pages"><button type="button" class="admin-btn-ghost" data-owner-notification-prev>Previous</button><span data-owner-notification-page aria-live="polite"></span><button type="button" class="admin-btn-ghost" data-owner-notification-next>Next</button></nav>
+            </section>
+            <section class="admin-panel" data-admin-panel="audit">
+                <div class="admin-card owner-audit-card">
+                    <div class="admin-card-head"><div><h3>Audit Trail</h3><p class="admin-card-sub">Recorded account, booking, payment, and staff activity.</p></div><button type="button" class="admin-btn-ghost" data-owner-audit-refresh>Refresh</button></div>
+                    <div class="owner-audit-filters" aria-label="Audit trail filters">
+                        <label class="admin-form-group"><span class="admin-form-label">Search event ID or text</span><input type="search" class="admin-input" maxlength="120" placeholder="Search actions, people, or record IDs" data-owner-audit-search></label>
+                        <label class="admin-form-group"><span class="admin-form-label">From</span><input type="date" class="admin-input" data-owner-audit-from></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Through</span><input type="date" class="admin-input" data-owner-audit-to></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Category</span><select class="admin-select" data-owner-audit-category><option value="all">All categories</option><option value="account">Account</option><option value="booking">Booking</option><option value="payment">Payment</option><option value="staff">Staff</option><option value="owner">Owner activity</option></select></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Actor</span><select class="admin-select" data-owner-audit-actor><option value="all">All actors</option></select></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Role</span><select class="admin-select" data-owner-audit-role><option value="all">All roles</option><option value="admin">Owner</option><option value="staff">Staff</option><option value="customer">Customer</option><option value="system">System</option></select></label>
+                    </div>
+                    <p class="owner-audit-session-note">Sign-out entries record a sign-out action handled by IñigoSync. Closing a browser or tab cannot be reliably observed.</p>
+                    <p class="owner-audit-status" data-owner-audit-status role="status" aria-live="polite">Open Audit Trail to load events.</p>
+                    <div class="owner-audit-table-wrap" role="region" aria-label="Audit trail events" tabindex="0">
+                    <table class="admin-table owner-audit-table">
+                            <caption class="owner-audit-caption">Recorded system events and transactions</caption>
+                            <colgroup><col class="owner-audit-col-date"><col class="owner-audit-col-id"><col class="owner-audit-col-event"><col class="owner-audit-col-category"><col class="owner-audit-col-actor"><col class="owner-audit-col-role"><col class="owner-audit-col-record"><col class="owner-audit-col-amount"><col class="owner-audit-col-summary"></colgroup>
+                            <thead><tr><th scope="col">Date and time</th><th scope="col">Event ID</th><th scope="col">Event</th><th scope="col">Category</th><th scope="col">Actor</th><th scope="col">Role</th><th scope="col">Record</th><th scope="col">Amount</th><th scope="col">Summary</th></tr></thead>
+                            <tbody data-owner-audit-rows><tr><td colspan="9">No events loaded.</td></tr></tbody>
+                        </table>
+                    </div>
+                    <nav class="owner-audit-pagination" data-owner-audit-pagination aria-label="Audit trail pages" hidden><button type="button" class="admin-btn-ghost" data-owner-audit-prev disabled>Previous</button><span data-owner-audit-page-info aria-live="polite">Page 1 of 1</span><button type="button" class="admin-btn-ghost" data-owner-audit-next disabled>Next</button></nav>
                 </div>
             </section>
             <section class="admin-panel" data-admin-panel="settings">
@@ -868,54 +894,66 @@
         </button>
 
         <h3 id="adminStaffEditModalTitle" data-admin-staff-edit-modal-title>Edit Staff</h3>
-        <!-- Filled by fillStaffEditForm() — Age (DERIVED from birthdate,
-             never stored) alongside Member since and Status, none of which
-             have their own input field in this form. -->
+        <!-- Edit-only context. Age is derived from birthdate and never stored. -->
         <p class="admin-form-hint" data-admin-staff-edit-meta>—</p>
 
-        <div class="admin-form-row">
-            <div class="admin-form-group">
-                <span class="admin-form-label">Full name</span>
-                <input type="text" class="admin-input" data-admin-staff-edit-name>
+        <dl class="admin-profile-dl owner-staff-details-view" data-admin-staff-details-view hidden>
+            <div class="admin-profile-dl-row"><dt>Full name</dt><dd data-admin-staff-detail-name>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Position</dt><dd data-admin-staff-detail-position>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Mobile number · staff verified</dt><dd data-admin-staff-detail-mobile>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Address</dt><dd data-admin-staff-detail-address>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Birthdate</dt><dd data-admin-staff-detail-birthdate>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Gender</dt><dd data-admin-staff-detail-gender>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Age</dt><dd data-admin-staff-detail-age>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Emergency contact name</dt><dd data-admin-staff-detail-emergency-name>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Emergency contact number</dt><dd data-admin-staff-detail-emergency-number>—</dd></div>
+        </dl>
+
+        <div class="owner-staff-details-edit" data-admin-staff-details-edit>
+            <div class="admin-form-row">
+                <div class="admin-form-group">
+                    <span class="admin-form-label">Full name</span>
+                    <input type="text" class="admin-input" data-admin-staff-edit-name>
+                </div>
+                <div class="admin-form-group">
+                    <span class="admin-form-label">Position</span>
+                    <select class="admin-select" data-admin-staff-edit-position><option>Secretary</option><option>Court Attendant</option></select>
+                </div>
             </div>
             <div class="admin-form-group">
-                <span class="admin-form-label">Position</span>
-                <select class="admin-select" data-admin-staff-edit-position><option>Secretary</option><option>Court Attendant</option></select>
-            </div>
-        </div>
-        <div class="admin-form-group">
-            <span class="admin-form-label">Mobile number · staff verified</span>
-            <input type="tel" class="admin-input" placeholder="Not provided" data-admin-staff-edit-mobile readonly aria-describedby="adminStaffMobileReadOnlyHint">
-            <span class="admin-form-hint" id="adminStaffMobileReadOnlyHint">Staff manage and verify their own mobile number in Account Settings.</span>
-        </div>
-        <div class="admin-form-group">
-            <span class="admin-form-label">Address</span>
-            <textarea class="admin-input admin-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-admin-staff-edit-address></textarea>
-        </div>
-        <div class="admin-form-row">
-            <div class="admin-form-group">
-                <span class="admin-form-label">Birthdate</span>
-                <input type="date" class="admin-input" data-admin-staff-edit-birthdate aria-label="Birthdate">
-                <label class="admin-form-label">Age<input class="admin-input" data-admin-staff-edit-age readonly aria-label="Age" placeholder="Not provided"></label>
+                <span class="admin-form-label">Mobile number · staff verified</span>
+                <input type="tel" class="admin-input" placeholder="Not provided" data-admin-staff-edit-mobile readonly aria-describedby="adminStaffMobileReadOnlyHint">
+                <span class="admin-form-hint" id="adminStaffMobileReadOnlyHint">Staff manage and verify their own mobile number in Account Settings.</span>
             </div>
             <div class="admin-form-group">
-                <span class="admin-form-label">Gender</span>
-                <select class="admin-select" data-admin-staff-edit-gender>
-                    <option value="">Select…</option>
-                    <option>Male</option>
-                    <option>Female</option>
-                    <option>Prefer not to say</option>
-                </select>
+                <span class="admin-form-label">Address</span>
+                <textarea class="admin-input admin-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-admin-staff-edit-address></textarea>
             </div>
-        </div>
-        <div class="admin-form-row">
-            <div class="admin-form-group">
-                <span class="admin-form-label">Emergency contact name</span>
-                <input type="text" class="admin-input" placeholder="Maria Cruz" data-admin-staff-edit-emergency-name>
+            <div class="admin-form-row">
+                <div class="admin-form-group">
+                    <span class="admin-form-label">Birthdate</span>
+                    <input type="date" class="admin-input" data-admin-staff-edit-birthdate aria-label="Birthdate">
+                    <label class="admin-form-label">Age<input class="admin-input" data-admin-staff-edit-age readonly aria-label="Age" placeholder="Not provided"></label>
+                </div>
+                <div class="admin-form-group">
+                    <span class="admin-form-label">Gender</span>
+                    <select class="admin-select" data-admin-staff-edit-gender>
+                        <option value="">Select…</option>
+                        <option>Male</option>
+                        <option>Female</option>
+                        <option>Prefer not to say</option>
+                    </select>
+                </div>
             </div>
-            <div class="admin-form-group">
-                <span class="admin-form-label">Emergency contact number</span>
-                <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-edit-emergency-number>
+            <div class="admin-form-row">
+                <div class="admin-form-group">
+                    <span class="admin-form-label">Emergency contact name</span>
+                    <input type="text" class="admin-input" placeholder="Maria Cruz" data-admin-staff-edit-emergency-name>
+                </div>
+                <div class="admin-form-group">
+                    <span class="admin-form-label">Emergency contact number</span>
+                    <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-edit-emergency-number>
+                </div>
             </div>
         </div>
 
@@ -924,17 +962,6 @@
             <button type="button" class="admin-btn-save" data-admin-staff-edit-submit>Save Changes</button>
         </div>
     </div>
-</div>
-
-<div class="admin-modal-overlay" data-admin-staff-activity-modal hidden>
-    <section class="admin-modal owner-staff-activity-modal" role="dialog" aria-modal="true" aria-labelledby="ownerStaffActivityTitle" tabindex="-1" data-admin-staff-activity-dialog>
-        <button type="button" class="admin-modal-close" data-admin-staff-activity-close aria-label="Close staff activity"><span aria-hidden="true">×</span></button>
-        <h3 id="ownerStaffActivityTitle">Staff activity</h3>
-        <p class="admin-form-hint" data-admin-staff-activity-person></p>
-        <label class="admin-form-group owner-staff-activity-search"><span class="admin-form-label">Search this staff member’s activity</span><input type="search" class="admin-input" placeholder="Search actions, bookings, or customers…" data-admin-staff-activity-search></label>
-        <div class="owner-staff-activity-list" data-admin-staff-activity-list aria-live="polite" aria-busy="false"></div>
-        <nav class="admin-staff-pagination owner-staff-activity-pagination" data-admin-staff-activity-pagination aria-label="Staff activity pages" hidden><button type="button" class="admin-btn-ghost" data-admin-staff-activity-prev disabled>Previous</button><span data-admin-staff-activity-page-info aria-live="polite">Page 1 of 1</span><button type="button" class="admin-btn-ghost" data-admin-staff-activity-next disabled>Next</button></nav>
-    </section>
 </div>
 
 <div class="admin-modal-overlay" data-owner-notification-modal hidden>
@@ -1044,7 +1071,7 @@
         <div class="admin-settings-grid">
             <label class="admin-form-group"><span class="admin-form-label">Full name</span><input type="text" class="admin-input" autocomplete="name" data-admin-settings-name></label>
             <div class="admin-form-group"><span class="admin-form-label">Email address</span><p class="admin-input admin-readonly-email" data-admin-settings-email>—</p><span class="admin-form-hint">Your sign-in email cannot be changed.</span></div>
-            <div class="admin-form-group owner-mobile-verification"><span class="admin-form-label">Mobile number · optional</span><div class="owner-mobile-edit-row"><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" data-admin-settings-mobile><button type="button" class="admin-btn-secondary" data-admin-mobile-validate>Validate &amp; save</button><button type="button" class="admin-btn-secondary" data-admin-mobile-remove hidden>Remove</button></div><span class="admin-form-hint" data-admin-mobile-message role="status">We check Philippine format, mobile type, and active status. This does not confirm ownership or guarantee reachability.</span></div>
+            <div class="admin-form-group owner-mobile-verification"><span class="admin-form-label">Mobile number · optional</span><div class="owner-mobile-edit-row"><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile><button type="button" class="admin-btn-secondary" data-admin-mobile-validate disabled>Save number</button><button type="button" class="admin-btn-secondary" data-admin-mobile-remove hidden>Remove</button></div><span class="admin-form-hint" id="adminOwnerMobileStatus" data-admin-mobile-message role="status">Format, mobile type, active status, and use by another account are checked automatically. This does not confirm ownership or guarantee reachability.</span></div>
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>

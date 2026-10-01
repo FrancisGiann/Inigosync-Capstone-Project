@@ -58,6 +58,18 @@ Deno.serve(async (req: Request) => {
   if (result.status === "unavailable") return phoneValidationUnavailable(result.retryAfterSeconds);
   if (result.status === "invalid") return json({ valid: false, reason: result.reason }, 200, origin);
 
+  // Check duplicates only after reserving the existing per-user/global quota
+  // and confirming provider status. The RPC returns a boolean and never
+  // exposes another profile's ID or stored phone value.
+  const { data: phoneInUse, error: availabilityError } = await admin.rpc("contact_phone_in_use", {
+    p_user_id: authData.user.id,
+    p_phone_e164: result.normalized,
+  });
+  if (availabilityError || typeof phoneInUse !== "boolean")
+    return json({ message: "Phone availability is temporarily unavailable." }, 503, origin);
+  if (phoneInUse)
+    return json({ valid: false, reason: "in_use", phone_type: "mobile", line_status: "active" }, 200, origin);
+
   const { data: recorded, error: proofError } = await admin.rpc("record_contact_phone_validation", {
     p_user_id: authData.user.id, p_phone_e164: result.normalized,
   });

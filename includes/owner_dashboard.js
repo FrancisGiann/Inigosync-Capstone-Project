@@ -128,13 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Configuration is gone (see this file's own removal note below).
         staff: { title: 'Staff Management', subtitle: 'Add, update, or remove staff accounts.' },
         courts: { title: 'Court Listings', subtitle: 'Add new courts, update details, or activate/deactivate existing ones.' },
-        'booking-rules': { title: 'Booking Rules', subtitle: 'Set shared opening hours and the no-show grace period.' },
+        'booking-rules': { title: 'Working Time Schedule', subtitle: 'Set shared opening hours and the no-show grace period.' },
         media: { title: 'Media Manager', subtitle: "Whatever you upload here shows up on the website's home featured slideshow — both the landing page and the customer dashboard." },
         payments: { title: 'Payment Configuration', subtitle: 'Set the deposit amount and payment methods for new bookings.' },
         // Revision A3 (implementation_plan.md, decision C5) — new tab, after
         // Media Manager in the sidebar.
         feedback: { title: 'Feedbacks & Reviews', subtitle: '' },
-        notifications: { title: 'Notifications', subtitle: '' },
+        announcement: { title: 'Announcement', subtitle: '' },
+        audit: { title: 'Audit Trail', subtitle: '' },
         settings: { title: 'Account Settings', subtitle: '' },
         // Revision A2, decision B2 — not in .admin-nav, only reachable from
         // the profile dropdown's "View Profile"; setActivePanel() below
@@ -160,12 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
             subtitleEl.hidden = true;
         }
 
-        // Revision A3, decision C5 — Feedbacks & Reviews loads its data on
-        // panel open rather than eagerly at startup (see loadFeedback's own
-        // comment). loadFeedback is a hoisted function declaration defined
-        // later in this file; calling it here is safe regardless of source
-        // order, same reasoning already documented below for
-        // closeAdminNotifMenu.
+        // Feedbacks & Reviews and Audit Trail load when their panels open.
 
         closeMobileSidebar();
         closeProfileMenu();
@@ -173,7 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.dispatchEvent(new CustomEvent('inigosync:owner-panel', { detail: name }));
         if (name === 'payments') { loadOwnerPaymentSettings(); refreshPayMongoHealth(); }
         if (name === 'booking-rules') loadBookingRules();
-        if (name === 'notifications') loadOwnerAnnouncements();
+        if (name === 'announcement') loadOwnerAnnouncements();
+        if (name === 'audit') loadAuditTrail();
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -1199,20 +1196,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const STAFF_PAGE_SIZE = 10;
     let staffProfiles = [];
     let staffPage = 1;
-    const staffActivityModal = document.querySelector('[data-admin-staff-activity-modal]');
-    const staffActivityDialog = document.querySelector('[data-admin-staff-activity-dialog]');
-    const staffActivityList = document.querySelector('[data-admin-staff-activity-list]');
-    const staffActivitySearch = document.querySelector('[data-admin-staff-activity-search]');
-    const staffActivityPagination = document.querySelector('[data-admin-staff-activity-pagination]');
-    const staffActivityPageInfo = document.querySelector('[data-admin-staff-activity-page-info]');
-    const staffActivityPrev = document.querySelector('[data-admin-staff-activity-prev]');
-    const staffActivityNext = document.querySelector('[data-admin-staff-activity-next]');
-    const STAFF_ACTIVITY_PAGE_SIZE = 10;
-    let staffActivityStaffId = null;
-    let staffActivityPage = 0;
-    let staffActivityGeneration = 0;
-    let staffActivitySearchTimer = null;
-
     function humanizeStaffAction(value) {
         const fixed = {
             booking_confirmed: 'Booking confirmed', booking_declined: 'Booking declined',
@@ -1222,92 +1205,9 @@ document.addEventListener('DOMContentLoaded', () => {
             checked_in: 'Customer checked in', collected_payment: 'Payment collected',
             collected_online_balance: 'Online balance collected', booking_status_changed: 'Booking status changed',
         };
-        const action = String(value || 'Staff action');
+        const action = String(value || 'Activity');
         return fixed[action] || action.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
     }
-
-    function summarizeStaffActivityDetails(details, entityId) {
-        const source = details && typeof details === 'object' && !Array.isArray(details) ? details : {};
-        const money = value => value === undefined || value === null || value === '' || !Number.isFinite(Number(value))
-            ? '' : `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const fields = [
-            ['Customer', source.customerName || source.customer_name || source.customer],
-            ['Space', source.courtName || source.court_name || source.court],
-            ['Court or lane', source.unit],
-            ['Starts', source.starts_at ? formatActivityTime(source.starts_at) : ''],
-            ['Total', money(source.total)],
-            ['Paid', money(source.paid)],
-            ['Collected', money(source.cash_collected ?? source.amount ?? source.paymentAmount)],
-            ['Payment', source.method || source.paymentMethod || source.payment_method],
-            ['Status', source.to || source.status],
-        ].filter(([, value]) => value !== undefined && value !== null && String(value).trim());
-        if (entityId) fields.push(['Record', `#${entityId}`]);
-        return fields.map(([label, value]) => `<span><strong>${label}:</strong> ${window.escapeHtml(String(value))}</span>`).join('');
-    }
-
-    async function loadStaffActivity() {
-        if (!staffActivityList || !staffActivityStaffId || !window.sb) return;
-        const generation = ++staffActivityGeneration;
-        staffActivityList.setAttribute('aria-busy', 'true');
-        staffActivityList.innerHTML = '<p class="admin-form-hint">Loading activity…</p>';
-        if (staffActivityPagination) staffActivityPagination.hidden = true;
-        try {
-            const { data, error } = await window.sb.rpc('owner_staff_activity', {
-                p_staff_id: staffActivityStaffId,
-                p_search: staffActivitySearch?.value.trim() || '',
-                p_offset: staffActivityPage * STAFF_ACTIVITY_PAGE_SIZE,
-                p_limit: STAFF_ACTIVITY_PAGE_SIZE,
-            });
-            if (generation !== staffActivityGeneration) return;
-            if (error) throw error;
-            const rows = Array.isArray(data?.rows) ? data.rows : [];
-            const total = Math.max(0, Number(data?.total_count) || 0);
-            staffActivityList.innerHTML = rows.length ? rows.map(item => {
-                const dateText = formatActivityTime(item.created_at);
-                const summary = summarizeStaffActivityDetails(item.details, item.entity_id);
-                const typeLabel = ['walkin', 'walk_in_booking'].includes(item.entity_type) ? 'Walk-in' : item.entity_type === 'booking' ? 'Booking' : '';
-                return `<article class="owner-staff-activity-item"><div class="owner-staff-activity-item-head"><strong>${window.escapeHtml(humanizeStaffAction(item.action))}</strong><time datetime="${window.escapeHtml(item.created_at || '')}">${window.escapeHtml(dateText)}</time></div>${typeLabel ? `<span class="owner-staff-activity-type">${typeLabel}</span>` : ''}${summary ? `<div class="owner-staff-activity-summary">${summary}</div>` : '<p class="admin-form-hint">No additional booking details were recorded for this action.</p>'}</article>`;
-            }).join('') : '<p class="admin-form-hint">No recorded activity matches this search.</p>';
-            const pageCount = Math.max(1, Math.ceil(total / STAFF_ACTIVITY_PAGE_SIZE));
-            if (staffActivityPagination) staffActivityPagination.hidden = total <= STAFF_ACTIVITY_PAGE_SIZE;
-            if (staffActivityPageInfo) staffActivityPageInfo.textContent = `Page ${staffActivityPage + 1} of ${pageCount} · ${total} actions`;
-            if (staffActivityPrev) staffActivityPrev.disabled = staffActivityPage <= 0;
-            if (staffActivityNext) staffActivityNext.disabled = staffActivityPage + 1 >= pageCount;
-        } catch (error) {
-            if (generation !== staffActivityGeneration) return;
-            console.error('[admin] staff activity could not be loaded', error);
-            staffActivityList.innerHTML = '<p class="admin-form-hint">Staff activity could not be loaded. Please try again.</p>';
-        } finally {
-            if (generation === staffActivityGeneration) staffActivityList.setAttribute('aria-busy', 'false');
-        }
-    }
-
-    function openStaffActivity(profile) {
-        if (!staffActivityModal || !profile?.id) return;
-        staffActivityStaffId = profile.id;
-        staffActivityPage = 0;
-        if (staffActivitySearch) staffActivitySearch.value = '';
-        const person = staffActivityDialog?.querySelector('[data-admin-staff-activity-person]');
-        if (person) person.textContent = `${profile.full_name || 'Staff member'} · ${profile.position || 'Staff'}`;
-        window.InigoOwnerUI.open(staffActivityModal);
-        loadStaffActivity();
-    }
-
-    document.querySelectorAll('[data-admin-staff-activity-close]').forEach(button => button.addEventListener('click', () => window.InigoOwnerUI.close(staffActivityModal)));
-    staffActivityModal?.addEventListener('pointerdown', event => { staffActivityModal.dataset.backdropPressed = String(event.target === staffActivityModal); });
-    staffActivityModal?.addEventListener('click', event => {
-        if (event.target === staffActivityModal && staffActivityModal.dataset.backdropPressed === 'true') window.InigoOwnerUI.close(staffActivityModal);
-        delete staffActivityModal.dataset.backdropPressed;
-    });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape' && staffActivityModal && !staffActivityModal.hidden) window.InigoOwnerUI.close(staffActivityModal); });
-    staffActivitySearch?.addEventListener('input', () => {
-        staffActivityPage = 0;
-        window.clearTimeout(staffActivitySearchTimer);
-        staffActivitySearchTimer = window.setTimeout(loadStaffActivity, 250);
-    });
-    staffActivityPrev?.addEventListener('click', () => { if (staffActivityPage > 0) { staffActivityPage -= 1; loadStaffActivity(); } });
-    staffActivityNext?.addEventListener('click', () => { staffActivityPage += 1; loadStaffActivity(); });
-
     if (staffSubmitBtn) {
         staffSubmitBtn.addEventListener('click', async () => {
             const nameInput = document.querySelector('[data-admin-staff-name]');
@@ -1344,7 +1244,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let emergency_contact_number = '';
             if (emergencyNumberRaw) {
                 if (!window.validatePhMobile) {
-                    window.alert('Unable to validate the emergency contact number right now. Please try again shortly.');
+                    window.InigoToast?.show('Unable to validate the emergency contact number right now. Please try again shortly.', true);
                     return;
                 }
                 const check = window.validatePhMobile(emergencyNumberRaw);
@@ -1357,7 +1257,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!window.sb || !window.SUPABASE_URL) {
-                window.alert('Unable to reach the server right now. Please try again shortly.');
+                window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
                 return;
             }
 
@@ -1387,7 +1287,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeStaffModal();
                 recordOwnerActivity(`Staff account invited: ${name}`, 'staff');
             } catch (err) {
-                window.alert(err.message || 'Could not send the invite. Please try again.');
+                window.InigoToast?.show(err.message || 'Could not send the invite. Please try again.', true);
             } finally {
                 staffSubmitBtn.disabled = false;
                 staffSubmitBtn.textContent = 'Send Invite';
@@ -1440,6 +1340,23 @@ document.addEventListener('DOMContentLoaded', () => {
         set('[data-admin-staff-edit-emergency-name]', profile.emergency_contact_name || '');
         set('[data-admin-staff-edit-emergency-number]', profile.emergency_contact_number || '');
 
+        const age = computeAdminStaffAge(profile.birthdate);
+        const details = [
+            ['name', profile.full_name],
+            ['position', profile.position],
+            ['mobile', profile.contact_num],
+            ['address', profile.address],
+            ['birthdate', profile.birthdate],
+            ['gender', profile.gender],
+            ['age', age === null ? '' : `${age} years old`],
+            ['emergency-name', profile.emergency_contact_name],
+            ['emergency-number', profile.emergency_contact_number],
+        ];
+        details.forEach(([key, value]) => {
+            const el = staffEditDialog.querySelector(`[data-admin-staff-detail-${key}]`);
+            if (el) el.textContent = value || '—';
+        });
+
         const metaEl = staffEditDialog.querySelector('[data-admin-staff-edit-meta]');
         if (metaEl) metaEl.textContent = formatAdminStaffEditMeta(profile);
     }
@@ -1455,6 +1372,12 @@ document.addEventListener('DOMContentLoaded', () => {
         staffEditModalProfileId = profile.id;
         fillStaffEditForm(profile);
         setStaffEditFieldsDisabled(mode === 'view');
+
+        const viewingDetails = mode === 'view';
+        const detailsView = staffEditDialog.querySelector('[data-admin-staff-details-view]');
+        const detailsEdit = staffEditDialog.querySelector('[data-admin-staff-details-edit]');
+        if (detailsView) detailsView.hidden = !viewingDetails;
+        if (detailsEdit) detailsEdit.hidden = viewingDetails;
 
         const titleEl = staffEditDialog.querySelector('[data-admin-staff-edit-modal-title]');
         if (titleEl) titleEl.textContent = mode === 'view' ? 'Staff Details' : 'Edit Staff';
@@ -1817,21 +1740,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                if (!window.confirm(`Email a password recovery link to ${name} at ${email}?`)) return;
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Send password reset link?',
+                    message: `Email a password recovery link to ${name} at ${email}?`,
+                    confirmLabel: 'Send reset link',
+                });
+                if (!accepted) return;
 
                 btn.disabled = true;
-                const { error } = await window.sb.auth.resetPasswordForEmail(email, {
-                    redirectTo: new URL('../index.html', window.location.href).href,
-                });
-                btn.disabled = false;
-
-                if (error) {
+                try {
+                    const { error } = await window.sb.auth.resetPasswordForEmail(email, {
+                        redirectTo: new URL('../index.html', window.location.href).href,
+                    });
+                    if (error) throw error;
+                    window.InigoToast?.show(`Recovery email requested for ${name}. Ask them to check their inbox.`);
+                    recordOwnerActivity(`Staff password recovery requested: ${name}`, 'staff');
+                } catch (error) {
                     window.InigoToast?.show(error.message || 'Could not send the recovery email.', true);
-                    return;
+                } finally {
+                    btn.disabled = false;
                 }
-
-                window.InigoToast?.show(`Recovery email requested for ${name}. Ask them to check their inbox.`);
-                recordOwnerActivity('Staff password recovery requested: ' + name, 'staff');
             });
         });
 
@@ -1867,7 +1795,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row = btn.closest('tr');
                 if (!row) return;
                 const name = row.querySelector('[data-admin-staff-name-cell]')?.textContent;
-                if (!window.confirm(`Deactivate ${name}'s account? They will no longer be able to log in.`)) return;
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Deactivate staff account?',
+                    message: `${name} will no longer be able to log in.`,
+                    confirmLabel: 'Deactivate account',
+                    danger: true,
+                });
+                if (!accepted) return;
 
                 btn.disabled = true;
                 const { error } = await window.sb.from('profiles').update({ status: 'disabled' }).eq('id', row.dataset.id);
@@ -1889,7 +1823,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row = btn.closest('tr');
                 if (!row) return;
                 const name = row.querySelector('[data-admin-staff-name-cell]')?.textContent || 'this account';
-                if (!window.confirm(`Activate ${name}'s account? They will be able to log in again.`)) return;
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Activate staff account?',
+                    message: `${name} will be able to log in again.`,
+                    confirmLabel: 'Activate account',
+                });
+                if (!accepted) return;
 
                 btn.disabled = true;
                 const { error } = await window.sb.from('profiles').update({ status: 'active' }).eq('id', row.dataset.id);
@@ -1916,7 +1855,6 @@ document.addEventListener('DOMContentLoaded', () => {
     staffActionCard.innerHTML = `
         <button type="button" data-admin-staff-command="view">View staff details</button>
         <button type="button" data-admin-staff-command="edit">Edit staff</button>
-        <button type="button" data-admin-staff-command="activity">View activity</button>
         <button type="button" data-admin-staff-command="reset">Send password reset</button>
         <button type="button" data-admin-staff-command="toggle">Deactivate account</button>
     `;
@@ -1974,10 +1912,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = trigger.closest('tr');
         closeStaffActionCard(true);
         if (!row) return;
-        if (command === 'activity') {
-            openStaffActivity(row.__staffProfile || fallbackProfileFromRow(row));
-            return;
-        }
         const target = {
             view: '[data-admin-view-staff]',
             edit: '[data-admin-edit-staff]',
@@ -2200,7 +2134,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingRulesTimezone = document.querySelector('[data-owner-rules-timezone]');
     const bookingRulesMessage = document.querySelector('[data-owner-rules-message]');
     const bookingRulesSave = document.querySelector('[data-owner-rules-save]');
+    const bookingRulesEdit = document.querySelector('[data-owner-rules-edit]');
+    const bookingRulesCancel = document.querySelector('[data-owner-rules-cancel]');
     let bookingRulesLoading = false;
+    let bookingRulesEditing = false;
+    let bookingRulesLoaded = false;
 
     function setBookingRulesMessage(message, isError = false) {
         if (!bookingRulesMessage) return;
@@ -2219,11 +2157,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setRuleDayClosed(row) {
         const closed = row.querySelector('[data-owner-rules-closed]')?.checked === true;
+        const closedInput = row.querySelector('[data-owner-rules-closed]');
+        if (closedInput) closedInput.disabled = !bookingRulesEditing;
         row.querySelectorAll('[data-owner-rules-open],[data-owner-rules-close]').forEach(input => {
-            input.disabled = closed;
-            input.required = !closed;
+            input.disabled = !bookingRulesEditing || closed;
+            input.required = bookingRulesEditing && !closed;
         });
         row.classList.toggle('is-closed', closed);
+    }
+
+    function setBookingRulesEditing(editing) {
+        bookingRulesEditing = editing;
+        if (bookingRulesEffective) bookingRulesEffective.disabled = !editing;
+        if (bookingRulesGrace) bookingRulesGrace.disabled = !editing;
+        bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]').forEach(setRuleDayClosed);
+        if (bookingRulesEdit) bookingRulesEdit.hidden = editing || !bookingRulesLoaded;
+        if (bookingRulesCancel) bookingRulesCancel.hidden = !editing;
+        if (bookingRulesSave) bookingRulesSave.hidden = !editing;
+        bookingRulesPanel?.toggleAttribute('data-editing', editing);
     }
 
     bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]').forEach(row => {
@@ -2233,6 +2184,8 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadBookingRules() {
         if (!bookingRulesPanel || !window.sb || bookingRulesLoading) return;
         bookingRulesLoading = true;
+        setBookingRulesEditing(false);
+        if (bookingRulesEdit) bookingRulesEdit.disabled = true;
         if (bookingRulesSave) bookingRulesSave.disabled = true;
         setBookingRulesMessage('Loading current booking rules…');
         try {
@@ -2263,15 +2216,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 closed.checked = day.is_closed === true;
                 setRuleDayClosed(row);
             });
+            bookingRulesLoaded = true;
             setBookingRulesMessage('Current rules loaded.');
         } catch (error) {
             console.error('[admin] booking rules could not be loaded', error);
             setBookingRulesMessage(error.message || 'Booking rules could not be loaded. Try again.', true);
         } finally {
             bookingRulesLoading = false;
+            if (bookingRulesEdit) bookingRulesEdit.disabled = false;
+            setBookingRulesEditing(false);
             if (bookingRulesSave) bookingRulesSave.disabled = false;
         }
     }
+
+    bookingRulesEdit?.addEventListener('click', () => {
+        if (!bookingRulesLoaded || bookingRulesLoading) return;
+        setBookingRulesEditing(true);
+        setBookingRulesMessage('Edit the weekly hours, effective date, or no-show grace period, then save the Working Time Schedule.');
+        bookingRulesEffective?.focus();
+    });
+
+    bookingRulesCancel?.addEventListener('click', async () => {
+        if (!bookingRulesEditing || bookingRulesLoading) return;
+        bookingRulesLoading = false;
+        bookingRulesEdit.disabled = true;
+        bookingRulesCancel.disabled = true;
+        setBookingRulesEditing(false);
+        setBookingRulesMessage('Discarding unsaved schedule changes…');
+        await loadBookingRules();
+        bookingRulesCancel.disabled = false;
+        bookingRulesEdit?.focus();
+    });
 
     bookingRulesSave?.addEventListener('click', async () => {
         if (!window.sb || bookingRulesLoading) return;
@@ -2297,8 +2272,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (weeklyHours.length !== 7) { setBookingRulesMessage('The weekly schedule must include all seven days.', true); return; }
 
+        const accepted = await window.InigoOwnerUI?.confirm({
+            title: 'Save Working Time Schedule?',
+            message: `Apply these opening hours and a ${graceMinutes}-minute no-show grace period from ${effectiveFrom}?`,
+            confirmLabel: 'Save schedule',
+        });
+        if (!accepted) return;
+
         bookingRulesSave.disabled = true;
-        bookingRulesSave.textContent = 'Saving…';
         setBookingRulesMessage('Saving rules and checking existing reservations…');
         try {
             const { error } = await window.sb.rpc('owner_save_booking_rules', {
@@ -2307,14 +2288,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_effective_from: effectiveFrom,
             });
             if (error) throw error;
-            setBookingRulesMessage('Booking rules saved. The shared availability schedule will use them from the effective date.');
-            window.InigoToast?.show('Booking rules saved.');
+            setBookingRulesMessage('Working Time Schedule saved. The shared availability schedule will use it from the effective date.');
+            window.InigoToast?.show('Working Time Schedule saved.');
+            setBookingRulesEditing(false);
+            bookingRulesEdit?.focus();
         } catch (error) {
             console.error('[admin] booking rules could not be saved', error);
             setBookingRulesMessage(error.message || 'Booking rules could not be saved. Check for conflicts with existing reservations.', true);
         } finally {
             bookingRulesSave.disabled = false;
-            bookingRulesSave.textContent = 'Save booking rules';
         }
     });
 
@@ -2422,15 +2404,140 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminNotifList = document.querySelector('[data-admin-notif-list]');
     const adminNotifDot = document.querySelector('[data-admin-notif-dot]');
     const adminNotifMarkAll = document.querySelector('[data-admin-notif-mark-all]');
-    const notificationList = document.querySelector('[data-owner-notification-list]');
     const notificationDetail = document.querySelector('[data-owner-notification-detail]');
     const notificationDetailBody = document.querySelector('[data-owner-notification-detail-body]');
     const notificationModal = document.querySelector('[data-owner-notification-modal]');
-    let notificationPage = 0;
     let selectedNotificationId = null;
-    let notificationGeneration = 0;
-    const NOTIFICATION_PAGE_SIZE = 15;
+    const auditPanel = document.querySelector('[data-admin-panel="audit"]');
+    const auditRows = document.querySelector('[data-owner-audit-rows]');
+    const auditStatus = document.querySelector('[data-owner-audit-status]');
+    const auditSearch = document.querySelector('[data-owner-audit-search]');
+    const auditFrom = document.querySelector('[data-owner-audit-from]');
+    const auditTo = document.querySelector('[data-owner-audit-to]');
+    const auditCategory = document.querySelector('[data-owner-audit-category]');
+    const auditActor = document.querySelector('[data-owner-audit-actor]');
+    const auditRole = document.querySelector('[data-owner-audit-role]');
+    const auditPagination = document.querySelector('[data-owner-audit-pagination]');
+    const auditPageInfo = document.querySelector('[data-owner-audit-page-info]');
+    const auditPrev = document.querySelector('[data-owner-audit-prev]');
+    const auditNext = document.querySelector('[data-owner-audit-next]');
+    const AUDIT_PAGE_SIZE = 25;
+    let auditPage = 0;
+    let auditGeneration = 0;
+    let auditSearchTimer = null;
     const formatActivityTime = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+
+    function auditDateBoundaryIso(value, addDay = false) {
+        if (!value) return null;
+        const date = new Date(`${value}T00:00:00+08:00`);
+        if (Number.isNaN(date.valueOf())) return null;
+        if (addDay) date.setUTCDate(date.getUTCDate() + 1);
+        return date.toISOString();
+    }
+
+    function auditCategoryLabel(value) {
+        return ({ account: 'Account', booking: 'Booking', payment: 'Payment', staff: 'Staff', owner: 'Owner activity' })[value] || 'Activity';
+    }
+
+    function auditRoleLabel(value) {
+        return ({ admin: 'Owner', staff: 'Staff', customer: 'Customer', system: 'System' })[value] || 'System';
+    }
+
+    function renderAuditTrailRows(rows) {
+        if (!auditRows) return;
+        auditRows.innerHTML = rows.length ? rows.map(item => {
+            const amount = item.amount !== null && item.amount !== undefined && Number.isFinite(Number(item.amount))
+                ? `₱${Number(item.amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+            const record = item.target_type || item.target_id ? `${item.target_type || 'Record'}${item.target_id ? ` #${item.target_id}` : ''}` : '—';
+            const cellValue = value => {
+                const text = String(value ?? '—');
+                const escaped = window.escapeHtml(text);
+                return `<span class="owner-audit-cell-value" title="${escaped}">${escaped}</span>`;
+            };
+            const eventId = String(item.event_id || '—');
+            const eventLabel = humanizeStaffAction(item.action);
+            const actorName = item.actor_name || 'Deleted account';
+            const category = auditCategoryLabel(item.category);
+            const role = auditRoleLabel(item.actor_role);
+            const timeLabel = formatActivityTime(item.created_at);
+            return `<tr>
+                <td><time datetime="${window.escapeHtml(item.created_at || '')}" class="owner-audit-cell-value" title="${window.escapeHtml(timeLabel)}">${window.escapeHtml(timeLabel)}</time></td>
+                <td><code class="owner-audit-cell-value" title="${window.escapeHtml(eventId)}">${window.escapeHtml(eventId)}</code></td>
+                <td>${cellValue(eventLabel)}</td>
+                <td>${cellValue(category)}</td>
+                <td>${cellValue(actorName)}</td>
+                <td>${cellValue(role)}</td>
+                <td>${cellValue(record)}</td>
+                <td>${cellValue(amount)}</td>
+                <td>${cellValue(item.summary || '—')}</td>
+            </tr>`;
+        }).join('') : '<tr><td colspan="9">No events match these filters.</td></tr>';
+    }
+
+    async function loadAuditTrail() {
+        if (!window.sb || !auditRows) return;
+        const generation = ++auditGeneration;
+        auditRows.setAttribute('aria-busy', 'true');
+        if (auditStatus) auditStatus.textContent = 'Loading audit trail…';
+        if (auditPagination) auditPagination.hidden = true;
+        try {
+            const { data, error } = await window.sb.rpc('owner_audit_trail', {
+                p_search: auditSearch?.value.trim() || '',
+                p_from: auditDateBoundaryIso(auditFrom?.value),
+                p_to: auditDateBoundaryIso(auditTo?.value, true),
+                p_category: auditCategory?.value || 'all',
+                p_actor_id: auditActor?.value && auditActor.value !== 'all' ? auditActor.value : null,
+                p_actor_role: auditRole?.value || 'all',
+                p_offset: auditPage * AUDIT_PAGE_SIZE,
+                p_limit: AUDIT_PAGE_SIZE,
+            });
+            if (generation !== auditGeneration) return;
+            if (error) throw error;
+            const actors = Array.isArray(data?.actors) ? data.actors : [];
+            const selectedActor = auditActor?.value || 'all';
+            if (auditActor) {
+                const selectedActorLabel = auditActor.selectedOptions[0]?.textContent || 'Staff member · Staff';
+                auditActor.innerHTML = '<option value="all">All actors</option>' + actors.map(actor =>
+                    `<option value="${window.escapeHtml(actor.id)}">${window.escapeHtml(actor.name)} · ${window.escapeHtml(auditRoleLabel(actor.role))}</option>`
+                ).join('');
+                if (actors.some(actor => actor.id === selectedActor)) auditActor.value = selectedActor;
+                else if (selectedActor !== 'all') {
+                    const option = document.createElement('option');
+                    option.value = selectedActor;
+                    option.textContent = selectedActorLabel;
+                    auditActor.append(option);
+                    auditActor.value = selectedActor;
+                } else auditActor.value = 'all';
+            }
+            const rows = Array.isArray(data?.rows) ? data.rows : [];
+            const total = Math.max(0, Number(data?.total_count) || 0);
+            renderAuditTrailRows(rows);
+            const pageCount = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
+            if (auditStatus) auditStatus.textContent = `${total.toLocaleString()} ${total === 1 ? 'event' : 'events'} recorded`;
+            if (auditPagination) auditPagination.hidden = total <= AUDIT_PAGE_SIZE;
+            if (auditPageInfo) auditPageInfo.textContent = `Page ${auditPage + 1} of ${pageCount}`;
+            if (auditPrev) auditPrev.disabled = auditPage <= 0;
+            if (auditNext) auditNext.disabled = auditPage + 1 >= pageCount;
+        } catch (error) {
+            if (generation !== auditGeneration) return;
+            console.error('[admin] audit trail could not be loaded', error);
+            if (auditStatus) auditStatus.textContent = 'Audit trail could not be loaded. Try refreshing.';
+            if (auditRows) auditRows.innerHTML = '<tr><td colspan="9">Audit trail could not be loaded.</td></tr>';
+        } finally {
+            if (generation === auditGeneration) auditRows.setAttribute('aria-busy', 'false');
+        }
+    }
+
+    const resetAuditPage = () => { auditPage = 0; loadAuditTrail(); };
+    auditSearch?.addEventListener('input', () => {
+        auditPage = 0;
+        window.clearTimeout(auditSearchTimer);
+        auditSearchTimer = window.setTimeout(loadAuditTrail, 250);
+    });
+    [auditFrom, auditTo, auditCategory, auditActor, auditRole].forEach(input => input?.addEventListener('change', resetAuditPage));
+    document.querySelector('[data-owner-audit-refresh]')?.addEventListener('click', loadAuditTrail);
+    auditPrev?.addEventListener('click', () => { if (auditPage > 0) { auditPage -= 1; loadAuditTrail(); } });
+    auditNext?.addEventListener('click', () => { auditPage += 1; loadAuditTrail(); });
     function closeAdminNotifMenu() {
         adminNotif?.removeAttribute('data-open');
         adminNotifTrigger?.setAttribute('aria-expanded', 'false');
@@ -2466,24 +2573,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (adminNotifDot) adminNotifDot.hidden = !unread.count;
             if (adminNotifMarkAll) adminNotifMarkAll.disabled = !unread.count;
         }
-        if (document.querySelector('[data-admin-panel="notifications"].is-active')) loadNotificationsPage();
-    }
-    async function loadNotificationsPage() {
-        if (!window.sb || !window.inigosyncProfile?.id || !notificationList) return;
-        const generation = ++notificationGeneration;
-        const { data, count, error } = await window.sb.from('owner_activity').select('id,title,created_at,seen_at', { count: 'exact' })
-            .eq('owner_id', window.inigosyncProfile.id).order('created_at', { ascending: false }).order('id', { ascending: false })
-            .range(notificationPage * NOTIFICATION_PAGE_SIZE, (notificationPage + 1) * NOTIFICATION_PAGE_SIZE - 1);
-        if (generation !== notificationGeneration) return;
-        if (error) { notificationList.textContent = 'Could not load notifications. Try opening this page again.'; return; }
-        notificationList.innerHTML = data?.length ? data.map(item => `<button type="button" class="owner-notification-row${item.seen_at ? ' is-seen' : ''}${item.id === selectedNotificationId ? ' is-selected' : ''}" data-owner-activity-id="${window.escapeHtml(item.id)}"><strong>${window.escapeHtml(item.title)}</strong><time datetime="${window.escapeHtml(item.created_at)}">${window.escapeHtml(formatActivityTime(item.created_at))} · ${item.seen_at ? 'Read' : 'Unread'}</time></button>`).join('') : '<p class="admin-form-hint">No notifications yet.</p>';
-        document.querySelector('[data-owner-notification-page]').textContent = `Page ${notificationPage + 1} of ${Math.max(1, Math.ceil(count / NOTIFICATION_PAGE_SIZE))}`;
-        document.querySelector('[data-owner-notification-prev]').disabled = notificationPage === 0;
-        document.querySelector('[data-owner-notification-next]').disabled = (notificationPage + 1) * NOTIFICATION_PAGE_SIZE >= count;
     }
     async function openNotification(id) {
         selectedNotificationId = id;
-        setActivePanel('notifications');
+        setActivePanel('audit');
         if (notificationDetailBody) notificationDetailBody.innerHTML = '<p class="admin-form-hint">Loading notification…</p>';
         window.InigoOwnerUI.open(notificationModal);
         const { data, error } = await window.sb.from('owner_activity').select('id,title,detail,target_section,created_at,seen_at').eq('id', id).eq('owner_id', window.inigosyncProfile.id).single();
@@ -2493,7 +2586,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (notificationDetailBody) notificationDetailBody.innerHTML = `<h3 id="ownerNotificationDetailTitle">${window.escapeHtml(data.title)}</h3><time datetime="${window.escapeHtml(data.created_at)}">${window.escapeHtml(formatActivityTime(data.created_at))} · ${seenResult.error ? 'Unread' : 'Read'}</time><p>${window.escapeHtml(data.detail || 'This earlier notification contains only the activity title and date.')}</p><button type="button" class="admin-btn-secondary" data-notification-go>Open ${window.escapeHtml(panelMeta[data.target_section]?.title || 'Overview')}</button>`;
         notificationDetailBody?.querySelector('[data-notification-go]')?.addEventListener('click', () => {
             window.InigoOwnerUI.close(notificationModal);
-            setActivePanel(panelMeta[data.target_section] ? data.target_section : 'overview');
+            const target = data.target_section === 'notifications' ? 'audit' : data.target_section;
+            setActivePanel(panelMeta[target] ? target : 'audit');
         });
         refreshOwnerActivityNotifications();
     }
@@ -2516,10 +2610,6 @@ document.addEventListener('DOMContentLoaded', () => {
     adminNotifList?.addEventListener('click', event => {
         routeOwnerActivityOpen(event.target, id => openNotification(id).catch(() => window.InigoToast?.show('Could not open notification.', true)));
     });
-    notificationList?.addEventListener('click', event => {
-        const item = event.target.closest('[data-owner-activity-id]');
-        if (item) openNotification(item.dataset.ownerActivityId).catch(() => window.InigoToast?.show('Could not open notification.', true));
-    });
     document.querySelectorAll('[data-owner-notification-close]').forEach(button => button.addEventListener('click', () => window.InigoOwnerUI.close(notificationModal)));
     let notificationBackdropPressed = false;
     notificationModal?.addEventListener('pointerdown', event => { notificationBackdropPressed = event.target === notificationModal; });
@@ -2534,9 +2624,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error) window.InigoToast?.show('Could not mark notifications as read.', true);
         refreshOwnerActivityNotifications();
     });
-    document.querySelector('[data-owner-notification-prev]')?.addEventListener('click', () => { if (notificationPage > 0) { notificationPage--; loadNotificationsPage(); } });
-    document.querySelector('[data-owner-notification-next]')?.addEventListener('click', () => { notificationPage++; loadNotificationsPage(); });
-    document.addEventListener('inigosync:owner-panel', event => { if (event.detail === 'notifications') loadNotificationsPage(); });
     document.addEventListener('inigosync:profile-ready', refreshOwnerActivityNotifications);
     window.setInterval(() => { if (!document.hidden) refreshOwnerActivityNotifications(); }, 15000);
     refreshOwnerActivityNotifications();
@@ -2772,9 +2859,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (ownerMobileMessage) {
             ownerMobileMessage.textContent = !profile.contact_num
-                ? 'A contact number is optional. We check Philippine format, mobile type, and active status, not ownership.'
+                ? 'A contact number is optional. We check Philippine format, mobile type, active status, and whether another account uses it. This does not confirm ownership.'
                 : profile.contact_num_validated
-                    ? `Validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(profile.contact_num_validated_at)}. This does not confirm ownership or guarantee reachability.`
+                    ? `Validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(profile.contact_num_validated_at)}. Ownership and use by other accounts are not confirmed.`
                     : 'This saved number has not been validated for format, mobile type, and active status.';
             ownerMobileMessage.classList.remove('is-error');
         }
@@ -2842,6 +2929,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const ownerMobileValidateBtn = document.querySelector('[data-admin-mobile-validate]');
     const ownerMobileRemoveBtn = document.querySelector('[data-admin-mobile-remove]');
     const ownerMobileMessage = document.querySelector('[data-admin-mobile-message]');
+    const ownerMobileInput = document.querySelector('[data-admin-settings-mobile]');
+    let ownerMobileCheckTimer = null;
+    let ownerMobileRequestId = 0;
+    let ownerMobileCheckedNumber = '';
+    let ownerMobileCheckPassed = false;
+    let ownerMobileCheckedAt = 0;
+    const OWNER_PHONE_PROOF_MAX_AGE_MS = 4 * 60 * 1000;
+    const ownerMobileRecentChecks = new Map();
 
     function setOwnerMobileMessage(message, isError = false) {
         if (!ownerMobileMessage) return;
@@ -2860,53 +2955,132 @@ document.addEventListener('DOMContentLoaded', () => {
         return error?.message || 'Phone validation is temporarily unavailable.';
     }
 
-    ownerMobileValidateBtn?.addEventListener('click', async () => {
-        const mobileInput = document.querySelector('[data-admin-settings-mobile]');
-        if (!window.sb || !window.inigosyncProfile || !mobileInput) return;
-        const check = window.validatePhMobile?.(mobileInput.value || '');
-        if (!check?.valid) { setOwnerMobileMessage(check?.message || 'Enter a valid Philippine mobile number.', true); mobileInput.focus(); return; }
+    function ownerPhoneFailureMessage(reason) {
+        return reason === 'not_mobile' ? 'This is not classified as a Philippine mobile number.'
+            : reason === 'in_use' ? 'This number is already in use by another account.'
+            : reason === 'inactive' ? 'The provider reports that this number is not active.'
+                : reason === 'status_unknown' ? 'The provider could not confirm the number status. Try again later.'
+                    : 'Enter a valid Philippine mobile number.';
+    }
+
+    function ownerMobileInputMatches(normalized) {
+        const current = window.validatePhMobile?.(ownerMobileInput?.value || '');
+        return current?.valid === true && current.normalized === normalized;
+    }
+
+    async function checkOwnerMobile(normalized, requestId) {
+        if (!window.sb || !window.inigosyncProfile) return;
         const currentCheck = window.validatePhMobile?.(window.inigosyncProfile.contact_num || '');
-        if (currentCheck?.valid && check.normalized === currentCheck.normalized) {
-            setOwnerMobileMessage(window.inigosyncProfile.contact_num_validated
-                ? 'This number is already validated; no provider lookup was used.'
-                : 'This saved number is unchanged; no provider lookup was used.');
+        if (currentCheck?.valid && normalized === currentCheck.normalized && window.inigosyncProfile.contact_num_validated) {
+            ownerMobileCheckedNumber = normalized;
+            ownerMobileCheckPassed = true;
+            ownerMobileCheckedAt = Date.now();
+            ownerMobileValidateBtn.disabled = true;
+            setOwnerMobileMessage(`Already validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(window.inigosyncProfile.contact_num_validated_at)}. Use by other accounts was not checked again.`);
+            return;
+        }
+        setOwnerMobileMessage('Checking mobile type and active status…');
+        try {
+            const { data, error } = await window.sb.functions.invoke('validate-contact-phone', { body: { phone: normalized } });
+            if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
+            if (error) throw new Error(await ownerPhoneFunctionError(error));
+            if (data?.valid !== true) {
+                throw new Error(ownerPhoneFailureMessage(data?.reason));
+            }
+            if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
+                || data.normalized !== `+63${normalized.slice(1)}` || data.line_status !== 'active') {
+                throw new Error('The provider returned an unsupported validation result. Try again later.');
+            }
+            ownerMobileCheckedNumber = normalized;
+            ownerMobileCheckPassed = true;
+            ownerMobileCheckedAt = Date.now();
+            ownerMobileRecentChecks.set(normalized, ownerMobileCheckedAt);
+            ownerMobileValidateBtn.disabled = currentCheck?.valid && normalized === currentCheck.normalized
+                && window.inigosyncProfile.contact_num_validated === true;
+            setOwnerMobileMessage('Available for this account and classified as an active Philippine mobile number. Save number to add it to your profile. This does not confirm ownership or guarantee reachability.');
+        } catch (error) {
+            if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
+            ownerMobileCheckPassed = false;
+            ownerMobileValidateBtn.disabled = true;
+            console.error('[admin] contact number validation failed', error);
+            setOwnerMobileMessage(error.message || 'Could not validate the number. Try again.', true);
+        }
+    }
+
+    ownerMobileInput?.addEventListener('input', () => {
+        clearTimeout(ownerMobileCheckTimer);
+        const requestId = ++ownerMobileRequestId;
+        ownerMobileCheckedNumber = '';
+        ownerMobileCheckPassed = false;
+        ownerMobileCheckedAt = 0;
+        ownerMobileValidateBtn.disabled = true;
+        const raw = ownerMobileInput.value.trim();
+        if (!raw) {
+            setOwnerMobileMessage('A contact number is optional. Format, mobile type, active status, and use by another account are checked automatically. This does not confirm ownership or guarantee reachability.');
+            return;
+        }
+        const localCheck = window.validatePhMobile?.(raw);
+        if (!localCheck?.valid) {
+            setOwnerMobileMessage('Enter a Philippine mobile number, such as 09171234567 or +639171234567.');
+            return;
+        }
+        const savedCheck = window.validatePhMobile?.(window.inigosyncProfile?.contact_num || '');
+        if (savedCheck?.valid && savedCheck.normalized === localCheck.normalized && window.inigosyncProfile?.contact_num_validated) {
+            ownerMobileCheckedNumber = localCheck.normalized;
+            ownerMobileCheckPassed = true;
+            ownerMobileCheckedAt = Date.now();
+            setOwnerMobileMessage(`Already validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(window.inigosyncProfile.contact_num_validated_at)}. Use by other accounts was not checked again.`);
+            return;
+        }
+        const recentCheckAt = ownerMobileRecentChecks.get(localCheck.normalized) || 0;
+        if (recentCheckAt && Date.now() - recentCheckAt < OWNER_PHONE_PROOF_MAX_AGE_MS) {
+            ownerMobileCheckedNumber = localCheck.normalized;
+            ownerMobileCheckPassed = true;
+            ownerMobileCheckedAt = recentCheckAt;
+            ownerMobileValidateBtn.disabled = false;
+            setOwnerMobileMessage('Available for this account and classified as an active Philippine mobile number. Save number to add it to your profile. This does not confirm ownership or guarantee reachability.');
+            return;
+        }
+        setOwnerMobileMessage('Valid Philippine mobile format. Checking mobile type and active status…');
+        ownerMobileCheckTimer = setTimeout(() => checkOwnerMobile(localCheck.normalized, requestId), 700);
+    });
+
+    ownerMobileValidateBtn?.addEventListener('click', async () => {
+        if (!window.sb || !window.inigosyncProfile || !ownerMobileInput) return;
+        const check = window.validatePhMobile?.(ownerMobileInput.value || '');
+        if (!check?.valid || !ownerMobileCheckPassed || ownerMobileCheckedNumber !== check.normalized) {
+            setOwnerMobileMessage('Wait for a successful automatic status check before saving this number.', true);
+            return;
+        }
+        if (Date.now() - ownerMobileCheckedAt >= OWNER_PHONE_PROOF_MAX_AGE_MS) {
+            ownerMobileCheckPassed = false;
+            ownerMobileValidateBtn.disabled = true;
+            setOwnerMobileMessage('The status check expired. Checking the number again…');
+            checkOwnerMobile(check.normalized, ++ownerMobileRequestId);
+            return;
+        }
+        const currentCheck = window.validatePhMobile?.(window.inigosyncProfile.contact_num || '');
+        if (currentCheck?.valid && check.normalized === currentCheck.normalized && window.inigosyncProfile.contact_num_validated) {
+            setOwnerMobileMessage('This number is already saved and validated; no provider lookup was used.');
             return;
         }
         ownerMobileValidateBtn.disabled = true;
-        ownerMobileValidateBtn.textContent = 'Validating…';
         try {
-            const { data, error } = await window.sb.functions.invoke('validate-contact-phone', { body: { phone: check.normalized } });
-            if (error) throw new Error(await ownerPhoneFunctionError(error));
-            if (data?.valid !== true) {
-                const reason = data?.reason;
-                const message = reason === 'not_mobile' ? 'Enter a Philippine mobile number.'
-                    : reason === 'inactive' ? 'The provider reports that this number is not active.'
-                        : reason === 'status_unknown' ? 'The provider could not confirm the number status. Try again later.'
-                            : 'Enter a valid Philippine mobile number.';
-                throw new Error(message);
-            }
-            if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
-                || data.normalized !== `+63${check.normalized.slice(1)}`) {
-                throw new Error('The provider returned an unsupported validation result. Try again later.');
-            }
             const { error: saveError } = await window.sb.from('profiles')
-                .update({ contact_num: data.normalized }).eq('id', window.inigosyncProfile.id);
+                .update({ contact_num: `+63${check.normalized.slice(1)}` }).eq('id', window.inigosyncProfile.id);
             if (saveError) throw saveError;
-            window.inigosyncProfile.contact_num = data.normalized;
+            window.inigosyncProfile.contact_num = `+63${check.normalized.slice(1)}`;
             window.inigosyncProfile.contact_num_validated = true;
             window.inigosyncProfile.contact_num_validated_at = new Date().toISOString();
-            mobileInput.value = check.normalized;
             renderAdminProfile(window.inigosyncProfile);
             paintOwnerDetails(window.inigosyncProfile);
             recordOwnerActivity('Owner contact number validated', 'settings');
-            setOwnerMobileMessage('Validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.');
+            setOwnerMobileMessage('Saved; available for this account and validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.');
             window.InigoToast?.show('Contact number validated and saved.');
         } catch (error) {
-            console.error('[admin] contact number validation failed', error);
-            setOwnerMobileMessage(error.message || 'Could not validate the number. Try again.', true);
-        } finally {
             ownerMobileValidateBtn.disabled = false;
-            ownerMobileValidateBtn.textContent = 'Validate & save';
+            console.error('[admin] contact number save failed', error);
+            setOwnerMobileMessage(error.message || 'Could not save the number. Try again.', true);
         }
     });
 
@@ -2957,6 +3131,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentMobileCheck = currentMobile ? window.validatePhMobile?.(currentMobile) : null;
             const mobileNeedsValidation = Boolean(requestedMobile)
                 && (!mobileCheck.valid || !currentMobileCheck?.valid || requestedMobile !== currentMobileCheck.normalized);
+            const mobileReadyToSave = mobileNeedsValidation && ownerMobileCheckPassed
+                && ownerMobileCheckedNumber === requestedMobile
+                && Date.now() - ownerMobileCheckedAt < OWNER_PHONE_PROOF_MAX_AGE_MS;
             const mobileNeedsRemoval = !requestedMobile && Boolean(currentMobile);
             if (birthdate && birthdate > todayDateInputValue()) {
                 window.InigoToast?.show('Date of birth cannot be in the future.', true);
@@ -2969,8 +3146,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameInput?.focus();
                 return;
             }
+            if (mobileNeedsValidation && ownerMobileCheckPassed && ownerMobileCheckedNumber === requestedMobile && !mobileReadyToSave) {
+                ownerMobileCheckPassed = false;
+                ownerMobileValidateBtn.disabled = true;
+                setOwnerMobileMessage('The status check expired. Checking the number again…');
+                checkOwnerMobile(requestedMobile, ++ownerMobileRequestId);
+            }
             const nameChanged = newName !== (window.inigosyncProfile.full_name || '');
-            const detailsChanged = mobileNeedsRemoval
+            const detailsChanged = mobileNeedsRemoval || mobileReadyToSave
                 || address !== (window.inigosyncProfile.address || '')
                 || birthdate !== (window.inigosyncProfile.birthdate || null)
                 || gender !== (window.inigosyncProfile.gender || '');
@@ -2989,6 +3172,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (nameChanged || detailsChanged) {
                     const profilePatch = { full_name: newName, address, birthdate, gender };
                     if (mobileNeedsRemoval) profilePatch.contact_num = null;
+                    if (mobileReadyToSave) profilePatch.contact_num = `+63${requestedMobile.slice(1)}`;
                     const { error } = await window.sb.from('profiles').update(profilePatch).eq('id', window.inigosyncProfile.id);
                     if (error) throw error;
                     Object.assign(window.inigosyncProfile, { full_name: newName, address, birthdate, gender });
@@ -2997,14 +3181,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         window.inigosyncProfile.contact_num_validated = false;
                         window.inigosyncProfile.contact_num_validated_at = null;
                     }
+                    if (mobileReadyToSave) {
+                        window.inigosyncProfile.contact_num = `+63${requestedMobile.slice(1)}`;
+                        window.inigosyncProfile.contact_num_validated = true;
+                        window.inigosyncProfile.contact_num_validated_at = new Date().toISOString();
+                    }
                 }
 
                 renderAdminProfile(window.inigosyncProfile);
                 paintOwnerDetails(window.inigosyncProfile);
                 if (nameChanged || detailsChanged) recordOwnerActivity('Owner profile updated', 'settings');
                 if (mobileNeedsValidation) {
-                    setOwnerMobileMessage('Other profile details were saved. Use Validate & save for the new mobile number.', true);
-                    window.InigoToast?.show('Profile details saved. Validate the new mobile number separately.');
+                    setOwnerMobileMessage('Other profile details were saved. Wait for the automatic status check before saving the new number.', true);
+                    window.InigoToast?.show('Profile details saved. Check the new mobile number before saving it.');
                 } else {
                     window.InigoToast?.show('Profile updated.');
                     window.InigoOwnerUI.close(document.querySelector('[data-admin-settings-profile-modal]'));

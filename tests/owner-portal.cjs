@@ -19,7 +19,18 @@ function fixture() {
         entity_type: index === 0 ? 'walk_in_booking' : 'booking', entity_id: `record-${index + 1}`,
         details: { customerName: index === 0 ? 'Walk-in Customer' : `Customer ${index + 1}`, courtName: `Court ${index + 1}`, amount: 500, paymentMethod: index % 2 ? 'Card' : 'Cash' },
     }));
-    const state = window.__ownerQa = { calls: [], failReorder: false, failSeen: false };
+    const auditEvents = Array.from({ length: 32 }, (_, index) => ({
+        event_id: index === 0 ? `audit-01-${'x'.repeat(42)}` : `audit-${String(index + 1).padStart(2, '0')}`, source: 'audit_log',
+        created_at: `2026-09-${String(26 - Math.floor(index / 2)).padStart(2, '0')}T10:00:00Z`,
+        action: index === 0 ? 'recorded_walk_in' : index % 2 ? 'checked_in' : 'collected_payment',
+        category: index % 2 ? 'booking' : 'payment', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff',
+        target_type: index % 2 ? 'walkin' : 'booking', target_id: `record-${String(index + 1).padStart(2, '0')}`,
+        amount: index % 2 ? null : 500, summary: index === 0 ? 'Walk-in customer · Court 1 — extended audit context for checking that long event summaries remain on one line and expose their complete value in the title tooltip.' : `Court ${index + 1} · customer booking`,
+    }));
+    auditEvents.push({ event_id: 'owner-event-1', source: 'owner_activity', created_at: '2026-09-01T10:00:00Z', action: 'Owner profile updated', category: 'owner', actor_id: 'qa-owner', actor_name: 'QA Owner', actor_role: 'admin', target_type: 'settings', target_id: null, amount: null, summary: 'The owner updated their account settings.' });
+    auditEvents.push({ event_id: 'session-event-1', source: 'customer_operational_events', created_at: '2026-09-02T10:00:00Z', action: 'sign_out', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-out observed' });
+    const ownerRules = { timezone: 'Asia/Manila', rules: [{ effective_from: '2026-01-01', grace_minutes: 30, weekly_hours: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, opens_at: '08:00:00', closes_at: '22:00:00', is_closed: false })) }] };
+    const state = window.__ownerQa = { calls: [], failReorder: false, failSeen: false, phoneInUse: false };
     const data = {
         event: [
             { id: '00000000-0000-4000-8000-000000000001', title: 'A very long featured tournament title that would otherwise push the card actions down and make its neighbors uneven', meta: 'First', tag: 'Event', image_url: null, display_order: 1, is_published: true, created_at: '2026-09-01T00:00:00Z' },
@@ -32,7 +43,7 @@ function fixture() {
         owner_activity: [{ id: 'activity-1', owner_id: 'qa-owner', title: 'Sport updated', detail: 'Basketball Court 1 rates changed', target_section: 'courts', created_at: '2026-09-01T00:00:00Z', seen_at: null }],
         profiles: [
             { id: 'qa-owner', role: 'admin', full_name: 'QA Owner', email: 'owner@example.test', position: 'Owner', status: 'active', created_at: '2025-01-01T00:00:00Z' },
-            { id: 'qa-staff', role: 'staff', full_name: 'QA Staff', email: 'staff@example.test', position: 'Court Attendant', status: 'active', birthdate: '2000-09-26', created_at: '2026-01-01T00:00:00Z' },
+            { id: 'qa-staff', role: 'staff', full_name: 'QA Staff', email: 'staff@example.test', position: 'Court Attendant', status: 'active', birthdate: '2000-09-26', contact_num: '+639171234567', address: '12 Example Street, Cebu City', gender: 'Prefer not to say', emergency_contact_name: 'QA Contact', emergency_contact_number: '09171234568', created_at: '2026-01-01T00:00:00Z' },
             { id: 'qa-customer', role: 'customer', full_name: 'QA Customer', email: 'customer@example.test', status: 'active', created_at: '2026-02-01T00:00:00Z' },
         ],
         app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true }],
@@ -109,6 +120,25 @@ function fixture() {
                 const total_count = rows.length;
                 return { data: { rows: rows.slice(args.p_offset, args.p_offset + args.p_limit), total_count }, error: null };
             }
+            if (name === 'owner_audit_trail') {
+                let rows = auditEvents.slice();
+                if (args.p_search) rows = rows.filter(row => JSON.stringify(row).toLocaleLowerCase().includes(String(args.p_search).toLocaleLowerCase()));
+                if (args.p_category && args.p_category !== 'all') rows = rows.filter(row => row.category === args.p_category);
+                if (args.p_actor_id) rows = rows.filter(row => row.actor_id === args.p_actor_id);
+                if (args.p_actor_role && args.p_actor_role !== 'all') rows = rows.filter(row => row.actor_role === args.p_actor_role);
+                if (args.p_from) rows = rows.filter(row => new Date(row.created_at) >= new Date(args.p_from));
+                if (args.p_to) rows = rows.filter(row => new Date(row.created_at) < new Date(args.p_to));
+                return { data: {
+                    rows: rows.slice(args.p_offset, args.p_offset + args.p_limit), total_count: rows.length,
+                    actors: [{ id: 'qa-owner', name: 'QA Owner', role: 'admin' }, { id: 'qa-staff', name: 'QA Staff', role: 'staff' }],
+                }, error: null };
+            }
+            if (name === 'owner_get_booking_rules') return { data: ownerRules, error: null };
+            if (name === 'owner_save_booking_rules') {
+                state.savedBookingRules = args;
+                ownerRules.rules = [{ effective_from: args.p_effective_from, grace_minutes: args.p_grace_minutes, weekly_hours: args.p_weekly_hours }];
+                return { data: null, error: null };
+            }
             if (name === 'owner_income_period') return { data: [{ income: { day: 100, month: 200, year: 300 }[args.p_period] }], error: null };
             if (name === 'admin_booking_overview') return { data: [
                 { status: 'pending', amount_paid: 0 }, { status: 'confirmed', amount_paid: 0 },
@@ -120,12 +150,21 @@ function fixture() {
             return { data: [], error: null };
         },
         storage: { from: () => ({ list: async () => ({ data: [], error: null }), upload: async (path, file) => { state.calls.push({ upload: path, type: file.type, size: file.size }); return { data: { path }, error: null }; }, remove: async paths => { state.calls.push({ remove: paths }); return { error: null }; }, getPublicUrl: path => ({ data: { publicUrl: `https://example.test/storage/v1/object/public/media/${path}` } }) }) },
-        functions: { invoke: async name => name === 'payment-health' ? { data: { api_connected: true, webhook_configured: true, last_confirmed_payment_at: '2026-09-26T10:00:00Z' }, error: null } : { data: null, error: { message: 'Unknown function' } } },
+        functions: { invoke: async (name, options) => {
+            if (name === 'payment-health') return { data: { api_connected: true, webhook_configured: true, last_confirmed_payment_at: '2026-09-26T10:00:00Z' }, error: null };
+            if (name === 'validate-contact-phone') {
+                state.calls.push({ function: name, options });
+                if (state.phoneInUse) return { data: { valid: false, reason: 'in_use', phone_type: 'mobile', line_status: 'active' }, error: null };
+                return { data: { valid: true, normalized: '+639171234567', phone_type: 'mobile', line_status: 'active' }, error: null };
+            }
+            return { data: null, error: { message: 'Unknown function' } };
+        } },
         auth: {
             getSession: async () => ({ data: { session: { access_token: 'qa-token', user: { id: 'qa-owner', email: 'owner@example.test' } } } }),
             getUser: async () => ({ data: { user: { id: 'qa-owner', email: 'owner@example.test', identities: [] } } }),
             onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
             signOut: async () => ({}),
+            resetPasswordForEmail: async email => { state.calls.push({ auth: 'resetPasswordForEmail', email }); return { error: null }; },
         },
     };
     window.SUPABASE_URL = 'https://example.test';
@@ -193,16 +232,76 @@ function fixture() {
                     });
                     assert.ok(await page.evaluate(() => Boolean(window.__ownerQa.tables.owner_activity[0].seen_at)));
                     assert.equal(await page.locator('[data-owner-notification-modal]').isVisible(), false, 'successful mark-seen must not open notification details');
+                    await page.locator('[data-admin-notif-list] [data-owner-activity-open]').first().click();
+                    await page.locator('[data-owner-notification-modal]').waitFor({ state: 'visible' });
+                    assert.equal(await page.locator('[data-admin-panel="audit"]').isVisible(), true, 'header notification details open over the Audit Trail');
+                    await page.locator('[data-owner-notification-close]').click();
 
                     await page.evaluate(() => window.__ownerQa.tables.owner_activity.push({
                         id: 'activity-2', owner_id: 'qa-owner', title: 'Second update', detail: 'Older owner activity',
                         target_section: 'courts', created_at: '2026-08-01T00:00:00Z', seen_at: null,
                     }));
-                    await page.locator('[data-admin-notif-trigger]').click();
-                    await page.locator('[data-admin-notif-trigger]').click();
+                    if (!(await page.locator('[data-admin-notif]').getAttribute('data-open'))) await page.locator('[data-admin-notif-trigger]').click();
+                    await page.locator('[data-admin-notif-mark-all]').waitFor({ state: 'visible' });
                     await page.locator('[data-admin-notif-mark-all]').click();
                     await page.waitForFunction(() => Boolean(window.__ownerQa.tables.owner_activity[1].seen_at));
                     assert.equal(await page.locator('[data-admin-notif-mark-all]').isDisabled(), true, 'Mark all should clear remaining unread notifications');
+                    assert.equal(await page.locator('[data-admin-nav="notifications"]').count(), 0, 'Notifications page is replaced by Audit Trail and Announcement');
+                    await page.locator('[data-admin-nav="announcement"]').evaluate(el => el.click());
+                    assert.equal(await page.locator('[data-admin-panel="announcement"]').isVisible(), true);
+                    assert.equal(await page.locator('[data-admin-title]').innerText(), 'Announcement');
+                    await page.locator('[data-admin-nav="booking-rules"]').evaluate(el => el.click());
+                    assert.equal(await page.locator('[data-admin-title]').innerText(), 'Working Time Schedule');
+                    await page.locator('[data-owner-rules-edit]').waitFor({ state: 'visible' });
+                    assert.equal(await page.locator('[data-owner-rules-effective]').isDisabled(), true, 'effective date starts read-only');
+                    assert.equal(await page.locator('[data-owner-rules-grace]').isDisabled(), true, 'grace period starts read-only');
+                    assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), true, 'weekly hours start read-only');
+                    const futureScheduleDate = await page.evaluate(() => {
+                        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+                        const date = new Date(`${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}-${parts.find(part => part.type === 'day').value}T00:00:00Z`);
+                        date.setUTCDate(date.getUTCDate() + 7);
+                        return date.toISOString().slice(0, 10);
+                    });
+                    const scheduleFields = await page.locator('.owner-booking-rules-meta > .admin-form-group').evaluateAll(groups => groups.slice(0, 2).map(group => {
+                        const input = group.querySelector('input');
+                        const groupBox = group.getBoundingClientRect();
+                        const inputBox = input.getBoundingClientRect();
+                        return { top: groupBox.top, bottom: groupBox.bottom, inputTop: inputBox.top };
+                    }));
+                    if (width > 640) {
+                        assert.ok(Math.abs(scheduleFields[0].inputTop - scheduleFields[1].inputTop) <= 2, `${width}px schedule field controls align horizontally`);
+                    } else {
+                        assert.ok(scheduleFields[0].bottom <= scheduleFields[1].top + 1, `${width}px schedule fields stack without overlap`);
+                    }
+                    await page.locator('[data-owner-rules-edit]').click();
+                    assert.equal(await page.locator('[data-owner-rules-effective]').isDisabled(), false, 'Edit enables effective date');
+                    assert.equal(await page.locator('[data-owner-rules-grace]').isDisabled(), false, 'Edit enables grace period');
+                    assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'Edit enables weekly hours');
+                    await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
+                    await page.locator('[data-owner-rules-grace]').fill('40');
+                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').fill('09:00');
+                    await page.locator('[data-owner-rules-cancel]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_get_booking_rules').length >= 2);
+                    assert.equal(await page.locator('[data-owner-rules-effective]').inputValue(), await page.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())), 'Cancel reloads and discards draft values');
+                    assert.equal(await page.locator('[data-owner-rules-grace]').inputValue(), '30');
+                    await page.locator('[data-owner-rules-edit]').click();
+                    await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
+                    await page.locator('[data-owner-rules-grace]').fill('45');
+                    await page.locator('[data-owner-rules-save]').click();
+                    const scheduleConfirm = page.locator('.owner-confirm-overlay');
+                    await scheduleConfirm.waitFor({ state: 'visible' });
+                    assert.ok((await scheduleConfirm.innerText()).includes(`45-minute no-show grace period from ${futureScheduleDate}`));
+                    await page.keyboard.press('Escape');
+                    await scheduleConfirm.waitFor({ state: 'detached' });
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.rpc === 'owner_save_booking_rules')), false, 'cancelled confirmation does not save');
+                    await page.locator('[data-owner-rules-save]').click();
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                    await page.waitForFunction(() => Boolean(window.__ownerQa.savedBookingRules));
+                    const savedSchedule = await page.evaluate(() => window.__ownerQa.savedBookingRules);
+                    assert.equal(savedSchedule.p_effective_from, futureScheduleDate);
+                    assert.equal(savedSchedule.p_grace_minutes, 45);
+                    assert.equal(savedSchedule.p_weekly_hours.length, 7);
+                    assert.equal(await page.locator('[data-owner-rules-save]').isVisible(), false, 'save returns to read-only mode');
 
                     // Profile modal must be visible, focusable, close, and restore focus.
                     await page.locator('[data-admin-nav="settings"]').first().evaluate(el => el.click());
@@ -234,6 +333,29 @@ function fixture() {
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update'));
                     await page.locator('[data-admin-avatar-modal]').waitFor({ state: 'hidden' });
 
+                    // Owner mobile status is checked automatically after a complete PH number is entered, then saved explicitly.
+                    await page.locator('[data-admin-profile-edit]').click();
+                    const ownerMobile = page.locator('[data-admin-settings-mobile]');
+                    await ownerMobile.fill('+63 917 123 4567');
+                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Save number to add'));
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'one complete number triggers one debounced provider check');
+                    assert.deepEqual(await page.evaluate(() => window.__ownerQa.calls.find(call => call.function === 'validate-contact-phone').options.body), { phone: '09171234567' }, 'international input is normalized for the provider');
+                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /does not confirm ownership/);
+                    assert.equal(await page.locator('[data-admin-mobile-validate]').isEnabled(), true);
+                    await ownerMobile.fill('09171234567');
+                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Save number to add'));
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'same normalized value in another format reuses its recent check');
+                    await page.locator('[data-admin-mobile-validate]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.contact_num === '+639171234567'));
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'saving uses the completed check without a second provider lookup');
+                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /does not confirm ownership/);
+                    await page.evaluate(() => window.__ownerQa.phoneInUse = true);
+                    await ownerMobile.fill('09991234567');
+                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('already in use by another account'));
+                    assert.equal(await page.locator('[data-admin-mobile-validate]').isEnabled(), false, 'a number in use by another account cannot be saved');
+                    await page.locator('[data-admin-settings-cancel="profile"]').last().click();
+                    await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
+
                     // Staff age and supported position choices.
                     await page.locator('[data-admin-nav="staff"]').first().evaluate(el => el.click());
                     await page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' }).waitFor();
@@ -252,17 +374,113 @@ function fixture() {
                     await staffTrigger.click();
                     await page.locator('[data-admin-panel="staff"] .admin-card-head').click();
                     assert.equal(await staffCard.isVisible(), false, 'outside click closes staff actions');
+                    assert.equal(await staffCard.locator('[data-admin-staff-command="activity"]').count(), 0, 'staff Actions menu has no View activity command');
+
+                    // Audit Trail aggregates activity with bounded search, filter and pagination.
+                    await page.locator('[data-admin-nav="audit"]').evaluate(el => el.click());
+                    await page.locator('[data-owner-audit-rows] tr').first().waitFor();
+                    const auditLayout = await page.locator('.owner-audit-filters').evaluate(el => {
+                        const groups = [...el.querySelectorAll('.admin-form-group')].map(group => {
+                            const label = group.querySelector('.admin-form-label').getBoundingClientRect();
+                            const control = group.querySelector('input, select').getBoundingClientRect();
+                            const box = group.getBoundingClientRect();
+                            return { row: Math.round(box.top), labelHeight: label.height, controlTop: control.top, controlWidth: control.width, groupWidth: box.width };
+                        });
+                        const rows = new Map();
+                        for (const group of groups) (rows.get(group.row) || rows.set(group.row, []).get(group.row)).push(group);
+                        return { groups, rows: [...rows.values()] };
+                    });
+                    assert.ok(auditLayout.groups.every(group => group.controlWidth <= group.groupWidth + 1), `${width}px audit controls fit their filter columns`);
+                    assert.ok(auditLayout.groups.every(group => Math.abs(group.labelHeight - auditLayout.groups[0].labelHeight) <= 1), `${width}px audit filter labels reserve matching height`);
+                    for (const row of auditLayout.rows) {
+                        assert.ok(row.every(group => Math.abs(group.controlTop - row[0].controlTop) <= 1), `${width}px audit controls align within each filter row`);
+                    }
+                    const auditLongCells = await page.locator('[data-owner-audit-rows] tr').first().locator('td:nth-child(2), td:nth-child(9)').evaluateAll(cells => cells.map(cell => {
+                        const value = cell.querySelector('.owner-audit-cell-value');
+                        const style = getComputedStyle(value);
+                        return { text: value.textContent, title: value.title, clipped: value.scrollWidth > value.clientWidth, whiteSpace: style.whiteSpace, overflow: style.overflow, textOverflow: style.textOverflow };
+                    }));
+                    assert.ok(auditLongCells.every(cell => cell.clipped && cell.whiteSpace === 'nowrap' && cell.overflow === 'hidden' && cell.textOverflow === 'ellipsis'), 'long audit identifiers and summaries stay one line and truncate cleanly');
+                    assert.ok(auditLongCells.every(cell => cell.title === cell.text), 'truncated audit values expose their full text in the title tooltip');
+                    assert.equal(await page.locator('[data-owner-audit-rows] tr').count(), 25);
+                    assert.match(await page.locator('[data-owner-audit-page-info]').innerText(), /Page 1 of 2/);
+                    await page.locator('[data-owner-audit-next]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_offset === 25);
+                    assert.match(await page.locator('[data-owner-audit-page-info]').innerText(), /Page 2 of 2/);
+                    await page.locator('[data-owner-audit-actor]').selectOption('qa-staff');
+                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_actor_id === 'qa-staff');
+                    await page.locator('[data-owner-audit-role]').selectOption('staff');
+                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_actor_role === 'staff');
+                    await page.locator('[data-owner-audit-category]').selectOption('payment');
+                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_category === 'payment');
+                    await page.locator('[data-owner-audit-from]').fill('2026-09-10');
+                    await page.locator('[data-owner-audit-to]').fill('2026-09-26');
+                    await page.waitForFunction(() => {
+                        const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                        return args?.p_from && args?.p_to;
+                    });
+                    await page.locator('[data-owner-audit-search]').fill('audit-31');
+                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_search === 'audit-31');
+                    assert.equal(await page.locator('[data-owner-audit-rows]').getByText('audit-31').count(), 1);
+                    await page.locator('[data-admin-nav="staff"]').evaluate(el => el.click());
+
+                    // Staff details are rendered as read-only information, while Edit retains its form controls.
                     await staffTrigger.click();
-                    await page.locator('[data-admin-staff-command="activity"]').click();
-                    await page.locator('[data-admin-staff-activity-list]').getByText('Walk-in booking recorded').waitFor();
-                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_staff_activity').at(-1).args.p_staff_id), 'qa-staff');
-                    await page.locator('[data-admin-staff-activity-next]').click();
-                    await page.locator('[data-admin-staff-activity-list]').getByText('audit-12').waitFor().catch(() => {});
-                    await page.locator('[data-admin-staff-activity-search]').fill('Walk-in');
-                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_staff_activity').at(-1)?.args.p_search === 'Walk-in');
-                    assert.equal(await page.locator('[data-admin-staff-activity-list] .owner-staff-activity-item').count(), 1);
+                    await page.locator('[data-admin-staff-command="view"]').click();
+                    const staffDetails = page.locator('[data-admin-staff-details-view]');
+                    assert.equal(await staffDetails.isVisible(), true);
+                    assert.deepEqual(await staffDetails.locator('input, select, textarea').count(), 0, 'view mode must not render disabled form controls');
+                    assert.equal(await staffDetails.locator('[data-admin-staff-detail-name]').innerText(), 'QA Staff');
+                    assert.equal(await staffDetails.locator('[data-admin-staff-detail-position]').innerText(), 'Court Attendant');
+                    assert.equal(await staffDetails.locator('[data-admin-staff-detail-mobile]').innerText(), '+639171234567');
+                    assert.equal(await staffDetails.locator('[data-admin-staff-detail-age]').innerText(), '26 years old');
+                    assert.equal(await staffDetails.locator('[data-admin-staff-detail-emergency-name]').innerText(), 'QA Contact');
+                    assert.equal(await page.locator('[data-admin-staff-edit-meta]').isVisible(), true, 'view mode keeps member-since and status context visible');
+                    assert.match(await page.locator('[data-admin-staff-edit-meta]').innerText(), /Member since .* · Active/);
+                    assert.equal(await page.locator('[data-admin-staff-edit-submit]').isVisible(), false);
+                    await page.locator('[data-admin-staff-edit-modal-close]').last().click();
+                    await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-staff-command="edit"]').click();
+                    assert.equal(await staffDetails.isVisible(), false);
+                    assert.equal(await page.locator('[data-admin-staff-details-edit]').isVisible(), true);
+                    assert.equal(await page.locator('[data-admin-staff-edit-name]').isVisible(), true, 'edit mode retains its editable fields');
+                    await page.locator('[data-admin-staff-edit-modal-close]').last().click();
+                    await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
+
+                    // Staff confirmations use the accessible shared dialog, with cancel/Escape and return focus.
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-staff-command="reset"]').click();
+                    const confirmDialog = page.locator('.owner-confirm-overlay');
+                    await confirmDialog.waitFor({ state: 'visible' });
+                    assert.match(await confirmDialog.innerText(), /Email a password recovery link to QA Staff at staff@example\.test/);
                     await page.keyboard.press('Escape');
-                    await page.locator('[data-admin-staff-activity-modal]').waitFor({ state: 'hidden' });
+                    await confirmDialog.waitFor({ state: 'detached' });
+                    assert.equal(await staffTrigger.evaluate(el => document.activeElement === el), true, 'Escape restores focus to staff Actions');
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.auth === 'resetPasswordForEmail').length), 0, 'cancelled reset does not send email');
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-staff-command="reset"]').click();
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.auth === 'resetPasswordForEmail'));
+
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-staff-command="toggle"]').click();
+                    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                    assert.match(await page.locator('.owner-confirm-overlay').innerText(), /QA Staff will no longer be able to log in/);
+                    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.status === 'disabled').length), 0);
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-staff-command="toggle"]').click();
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                    await page.waitForFunction(() => window.__ownerQa.tables.profiles.find(profile => profile.id === 'qa-staff').status === 'disabled');
+                    await page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' }).getByText('Deactivated').waitFor();
+                    await staffTrigger.click();
+                    await page.locator('[data-admin-staff-command="toggle"]').click();
+                    assert.match(await page.locator('.owner-confirm-overlay').innerText(), /QA Staff will be able to log in again/);
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                    await page.waitForFunction(() => window.__ownerQa.tables.profiles.find(profile => profile.id === 'qa-staff').status === 'active');
+                    await page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' }).getByText('Active').waitFor();
+
                     await page.locator('[data-admin-staff-add]').first().click();
                     const positions = await page.locator('[data-admin-staff-role] option').allTextContents();
                     assert.deepEqual(positions.map(s => s.trim()), ['Secretary', 'Court Attendant']);
@@ -304,7 +522,7 @@ function fixture() {
                     await page.locator('[data-admin-notif-list] [data-owner-activity-id]').first().click();
                     await page.locator('[data-owner-notification-detail]').getByText('Basketball Court 1 rates changed').waitFor();
                     assert.equal(await page.locator('[data-owner-notification-modal]').getAttribute('data-open'), '');
-                    assert.equal(await page.locator('[data-admin-panel="notifications"].is-active').count(), 1);
+                    assert.equal(await page.locator('[data-admin-panel="audit"].is-active').count(), 1);
                     await page.locator('[data-notification-go]').click();
                     await page.locator('[data-owner-notification-modal]').waitFor({ state: 'hidden' });
                     assert.equal(await page.locator('[data-admin-panel="courts"].is-active').count(), 1);

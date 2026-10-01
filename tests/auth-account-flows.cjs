@@ -11,12 +11,18 @@ function mockClient(options) {
     if (options.oauth) sessionStorage.setItem('inigosync-oauth-pending', '1');
     window.InigoAuthStorage = { setRememberSession() {} };
     window.sb = {
-        rpc: (name, data) => ({ abortSignal: async () => {
+        rpc: (name, data) => {
+            if (name === 'record_account_session_event') {
+                record('accountSessionEvent', data);
+                return Promise.resolve({ data: true, error: null });
+            }
+            return { abortSignal: async () => {
             record('emailCheck', data);
             if (data.email_address === 'slow@example.test') await new Promise(resolve => setTimeout(resolve, 900));
             if (options.emailMode === 'error') return { error: { message: 'Network error' } };
             return { data: options.emailMode === 'rate_limited' ? 'rate_limited' : ['taken@example.test', 'slow@example.test'].includes(data.email_address) ? 'taken' : 'available' };
-        } }),
+            } };
+        },
         auth: {
             getSession: async () => ({ data: { session } }),
             onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
@@ -178,7 +184,10 @@ function mockClient(options) {
         assert.match(await disabled.locator('[data-auth-access-error]').innerText(), /disabled/);
         await disabled.close();
         const customer = await setup({ oauth: true });
-        await customer.waitForURL('**/user_dashboard.html'); await customer.close();
+        await customer.waitForURL('**/user_dashboard.html');
+        const customerSessionEvents = (await calls(customer)).filter(call => call.kind === 'accountSessionEvent');
+        assert.deepEqual(customerSessionEvents.map(call => call.data), [{ p_kind: 'sign_in', p_reason: 'app_login' }], 'successful authentication records sign-in through the server-derived account session RPC without a client actor ID');
+        await customer.close();
         for (const role of ['staff', 'admin', 'customer']) {
             const page = await setup({ role });
             await page.locator('.cta-buttons [data-auth-open]').click();
@@ -262,7 +271,7 @@ function mockClient(options) {
         await cancelled.close();
 
         const dashboard = await setupDashboard();
-        await dashboard.locator('[data-dash-nav="settings"]').click();
+        await dashboard.locator('[data-dash-nav="settings"]').first().click();
         const mobileInput = dashboard.locator('[data-dash-settings-mobile]');
         await mobileInput.fill('09171234567');
         await dashboard.locator('[data-dash-mobile-validate]').click();
@@ -279,12 +288,19 @@ function mockClient(options) {
         await dashboard.close();
 
         const rejectedDashboard = await setupDashboard({ validationReason: 'inactive' });
-        await rejectedDashboard.locator('[data-dash-nav="settings"]').click();
+        await rejectedDashboard.locator('[data-dash-nav="settings"]').first().click();
         await rejectedDashboard.locator('[data-dash-settings-mobile]').fill('09171234567');
         await rejectedDashboard.locator('[data-dash-mobile-validate]').click();
         await rejectedDashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('not active'));
         assert(!(await calls(rejectedDashboard)).some(c => c.kind === 'profileWrite'));
         await rejectedDashboard.close();
+
+        const signOutDashboard = await setupDashboard();
+        await signOutDashboard.locator('[data-dash-logout]').first().evaluate(button => button.click());
+        await signOutDashboard.waitForURL('**/index.html');
+        const signOutEvents = (await calls(signOutDashboard)).filter(call => call.kind === 'accountSessionEvent');
+        assert.deepEqual(signOutEvents.map(call => call.data), [{ p_kind: 'sign_out', p_reason: 'app_logout' }], 'explicit app sign-out uses the server-derived account session RPC without a client actor ID');
+        await signOutDashboard.close();
 
         console.log('PASS signup and customer contact number validation: no unproved signup metadata, active provider result required, failures do not save, unchanged values avoid provider quota, and one UI click makes one authenticated lookup');
         console.log('PASS early email checks: taken/available, edit recovery, stale responses, network failure, rate limit and final-signup races');

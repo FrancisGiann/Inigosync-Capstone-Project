@@ -127,17 +127,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (signOutInProgress) return;
         signOutInProgress = true;
         clearSessionSecurityTimers();
-        // A browser close cannot be observed reliably. Record only exits the
-        // app actually performs, while the customer JWT is still valid.
-        if (profile.role === 'customer' && typeof window.sb.rpc === 'function') {
+        // A browser close cannot be observed reliably. Record only sign-out
+        // actions the app handles, while the authenticated JWT is still valid.
+        if (typeof window.sb.rpc === 'function') {
             try {
+                const eventReason = reason === 'idle' ? 'idle_timeout'
+                    : reason === 'superseded' ? 'session_replaced' : 'app_logout';
                 const eventResult = await Promise.race([
-                    window.sb.rpc('record_customer_session_event', { p_kind: 'sign_out' }),
+                    window.sb.rpc('record_account_session_event', { p_kind: 'sign_out', p_reason: eventReason }),
                     new Promise(resolve => window.setTimeout(resolve, 1200)),
                 ]);
                 if (eventResult?.error) throw eventResult.error;
             } catch (error) {
-                console.warn('[authGuard] customer sign-out event was not recorded', error);
+                console.warn('[authGuard] account sign-out event was not recorded', error);
             }
         }
         try {

@@ -365,18 +365,18 @@ document.addEventListener('DOMContentLoaded', () => {
         markDeviceTrusted(session.user.id);
 
         // This is an observed app sign-in, not a claim about when every Auth
-        // session started. The database RPC attributes and deduplicates it
-        // using the signed-in customer's JWT. Logging is best effort so an
-        // activity-feed outage cannot lock a customer out of the dashboard.
-        if (profile.role === 'customer' && typeof window.sb.rpc === 'function') {
+        // session started. The database RPC derives the actor and session
+        // from the authenticated JWT and deduplicates repeated calls. Logging
+        // is best effort so an audit-feed outage cannot block a valid login.
+        if (typeof window.sb.rpc === 'function') {
             try {
                 const eventResult = await Promise.race([
-                    window.sb.rpc('record_customer_session_event', { p_kind: 'sign_in' }),
+                    window.sb.rpc('record_account_session_event', { p_kind: 'sign_in', p_reason: 'app_login' }),
                     new Promise(resolve => window.setTimeout(resolve, 1800)),
                 ]);
                 if (eventResult?.error) throw eventResult.error;
             } catch (error) {
-                console.warn('[auth] customer sign-in event was not recorded', error);
+                console.warn('[auth] account sign-in event was not recorded', error);
             }
         }
 
