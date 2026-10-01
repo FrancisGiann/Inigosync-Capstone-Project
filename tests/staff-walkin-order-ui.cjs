@@ -9,7 +9,7 @@ const courts = [
 ];
 
 function fixture(config) {
-    window.__walkinQa = { calls: [], reads: [], config, createdItems: [], checkoutAttempts: 0, markAllReadCount: 0 };
+    window.__walkinQa = { calls: [], reads: [], config, createdItems: [], checkoutAttempts: 0, acknowledgmentAttempts: 0, markAllReadCount: 0 };
     const qa = window.__walkinQa;
     const profiles = [
         { id: 'qa-staff', role: 'staff', status: 'active', full_name: 'QA Staff', email: 'staff@example.test', contact_num: '', contact_num_validated: false, contact_num_validated_at: null },
@@ -74,15 +74,20 @@ function fixture(config) {
             if (name === 'court_occupancy') return { data: [], error: null };
             if (name === 'staff_create_walkin_order') {
                 qa.createdItems = args.p_items;
-                return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', status: args.p_payment_method === 'cash' ? 'paid' : 'pending', amount_total: 350 }, error: null };
+                return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', status: args.p_payment_method === 'cash' ? 'paid' : 'pending', base_minor: config.orderBaseMinor ?? 35000, amount_total: 350 }, error: null };
             }
             if (name === 'get_walkin_order_acknowledgment') {
+                qa.acknowledgmentAttempts += 1;
+                if (config.ackError) return { data: null, error: { message: 'Acknowledgment access denied in fixture' } };
+                const paymentStatus = config.ackPaidAfter
+                    ? (qa.acknowledgmentAttempts >= config.ackPaidAfter ? 'paid' : 'pending')
+                    : (config.paymentStatus || 'paid');
                 return { data: {
                     receipt_id: 'qa-receipt', receipt_number: 'QA-001', issued_at: new Date().toISOString(), customer_name: 'Guest Customer',
                     items: qa.createdItems.length ? qa.createdItems.map((item, index) => ({ sport: index ? 'Basketball' : 'Badminton', court: index ? 'Basketball' : 'Badminton', unit: index ? 'Court 2' : 'Court 1', starts_at: item.starts_at, ends_at: item.ends_at, subtotal_minor: (index ? 150 : 200) * 100 })) : (config.ackItems || []),
                     court_subtotal_minor: 35000, amount_paid_minor: 35000, remaining_balance_minor: 0,
                     fee_minor: 0, gross_minor: 35000, subtotal: 350, fee: 0, total: 350,
-                    payment_method: config.paymentMethod || 'Cash', payment_status: config.paymentStatus || 'paid',
+                    payment_method: config.paymentMethod || 'Cash', payment_status: paymentStatus,
                     disclaimer: 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.',
                 }, error: null };
             }
@@ -124,7 +129,13 @@ function fixture(config) {
             }
             qa.checkoutAttempts += 1;
             if (config.failCheckoutOnce && qa.checkoutAttempts === 1) return { data: null, error: { message: 'Temporary checkout error' } };
-            return { data: { order_id: options.body.order_id, attempt_id: 'qa-attempt', checkout_url: 'https://checkout.paymongo.com/qa-walkin', session_id: 'qa-session' }, error: null };
+            return { data: {
+                order_id: options.body.order_id, attempt_id: 'qa-attempt',
+                checkout_url: config.checkoutUrl || 'https://checkout.paymongo.com/qa-walkin',
+                base_minor: config.checkoutBaseMinor ?? 35000,
+                expires_at: config.checkoutExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+                channel: options.body.channel || config.retryChannel || null, session_id: 'qa-session',
+            }, error: null };
         } },
         auth: {
             getSession: async () => ({ data: { session: { user: { id: 'qa-staff', email: 'staff@example.test' } } } }),
@@ -154,7 +165,8 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
     await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.inigosyncProfile={id:'qa-staff',role:'staff',status:'active',full_name:'QA Staff',email:'staff@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
     await page.route('**/includes/appSettings.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoAppSettings={DEFAULT_SETTINGS:{downpaymentPct:50,cashEnabled:true,cardEnabled:true,gcashEnabled:true},getSettings:async()=>({downpaymentPct:50,cashEnabled:true,cardEnabled:true,gcashEnabled:true,nightRateStartsAt:'18:00'})};` }));
     await page.route('**/includes/courtsData.js', route => route.fulfill({ contentType: 'application/javascript', body: courtsFixture() }));
-    await page.goto(`http://127.0.0.1:4178/Pages/staff_dashboard.html${query}`, { waitUntil: 'domcontentloaded' });
+    const baseUrl = (process.env.STAFF_WALKIN_UI_BASE_URL || 'http://127.0.0.1:4178').replace(/\/+$/, '');
+    await page.goto(`${baseUrl}/Pages/staff_dashboard.html${query}`, { waitUntil: 'domcontentloaded' });
     return { context, page };
 }
 
@@ -219,6 +231,99 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         assert.ok(onlineCalls.some(call => call.kind === 'function' && call.name === 'staff-walkin-checkout' && call.options.body.order_id === 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526'));
         assert.equal(onlineCalls.some(call => call.kind === 'rpc' && call.name === 'get_walkin_order_acknowledgment'), false, 'online redirect must not fabricate a paid acknowledgment');
         await online.context.close();
+
+        const qrContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { paymentStatus: 'pending', ackPaidAfter: 2, paymentMethod: 'PayMongo', orderBaseMinor: 37000, checkoutBaseMinor: 37500 },
+        });
+        const qrPage = qrContext.page;
+        await qrPage.locator('[data-staff-nav="walkin"]').click();
+        await qrPage.locator('[data-staff-walkin-name]').fill('QR Guest');
+        await qrPage.locator('[data-staff-walkin-next]').click();
+        await qrPage.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await qrPage.locator('[data-staff-walkin-next]').click();
+        await qrPage.locator('[data-staff-walkin-hour="11"]').click();
+        await qrPage.locator('[data-staff-walkin-next]').click();
+        await qrPage.locator('[data-staff-walkin-qr-option]').click();
+        assert.equal(await qrPage.locator('[data-staff-walkin-summary-payment]').innerText(), 'E-wallet QR · GCash');
+        await qrPage.locator('[data-staff-walkin-next]').click();
+        await qrPage.locator('[data-staff-walkin-save]').click();
+        await qrPage.locator('[data-staff-walkin-qr-image] svg').waitFor();
+        assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /Amount before processing fee\s+₱375\.00/, 'QR amount follows the server checkout charge, not the stale client estimate');
+        assert.match(await qrPage.locator('[data-staff-walkin-qr-status]').innerText(), /Waiting for PayMongo payment confirmation/);
+        assert.match(await qrPage.locator('[data-staff-walkin-qr-card], .staff-walkin-qr-card').innerText(), /PayMongo shows any processing fee/);
+        assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /not a direct wallet transfer/);
+        const qrSetup = await qrPage.evaluate(() => ({
+            create: window.__walkinQa.calls.find(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order'),
+            checkout: window.__walkinQa.calls.find(call => call.kind === 'function' && call.name === 'staff-walkin-checkout'),
+            acknowledgments: window.__walkinQa.acknowledgmentAttempts,
+            svgHasPath: Boolean(document.querySelector('[data-staff-walkin-qr-image] svg path')),
+            remoteQrImage: Boolean(document.querySelector('[data-staff-walkin-qr-image] img[src^="https://"]')),
+        }));
+        assert.equal(qrSetup.create.args.p_payment_method, 'paymongo', 'QR UI maps to the PayMongo payment method for the atomic order RPC');
+        assert.deepEqual(qrSetup.checkout.options.body, {
+            order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', channel: 'gcash',
+        }, 'QR checkout explicitly requests the backend GCash channel');
+        assert.equal(qrSetup.acknowledgments, 0, 'the pending QR is displayed without requesting or fabricating an acknowledgment');
+        assert.equal(qrSetup.svgHasPath, true, 'the local QR generator renders the checkout into SVG modules');
+        assert.equal(qrSetup.remoteQrImage, false, 'the QR is rendered locally without a third-party QR image service');
+        await qrPage.locator('[data-staff-walkin-qr-check]').click();
+        assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1);
+        assert.equal(await qrPage.locator('.staff-receipt-card').count(), 0, 'a pending status check does not show a paid acknowledgment');
+        await qrPage.clock.fastForward(5000);
+        await qrPage.locator('.staff-receipt-card').waitFor();
+        assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 2, 'the staff screen polls again while the checkout remains in expiry window');
+        await qrContext.context.close();
+
+        const expiredQrContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { paymentStatus: 'pending', checkoutExpiresAt: '2026-09-27T00:00:02Z' },
+        });
+        const expiredQrPage = expiredQrContext.page;
+        await expiredQrPage.locator('[data-staff-nav="walkin"]').click();
+        await expiredQrPage.locator('[data-staff-walkin-name]').fill('Expired QR Guest');
+        await expiredQrPage.locator('[data-staff-walkin-next]').click();
+        await expiredQrPage.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await expiredQrPage.locator('[data-staff-walkin-next]').click();
+        await expiredQrPage.locator('[data-staff-walkin-hour="11"]').click();
+        await expiredQrPage.locator('[data-staff-walkin-next]').click();
+        await expiredQrPage.locator('[data-staff-walkin-qr-option]').click();
+        await expiredQrPage.locator('[data-staff-walkin-next]').click();
+        await expiredQrPage.locator('[data-staff-walkin-save]').click();
+        await expiredQrPage.locator('[data-staff-walkin-qr-image] svg').waitFor();
+        await expiredQrPage.setViewportSize({ width: 320, height: 900 });
+        const qrDimensions = await expiredQrPage.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+        assert.ok(qrDimensions.document <= qrDimensions.viewport, 'the staff QR panel stays within a 320px screen');
+        await expiredQrPage.clock.fastForward(2000);
+        await expiredQrPage.waitForFunction(() => /Checkout expired/.test(document.querySelector('[data-staff-walkin-qr-status]')?.textContent || ''));
+        assert.equal(await expiredQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0,
+            'automatic status checks stop when PayMongo reports that checkout expired');
+        await expiredQrPage.locator('[data-staff-walkin-qr-check]').click();
+        assert.equal(await expiredQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1,
+            'staff can manually verify a late payment after the checkout expiry');
+        assert.equal(await expiredQrPage.locator('.staff-receipt-card').count(), 0,
+            'an expired but unconfirmed checkout still has no acknowledgment');
+        await expiredQrContext.context.close();
+
+        const invalidQrContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: { checkoutUrl: 'https://checkout.paymongo.com.attacker.test/session' },
+        });
+        const invalidQrPage = invalidQrContext.page;
+        await invalidQrPage.locator('[data-staff-nav="walkin"]').click();
+        await invalidQrPage.locator('[data-staff-walkin-name]').fill('Invalid URL Guest');
+        await invalidQrPage.locator('[data-staff-walkin-next]').click();
+        await invalidQrPage.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await invalidQrPage.locator('[data-staff-walkin-next]').click();
+        await invalidQrPage.locator('[data-staff-walkin-hour="11"]').click();
+        await invalidQrPage.locator('[data-staff-walkin-next]').click();
+        await invalidQrPage.locator('[data-staff-walkin-qr-option]').click();
+        await invalidQrPage.locator('[data-staff-walkin-next]').click();
+        await invalidQrPage.locator('[data-staff-walkin-save]').click();
+        await invalidQrPage.getByText('GCash QR unavailable').waitFor();
+        assert.equal(await invalidQrPage.locator('[data-staff-walkin-qr-image]').count(), 0, 'a lookalike hostname is never encoded into a QR');
+        assert.equal(await invalidQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0, 'invalid checkout data never triggers an acknowledgment lookup');
+        await invalidQrContext.context.close();
 
         const ackItem = [{ sport: 'Badminton', court: 'Badminton', unit: 'Court 1', starts_at: '2026-09-27T01:00:00Z', ends_at: '2026-09-27T02:00:00Z', subtotal_minor: 10000 }];
         const pendingReturn = await openStaffPage(browser, {
@@ -375,6 +480,23 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await retryPage.waitForURL('https://checkout.paymongo.com/qa-walkin');
         assert.equal(retryCalls.filter(call => call.kind === 'function' && call.name === 'staff-walkin-checkout').length, 2, 'staff can resume after a failed checkout attempt');
         await retryContext.context.close();
+
+        const retryQrContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: { walkins: [pendingOrderLine(74, '2026-09-27T07:00:00Z')], retryChannel: 'gcash', checkoutBaseMinor: 10000 },
+        });
+        const retryQrPage = retryQrContext.page;
+        retryQrPage.on('dialog', dialog => dialog.accept());
+        await retryQrPage.locator('[data-staff-nav="transactions"]').click();
+        await retryQrPage.locator('[data-staff-walkin-retry]').click();
+        await retryQrPage.locator('.staff-walkin-qr-card [data-staff-walkin-qr-image] svg').waitFor();
+        assert.equal(await retryQrPage.locator('[data-staff-panel="walkin"]').evaluate(panel => panel.classList.contains('is-active')), true,
+            'a saved GCash checkout retry returns staff to the walk-in QR screen');
+        assert.equal(new URL(retryQrPage.url()).pathname, '/Pages/staff_dashboard.html', 'a GCash QR retry does not redirect the staff browser');
+        assert.match(await retryQrPage.locator('.staff-walkin-qr-card').innerText(), /₱100\.00/, 'retry QR uses the pending order amount when available');
+        assert.equal(await retryQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0,
+            'retrying a pending QR does not show an acknowledgment before payment confirmation');
+        await retryQrContext.context.close();
 
         const unreadNotifications = Array.from({ length: 18 }, (_, index) => ({
             key: `notice-${index + 1}`, title: `Notice ${index + 1}`, body: 'Unread staff update', category: 'booking',
@@ -605,7 +727,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         assert.equal(thermalPageSize, '80mm 300mm', 'receipt print page must parse as a valid 80mm thermal format');
         assert.deepEqual(errors, [], 'walk-in browser console must have no uncaught page errors');
         await responsive.context.close();
-        console.log('PASS staff walk-in UI: atomic multi-line order, Manila date boundary, and 360/768/1280 widths');
+        console.log('PASS staff walk-in UI: atomic orders, GCash QR lifecycle and retry, Manila date boundary, and responsive widths');
     } finally {
         await browser.close();
     }

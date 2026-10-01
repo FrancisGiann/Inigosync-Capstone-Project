@@ -432,8 +432,13 @@
                                     <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo"> Online payment</span>
                                     <p>Continue to PayMongo secure checkout.</p>
                                 </label>
+                                <label class="staff-payment-option" data-staff-payment-option data-staff-walkin-qr-option>
+                                    <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo_qr"> E-wallet QR · GCash</span>
+                                    <p>Show a PayMongo checkout QR on this screen for the customer to scan.</p>
+                                </label>
                             </div>
                             <p class="staff-form-hint" data-staff-walkin-cash-unavailable hidden>Cash collection is unavailable. Ask the owner to enable Cash in Payment Configuration.</p>
+                            <p class="staff-form-hint" data-staff-walkin-qr-unavailable hidden>GCash checkout is unavailable. Ask the owner to enable GCash in Payment Configuration.</p>
                         </div>
 
                         <!-- STEP 5 — Review & save -->
@@ -448,7 +453,7 @@
                                     <span>Court subtotal</span>
                                     <span data-staff-walkin-summary-total>—</span>
                                 </div>
-                                <p class="staff-form-hint" data-staff-walkin-online-fee-note hidden>PayMongo displays the processing fee and final amount at checkout.</p>
+                                <p class="staff-form-hint" data-staff-walkin-online-fee-note hidden>PayMongo shows any processing fee and the final total before the customer pays.</p>
                                 <p class="staff-form-hint" data-staff-walkin-acknowledgment-note>Payment acknowledgment and entry pass — not a BIR invoice or official receipt.</p>
                                 <button type="button" class="staff-btn-primary" data-staff-walkin-save>Complete cash payment</button>
                             </div>
@@ -947,6 +952,9 @@
      staff_dashboard.js, whose Court Schedule columns and the walk-in
      wizard's From/To pickers read window.InigoBusinessHours at parse time. -->
 <script src="../includes/businessHours.js"></script>
+<!-- Locally generated payment QR; checkout URLs stay on PayMongo and are
+     encoded in the browser without a third-party QR service. -->
+<script src="../includes/qrcode-generator.js"></script>
 <!-- Revision S1, decision S4 — html2canvas rasterizes the walk-in receipt
      card for "Download PNG", same CDN build already used on the customer
      dashboard (Pages/user_dashboard.html). Must load before

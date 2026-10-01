@@ -1642,6 +1642,37 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-receipt-item span { color: #5d554d; }
 .staff-receipt-disclaimer { border-top: 1px dashed #aaa197; padding-top: 8px; font-size: 10px; line-height: 1.4; }
 .staff-receipt-pending p { margin: 8px 0 16px; color: var(--color-ink-faint); }
+.staff-walkin-qr-card {
+    display: grid;
+    grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: center;
+    width: min(680px, 100%);
+    padding: 24px;
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    background: var(--color-bg-elevated);
+}
+.staff-walkin-qr-code {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    aspect-ratio: 1;
+    padding: 10px;
+    border-radius: 10px;
+    background: #fff;
+}
+.staff-walkin-qr-code svg { display: block; width: 100%; height: 100%; max-width: 240px; }
+.staff-walkin-qr-copy { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.staff-walkin-qr-copy h3 { font-family: var(--font-display); font-size: var(--fs-xl); }
+.staff-walkin-qr-copy p { color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.5; }
+.staff-walkin-qr-meta { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); }
+.staff-walkin-qr-meta .staff-summary-row { font-size: var(--fs-sm); }
+.staff-walkin-qr-status { color: var(--color-court-green) !important; font-weight: 600; }
+.staff-walkin-qr-status.is-expired { color: var(--color-alert) !important; }
+.staff-walkin-qr-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.staff-walkin-qr-actions .staff-btn-ghost { flex: 1 1 180px; }
 .staff-receipt-modal .staff-modal { width: min(540px, calc(100vw - 32px)); max-height: min(90vh, 900px); overflow-y: auto; }
 .staff-receipt-modal .staff-receipt-card { margin: 0 auto; }
 .staff-payment-history-list { list-style: none; display: grid; gap: 10px; min-width: 220px; margin: 0; padding: 0; }
@@ -1689,6 +1720,8 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-pagination { justify-content: space-between; }
     .staff-notif-menu { right: -92px; }
     .staff-profile-menu { right: -4px; }
+    .staff-walkin-qr-card { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+    .staff-walkin-qr-code { width: min(240px, 100%); justify-self: center; }
 }
 
 @media (max-width: 700px) {

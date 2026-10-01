@@ -800,6 +800,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinOnlineFeeNote = document.querySelector('[data-staff-walkin-online-fee-note]');
     const walkinPaymentOptionEls = document.querySelectorAll('[data-staff-walkin-step="4"] [data-staff-payment-option]');
     const walkinCashUnavailableEl = document.querySelector('[data-staff-walkin-cash-unavailable]');
+    const walkinQrUnavailableEl = document.querySelector('[data-staff-walkin-qr-unavailable]');
+    const walkinAcknowledgmentNote = document.querySelector('[data-staff-walkin-acknowledgment-note]');
 
     const walkinSummaryName = document.querySelector('[data-staff-walkin-summary-name]');
     const walkinSummaryMobile = document.querySelector('[data-staff-walkin-summary-mobile]');
@@ -814,6 +816,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const WALKIN_STEP_COUNT = 5;
     let walkinWizardStep = 1;
     let staffCashEnabled = true;
+    let staffGcashEnabled = true;
 
     let walkinState = {
         name: '',
@@ -839,6 +842,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     let walkinBusinessRules = null;
     let walkinCustomerSearchTimer = null;
+    let walkinQrPollTimer = null;
+    let activeWalkinQr = null;
+    let walkinQrCheckInFlight = false;
 
     // { ok, rows } — today's bookings/walk-ins for the CURRENTLY selected
     // court, refreshed by refreshWalkinTimePickers() below. Same shape as
@@ -849,6 +855,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function applyStaffPaymentSettings(settings) {
         staffCashEnabled = settings?.cashEnabled !== false;
+        staffGcashEnabled = settings?.gcashEnabled !== false;
         document.querySelectorAll('[data-staff-walkin-cash-option], [data-staff-timein-cash-option]').forEach((option) => {
             option.hidden = !staffCashEnabled;
             if (!staffCashEnabled) {
@@ -857,9 +864,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (radio) radio.checked = false;
             }
         });
+        const qrOption = document.querySelector('[data-staff-walkin-qr-option]');
+        if (qrOption) qrOption.hidden = !staffGcashEnabled;
+        if (walkinQrUnavailableEl) walkinQrUnavailableEl.hidden = staffGcashEnabled;
         if (walkinCashUnavailableEl) walkinCashUnavailableEl.hidden = staffCashEnabled;
         if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = null;
         if (staffCashEnabled && !walkinState.payment) walkinState.payment = 'cash';
+        if (!staffGcashEnabled && walkinState.payment === 'paymongo_qr') {
+            walkinState.payment = staffCashEnabled ? 'cash' : 'paymongo';
+        }
+        walkinPaymentOptionEls.forEach((option) => {
+            const radio = option.querySelector('input[type="radio"]');
+            option.classList.toggle('is-selected', Boolean(radio && radio.dataset.staffPayment === walkinState.payment));
+            if (radio) radio.checked = radio.dataset.staffPayment === walkinState.payment;
+        });
         if (!staffCashEnabled && timeInSelectedMethod === 'Cash') {
             timeInSelectedMethod = null;
             if (timeInModalRow && timeInModalIsOpen) renderTimeInModal(timeInModalRow);
@@ -879,7 +897,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (step === 3) return Boolean(walkinBusinessRules?.authoritative)
             && ((walkinState.startHour !== null && walkinState.endHour !== null)
                 || (!walkinState.court && walkinState.items.length > 0));
-        if (step === 4) return Boolean(walkinState.payment) && (walkinState.payment !== 'cash' || staffCashEnabled);
+        if (step === 4) return Boolean(walkinState.payment)
+            && (walkinState.payment !== 'cash' || staffCashEnabled)
+            && (walkinState.payment !== 'paymongo_qr' || staffGcashEnabled);
         return true;
     }
 
@@ -900,7 +920,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (walkinSaveBtn) {
             walkinSaveBtn.disabled = !walkinState.items.length || !walkinBusinessRules?.authoritative
-                || (walkinState.payment === 'cash' && !staffCashEnabled);
+                || (walkinState.payment === 'cash' && !staffCashEnabled)
+                || (walkinState.payment === 'paymongo_qr' && !staffGcashEnabled);
         }
         if (walkinWizardStep === WALKIN_STEP_COUNT) updateWalkinSummary();
     }
@@ -1537,6 +1558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             option.classList.add('is-selected');
             radio.checked = true;
             walkinState.payment = radio.dataset.staffPayment;
+            renderWalkinWizard();
             updateWalkinSummary();
         });
     });
@@ -1610,10 +1632,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const subtotal = walkinState.items.reduce((sum, item) => item.subtotal === null ? null : (sum === null ? item.subtotal : sum + item.subtotal), 0);
         if (walkinSummaryName) walkinSummaryName.textContent = walkinState.name || '—';
         if (walkinSummaryMobile) walkinSummaryMobile.textContent = walkinState.mobile || 'Not provided';
-        if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'paymongo' ? 'PayMongo online' : 'Cash';
+        if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'paymongo_qr'
+            ? 'E-wallet QR · GCash'
+            : walkinState.payment === 'paymongo' ? 'PayMongo online' : 'Cash';
         if (walkinSummaryTotal) walkinSummaryTotal.textContent = subtotal === null ? 'Confirm at front desk' : formatStaffPeso(subtotal);
-        if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = walkinState.payment !== 'paymongo';
-        if (walkinSaveBtn) walkinSaveBtn.textContent = walkinState.payment === 'paymongo' ? 'Next · Pay online' : 'Complete cash payment';
+        if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = !['paymongo', 'paymongo_qr'].includes(walkinState.payment);
+        if (walkinAcknowledgmentNote) walkinAcknowledgmentNote.textContent = walkinState.payment === 'paymongo_qr'
+            ? 'A payment acknowledgment is available only after PayMongo confirms payment.'
+            : 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
+        if (walkinSaveBtn) walkinSaveBtn.textContent = walkinState.payment === 'paymongo_qr'
+            ? 'Show GCash QR'
+            : walkinState.payment === 'paymongo' ? 'Next · Pay online' : 'Complete cash payment';
         if (walkinReviewLinesEl) {
             walkinReviewLinesEl.innerHTML = walkinState.items.map((item, index) => `<div class="staff-walkin-review-line">
                 <div><strong>${index + 1}. ${window.escapeHtml(item.sport)} · ${window.escapeHtml(item.court)}${item.unit ? ` · ${window.escapeHtml(item.unit)}` : ''}</strong>
@@ -1748,6 +1777,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function resetWalkinWizard() {
+        stopWalkinQrPolling();
+        activeWalkinQr = null;
         const courts = walkinState.courts;
         const nightRateStartsAt = walkinState.nightRateStartsAt || null;
         walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', rateQuantity: 1, nightRateStartsAt, startHour: null, endHour: null, durationHours: 1, items: [], payment: staffCashEnabled ? 'cash' : 'paymongo' };
@@ -1770,9 +1801,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderWalkinTimePickers();
         walkinPaymentOptionEls.forEach((option) => {
             const radio = option.querySelector('input[type="radio"]');
-            const isCash = staffCashEnabled && Boolean(radio && radio.dataset.staffPayment === 'cash');
-            option.classList.toggle('is-selected', isCash);
-            if (radio) radio.checked = isCash;
+            const isSelected = Boolean(radio && radio.dataset.staffPayment === walkinState.payment);
+            option.classList.toggle('is-selected', isSelected);
+            if (radio) radio.checked = isSelected;
         });
         updateWalkinSummary();
         goToWalkinStep(1);
@@ -1792,9 +1823,202 @@ document.addEventListener('DOMContentLoaded', async () => {
         const row = normalizeRpcRow(result?.data);
         if (result?.error) return { error: result.error.message || 'Could not load the acknowledgment.' };
         if (!row || !Array.isArray(row.items) || !row.items.length || !['paid', 'succeeded', 'completed'].includes(String(row.payment_status || '').toLowerCase())) {
-            return { error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
+            return { pending: true, error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
         }
         return { receipt: row };
+    }
+
+    function safePayMongoCheckoutUrl(value) {
+        if (typeof value !== 'string' || value.length > 4096) return null;
+        try {
+            const url = new URL(value);
+            if (url.protocol !== 'https:' || url.origin !== 'https://checkout.paymongo.com'
+                || url.username || url.password || url.pathname === '/') return null;
+            return url.href;
+        } catch (_) { return null; }
+    }
+
+    function parseWalkinCheckoutExpiry(value) {
+        let timestamp = NaN;
+        if (typeof value === 'number' || (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim()))) {
+            const numeric = Number(value);
+            timestamp = numeric > 1000000000000 ? numeric : numeric * 1000;
+        } else if (typeof value === 'string') timestamp = new Date(value).getTime();
+        return Number.isFinite(timestamp) && timestamp > 0 && timestamp <= 8640000000000000 ? timestamp : null;
+    }
+
+    function formatWalkinCheckoutExpiry(timestamp) {
+        return new Intl.DateTimeFormat('en-PH', {
+            timeZone: STAFF_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short',
+        }).format(new Date(timestamp));
+    }
+
+    function stopWalkinQrPolling() {
+        if (walkinQrPollTimer !== null) window.clearTimeout(walkinQrPollTimer);
+        walkinQrPollTimer = null;
+    }
+
+    function renderWalkinQrError(orderId, amount, message) {
+        stopWalkinQrPolling();
+        activeWalkinQr = { orderId, amount, checkoutUrl: null, expiresAtMs: null, startedAt: Date.now() };
+        if (walkinWizardWrap) walkinWizardWrap.hidden = true;
+        if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
+        if (!walkinReceiptEl) return;
+        walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending">
+            <h3>GCash QR unavailable</h3>
+            <p>${window.escapeHtml(message)} The walk-in order is still pending. Retry to prepare its PayMongo checkout QR.</p>
+            <button type="button" class="staff-btn-primary" data-staff-walkin-qr-checkout-retry="${window.escapeHtml(String(orderId))}">Retry checkout setup</button>
+            <button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>
+        </div>`;
+        const retry = walkinReceiptEl.querySelector('[data-staff-walkin-qr-checkout-retry]');
+        if (retry) retry.dataset.amount = Number.isFinite(amount) ? String(amount) : '';
+    }
+
+    function scheduleWalkinQrPoll() {
+        stopWalkinQrPolling();
+        const active = activeWalkinQr;
+        if (!active || !active.checkoutUrl || !active.expiresAtMs) return;
+        const remaining = active.expiresAtMs - Date.now();
+        if (remaining <= 0) {
+            hideExpiredWalkinQr();
+            setWalkinQrStatus('Checkout expired. Check once more for a late payment confirmation.', true);
+            return;
+        }
+        const elapsed = Date.now() - active.startedAt;
+        const delay = elapsed < 60000 ? 5000 : elapsed < 300000 ? 10000 : 30000;
+        walkinQrPollTimer = window.setTimeout(() => checkWalkinQrPayment(active.orderId, false), Math.min(delay, remaining));
+    }
+
+    function setWalkinQrStatus(message, expired = false) {
+        const status = walkinReceiptEl?.querySelector('[data-staff-walkin-qr-status]');
+        if (!status) return;
+        status.textContent = message;
+        status.classList.toggle('is-expired', expired);
+    }
+
+    function hideExpiredWalkinQr() {
+        const image = walkinReceiptEl?.querySelector('[data-staff-walkin-qr-image]');
+        if (image) image.textContent = 'QR expired';
+        const title = walkinReceiptEl?.querySelector('#staffWalkinQrTitle');
+        if (title) title.textContent = 'Checkout expired';
+    }
+
+    function renderWalkinQrPanel(orderId, amount, checkoutUrl, expiresAtMs) {
+        if (typeof window.qrcode !== 'function') {
+            renderWalkinQrError(orderId, amount, 'The local QR generator is unavailable on this screen.');
+            return false;
+        }
+        try {
+            const expired = Date.now() >= expiresAtMs;
+            let svg = '';
+            if (!expired) {
+                const code = window.qrcode(0, 'M');
+                code.addData(checkoutUrl, 'Byte');
+                code.make();
+                svg = code.createSvgTag(4, 4, 'PayMongo GCash checkout QR code', 'PayMongo checkout QR');
+            }
+            activeWalkinQr = { orderId, amount, checkoutUrl, expiresAtMs, startedAt: Date.now() };
+            if (walkinWizardWrap) walkinWizardWrap.hidden = true;
+            if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
+            if (!walkinReceiptEl) return false;
+            const amountText = Number.isFinite(amount) ? formatStaffPeso(amount) : 'Confirm in PayMongo';
+            walkinReceiptEl.innerHTML = `<section class="staff-walkin-qr-card" aria-labelledby="staffWalkinQrTitle">
+                <div class="staff-walkin-qr-code" data-staff-walkin-qr-image>${expired ? 'QR expired' : svg}</div>
+                <div class="staff-walkin-qr-copy">
+                    <span class="staff-form-label">PayMongo checkout · GCash</span>
+                    <h3 id="staffWalkinQrTitle">${expired ? 'Checkout expired' : 'Scan to pay'}</h3>
+                    <p>Ask the customer to scan this QR with their phone, then finish payment on PayMongo. This QR opens a hosted checkout; it is not a direct wallet transfer.</p>
+                    <div class="staff-walkin-qr-meta">
+                        <div class="staff-summary-row"><span>Amount before processing fee</span><strong>${window.escapeHtml(amountText)}</strong></div>
+                        <p>PayMongo shows any processing fee and the final amount before the customer pays.</p>
+                        <p class="staff-walkin-qr-status" data-staff-walkin-qr-status role="status" aria-live="polite">${expired ? 'Checkout expired. Check once more for a late payment confirmation.' : 'Waiting for PayMongo payment confirmation…'}</p>
+                        <div class="staff-summary-row"><span>Checkout expires</span><time datetime="${new Date(expiresAtMs).toISOString()}">${window.escapeHtml(formatWalkinCheckoutExpiry(expiresAtMs))}</time></div>
+                    </div>
+                    <div class="staff-walkin-qr-actions">
+                        <button type="button" class="staff-btn-ghost" data-staff-walkin-qr-check>Check payment status</button>
+                        <button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>
+                    </div>
+                </div>
+            </section>`;
+            if (!expired) scheduleWalkinQrPoll();
+            return true;
+        } catch (error) {
+            console.error('[staff] local walk-in QR generation failed', error);
+            renderWalkinQrError(orderId, amount, 'Could not generate the local checkout QR.');
+            return false;
+        }
+    }
+
+    function showWalkinQrCheckoutData(orderId, amount, checkoutData) {
+        const checkoutUrl = safePayMongoCheckoutUrl(checkoutData?.checkout_url);
+        const expiresAtMs = parseWalkinCheckoutExpiry(checkoutData?.expires_at);
+        if (!checkoutUrl || !expiresAtMs) {
+            renderWalkinQrError(orderId, amount,
+                !checkoutUrl ? 'PayMongo did not return a valid checkout.paymongo.com URL.'
+                    : 'PayMongo did not return a valid checkout expiry.');
+            return false;
+        }
+        const checkoutMinor = checkoutData?.base_minor === null || checkoutData?.base_minor === undefined
+            ? NaN : Number(checkoutData.base_minor);
+        const authoritativeAmount = Number.isSafeInteger(checkoutMinor) && checkoutMinor > 0
+            ? checkoutMinor / 100 : amount;
+        return renderWalkinQrPanel(orderId, authoritativeAmount, checkoutUrl, expiresAtMs);
+    }
+
+    async function checkWalkinQrPayment(orderId, manual = true) {
+        const active = activeWalkinQr;
+        if (!active || String(active.orderId) !== String(orderId) || !active.checkoutUrl || walkinQrCheckInFlight) return;
+        const expired = Date.now() >= active.expiresAtMs;
+        if (expired && !manual) {
+            hideExpiredWalkinQr();
+            setWalkinQrStatus('Checkout expired. Check once more for a late payment confirmation.', true);
+            stopWalkinQrPolling();
+            return;
+        }
+        walkinQrCheckInFlight = true;
+        const checkButton = walkinReceiptEl?.querySelector('[data-staff-walkin-qr-check]');
+        if (manual && checkButton) { checkButton.disabled = true; checkButton.textContent = 'Checking…'; }
+        const result = await loadWalkinAcknowledgment(orderId);
+        walkinQrCheckInFlight = false;
+        if (activeWalkinQr !== active) return;
+        if (manual && checkButton?.isConnected) { checkButton.disabled = false; checkButton.textContent = 'Check payment status'; }
+        if (result.receipt) {
+            stopWalkinQrPolling();
+            activeWalkinQr = null;
+            renderStaffReceipt(result.receipt);
+            window.InigoToast?.show('PayMongo confirmed payment. The acknowledgment is ready to print or download.');
+            refreshBookingOverview();
+            refreshCourtSchedule();
+            refreshTransactions();
+            refreshStaffNotifications();
+            return;
+        }
+        if (expired) {
+            hideExpiredWalkinQr();
+            setWalkinQrStatus(result.error && !result.pending
+                ? 'Checkout expired. Payment status could not be verified; retry the check before recording payment.'
+                : 'Checkout expired. No payment acknowledgment is available until PayMongo confirms payment.', true);
+            return;
+        }
+        setWalkinQrStatus(result.error && !result.pending
+            ? 'Could not verify payment yet. The screen will retry automatically; you can also check again.'
+            : 'Waiting for PayMongo payment confirmation…');
+        scheduleWalkinQrPoll();
+    }
+
+    async function prepareWalkinQrCheckout(orderId, amount) {
+        let checkout;
+        try {
+            checkout = await window.sb.functions.invoke('staff-walkin-checkout', {
+                body: { order_id: String(orderId), channel: 'gcash' },
+            });
+        } catch (error) { checkout = { error }; }
+        if (checkout?.error) {
+            renderWalkinQrError(orderId, amount,
+                checkout.error.message || 'Could not prepare the PayMongo checkout.');
+            return false;
+        }
+        return showWalkinQrCheckoutData(orderId, amount, checkout?.data);
     }
 
     async function showWalkinAcknowledgment(orderId) {
@@ -1928,6 +2152,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('Cash payment is currently unavailable.', true);
             return;
         }
+        if (walkinState.payment === 'paymongo_qr' && !staffGcashEnabled) {
+            window.InigoToast?.show('GCash checkout is currently unavailable.', true);
+            return;
+        }
         if (walkinState.payment === 'paymongo' && !window.confirm('You will be redirected to PayMongo to complete the online payment. Continue?')) return;
 
         button.disabled = true;
@@ -1948,7 +2176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 p_guest_name: walkinState.customerId ? null : walkinState.name,
                 p_guest_mobile: walkinState.mobile || null,
                 p_items: rpcItems,
-                p_payment_method: walkinState.payment,
+                p_payment_method: walkinState.payment === 'paymongo_qr' ? 'paymongo' : walkinState.payment,
             });
         } catch (error) { create = { error }; }
         const order = normalizeRpcRow(create?.data);
@@ -1964,16 +2192,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             let checkout;
             try { checkout = await window.sb.functions.invoke('staff-walkin-checkout', { body: { order_id: String(order.order_id) } }); }
             catch (error) { checkout = { error }; }
-            const checkoutUrl = checkout?.data?.checkout_url;
-            if (checkout?.error || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('https://checkout.paymongo.com/')) {
+            const checkoutUrl = safePayMongoCheckoutUrl(checkout?.data?.checkout_url);
+            if (checkout?.error || !checkoutUrl) {
                 button.disabled = false;
                 button.textContent = originalText;
-                window.InigoToast?.show(checkout?.error?.message || 'Could not start PayMongo checkout. The order is still pending; retry from Transactions after checking its status.', true);
+                window.InigoToast?.show(checkout?.error?.message || 'PayMongo did not return a valid checkout.paymongo.com URL. The order is still pending; retry from Transactions after checking its status.', true);
                 refreshBookingOverview();
                 refreshTransactions();
                 return;
             }
             window.location.assign(checkoutUrl);
+            return;
+        }
+
+        if (walkinState.payment === 'paymongo_qr') {
+            button.textContent = 'Preparing GCash QR…';
+            const orderMinor = order.base_minor === null || order.base_minor === undefined
+                ? NaN : Number(order.base_minor);
+            const amount = Number.isSafeInteger(orderMinor) && orderMinor > 0 ? orderMinor / 100 : null;
+            await prepareWalkinQrCheckout(order.order_id, amount);
+            refreshBookingOverview();
+            refreshCourtSchedule();
+            refreshTransactions();
+            refreshStaffNotifications();
             return;
         }
 
@@ -1997,6 +2238,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const printBtn = e.target.closest('[data-staff-receipt-print]');
             const resetBtn = e.target.closest('[data-staff-walkin-reset]');
             const retryBtn = e.target.closest('[data-staff-receipt-retry]');
+            const qrCheckBtn = e.target.closest('[data-staff-walkin-qr-check]');
+            const qrCheckoutRetryBtn = e.target.closest('[data-staff-walkin-qr-checkout-retry]');
 
             if (downloadBtn) {
                 const card = downloadBtn.closest('.staff-receipt-card');
@@ -2018,6 +2261,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 retryBtn.disabled = true;
                 retryBtn.textContent = 'Checking…';
                 await showWalkinAcknowledgment(retryBtn.dataset.staffReceiptRetry);
+                return;
+            }
+            if (qrCheckBtn) {
+                await checkWalkinQrPayment(activeWalkinQr?.orderId, true);
+                return;
+            }
+            if (qrCheckoutRetryBtn) {
+                const orderId = qrCheckoutRetryBtn.dataset.staffWalkinQrCheckoutRetry;
+                const amount = qrCheckoutRetryBtn.dataset.amount === '' ? null : Number(qrCheckoutRetryBtn.dataset.amount);
+                qrCheckoutRetryBtn.disabled = true;
+                qrCheckoutRetryBtn.textContent = 'Preparing…';
+                const ready = await prepareWalkinQrCheckout(orderId, amount);
+                if (!ready) refreshTransactions();
                 return;
             }
             if (resetBtn) {
@@ -2845,11 +3101,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             let checkout;
             try { checkout = await window.sb.functions.invoke('staff-walkin-checkout', { body: { order_id: orderId } }); }
             catch (error) { checkout = { error }; }
-            const checkoutUrl = checkout?.data?.checkout_url;
-            if (checkout?.error || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('https://checkout.paymongo.com/')) {
+            if (!checkout?.error && String(checkout?.data?.channel || '').toLowerCase() === 'gcash') {
+                const rawAmount = row?.raw?.amount_total;
+                const amount = rawAmount === null || rawAmount === undefined || rawAmount === '' ? null : Number(rawAmount);
+                retryButton.textContent = 'Opening GCash QR…';
+                setActivePanel('walkin');
+                showWalkinQrCheckoutData(orderId, Number.isFinite(amount) ? amount : null, checkout.data);
+                return;
+            }
+            const checkoutUrl = safePayMongoCheckoutUrl(checkout?.data?.checkout_url);
+            if (checkout?.error || !checkoutUrl) {
                 retryButton.disabled = false;
                 retryButton.textContent = 'Retry online checkout';
-                window.InigoToast?.show(checkout?.error?.message || 'Could not resume PayMongo checkout. This order remains pending while its reservation hold is active.', true);
+                window.InigoToast?.show(checkout?.error?.message || 'PayMongo did not return a valid checkout.paymongo.com URL. This order remains pending while its reservation hold is active.', true);
                 return;
             }
             window.location.assign(checkoutUrl);
