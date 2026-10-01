@@ -29,8 +29,8 @@
 // placeholders read as instructions, not fake passwords (C1); Staff
 // Management/the "Active staff accounts" stat are staff-only, no more owner
 // row (C2); Booking status this month drops Confirmed/Cancelled (C3);
-// Recent bookings was replaced by a Website performance card of 6 honest,
-// client-measurable checks (C4, refreshWebsitePerformance()); and a new
+// Recent bookings was replaced by a Website performance card with three
+// grouped, client-measurable checks (C4, refreshWebsitePerformance()); and a new
 // Feedbacks & Reviews tab renders a Google-Play-style ratings summary +
 // sortable/filterable list over the `feedback` table (C5).
 
@@ -45,6 +45,73 @@
 let inigosyncSessionErrorCount = 0;
 window.addEventListener('error', () => { inigosyncSessionErrorCount += 1; });
 window.addEventListener('unhandledrejection', () => { inigosyncSessionErrorCount += 1; });
+
+function worstAdminPerfStatus(rows) {
+    const rank = { good: 0, warn: 1, problem: 2 };
+    let worst = null;
+    rows.forEach(row => {
+        if (!row || row.status === 'neutral' || !(row.status in rank)) return;
+        worst = worst === null ? rank[row.status] : Math.max(worst, rank[row.status]);
+    });
+    return worst === null ? 'good' : worst === 0 ? 'good' : worst === 1 ? 'warn' : 'problem';
+}
+
+function buildAdminPerfGroups({ storage, pageLoad, serverResponse, errorCount, connection }) {
+    const pageParts = [
+        pageLoad.status === 'neutral' ? 'Page load unavailable' : `Page load ${pageLoad.value}`,
+        serverResponse.status === 'neutral' ? 'Service response unavailable' : `Service response ${serverResponse.value}`,
+    ];
+    const pageUnavailable = pageLoad.status === 'neutral' || serverResponse.status === 'neutral';
+    const pageStatus = pageUnavailable ? 'neutral' : worstAdminPerfStatus([pageLoad, serverResponse]);
+    const problemsStatus = worstAdminPerfStatus([{
+        status: errorCount === 0 ? 'good' : errorCount < 5 ? 'warn' : 'problem',
+    }, connection]);
+    return [
+        storage,
+        {
+            label: 'Page speed',
+            value: pageUnavailable ? 'Unavailable' : `${pageLoad.value} · ${serverResponse.value}`,
+            details: pageParts.join(' · '), status: pageStatus,
+            pillText: pageUnavailable ? 'Unavailable' : pageStatus === 'good' ? 'Good' : pageStatus === 'warn' ? 'Slow' : 'Problem',
+        },
+        {
+            label: 'Problems / errors', value: `${errorCount} · ${connection.value}`,
+            details: `${errorCount === 0 ? 'No browser errors recorded this visit' : `${errorCount} browser error${errorCount === 1 ? '' : 's'} recorded this visit`} · Internet ${connection.value.toLowerCase()}`,
+            status: problemsStatus,
+            pillText: errorCount > 0 ? (errorCount < 5 ? 'Review' : 'Problem') : connection.status === 'problem' ? 'Check connection' : 'Clear',
+        },
+    ];
+}
+
+async function setOwnerActivitySeen(checkbox, persist, refresh, notify) {
+    const row = checkbox.closest('[data-owner-activity-id]');
+    if (!row || checkbox.disabled) return false;
+    checkbox.disabled = true;
+    let error;
+    try {
+        error = await persist(row.dataset.ownerActivityId);
+    } catch (_error) {
+        error = _error;
+    }
+    if (error) {
+        checkbox.checked = false;
+        checkbox.disabled = false;
+        notify();
+        return false;
+    }
+    checkbox.checked = true;
+    row.classList.add('is-seen');
+    refresh();
+    return true;
+}
+
+function routeOwnerActivityOpen(target, openNotification) {
+    const button = target.closest('[data-owner-activity-open]');
+    const row = button?.closest('[data-owner-activity-id]');
+    if (!row) return false;
+    openNotification(row.dataset.ownerActivityId);
+    return true;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
@@ -261,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (error) {
             if (isMediaBucketMissingError(error)) {
-                throw new Error("Media storage isn't set up yet — run database/schema/015_media_bucket.sql");
+                throw new Error("Photo storage isn't set up yet. Please contact support.");
             }
             throw new Error(error.message || 'Could not upload that image.');
         }
@@ -344,9 +411,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------
-    // Booking Overview — 4 real stat tiles (previously hardcoded to
-    // 102/14/8/4 with no data-* binding at all). Computed from the same
-    // tables Staff Management, Court Listings, and staff_dashboard.js's own
+    // Booking Overview — 3 account/catalog stat tiles computed from the
+    // same tables Staff Management, Court Listings, and staff_dashboard.js's own
     // stat tiles already read — no new tables needed (implementation_plan.md
     // E1). "—" (not "0") whenever a count is genuinely unknown — a query
     // error, window.sb missing, or the whole fetch rejecting — matching the
@@ -359,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const ADMIN_STAT_KEYS = ['bookings-month', 'customer-accounts', 'sports-listed', 'active-staff'];
+    const ADMIN_STAT_KEYS = ['customer-accounts', 'sports-listed', 'active-staff'];
     function setAllAdminStatsUnknown() {
         ADMIN_STAT_KEYS.forEach((key) => setAdminStat(key, '—'));
     }
@@ -376,11 +442,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // that file's comment on the admin-stat-grid).
         if (!window.sb) return;
 
-        const { start: monthStart, end: monthEnd } = monthRange();
-        let monthRes, customersRes, staffRes, sports;
+        let customersRes, staffRes, sports;
         try {
-            [monthRes, customersRes, staffRes, sports] = await Promise.all([
-                window.sb.rpc('admin_booking_overview', { p_from_at: monthStart.toISOString(), p_to_at: monthEnd.toISOString() }),
+            [customersRes, staffRes, sports] = await Promise.all([
                 window.sb.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'customer'),
                 // Revision A3, decision C2 — staff ONLY now (.eq, not the old
                 // .in('role', ['staff', 'admin'])): this tile shares the
@@ -416,7 +480,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (monthRes.error) console.error('[admin] failed to load the bookings-this-month stat', monthRes.error);
         if (customersRes.error) console.error('[admin] failed to load the total-customer-accounts stat', customersRes.error);
         if (staffRes.error) console.error('[admin] failed to load the active-staff stat', staffRes.error);
 
@@ -431,13 +494,12 @@ document.addEventListener('DOMContentLoaded', () => {
             window.InigoCourtsData && window.InigoCourtsData.isSportsFallback && window.InigoCourtsData.isSportsFallback()
         );
 
-        setAdminStat('bookings-month', monthRes.error ? '—' : (monthRes.data?.length || 0));
         setAdminStat('customer-accounts', customersRes.error ? '—' : (customersRes.count || 0));
         setAdminStat('sports-listed', sportsIsFallback ? '—' : (sports || []).length);
         setAdminStat('active-staff', staffRes.error ? '—' : (staffRes.count || 0));
 
         // Revision A1, decision A3 — the Booking status breakdown refreshes
-        // alongside the 4 stat tiles, from this SAME entry point (also
+        // alongside the account/catalog stat tiles, from this SAME entry point (also
         // triggered on 'inigosync:profile-ready' below), rather than a
         // second listener elsewhere. Revision A3, decision C4 — the old
         // Recent bookings table (which used to also refresh from here) is
@@ -516,7 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Overview — Website performance (Revision A3, implementation_plan.md,
-    // decision C4). Replaces the old Recent bookings card with 6 honest,
+    // decision C4). Replaces the old Recent bookings card with 3 grouped,
     // client-measurable health checks. Every check either returns a REAL
     // measured value or, if it genuinely can't run right now, an explicit
     // "—" value with a neutral "Unavailable" pill and a tooltip reason
@@ -580,7 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // uploadToMedia()) so a not-yet-provisioned bucket reads as "Not set up"
     // rather than an error.
     async function checkAdminPerfMediaStorage() {
-        const LABEL = 'Photo storage used';
+        const LABEL = 'Storage';
         if (!window.sb) return adminPerfUnavailableRow(LABEL, 'Not connected to the server yet.');
 
         let totalBytes = 0;
@@ -626,7 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (bucketMissing) {
-            return { label: LABEL, value: 'Not set up — run 015_media_bucket.sql', status: 'neutral', pillText: 'Not set up' };
+            return { label: LABEL, value: 'Not set up', status: 'neutral', pillText: 'Unavailable', title: 'Photo storage has not been configured.' };
         }
         if (hardError) {
             return adminPerfUnavailableRow(LABEL, hardError.message || 'Could not read Storage.');
@@ -694,7 +756,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ADMIN_PERF_OVERALL_LABELS = { good: 'Good', warn: 'Slow', problem: 'Problem' };
 
-    // Worst of the five — but a 'neutral' row (media storage's "Not set up",
+    // A 'neutral' row (media storage's "Not set up",
     // or any check's own "Unavailable") never counts toward it: a bucket
     // the owner hasn't provisioned yet, or a check that simply couldn't run
     // this time, isn't a website PERFORMANCE problem, so neither should
@@ -702,18 +764,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // unreachable — Connection/Errors this session/Page load are almost
     // always computable), default to Good rather than alarming the owner
     // over nothing measured.
-    function worstAdminPerfStatus(rows) {
-        const RANK = { good: 0, warn: 1, problem: 2 };
-        let worst = null;
-        rows.forEach((row) => {
-            if (!row || row.status === 'neutral' || !(row.status in RANK)) return;
-            const rank = RANK[row.status];
-            if (worst === null || rank > worst) worst = rank;
-        });
-        if (worst === null) return 'good';
-        return worst === 0 ? 'good' : worst === 1 ? 'warn' : 'problem';
-    }
-
     function adminPerfPillHtml(row, extraClass) {
         const status = row.status || 'neutral';
         const text = row.pillText || 'Info';
@@ -735,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const barHtml = (typeof row.barPct === 'number')
             ? `<div class="admin-progress-track admin-perf-bar" role="progressbar" aria-label="${window.escapeHtml(row.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.max(0, row.barPct))}" aria-valuetext="${window.escapeHtml(row.barValueText || `${row.barPct}%`)}"><div class="admin-progress-fill admin-perf-bar-fill-${window.escapeHtml(row.status || 'neutral')}" style="width: ${Math.min(100, Math.max(0, row.barPct))}%;"></div></div>`
             : '';
+        const detailHtml = row.details ? `<span class="admin-perf-item-detail">${window.escapeHtml(row.details)}</span>` : '';
         return `
             <div class="admin-perf-item"${row.storageUsage ? ' data-admin-perf-storage' : ''}>
                 <div class="admin-perf-item-row">
@@ -742,6 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="admin-perf-item-value">${window.escapeHtml(row.value)}</span>
                     ${adminPerfPillHtml(row)}
                 </div>
+                ${detailHtml}
                 ${barHtml}
             </div>
         `;
@@ -818,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 data: {
                     labels: rows.map((row) => row.label),
                     datasets: [{
-                        // Six EQUAL slices — status (color), not magnitude,
+                        // Three EQUAL slices — status (color), not magnitude,
                         // is what this ring encodes; a real check value
                         // (e.g. milliseconds vs. a booking count) has no
                         // shared unit to size slices by anyway.
@@ -864,7 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Center-of-the-ring overlay — the overall word (never 'neutral', see
-    // worstAdminPerfStatus()) plus the static "5 checks" already in the
+    // worstAdminPerfStatus()) plus the static "3 checks" already in the
     // markup. Pure CSS class swap, so it stays correct across theme changes
     // on its own (no JS re-render needed, unlike the canvas ring itself).
     function updateAdminPerfChartCenter(overall) {
@@ -892,13 +944,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const rows = await Promise.all([
-                checkAdminPerfPageLoad(),
+            const [storage, pageLoad, serverResponse] = await Promise.all([
                 checkAdminPerfMediaStorage(),
+                Promise.resolve(checkAdminPerfPageLoad()),
                 checkAdminPerfServerResponse(),
-                checkAdminPerfSessionErrors(),
-                checkAdminPerfConnection(),
             ]);
+            const connection = checkAdminPerfConnection();
+            const rows = buildAdminPerfGroups({
+                storage, pageLoad, serverResponse,
+                errorCount: inigosyncSessionErrorCount, connection,
+            });
 
             listRoot.innerHTML = rows.map(adminPerfRowHtml).join('');
             renderAdminPerfChart(rows);
@@ -927,6 +982,46 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    let ownerIncomeRange = 'month';
+    let ownerIncomeRequest = 0;
+    const ownerIncomeState = document.querySelector('[data-owner-income-state]');
+    const ownerIncomeCaption = document.querySelector('[data-owner-income-caption]');
+    const ownerIncomeTotal = document.querySelector('[data-owner-income-total]');
+    async function refreshOwnerIncome() {
+        if (!ownerIncomeState || !window.sb || !window.inigosyncProfile?.id) return;
+        const request = ++ownerIncomeRequest;
+        ownerIncomeState.textContent = 'Loading income…';
+        let data; let error;
+        try {
+            ({ data, error } = await window.sb.rpc('owner_income_period', { p_period: ownerIncomeRange }));
+        } catch (err) {
+            error = err;
+        }
+        if (request !== ownerIncomeRequest) return;
+        if (error || !Array.isArray(data)) {
+            console.error('[admin] failed to load owner income', error);
+            ownerIncomeTotal.textContent = '₱—';
+            ownerIncomeCaption.textContent = `Income ${ownerIncomeRange} · Asia/Manila`;
+            ownerIncomeState.textContent = 'Income is unavailable right now.';
+            return;
+        }
+        const total = data.reduce((sum, row) => sum + (Number(row.income) || 0), 0);
+        const formatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 });
+        ownerIncomeTotal.textContent = formatter.format(total);
+        const captions = { day: 'Income today', month: 'Income this month', year: 'Income this year' };
+        ownerIncomeCaption.textContent = `${captions[ownerIncomeRange]} · Asia/Manila`;
+        ownerIncomeState.textContent = 'Amounts are before payment provider fees.';
+    }
+    document.querySelectorAll('[data-owner-income-range]').forEach(button => button.addEventListener('click', () => {
+        const range = button.dataset.ownerIncomeRange;
+        if (!['day', 'month', 'year'].includes(range)) return;
+        ownerIncomeRange = range;
+        document.querySelectorAll('[data-owner-income-range]').forEach(item => item.classList.toggle('is-active', item === button));
+        refreshOwnerIncome();
+    }));
+    document.addEventListener('inigosync:profile-ready', refreshOwnerIncome);
+    if (window.inigosyncProfile) refreshOwnerIncome();
 
     const adminPerfRunBtn = document.querySelector('[data-admin-perf-run]');
     if (adminPerfRunBtn) adminPerfRunBtn.addEventListener('click', refreshWebsitePerformance);
@@ -2366,7 +2461,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.sb.from('owner_activity').select('id', { count: 'exact', head: true }).eq('owner_id', ownerId).is('seen_at', null),
         ]);
         if (latest.error) { if (adminNotifList) adminNotifList.textContent = 'Notifications could not be loaded.'; return; }
-        if (adminNotifList) adminNotifList.innerHTML = latest.data?.length ? latest.data.map(item => `<button type="button" class="admin-notif-item${item.seen_at ? ' is-seen' : ''}" data-owner-activity-id="${window.escapeHtml(item.id)}"><span class="admin-notif-dot pending" aria-hidden="true"></span><span class="admin-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(formatActivityTime(item.created_at))} · ${item.seen_at ? 'Seen' : 'New'}</span></span></button>`).join('') : '<p class="admin-notif-empty">No owner activity yet.</p>';
+        if (adminNotifList) adminNotifList.innerHTML = latest.data?.length ? latest.data.map(item => `<div class="admin-notif-item${item.seen_at ? ' is-seen' : ''}" data-owner-activity-id="${window.escapeHtml(item.id)}"><input type="checkbox" class="admin-notif-seen-toggle" data-owner-notification-seen aria-label="Mark ${window.escapeHtml(item.title)} as seen"${item.seen_at ? ' checked disabled' : ''}><button type="button" class="admin-notif-open" data-owner-activity-open><span class="admin-notif-dot pending" aria-hidden="true"></span><span class="admin-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(formatActivityTime(item.created_at))} · ${item.seen_at ? 'Seen' : 'New'}</span></span></button></div>`).join('') : '<p class="admin-notif-empty">No owner activity yet.</p>';
         if (!unread.error) {
             if (adminNotifDot) adminNotifDot.hidden = !unread.count;
             if (adminNotifMarkAll) adminNotifMarkAll.disabled = !unread.count;
@@ -2402,10 +2497,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         refreshOwnerActivityNotifications();
     }
-    [adminNotifList, notificationList].forEach(root => root?.addEventListener('click', event => {
+    async function markNotificationSeen(checkbox) {
+        const row = checkbox.closest('[data-owner-activity-id]');
+        if (!row || checkbox.disabled) return;
+        const id = row.dataset.ownerActivityId;
+        return setOwnerActivitySeen(checkbox, async () => {
+            const { error } = await window.sb.from('owner_activity').update({ seen_at: new Date().toISOString() })
+                .eq('id', id).eq('owner_id', window.inigosyncProfile.id).is('seen_at', null);
+            return error;
+        }, refreshOwnerActivityNotifications, () => window.InigoToast?.show('Could not mark notification as seen.', true));
+    }
+    adminNotifList?.addEventListener('change', event => {
+        const checkbox = event.target.closest('[data-owner-notification-seen]');
+        if (!checkbox) return;
+        event.stopPropagation();
+        markNotificationSeen(checkbox);
+    });
+    adminNotifList?.addEventListener('click', event => {
+        routeOwnerActivityOpen(event.target, id => openNotification(id).catch(() => window.InigoToast?.show('Could not open notification.', true)));
+    });
+    notificationList?.addEventListener('click', event => {
         const item = event.target.closest('[data-owner-activity-id]');
         if (item) openNotification(item.dataset.ownerActivityId).catch(() => window.InigoToast?.show('Could not open notification.', true));
-    }));
+    });
     document.querySelectorAll('[data-owner-notification-close]').forEach(button => button.addEventListener('click', () => window.InigoOwnerUI.close(notificationModal)));
     let notificationBackdropPressed = false;
     notificationModal?.addEventListener('pointerdown', event => { notificationBackdropPressed = event.target === notificationModal; });

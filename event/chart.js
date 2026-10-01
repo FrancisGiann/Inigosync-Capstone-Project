@@ -1,91 +1,117 @@
-// IñigoSync — Owner Dashboard: Booking Trends Chart (Chart.js)
-// Renders the single Weekly/Monthly-toggleable booking trend bar graph
-// shown on the Booking Overview panel of Pages/owner_dashboard.html.
-//
-// Real data: counts real rows from the `booking` table, grouped by day
-// (last 7 days) or by month (last 8 months) client-side — there's no SQL
-// aggregation available without a view/RPC, and none exists, so grouping
-// happens in JS over the raw `time_date` values.
-//
-// Colors are read dynamically from CSS custom properties and updated on theme change.
+// Owner dashboard booking trends chart. Calendar buckets use the
+// business timezone, Asia/Manila, regardless of the owner's device timezone.
 
 let bookingChart = null;
 let currentChartRange = 'week';
-
-function emptyRange(labels, unit) {
-    return { labels, values: labels.map(() => 0), total: 0, unit };
-}
-
 let CHART_DATA = {
-    week: emptyRange(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], 'bookings per day · last 7 days'),
-    month: emptyRange(['—'], 'bookings per month'),
-    year: emptyRange(['—'], 'bookings per month · this year'),
+    week: { labels: [], values: [], total: 0, unit: 'bookings per day · this calendar week' },
+    month: { labels: [], values: [], total: 0, unit: 'bookings per day · this month' },
+    year: { labels: [], values: [], total: 0, unit: 'bookings per month · this year' },
 };
 
-function aggregateWeek(rows) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const days = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(today);
-        d.setDate(d.getDate() - (6 - i));
-        return d;
-    });
+const manilaParts = (date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(date);
+    return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+};
+const pad2 = value => String(value).padStart(2, '0');
+const dateKey = (year, month, day) => `${year}-${pad2(month)}-${pad2(day)}`;
+const rowManilaDate = row => {
+    const parsed = new Date(row.time_date);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const parts = manilaParts(parsed);
+    return dateKey(parts.year, parts.month, parts.day);
+};
+const rangeCaption = range => ({
+    week: 'bookings per day · this calendar week',
+    month: 'bookings per day · this month',
+    year: 'bookings per month · this year',
+})[range];
 
-    const labels = days.map((d) => d.toLocaleDateString('en-US', { weekday: 'short' }));
-    const values = days.map((d) => {
-        const next = new Date(d);
-        next.setDate(next.getDate() + 1);
-        return rows.filter((r) => {
-            const t = new Date(r.time_date);
-            return t >= d && t < next;
-        }).length;
+function aggregateBookingRows(rows) {
+    const today = manilaParts(new Date());
+    const todayUtc = Date.UTC(today.year, today.month - 1, today.day);
+    const mondayUtc = todayUtc - ((new Date(todayUtc).getUTCDay() + 6) % 7) * 86400000;
+    const week = Array.from({ length: 7 }, (_, i) => new Date(mondayUtc + i * 86400000))
+        .map(d => ({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() }));
+    const monthDays = new Date(Date.UTC(today.year, today.month, 0)).getUTCDate();
+    const month = Array.from({ length: monthDays }, (_, i) => ({ year: today.year, month: today.month, day: i + 1 }));
+    const weekLabels = week.map(d => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' }).format(new Date(Date.UTC(d.year, d.month - 1, d.day))));
+    const monthLabels = month.map(d => String(d.day));
+    const yearLabels = Array.from({ length: 12 }, (_, i) => new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(today.year, i, 1))));
+    const weekKeys = week.map(d => dateKey(d.year, d.month, d.day));
+    const monthKeys = month.map(d => dateKey(d.year, d.month, d.day));
+    const weekValues = weekKeys.map((key, index) => {
+        const bucket = week[index];
+        const isFuture = Date.UTC(bucket.year, bucket.month - 1, bucket.day) > todayUtc;
+        return isFuture ? 0 : rows.filter(row => rowManilaDate(row) === key).length;
     });
-
-    return { labels, values, total: values.reduce((a, b) => a + b, 0), unit: 'bookings per day · last 7 days' };
+    const monthValues = monthKeys.map((key, index) => index + 1 > today.day ? 0 : rows.filter(row => rowManilaDate(row) === key).length);
+    const yearValues = Array.from({ length: 12 }, (_, i) => i > today.month - 1 ? 0 : rows.filter(row => {
+        const parsed = new Date(row.time_date);
+        if (Number.isNaN(parsed.getTime())) return false;
+        const parts = manilaParts(parsed);
+        return parts.year === today.year && parts.month === i + 1;
+    }).length);
+    const total = values => values.reduce((sum, value) => sum + value, 0);
+    CHART_DATA = {
+        week: { labels: weekLabels, values: weekValues, total: total(weekValues), unit: rangeCaption('week') },
+        month: { labels: monthLabels, values: monthValues, total: total(monthValues), unit: rangeCaption('month') },
+        year: { labels: yearLabels, values: yearValues, total: total(yearValues), unit: rangeCaption('year') },
+    };
 }
 
-function aggregateMonth(rows) {
-    const now = new Date();
-    const months = Array.from({ length: 8 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - (7 - i), 1));
-
-    const labels = months.map((d) => d.toLocaleDateString('en-US', { month: 'short' }));
-    const values = months.map((d) => rows.filter((r) => {
-        const t = new Date(r.time_date);
-        return t.getFullYear() === d.getFullYear() && t.getMonth() === d.getMonth();
-    }).length);
-
-    return { labels, values, total: values.reduce((a, b) => a + b, 0), unit: `bookings per month · ${now.getFullYear()}` };
+function manilaYearStartIso(year) {
+    // Manila has UTC+08:00 with no daylight-saving transition.
+    return new Date(Date.UTC(year, 0, 1) - 8 * 60 * 60 * 1000).toISOString();
 }
 
-function aggregateYear(rows) {
-    const year = new Date().getFullYear();
-    const months = Array.from({ length: 12 }, (_, i) => new Date(year, i, 1));
-    const labels = months.map((d) => d.toLocaleDateString('en-US', { month: 'short' }));
-    const values = months.map((d) => rows.filter((row) => {
-        const time = new Date(row.time_date);
-        return time.getFullYear() === year && time.getMonth() === d.getMonth();
-    }).length);
-    return { labels, values, total: values.reduce((sum, value) => sum + value, 0), unit: `bookings per month · ${year}` };
+function manilaCalendarWeekStartIso(date = new Date()) {
+    const parts = manilaParts(date);
+    const todayUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
+    const mondayUtc = todayUtc - ((new Date(todayUtc).getUTCDay() + 6) % 7) * 86400000;
+    return new Date(mondayUtc - 8 * 60 * 60 * 1000).toISOString();
 }
 
 async function loadChartData() {
     if (!window.sb) return;
-    const now = new Date();
-    const earliest = new Date(now.getFullYear(), now.getMonth() - 7, 1);
-    const yearStart = new Date(now.getFullYear(), 0, 1);
-    const from = earliest < yearStart ? earliest : yearStart;
-    // Online and walk-in reservations share reporting as well as availability.
-    const { data: rows, error } = await window.sb.rpc('admin_booking_overview', {
-        p_from_at: from.toISOString(), p_to_at: new Date(now.getFullYear() + 1, 0, 1).toISOString(),
-    });
-    if (error || !rows) { console.error('[admin-chart] failed to load reservations', error); return; }
-    CHART_DATA = { week: aggregateWeek(rows), month: aggregateMonth(rows), year: aggregateYear(rows) };
+    const year = manilaParts(new Date()).year;
+    const yearStart = manilaYearStartIso(year);
+    const weekStart = manilaCalendarWeekStartIso();
+    const yearEnd = manilaYearStartIso(year + 1);
+    let rows;
+    if (weekStart < yearStart) {
+        // Keep each call within admin_booking_overview's 366-day limit:
+        // fetch only the prior-year fragment plus the current calendar year.
+        const [priorWeek, currentYear] = await Promise.all([
+            window.sb.rpc('admin_booking_overview', { p_from_at: weekStart, p_to_at: yearStart }),
+            window.sb.rpc('admin_booking_overview', { p_from_at: yearStart, p_to_at: yearEnd }),
+        ]);
+        if (priorWeek.error || currentYear.error || !priorWeek.data || !currentYear.data) {
+            console.error('[admin-chart] failed to load reservations', priorWeek.error || currentYear.error);
+            return;
+        }
+        rows = [...priorWeek.data, ...currentYear.data];
+    } else {
+        const { data, error } = await window.sb.rpc('admin_booking_overview', {
+            p_from_at: yearStart, p_to_at: yearEnd,
+        });
+        if (error || !data) {
+            console.error('[admin-chart] failed to load reservations', error);
+            return;
+        }
+        rows = data;
+    }
+    if (!rows) {
+        console.error('[admin-chart] failed to load reservations');
+        return;
+    }
+    aggregateBookingRows(rows);
 }
 
 function getThemeColors() {
-    const root = document.documentElement;
-    const style = getComputedStyle(root);
-
+    const style = getComputedStyle(document.documentElement);
     return {
         ink: style.getPropertyValue('--color-ink').trim(),
         inkFaint: style.getPropertyValue('--color-ink-faint').trim(),
@@ -98,80 +124,36 @@ function getThemeColors() {
 
 function baseOptions(colors) {
     return {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: {
             legend: { display: false },
-            tooltip: {
-                backgroundColor: colors.bgCard,
-                borderColor: colors.line,
-                borderWidth: 1,
-                titleColor: colors.ink,
-                bodyColor: colors.ink,
-                padding: 10,
-                displayColors: false,
-            },
+            tooltip: { backgroundColor: colors.bgCard, borderColor: colors.line, borderWidth: 1, titleColor: colors.ink, bodyColor: colors.ink, padding: 10, displayColors: false },
         },
         scales: {
-            x: {
-                grid: { display: false },
-                ticks: { color: colors.inkFaint, font: { size: 11 } },
-            },
-            y: {
-                beginAtZero: true,
-                grid: { color: colors.line },
-                ticks: { color: colors.inkFaint, font: { size: 11 }, precision: 0 },
-            },
+            x: { grid: { display: false }, ticks: { color: colors.inkFaint, font: { size: 11 }, maxRotation: 0, autoSkip: true } },
+            y: { beginAtZero: true, grid: { color: colors.line }, ticks: { color: colors.inkFaint, font: { size: 11 }, precision: 0 } },
         },
     };
 }
 
-// Re-applies current theme colors to the existing chart instance (called on
-// 'themechange' so the graph flips light/dark without a full re-render).
-function updateCharts() {
-    if (!bookingChart) return;
-
-    const colors = getThemeColors();
-
-    bookingChart.data.datasets[0].backgroundColor = colors.primary;
-    bookingChart.data.datasets[0].hoverBackgroundColor = colors.primaryDim;
-    bookingChart.options.plugins.tooltip.backgroundColor = colors.bgCard;
-    bookingChart.options.plugins.tooltip.borderColor = colors.line;
-    bookingChart.options.plugins.tooltip.titleColor = colors.ink;
-    bookingChart.options.plugins.tooltip.bodyColor = colors.ink;
-    bookingChart.options.scales.x.ticks.color = colors.inkFaint;
-    bookingChart.options.scales.y.grid.color = colors.line;
-    bookingChart.options.scales.y.ticks.color = colors.inkFaint;
-    bookingChart.update();
-}
-
-// Updates the "total {N}" label, the unit caption under the title, and the
-// active/inactive styling on the Weekly/Monthly pill toggle.
 function renderChartMeta() {
-    const src = CHART_DATA[currentChartRange];
-
-    const unitEl = document.querySelector('[data-admin-chart-unit]');
-    const totalEl = document.querySelector('[data-admin-chart-total]');
-    if (unitEl) unitEl.textContent = src.unit;
-    if (totalEl) totalEl.textContent = src.total;
-
-    document.querySelectorAll('[data-admin-chart-range]').forEach((btn) => {
-        btn.classList.toggle('is-active', btn.dataset.adminChartRange === currentChartRange);
-    });
+    const source = CHART_DATA[currentChartRange];
+    const unit = document.querySelector('[data-admin-chart-unit]');
+    const total = document.querySelector('[data-admin-chart-total]');
+    if (unit) unit.textContent = source.unit;
+    if (total) total.textContent = source.total;
+    document.querySelectorAll('[data-admin-chart-range]').forEach(button => button.classList.toggle('is-active', button.dataset.adminChartRange === currentChartRange));
 }
 
 function setChartRange(range) {
     if (!CHART_DATA[range]) return;
     currentChartRange = range;
-
     renderChartMeta();
-
-    if (bookingChart) {
-        const src = CHART_DATA[range];
-        bookingChart.data.labels = src.labels;
-        bookingChart.data.datasets[0].data = src.values;
-        bookingChart.update();
-    }
+    if (!bookingChart) return;
+    const source = CHART_DATA[range];
+    bookingChart.data.labels = source.labels;
+    bookingChart.data.datasets[0].data = source.values;
+    bookingChart.update();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -179,50 +161,35 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('[admin-chart] Chart.js failed to load from the CDN.');
         return;
     }
-
     const colors = getThemeColors();
-
     Chart.defaults.font.family = "'Inter', 'Segoe UI', sans-serif";
     Chart.defaults.color = colors.inkFaint;
 
-    // ------------------------------------------------------------------
-    // Booking Trends — single bar chart, toggled between Weekly / Monthly.
-    // ------------------------------------------------------------------
-    const canvas = document.getElementById('adminBookingChart');
-    if (canvas) {
-        const src = CHART_DATA[currentChartRange];
-
-        bookingChart = new Chart(canvas, {
-            type: 'bar',
-            data: {
-                labels: src.labels,
-                datasets: [{
-                    label: 'Bookings',
-                    data: src.values,
-                    backgroundColor: colors.primary,
-                    hoverBackgroundColor: colors.primaryDim,
-                    borderRadius: 6,
-                    maxBarThickness: 42,
-                }],
-            },
-            options: baseOptions(colors),
-        });
+    const bookingCanvas = document.getElementById('adminBookingChart');
+    if (bookingCanvas) {
+        const source = CHART_DATA[currentChartRange];
+        bookingChart = new Chart(bookingCanvas, { type: 'bar', data: { labels: source.labels, datasets: [{ label: 'Bookings', data: source.values, backgroundColor: colors.primary, hoverBackgroundColor: colors.primaryDim, borderRadius: 6, maxBarThickness: 42 }] }, options: baseOptions(colors) });
     }
-
     renderChartMeta();
+    document.querySelectorAll('[data-admin-chart-range]').forEach(button => button.addEventListener('click', () => setChartRange(button.dataset.adminChartRange)));
 
-    // Weekly / Monthly pill toggle — swaps the dataset in place.
-    document.querySelectorAll('[data-admin-chart-range]').forEach((btn) => {
-        btn.addEventListener('click', () => setChartRange(btn.dataset.adminChartRange));
-    });
+    function paintTheme() {
+        const theme = getThemeColors();
+        if (bookingChart) {
+            bookingChart.data.datasets[0].backgroundColor = theme.primary;
+            bookingChart.data.datasets[0].hoverBackgroundColor = theme.primaryDim;
+            bookingChart.options.plugins.tooltip.backgroundColor = theme.bgCard;
+            bookingChart.options.plugins.tooltip.borderColor = theme.line;
+            bookingChart.options.plugins.tooltip.titleColor = theme.ink;
+            bookingChart.options.plugins.tooltip.bodyColor = theme.ink;
+            bookingChart.options.scales.x.ticks.color = theme.inkFaint;
+            bookingChart.options.scales.y.grid.color = theme.line;
+            bookingChart.options.scales.y.ticks.color = theme.inkFaint;
+            bookingChart.update();
+        }
+    }
+    document.addEventListener('themechange', paintTheme);
 
-    // Listen for theme changes and re-color the chart.
-    document.addEventListener('themechange', () => {
-        updateCharts();
-    });
-
-    // Real booking counts load once the signed-in profile is confirmed
-    // (RLS needs an authenticated session), then refresh the chart in place.
     async function refreshChartData() {
         await loadChartData();
         setChartRange(currentChartRange);

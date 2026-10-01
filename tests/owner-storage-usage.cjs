@@ -37,7 +37,7 @@ function installSupabaseFixture() {
         storage: {
             from: () => ({
                 list: async prefix => {
-                    if (window.__mediaUnavailable) return { data: null, error: { message: 'Storage unavailable' } };
+                    if (window.__mediaUnavailable) return { data: null, error: { message: 'Bucket not found' } };
                     return { data: prefix ? [] : window.__mediaEntries, error: null };
                 },
                 upload: async () => ({ data: { path: 'qa/photo.jpg' }, error: null }),
@@ -96,7 +96,7 @@ function installSupabaseFixture() {
 
     try {
         await page.goto('http://127.0.0.1:4178/Pages/owner_dashboard.html', { waitUntil: 'domcontentloaded' });
-        const storageRow = page.locator('[data-admin-perf-list] .admin-perf-item').filter({ hasText: 'Photo storage used' });
+        const storageRow = page.locator('[data-admin-perf-list] .admin-perf-item').filter({ hasText: 'Storage' });
         await storageRow.waitFor();
 
         const referenceBytes = 1_000_000_000;
@@ -121,7 +121,7 @@ function installSupabaseFixture() {
             await page.locator('[data-admin-perf-run]').click();
             await page.waitForFunction(expected => {
                 const row = [...document.querySelectorAll('[data-admin-perf-list] .admin-perf-item')]
-                    .find(candidate => candidate.textContent.includes('Photo storage used'));
+                    .find(candidate => candidate.textContent.includes('Storage'));
                 return row?.querySelector('.admin-perf-pill')?.textContent.trim() === expected;
             }, item.pill);
 
@@ -147,7 +147,7 @@ function installSupabaseFixture() {
             assert.equal(dotColor, color.resolved, `${item.label} dot color`);
             const chartColor = await page.evaluate(() => {
                 const chart = window.__ownerStorageChart;
-                const index = chart.data.labels.indexOf('Photo storage used');
+                const index = chart.data.labels.indexOf('Storage');
                 return chart.data.datasets[0].backgroundColor[index];
             });
             assert.equal(chartColor, color.tokenValue, `${item.label} chart color`);
@@ -158,8 +158,10 @@ function installSupabaseFixture() {
         await page.evaluate(() => { window.__mediaUnavailable = true; });
         await page.locator('[data-admin-perf-run]').click();
         await page.waitForFunction(() => [...document.querySelectorAll('[data-admin-perf-list] .admin-perf-item')]
-            .find(row => row.textContent.includes('Photo storage used'))?.querySelector('.admin-perf-pill')?.textContent.trim() === 'Unavailable');
+            .find(row => row.textContent.includes('Storage'))?.querySelector('.admin-perf-pill')?.textContent.trim() === 'Unavailable');
         assert.equal(await storageRow.locator('.admin-perf-dot').getAttribute('class').then(value => value.split(' ').at(-1)), 'admin-perf-dot-neutral');
+        assert.equal(await storageRow.locator('.admin-perf-item-value').innerText(), 'Not set up');
+        assert.doesNotMatch(await storageRow.innerText(), /015_media_bucket\.sql/i);
         assert.equal(await storageRow.locator('.admin-perf-bar').count(), 0, 'unavailable storage should not imply a measured amount');
         assert.deepEqual(errors, [], 'owner dashboard has no uncaught errors');
         console.log('PASS owner photo storage thresholds: 0%, 25%, 50%, 70%, 100%, above 100%, unavailable');

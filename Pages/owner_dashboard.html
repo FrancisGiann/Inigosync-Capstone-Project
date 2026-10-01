@@ -223,9 +223,10 @@
                  ============================================================ -->
             <section class="admin-panel is-active" data-admin-panel="overview">
 
-                <!-- Values computed live in includes/owner_dashboard.js
-                     (refreshOverviewStats) from the real `booking`, `sport`,
-                     and `profiles` tables — no longer hardcoded to
+                <!-- Account/catalog values computed live in
+                     includes/owner_dashboard.js (refreshOverviewStats) from
+                     the real `sport` and `profiles` tables. Income uses its
+                     owner-only payment-ledger RPC — no longer hardcoded to
                      102/14/8/4. "—" is the pre-fetch/failure placeholder —
                      an honest "not loaded yet", never a fake "0" (same rule
                      as the "Rate TBA" placeholder in Court Listings below).
@@ -237,8 +238,15 @@
                         <div class="admin-stat-icon">
                             <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                         </div>
-                        <span class="admin-stat-value" data-admin-stat="bookings-month">—</span>
-                        <span class="admin-stat-label">Bookings this month</span>
+                        <span class="admin-stat-value" data-owner-income-total>₱—</span>
+                        <span class="admin-stat-label">Total income</span>
+                        <span class="admin-income-caption" data-owner-income-caption>Income this month · Asia/Manila</span>
+                        <div class="admin-income-range" role="group" aria-label="Income period">
+                            <button type="button" class="admin-pill-btn" data-owner-income-range="day">Day</button>
+                            <button type="button" class="admin-pill-btn is-active" data-owner-income-range="month">Month</button>
+                            <button type="button" class="admin-pill-btn" data-owner-income-range="year">Year</button>
+                        </div>
+                        <span class="admin-income-state" data-owner-income-state aria-live="polite">Loading income…</span>
                     </div>
                     <div class="admin-stat-card">
                         <div class="admin-stat-icon">
@@ -314,10 +322,10 @@
                         <!-- Plain-language measures from this owner's current browser and connection. -->
                         <div class="admin-perf-body" data-admin-perf-body>
                             <div class="admin-perf-chart-wrap" data-admin-perf-chart-wrap>
-                                <canvas data-admin-perf-chart role="img" aria-label="Website performance status breakdown, 5 checks"></canvas>
+                                <canvas data-admin-perf-chart role="img" aria-label="Website performance status breakdown, 3 checks"></canvas>
                                 <div class="admin-perf-chart-center">
                                     <span class="admin-perf-chart-status" data-admin-perf-chart-status>—</span>
-                                    <span class="admin-perf-chart-sub">5 checks</span>
+                                    <span class="admin-perf-chart-sub">3 checks</span>
                                 </div>
                             </div>
                             <div class="admin-perf-list" data-admin-perf-list>

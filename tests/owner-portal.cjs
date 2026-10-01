@@ -19,7 +19,7 @@ function fixture() {
         entity_type: index === 0 ? 'walk_in_booking' : 'booking', entity_id: `record-${index + 1}`,
         details: { customerName: index === 0 ? 'Walk-in Customer' : `Customer ${index + 1}`, courtName: `Court ${index + 1}`, amount: 500, paymentMethod: index % 2 ? 'Card' : 'Cash' },
     }));
-    const state = window.__ownerQa = { calls: [], failReorder: false };
+    const state = window.__ownerQa = { calls: [], failReorder: false, failSeen: false };
     const data = {
         event: [
             { id: '00000000-0000-4000-8000-000000000001', title: 'A very long featured tournament title that would otherwise push the card actions down and make its neighbors uneven', meta: 'First', tag: 'Event', image_url: null, display_order: 1, is_published: true, created_at: '2026-09-01T00:00:00Z' },
@@ -42,6 +42,7 @@ function fixture() {
         data.court.push({ id: '00000000-0000-4000-8000-000000000099', sport_id: '00000000-0000-4000-8000-000000000098', slug: 'qa-covered-sport', name: 'QA Covered Sport', quantity: 1, unit: 'courts', description: null, image_url: window.__qaSavedCover, is_active: true, display_order: 99, sport: { id: '00000000-0000-4000-8000-000000000098', name: 'QA Covered Sport', slug: 'qa-covered-sport' } });
         data.court_unit_inventory = [{ id: '00000000-0000-4000-8000-000000000097', court_id: '00000000-0000-4000-8000-000000000099', label: 'Court 1', photo_url: window.__qaSavedUnitPhoto, rate_day: null, rate_night: null, rate_unit: '/hr', is_active: true, inventory_verified: true }];
     }
+    state.tables = data;
     const result = (table, q) => {
         let rows = (data[table] || []).slice();
         if (q.filters) rows = rows.filter(row => Object.entries(q.filters).every(([key, value]) => row[key] == value));
@@ -51,6 +52,7 @@ function fixture() {
         if (q.limit) rows = rows.slice(0, q.limit);
         if (q.write) {
             state.calls.push({ table, write: q.write, payload: q.payload, filters: q.filters });
+            if (table === 'owner_activity' && q.write === 'update' && state.failSeen) return { data: null, error: { message: 'Simulated seen update failure' }, count: 0 };
             if (q.write === 'insert') {
                 const row = { ...(Array.isArray(q.payload) ? q.payload[0] : q.payload), id: `00000000-0000-4000-8000-${String((data[table] || []).length + 3).padStart(12, '0')}` };
                 (data[table] ||= []).push(row); rows = [row];
@@ -107,6 +109,7 @@ function fixture() {
                 const total_count = rows.length;
                 return { data: { rows: rows.slice(args.p_offset, args.p_offset + args.p_limit), total_count }, error: null };
             }
+            if (name === 'owner_income_period') return { data: [{ income: { day: 100, month: 200, year: 300 }[args.p_period] }], error: null };
             if (name === 'admin_booking_overview') return { data: [
                 { status: 'pending', amount_paid: 0 }, { status: 'confirmed', amount_paid: 0 },
                 { status: 'confirmed', amount_paid: 250 }, { status: 'completed', amount_paid: 500 },
@@ -152,12 +155,54 @@ function fixture() {
                     assert.equal(await page.locator('[data-admin-slides] [data-media-card]').count(), 2);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}/${theme} horizontal overflow on overview`);
                     await page.locator('[data-admin-stat="customer-accounts"]').getByText('1').waitFor();
+                    await page.locator('[data-owner-income-total]').getByText(/200\.00/).waitFor();
+                    await page.locator('[data-owner-income-range="day"]').click();
+                    await page.locator('[data-owner-income-total]').getByText(/100\.00/).waitFor();
+                    assert.match(await page.locator('[data-owner-income-caption]').innerText(), /Income today/);
+                    await page.locator('[data-owner-income-range="year"]').click();
+                    await page.locator('[data-owner-income-total]').getByText(/300\.00/).waitFor();
+                    assert.match(await page.locator('[data-owner-income-caption]').innerText(), /Income this year/);
+                    await page.locator('[data-owner-income-range="month"]').click();
+                    await page.locator('[data-owner-income-total]').getByText(/200\.00/).waitFor();
                     await page.locator('[data-admin-status-breakdown] .admin-progress-item').nth(2).waitFor();
                     assert.equal(await page.locator('[data-admin-status-breakdown] .admin-progress-item').count(), 3);
                     assert.doesNotMatch(await page.locator('[data-admin-status-breakdown]').innerText(), /Awaiting payment/i);
-                    await page.locator('[data-admin-perf-list]').getByText('Server response').waitFor();
+                    const pageSpeedRow = page.locator('[data-admin-perf-list] .admin-perf-item').filter({ hasText: 'Page speed' });
+                    await pageSpeedRow.waitFor();
+                    assert.match(await pageSpeedRow.innerText(), /Service response/);
+                    assert.equal(await page.locator('[data-admin-perf-list] .admin-perf-item').count(), 3);
                     assert.doesNotMatch(await page.locator('[data-admin-perf-list]').innerText(), /Saved bookings and customers/i);
-                    assert.match(await page.locator('[data-admin-perf-list]').innerText(), /Photo storage used/i);
+                    assert.match(await page.locator('[data-admin-perf-list]').innerText(), /Storage/i);
+                    assert.doesNotMatch(await page.locator('[data-admin-perf-list]').innerText(), /015_media_bucket\.sql/i);
+
+                    await page.locator('[data-admin-notif-trigger]').click();
+                    const seenBox = page.locator('[data-admin-notif-list] [data-owner-notification-seen]').first();
+                    await seenBox.waitFor();
+                    await page.evaluate(() => { window.__ownerQa.failSeen = true; });
+                    await seenBox.evaluate(element => element.click());
+                    await page.waitForFunction(() => {
+                        const checkbox = document.querySelector('[data-admin-notif-list] [data-owner-notification-seen]');
+                        return checkbox && !checkbox.checked && !checkbox.disabled;
+                    });
+                    assert.equal(await page.locator('[data-owner-notification-modal]').isVisible(), false, 'marking seen must not open notification details');
+                    await page.evaluate(() => { window.__ownerQa.failSeen = false; });
+                    await seenBox.evaluate(element => element.click());
+                    await page.waitForFunction(() => {
+                        const checkbox = document.querySelector('[data-admin-notif-list] [data-owner-notification-seen]');
+                        return checkbox && checkbox.checked && checkbox.disabled;
+                    });
+                    assert.ok(await page.evaluate(() => Boolean(window.__ownerQa.tables.owner_activity[0].seen_at)));
+                    assert.equal(await page.locator('[data-owner-notification-modal]').isVisible(), false, 'successful mark-seen must not open notification details');
+
+                    await page.evaluate(() => window.__ownerQa.tables.owner_activity.push({
+                        id: 'activity-2', owner_id: 'qa-owner', title: 'Second update', detail: 'Older owner activity',
+                        target_section: 'courts', created_at: '2026-08-01T00:00:00Z', seen_at: null,
+                    }));
+                    await page.locator('[data-admin-notif-trigger]').click();
+                    await page.locator('[data-admin-notif-trigger]').click();
+                    await page.locator('[data-admin-notif-mark-all]').click();
+                    await page.waitForFunction(() => Boolean(window.__ownerQa.tables.owner_activity[1].seen_at));
+                    assert.equal(await page.locator('[data-admin-notif-mark-all]').isDisabled(), true, 'Mark all should clear remaining unread notifications');
 
                     // Profile modal must be visible, focusable, close, and restore focus.
                     await page.locator('[data-admin-nav="settings"]').first().evaluate(el => el.click());

@@ -377,23 +377,26 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-notif-mark-all:disabled { opacity: .5; cursor: default; }
 .admin-notif-item.is-seen .admin-notif-dot { opacity: 0; }
 
-/* .admin-notif-item renders as EITHER a <button> (a pending booking — click
-   jumps to Overview) or a plain <div> (a feedback row — informational
-   only); shared layout rules below cover both, button-only resets/states
-   are scoped with the `button.` prefix so a static <div> never looks
-   clickable. */
 .admin-notif-item {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     width: 100%;
-    gap: 10px;
+    gap: 8px;
     padding: 10px;
     border-radius: 8px;
 }
-
-button.admin-notif-item {
+.admin-notif-item.is-seen { opacity: .75; }
+.admin-notif-seen-toggle { flex: 0 0 auto; width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
+.admin-notif-seen-toggle:disabled { cursor: default; opacity: .65; }
+.admin-notif-open {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
     background: none;
     border: 0;
+    padding: 0;
     text-align: left;
     font: inherit;
     color: inherit;
@@ -401,12 +404,12 @@ button.admin-notif-item {
     transition: background 0.15s ease;
 }
 
-button.admin-notif-item:hover,
-button.admin-notif-item:focus-visible {
+.admin-notif-open:hover,
+.admin-notif-open:focus-visible {
     background: rgba(244, 239, 230, 0.06);
 }
 
-button.admin-notif-item:focus-visible {
+.admin-notif-open:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: -2px;
 }
@@ -549,6 +552,10 @@ button.admin-notif-item:focus-visible {
    --fw-semibold (600); Sora renders heavier at the same weight. */
 .admin-stat-value { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); }
 .admin-stat-label { font-size: var(--fs-sm); color: var(--color-ink-faint); }
+.admin-stat-value[data-owner-income-total] { font-size: clamp(1.05rem, 2vw, 1.5rem); overflow-wrap: anywhere; }
+.admin-income-caption, .admin-income-state { color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.35; }
+.admin-income-range { display: flex; width: fit-content; max-width: 100%; background: var(--color-bg-elevated); border: 1px solid var(--color-line); border-radius: 999px; padding: 2px; }
+.admin-income-range .admin-pill-btn { padding: 5px 10px; font-size: var(--fs-xs); }
 
 /* Generic card — Revision A2, decision B5: shared by stat cards, the
    chart/recent-bookings/status-breakdown cards, Staff/Court/Media/
@@ -673,6 +680,7 @@ button.admin-notif-item:focus-visible {
 .admin-perf-item:first-child { padding-top: 0; }
 
 .admin-perf-item-row { display: flex; align-items: center; gap: 10px; }
+.admin-perf-item-detail { display: block; margin: 4px 0 0 18px; color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.45; }
 .admin-perf-item-label {
     display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
     font-size: var(--fs-sm); color: var(--color-ink-faint);
@@ -724,7 +732,7 @@ button.admin-notif-item:focus-visible {
 .admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-problem { background: var(--color-alert); }
 
 /* "Like a pie graph" layout — a Chart.js doughnut on top, centered, plus
-   the same 6 rows as a full-width legend below it (unchanged
+   the same 3 rows as a full-width legend below it (unchanged
    .admin-perf-list/-item rules above besides the added .admin-perf-dot).
    Built in includes/owner_dashboard.js's renderAdminPerfChart(). Stacked
    at every width — a side-by-side chart|legend grid (this section's
