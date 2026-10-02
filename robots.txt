@@ -5,4 +5,4 @@ Disallow: /database/
 Disallow: /supabase/
 Disallow: /scripts/
 
-Sitemap: https://iñigos.com/sitemap.xml
+Sitemap: https://inigossportcenter.com/sitemap.xml
