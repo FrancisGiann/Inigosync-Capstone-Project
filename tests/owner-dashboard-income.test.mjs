@@ -61,6 +61,61 @@ test('booking trends use year-to-date months and zero future month buckets', () 
     assert.deepEqual(Array.from(data.year.values.slice(10)), [0, 0]);
     assert.equal(data.year.total, 2);
     assert.equal(data.year.unit, 'bookings per month · this year');
+    assert.equal(data.year.periods[0], 'January 2026');
+    assert.equal(data.year.periods[9], 'October 2026');
+});
+
+test('booking trend report includes selected range, explicit periods, and only loaded chart data', () => {
+    const context = {
+        Date, Intl, Number, String, Object, Array, Math, console,
+        document: { addEventListener() {} }, window: {},
+    };
+    runInNewContext(`${chartSource}\nglobalThis.__aggregate = aggregateBookingRows; globalThis.__report = buildBookingReport; globalThis.__ready = value => { chartDataAvailable = value; };`, context);
+    context.__aggregate([{ time_date: '2026-09-28T01:00:00Z' }]);
+    assert.equal(context.__report('week'), null, 'export data is unavailable until a successful fetch completes');
+    context.__ready(true);
+    const report = context.__report('week', new Date('2026-10-01T02:00:00Z'));
+    assert.equal(report.rangeName, 'Weekly');
+    assert.match(report.periodLabel, /September 28, 2026/);
+    assert.equal(report.total, 1);
+    assert.equal(report.rows.length, 7);
+    assert.equal(report.rows[0].period, 'September 28, 2026');
+    assert.equal(report.rows[0].bookings, 1);
+});
+
+test('booking report exporters pass chart totals and period rows to both file formats', () => {
+    let workbookRows; let workbookFilename; const pdfCalls = [];
+    class FakePdf {
+        setFontSize() {} setFont() {}
+        text(...args) { pdfCalls.push(args); }
+        addPage() {}
+        save(filename) { pdfCalls.push(['save', filename]); }
+    }
+    const context = {
+        Date, Intl, Number, String, Object, Array, Math, console,
+        document: { addEventListener() {}, querySelector: () => null },
+        window: {
+            XLSX: {
+                utils: {
+                    aoa_to_sheet: rows => { workbookRows = rows; return { rows }; },
+                    book_new: () => ({}), book_append_sheet() {},
+                },
+                writeFile: (_book, filename) => { workbookFilename = filename; },
+            },
+            jspdf: { jsPDF: FakePdf },
+        },
+    };
+    runInNewContext(`${chartSource}\nglobalThis.__aggregate = aggregateBookingRows; globalThis.__ready = value => { chartDataAvailable = value; }; globalThis.__range = range => { currentChartRange = range; }; globalThis.__export = exportBookingReport;`, context);
+    context.__aggregate([{ time_date: new Date().toISOString() }]);
+    context.__ready(true);
+    context.__range('year');
+    assert.equal(context.__export('xlsx'), true);
+    assert.match(workbookFilename, /booking-trends-year-\d{4}-\d{2}-\d{2}\.xlsx/);
+    assert.ok(workbookRows.some(row => row[0] === 'Total bookings' && row[1] === 1));
+    assert.ok(workbookRows.some(row => row[0] === 'Period' && row[1] === 'Bookings'));
+    assert.equal(context.__export('pdf'), true);
+    assert.ok(pdfCalls.some(call => call[0] === 'Total bookings: 1'));
+    assert.ok(pdfCalls.some(call => call[0] === 'save' && call[1].endsWith('.pdf')));
 });
 
 test('New Year booking trend fetch splits at year start and keeps both requests within 366 days', async () => {
@@ -74,8 +129,9 @@ test('New Year booking trend fetch splits at year start and keeps both requests 
         document: { addEventListener() {} },
         window: { sb: { rpc: async (name, args) => { requests.push({ name, ...args }); return { data: [], error: null }; } } },
     };
-    runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData;`, context);
+    runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__isChartAvailable = () => chartDataAvailable;`, context);
     await context.__loadChartData();
+    assert.equal(context.__isChartAvailable(), true, 'a successful empty result is valid loaded data');
     assert.equal(requests.length, 2);
     assert.ok(requests.every(request => request.name === 'admin_booking_overview'));
     assert.deepEqual(requests.map(request => [request.p_from_at, request.p_to_at]), [
@@ -83,6 +139,19 @@ test('New Year booking trend fetch splits at year start and keeps both requests 
         ['2026-12-31T16:00:00.000Z', '2027-12-31T16:00:00.000Z'],
     ]);
     assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
+});
+
+test('booking trend RPC failure keeps exports unavailable', async () => {
+    const buttons = [{ disabled: false }, { disabled: false }];
+    const context = {
+        Date, Intl, Number, String, Object, Array, Math, console,
+        document: { addEventListener() {}, querySelectorAll: () => buttons, querySelector: () => null },
+        window: { sb: { rpc: async () => ({ data: null, error: new Error('denied') }) } },
+    };
+    runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__isChartAvailable = () => chartDataAvailable;`, context);
+    assert.equal(await context.__loadChartData(), false);
+    assert.equal(context.__isChartAvailable(), false);
+    assert.ok(buttons.every(button => button.disabled));
 });
 
 test('income RPC requires an active owner and uses Manila payment-time ledger buckets', () => {
@@ -99,7 +168,12 @@ test('income RPC requires an active owner and uses Manila payment-time ledger bu
 test('owner income defaults to Month and replaces the bookings stat', () => {
     assert.match(dashboardHtml, /data-owner-income-range="month"[^>]*class="admin-pill-btn is-active"|class="admin-pill-btn is-active"[^>]*data-owner-income-range="month"/i);
     assert.match(dashboardHtml, /data-owner-income-total/);
-    assert.match(dashboardHtml, /Total income/);
+    assert.match(dashboardHtml, /Total sales/);
+    assert.doesNotMatch(dashboardHtml, /Income this month · Asia\/Manila|Amounts are before payment provider fees\./);
+    assert.match(dashboardHtml, /data-admin-chart-export="pdf" disabled/);
+    assert.match(dashboardHtml, /data-admin-chart-export="xlsx" disabled/);
+    assert.match(dashboardHtml, /xlsx-0\.20\.3/);
+    assert.match(dashboardHtml, /jspdf@4\.2\.1/);
     assert.doesNotMatch(dashboardHtml, /data-admin-stat="bookings-month"|ownerIncomeChart/);
     assert.match(dashboardHtml, /data-admin-perf-chart[^>]*3 checks/i);
     assert.doesNotMatch(dashboardScript, /run 015_media_bucket\.sql/i);

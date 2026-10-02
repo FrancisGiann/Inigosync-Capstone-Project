@@ -983,12 +983,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let ownerIncomeRange = 'month';
     let ownerIncomeRequest = 0;
     const ownerIncomeState = document.querySelector('[data-owner-income-state]');
-    const ownerIncomeCaption = document.querySelector('[data-owner-income-caption]');
     const ownerIncomeTotal = document.querySelector('[data-owner-income-total]');
     async function refreshOwnerIncome() {
         if (!ownerIncomeState || !window.sb || !window.inigosyncProfile?.id) return;
         const request = ++ownerIncomeRequest;
-        ownerIncomeState.textContent = 'Loading income…';
+        ownerIncomeState.textContent = '';
+        ownerIncomeTotal.textContent = '₱—';
         let data; let error;
         try {
             ({ data, error } = await window.sb.rpc('owner_income_period', { p_period: ownerIncomeRange }));
@@ -999,16 +999,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (error || !Array.isArray(data)) {
             console.error('[admin] failed to load owner income', error);
             ownerIncomeTotal.textContent = '₱—';
-            ownerIncomeCaption.textContent = `Income ${ownerIncomeRange} · Asia/Manila`;
-            ownerIncomeState.textContent = 'Income is unavailable right now.';
+            ownerIncomeState.textContent = 'Sales total unavailable right now.';
             return;
         }
         const total = data.reduce((sum, row) => sum + (Number(row.income) || 0), 0);
         const formatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 });
         ownerIncomeTotal.textContent = formatter.format(total);
-        const captions = { day: 'Income today', month: 'Income this month', year: 'Income this year' };
-        ownerIncomeCaption.textContent = `${captions[ownerIncomeRange]} · Asia/Manila`;
-        ownerIncomeState.textContent = 'Amounts are before payment provider fees.';
+        ownerIncomeState.textContent = '';
     }
     document.querySelectorAll('[data-owner-income-range]').forEach(button => button.addEventListener('click', () => {
         const range = button.dataset.ownerIncomeRange;

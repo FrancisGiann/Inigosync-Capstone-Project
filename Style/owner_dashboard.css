@@ -553,9 +553,12 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-stat-value { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); }
 .admin-stat-label { font-size: var(--fs-sm); color: var(--color-ink-faint); }
 .admin-stat-value[data-owner-income-total] { font-size: clamp(1.05rem, 2vw, 1.5rem); overflow-wrap: anywhere; }
-.admin-income-caption, .admin-income-state { color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.35; }
+.admin-income-state { color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.35; }
 .admin-income-range { display: flex; width: fit-content; max-width: 100%; background: var(--color-bg-elevated); border: 1px solid var(--color-line); border-radius: 999px; padding: 2px; }
 .admin-income-range .admin-pill-btn { padding: 5px 10px; font-size: var(--fs-xs); }
+.admin-income-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.admin-income-topline .admin-income-range { margin-left: auto; }
+.admin-income-state:empty { display: none; }
 
 /* Generic card — Revision A2, decision B5: shared by stat cards, the
    chart/recent-bookings/status-breakdown cards, Staff/Court/Media/
@@ -613,6 +616,10 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 /* Booking Trends card header — title/caption left, total + range toggle right */
 .admin-chart-head { align-items: flex-start; }
 .admin-chart-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.admin-chart-exports { display: flex; align-items: center; gap: 8px; }
+.admin-chart-exports button { white-space: nowrap; }
+.admin-chart-exports button:disabled { opacity: .55; cursor: not-allowed; }
+.admin-chart-export-status { flex-basis: 100%; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: right; }
 .admin-chart-total {
     /* Revision A2 (implementation_plan.md) — a booking count, so it takes
        --font-numeric (tabular-nums) instead of the removed --font-mono. */

@@ -36,6 +36,9 @@
 
 <!-- Chart.js (CDN) — booking trend graph is configured in event/chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- Pinned browser-only report exporters; dashboard remains a static frontend. -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body class="admin-body" data-required-role="admin">
 <script>window.InigoLoading.show('Loading your dashboard…');</script>
@@ -241,36 +244,37 @@
                      isn't available yet or the fetch fails outright. -->
                 <div class="admin-stat-grid">
                     <div class="admin-stat-card">
-                        <div class="admin-stat-icon">
-                            <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        <div class="admin-income-topline">
+                            <div class="admin-stat-icon">
+                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 18.5V14m5 4.5V10m5 8.5V6m5 12.5V3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m3.5 9 5-3 5 1.5 6-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </div>
+                            <div class="admin-income-range" role="group" aria-label="Sales period">
+                                <button type="button" class="admin-pill-btn" data-owner-income-range="day">Day</button>
+                                <button type="button" class="admin-pill-btn is-active" data-owner-income-range="month">Month</button>
+                                <button type="button" class="admin-pill-btn" data-owner-income-range="year">Year</button>
+                            </div>
                         </div>
                         <span class="admin-stat-value" data-owner-income-total>₱—</span>
-                        <span class="admin-stat-label">Total income</span>
-                        <span class="admin-income-caption" data-owner-income-caption>Income this month · Asia/Manila</span>
-                        <div class="admin-income-range" role="group" aria-label="Income period">
-                            <button type="button" class="admin-pill-btn" data-owner-income-range="day">Day</button>
-                            <button type="button" class="admin-pill-btn is-active" data-owner-income-range="month">Month</button>
-                            <button type="button" class="admin-pill-btn" data-owner-income-range="year">Year</button>
-                        </div>
-                        <span class="admin-income-state" data-owner-income-state aria-live="polite">Loading income…</span>
+                        <span class="admin-stat-label">Total sales</span>
+                        <span class="admin-income-state" data-owner-income-state aria-live="polite"></span>
                     </div>
                     <div class="admin-stat-card">
                         <div class="admin-stat-icon">
-                            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="9" r="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 20c.8-3.5 3.1-5.5 6.5-5.5s5.7 2 6.5 5.5M15 14.8c2.8-.4 5 1.4 5.8 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                         </div>
                         <span class="admin-stat-value" data-admin-stat="customer-accounts">—</span>
                         <span class="admin-stat-label">Total customer accounts</span>
                     </div>
                     <div class="admin-stat-card">
                         <div class="admin-stat-icon">
-                            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="1.5"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="m12 7 3 2.2-1.1 3.5h-3.8L9 9.2 12 7Zm0 0V3m3 6.2 3.6-.6M13.9 12.7l2.2 3.4m-6-3.4-2.2 3.4M9 9.2l-3.6-.6M10.1 12.7l-1.2 4.1 3.1 2.2 3.1-2.2" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
                         </div>
                         <span class="admin-stat-value" data-admin-stat="sports-listed">—</span>
                         <span class="admin-stat-label">Sports listed</span>
                     </div>
                     <div class="admin-stat-card">
                         <div class="admin-stat-icon">
-                            <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.4" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 19c1.2-3.4 3.8-5.2 6.5-5.2s5.3 1.8 6.5 5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2" stroke="currentColor" stroke-width="1.7"/><circle cx="10" cy="9" r="2.2" stroke="currentColor" stroke-width="1.6"/><path d="M6.7 16c.5-2.1 1.6-3.2 3.3-3.2s2.8 1.1 3.3 3.2m1.4-1.3 1.2 1.2 2.1-2.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </div>
                         <span class="admin-stat-value" data-admin-stat="active-staff">—</span>
                         <span class="admin-stat-label">Active staff accounts</span>
@@ -284,12 +288,17 @@
                             <p class="admin-card-sub" data-admin-chart-unit>bookings per day · this week</p>
                         </div>
                         <div class="admin-chart-controls">
-                            <span class="admin-chart-total">total <span data-admin-chart-total>143</span></span>
+                            <span class="admin-chart-total">Total <span data-admin-chart-total>—</span></span>
                             <div class="admin-toggle-pill">
                                 <button type="button" class="admin-pill-btn is-active" data-admin-chart-range="week">Weekly</button>
                                 <button type="button" class="admin-pill-btn" data-admin-chart-range="month">Monthly</button>
                                 <button type="button" class="admin-pill-btn" data-admin-chart-range="year">Yearly</button>
                             </div>
+                            <div class="admin-chart-exports" role="group" aria-label="Export booking trends report">
+                                <button type="button" class="admin-btn-chip-secondary" data-admin-chart-export="pdf" disabled>Export PDF</button>
+                                <button type="button" class="admin-btn-chip-secondary" data-admin-chart-export="xlsx" disabled>Export Excel</button>
+                            </div>
+                            <span class="admin-chart-export-status" data-admin-chart-export-status aria-live="polite"></span>
                         </div>
                     </div>
                     <div class="admin-chart-wrap">
