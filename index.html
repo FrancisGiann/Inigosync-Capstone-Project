@@ -71,6 +71,7 @@
             <nav class="site-nav-links" aria-label="Primary">
                 <ul>
                     <li><a href="#home" class="active">Home</a></li>
+                    <li><a href="#featured">Featured</a></li>
                     <li><a href="#courts">Courts &amp; Pricing</a></li>
                     <li><a href="#about">About</a></li>
                 </ul>
@@ -110,6 +111,7 @@
             </div>
             <ul>
                 <li><a href="#home" class="active">Home</a></li>
+                <li><a href="#featured">Featured</a></li>
                 <li><a href="#courts">Courts &amp; Pricing</a></li>
                 <li><a href="#about">About</a></li>
             </ul>
@@ -121,31 +123,51 @@
 
         <h1 class="sr-only">IñigoSync — book courts at Iñigos Sports Center, Lucena City</h1>
 
-        <!-- HERO — theme-responsive venue background behind the rotating featured-event photos -->
-        <section class="hero" id="home" data-home-showcase>
-
-            <!-- Populated by includes/home-showcase.js from window.InigoContent.getEvents()
-                 (published Supabase events) — see bug 2/6 fixes. -->
-            <div class="hero-media" data-home-media></div>
+        <!-- HERO — theme-responsive venue backgrounds remain the visual anchor. -->
+        <section class="hero" id="home">
             <div class="hero-scrim" aria-hidden="true"></div>
-
             <div class="hero-content">
                 <div class="hero-copy-wrap">
-                    <!-- Populated by includes/home-showcase.js from the same
-                         window.InigoContent.getEvents() data that drives the
-                         hero photos, so photo and caption can't drift. -->
-                    <div class="hero-copy-stack" data-home-copy-stack aria-live="polite"></div>
+                    <span class="hero-tag">Iñigos Sports Center · Lucena City</span>
+                    <h2 class="hero-title">Find your game.<br><span>Make time to play.</span></h2>
+                    <p class="hero-meta">Book your next visit online and choose from eight sports at Iñigos Sports Center.</p>
                     <div class="cta-buttons">
                         <button type="button" class="cta-button" data-auth-open="login">Book a court</button>
-                        <a href="#courts" class="cta-button secondary">See the courts</a>
+                        <a href="#courts" class="cta-button secondary">Explore the courts</a>
+                    </div>
+                    <div class="hero-stats" aria-label="Iñigos Sports Center facts">
+                        <div><strong>8</strong><span>Sports offered</span></div>
+                        <div><strong>2011</strong><span>Serving Lucena since</span></div>
+                        <div><strong>24/7</strong><span>Online booking access</span></div>
                     </div>
                 </div>
+            </div>
+        </section>
 
-                <div class="hero-progress">
-                    <button type="button" class="hero-arrow hero-arrow-prev" data-home-prev aria-label="Previous featured event" hidden><span aria-hidden="true">←</span></button>
-                    <button type="button" class="hero-arrow hero-arrow-next" data-home-next aria-label="Next featured event" hidden><span aria-hidden="true">→</span></button>
-                    <button type="button" class="hero-pause" data-home-pause aria-label="Pause slideshow" aria-pressed="false">Pause</button>
-                    <div class="hero-dots" data-home-dots></div>
+        <!-- FEATURED — current published event photos and captions from Supabase. -->
+        <section class="featured reveal" id="featured" data-home-showcase aria-labelledby="featured-title">
+            <div class="section-inner featured-inner">
+                <div class="featured-heading">
+                    <p class="eyebrow">Happening at Iñigos</p>
+                    <h2 class="section-title" id="featured-title">Featured events</h2>
+                    <p class="body-text section-intro">See what’s coming up at Iñigos Sports Center.</p>
+                </div>
+                <div class="featured-showcase">
+                    <div class="featured-venue-glow" aria-hidden="true"></div>
+                    <div class="featured-gallery" data-home-media role="group" aria-label="Featured event photos"></div>
+                    <div class="featured-caption-wrap">
+                        <div class="featured-copy-stack" data-home-copy-stack aria-live="polite"></div>
+                        <div class="featured-progress" role="group" aria-label="Featured event slideshow controls">
+                            <button type="button" class="hero-arrow hero-arrow-prev" data-home-prev aria-label="Previous featured event" hidden><span aria-hidden="true">←</span></button>
+                            <button type="button" class="hero-arrow hero-arrow-next" data-home-next aria-label="Next featured event" hidden><span aria-hidden="true">→</span></button>
+                            <button type="button" class="hero-pause" data-home-pause aria-label="Pause slideshow" aria-pressed="false">Pause</button>
+                            <div class="hero-dots" data-home-dots></div>
+                        </div>
+                    </div>
+                    <div class="cta-buttons featured-cta">
+                        <button type="button" class="cta-button" data-auth-open="login">Book a court</button>
+                        <a href="#courts" class="cta-button secondary">Explore the courts</a>
+                    </div>
                 </div>
             </div>
         </section>

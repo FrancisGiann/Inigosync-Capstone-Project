@@ -40,9 +40,8 @@ function monogramFor(sportSlug, name) {
     return (words[0] || '?').slice(0, 2).toUpperCase();
 }
 
-// Shared by both the court cards and the event cards — hero slides use their
-// own full-bleed variant (see includes/home-showcase.js) since they need to
-// stack under the hero-scrim rather than sit inside a rounded card.
+// Court cards and viewer photos share this slot. The Featured event gallery
+// uses its own framed image treatment (see includes/home-showcase.js).
 function renderMediaSlot({ imageUrl, alt, monogram }) {
     if (window.InigoVisuals) imageUrl = window.InigoVisuals.venuePhoto(imageUrl);
     const safeAlt = escapeHtml(alt || '');
@@ -72,9 +71,7 @@ function formatEventDate(date) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// Composes the single display line for an event's schedule (used by both
-// the hero caption and the Featured Events card) so the two never have a
-// chance to format the same event differently.
+// Composes the display line for an event's schedule in the Featured caption.
 function formatEventMeta(ev) {
     return [formatEventDate(ev.eventDate), ev.meta].filter(Boolean).join(' · ');
 }
@@ -819,8 +816,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // render the same links (see Index.html), so there are two <a> elements
     // per href — match by href, not by node identity, so both stay in sync.
     //
-    // The nav is Home / Courts & Pricing / About, and each of those resolves
-    // to a real section: the hero now carries id="home", so `#home` maps
+    // The nav is Home / Featured / Courts & Pricing / About, and each of
+    // those resolves to a real section: the hero carries id="home", so `#home` maps
     // through the normal document.querySelector path. The `href === '#'`
     // branch below is kept as a fallback for any nav that still ships a bare
     // '#' Home link — it is no longer used by Pages/Index.html.

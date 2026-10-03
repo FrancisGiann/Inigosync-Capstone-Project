@@ -744,11 +744,8 @@ nav ul li a.active {
 
 /* ==========================================================================
    Image slots — shared by the court grid cards and the court viewer modal.
-   The standalone Featured Events section (and with it .event-grid /
-   .event-card*) was removed in the landing-page redesign; the event data it
-   used still drives the hero carousel through the same
-   window.InigoContent.getEvents() (see includes/home-showcase.js), it just
-   no longer has a second grid of its own.
+   Featured event photography uses its own framed gallery and reads published
+   rows from window.InigoContent.getEvents() (see includes/home-showcase.js).
 
    No court photos exist in the DB yet (image_url is nullable on `court`);
    this renders a pattern + sport monogram instead of a broken <img>, and
