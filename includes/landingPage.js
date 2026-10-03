@@ -708,25 +708,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const courtGrid = document.querySelector('[data-court-grid]');
     const status = document.querySelector('[data-courts-status]');
+    const sportsCountNodes = document.querySelectorAll('[data-sports-count]');
+    const sportsLabelNodes = document.querySelectorAll('[data-sports-label]');
+    let courtsLoadSequence = 0;
     let clickSequence = 0;
     let activeCourtCard = null;
     const retryMarkup = (text, target) => '<p class="content-state" role="status">' + text + ' <button type="button" data-content-retry="' + target + '">Try again</button></p>';
+    const canRefreshCourts = () => !document.hidden && !activeCourtCard
+        && !document.querySelector('[data-court-viewer]:not([hidden])');
+    const setSportsCount = count => {
+        const display = Number.isInteger(count) && count >= 0 ? String(count) : '—';
+        sportsCountNodes.forEach(node => { node.textContent = display; });
+        sportsLabelNodes.forEach(node => { node.textContent = count === 1 ? 'Sport offered' : 'Sports offered'; });
+    };
 
     async function loadCourts(force = false) {
         if (!courtGrid) return;
+        const sequence = ++courtsLoadSequence;
         courtGrid.setAttribute('aria-busy', 'true');
         if (status) status.textContent = 'Loading current court information…';
         try {
             const courts = await getCourts({ force });
+            if (sequence !== courtsLoadSequence) return;
             const focusedSlug = courtGrid.contains(document.activeElement) ? document.activeElement.dataset.courtId : null;
             courtGrid.innerHTML = courts.length ? courts.map(renderCourtCard).join('') : '<p class="content-state">No courts are currently listed. Please check with the front desk.</p>';
+            setSportsCount(courts.length);
             if (status) status.textContent = '';
             if (focusedSlug) [...courtGrid.querySelectorAll('.court-card')].find(card => card.dataset.courtId === focusedSlug)?.focus({ preventScroll: true });
             document.dispatchEvent(new Event('inigo:courts-rendered'));
         } catch {
+            if (sequence !== courtsLoadSequence) return;
+            // A failed refresh must not leave a once-correct number on screen
+            // as if it still reflects the active public sports list.
+            setSportsCount(null);
             courtGrid.innerHTML = retryMarkup('Court information could not be loaded.', 'courts');
             if (status) status.textContent = '';
-        } finally { courtGrid.setAttribute('aria-busy', 'false'); }
+        } finally {
+            if (sequence === courtsLoadSequence) courtGrid.setAttribute('aria-busy', 'false');
+        }
     }
     courtGrid?.addEventListener('click', async event => {
         const card = event.target.closest('.court-card');
@@ -770,9 +789,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (target === 'courts') loadCourts(true);
     });
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) loadCourts(true);
+        if (canRefreshCourts()) loadCourts(true);
     });
     loadCourts();
+    // Refresh while the landing page remains open. getCourts({ force: true })
+    // uses the same request cache as the grid; repeated visibility and timer
+    // refreshes share any request already in flight.
+    window.setInterval(() => {
+        if (canRefreshCourts()) loadCourts(true);
+    }, 60_000);
 
     // ------------------------------------------------------------------
     // Theme toggle — includes/theme.js manages the data-theme attribute
@@ -852,7 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = href === '#' ? document.querySelector('.hero') : document.querySelector(href);
         return target ? { link, target } : null;
     }).filter(Boolean);
-    // The footer continues About, including its map and platform credits.
+    // The footer continues About, including its map and closing signoff.
     const aboutLink = sectionMap.find(({ link }) => link.getAttribute('href') === '#about')?.link;
     const footer = document.querySelector('.site-footer');
     if (aboutLink && footer) sectionMap.push({ link: aboutLink, target: footer });

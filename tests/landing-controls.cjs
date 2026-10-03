@@ -3,6 +3,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const base = 'http://127.0.0.1:4178/index.html';
 const uuid = '11111111-2222-3333-4444-555555555555';
+let publishedSportsCount = 2;
+let failCourtFetch = false;
 (async () => {
     const browser = await chromium.launch({channel:'msedge',headless:true});
     try {
@@ -13,7 +15,12 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             await page.route('https://elfsightcdn.com/**', route => provider === 'blocked' ? route.abort() : route.fulfill({contentType:'application/javascript',body: provider === 'empty' ? '' : `document.querySelector('.elfsight-app-${uuid}').textContent='Provider fixture: 4.3 stars';`}));
             await page.route('**/rest/v1/**', route => {
                 const table = new URL(route.request().url()).pathname.split('/').pop();
-                const data = table === 'event' ? Array.from({length:count},(_,i)=>({title:'Feature '+(i+1),meta:'Venue event',tag:'Featured',image_url:'../assets/landing/featured-tournament-placeholder.png'})) : [];
+                if (table === 'court' && failCourtFetch) return route.fulfill({status:500,json:{message:'Fixture court fetch failure'}});
+                const data = table === 'event'
+                    ? Array.from({length:count},(_,i)=>({title:'Feature '+(i+1),meta:'Venue event',tag:'Featured',image_url:'../assets/landing/featured-tournament-placeholder.png'}))
+                    : table === 'court'
+                        ? Array.from({length:publishedSportsCount},(_,i)=>({id:'court-'+i,name:'Sport '+(i+1),quantity:1,unit:'courts',is_active:true,display_order:i,rate:null,rate_unit:'/hr',sport:{slug:'sport-'+i,name:'Sport '+(i+1)}}))
+                        : [];
                 return route.fulfill({json:data});
             });
             await page.goto(base,{waitUntil:'domcontentloaded'});
@@ -45,6 +52,19 @@ const uuid = '11111111-2222-3333-4444-555555555555';
         assert(await page.locator('[data-google-reviews]').isHidden());
         assert(await page.locator('[data-google-reviews-fallback]').isVisible());
         assert.equal(await page.locator('script[src*="elfsightcdn"]').count(),0);
+        await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='2'));
+        assert.deepEqual(await page.locator('[data-sports-count]').allTextContents(),['2','2']);
+        assert.deepEqual(await page.locator('[data-sports-label]').allTextContents(),['Sports offered','Sports offered']);
+        publishedSportsCount=3;
+        await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='3'));
+        publishedSportsCount=1;
+        await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='1'));
+        assert.deepEqual(await page.locator('[data-sports-label]').allTextContents(),['Sport offered','Sport offered']);
+        publishedSportsCount=3;
+        await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='3'));
         for (const width of [320,390,768,1024,1440,1920]) {
             await page.setViewportSize({width,height:900});
             for (const theme of ['dark','light']) {
@@ -65,17 +85,39 @@ const uuid = '11111111-2222-3333-4444-555555555555';
                     const rect=s=>document.querySelector(s).getBoundingClientRect();
                     const map=rect('.footer-map-frame'),card=rect('.map-location-card');
 
+                    const courtBackground=getComputedStyle(document.querySelector('.courts')).backgroundColor;
+                    const poster=getComputedStyle(document.querySelector('.featured-frame'));
+                    const featured=getComputedStyle(document.querySelector('.featured'));
+                    const featuredTitle=getComputedStyle(document.querySelector('#featured-title'));
+                    const heroTitle=getComputedStyle(document.querySelector('.hero-title'));
+                    const heroTag=getComputedStyle(document.querySelector('.hero-tag'));
+                    const heroMeta=getComputedStyle(document.querySelector('.hero-meta'));
                     return {mapHeight:map.height,cardBelow:card.top>=map.bottom-1,
                         padding:getComputedStyle(document.querySelector('.site-footer')).paddingTop,
-                        credits:document.querySelectorAll('.footer-provider').length};
+                        platformCredits:document.querySelectorAll('.footer-credits, .footer-provider').length,
+                        courtBackground,posterRadius:poster.borderRadius,posterShadow:poster.boxShadow,
+                        posterBorder:poster.borderColor,posterBackground:poster.backgroundColor,
+                        featuredPadding:featured.paddingTop,featuredTitleSize:featuredTitle.fontSize,
+                        featuredCtaCount:document.querySelectorAll('.featured-cta').length,
+                        heroTitleSize:heroTitle.fontSize,heroTitleFont:heroTitle.fontFamily,
+                        heroTitleLineHeight:heroTitle.lineHeight,
+                        heroTagFont:heroTag.fontFamily,heroMetaSize:heroMeta.fontSize};
                 });
                 assert.equal(layout.mapHeight,width<=768?240:340);
                 assert.equal(layout.padding,width<=768?'24px':'32px');
-                assert.equal(layout.credits,4);
+                assert.equal(layout.platformCredits,0);
+                assert.equal(layout.courtBackground,theme==='light'?'rgb(255, 255, 255)':'rgb(17, 21, 21)');
+                assert.equal(layout.posterRadius,'12px');
+                assert.notEqual(layout.posterShadow,'none');
+                assert.notEqual(layout.posterBorder,'rgb(255, 255, 255)');
+                assert.notEqual(layout.posterBackground,'rgb(248, 244, 235)');
+                assert.equal(layout.featuredPadding,width<=768?'76px':'96px');
+                assert(parseFloat(layout.featuredTitleSize)>=(width<=768?30:34));
+                assert.equal(layout.featuredCtaCount,0);
+                assert(parseFloat(layout.heroTitleSize)>=(width<=768?32:36));
+                assert.equal(layout.heroTagFont,layout.heroTitleFont);
+                assert(parseFloat(layout.heroMetaSize)>=(width<=768?13:15));
                 if(width<=768) { assert(layout.cardBelow); }
-                await page.locator('.footer-credits').scrollIntoViewIfNeeded();
-                await page.locator('img[alt="Elfsight"]').evaluate(img=>img.decode());
-                assert(await page.locator('img[alt="Elfsight"]').evaluate(img=>img.complete && img.naturalWidth>0));
             }
             await page.locator('[data-home-next]').scrollIntoViewIfNeeded();
             assert(await page.locator('.hero-media-slide.is-active .hero-media-img').evaluate(img=>getComputedStyle(img).objectFit==='contain'), 'Featured photo must fit at '+width);
@@ -83,11 +125,12 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             if(width<=768) assert(await page.locator('.hero-media-slide.is-active .hero-media-img').evaluate(img=>img.getBoundingClientRect().bottom<=document.querySelector('.hero-copy-wrap').getBoundingClientRect().top), 'Photo overlaps copy at '+width);
             assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth), 'Overflow at '+width);
             assert(await page.locator('.footer-bottom').evaluate((footer,width)=>{
-                const [location,copyright,credits]=[...footer.children].map(el=>el.getBoundingClientRect());
+                const [location,copyright,signoff]=[...footer.children].map(el=>el.getBoundingClientRect());
                 const row=footer.getBoundingClientRect();
-                if(width<=768) return location.bottom<=copyright.top && copyright.bottom<=credits.top && [location,copyright,credits].every(r=>Math.abs(r.left+r.width/2-row.left-row.width/2)<1);
-                return location.right<copyright.left && copyright.right<credits.left && Math.abs(copyright.left+copyright.width/2-row.left-row.width/2)<1;
+                if(width<=768) return location.bottom<=copyright.top && copyright.bottom<=signoff.top && [location,copyright,signoff].every(r=>Math.abs(r.left+r.width/2-row.left-row.width/2)<1);
+                return location.right<copyright.left && copyright.right<signoff.left && Math.abs(copyright.left+copyright.width/2-row.left-row.width/2)<1;
             },width), 'Footer order and centering at '+width);
+            assert.equal((await page.locator('.footer-bottom > :last-child').innerText()).trim(),'See you on the court.');
             assert(await page.evaluate(()=>{
                 const rect=s=>document.querySelector(s).getBoundingClientRect();
                 const group=rect('.hero-progress'),cta=rect('.cta-buttons'),prev=rect('[data-home-prev]'),next=rect('[data-home-next]'),pause=rect('[data-home-pause]');
@@ -128,10 +171,6 @@ const uuid = '11111111-2222-3333-4444-555555555555';
         await page.locator('.site-nav-actions .book-now').focus();
         await page.waitForFunction(()=>!document.querySelector('.site-nav').classList.contains('is-hidden'));
         assert.equal(await page.locator('.site-nav').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
-        assert(await page.locator('a[href="asset-credits.html"]').isVisible());
-        await page.locator('a[href="asset-credits.html"]').click();
-        assert.match(await page.locator('main').innerText(),/B1Blender/);
-        await page.goBack();
         await page.screenshot({path:'output/landing-controls-desktop.png'});
         await page.setViewportSize({width:390,height:844});
         await page.evaluate(async()=>{ scrollTo({top:0,behavior:'instant'}); await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))); document.activeElement.blur(); });
@@ -146,6 +185,18 @@ const uuid = '11111111-2222-3333-4444-555555555555';
         await page.evaluate(()=>scrollBy({top:220,behavior:'instant'}));
         assert(await page.locator('.site-nav').evaluate(el=>!el.classList.contains('is-hidden')),'Open menu keeps header visible');
         await page.keyboard.press('Escape');
+        assert.equal(await page.getByRole('link',{name:'Facebook'}).count(),1,'Facebook link keeps its accessible name');
+        assert.equal(await page.locator('.court-art-note').count(),0);
+        assert.equal(await page.locator('.featured').getByRole('button',{name:'Book a court'}).count(),0);
+        assert.equal(await page.locator('.featured').getByRole('link',{name:'Explore the courts'}).count(),0);
+        failCourtFetch=true;
+        await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='—'));
+        assert(await page.locator('.content-state').isVisible(),'A failed refresh clears the previous sports count');
+        failCourtFetch=false;
+        publishedSportsCount=2;
+        await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='2'));
         console.log('PASS controls, footer dimensions and themes at six widths');
         await page.setViewportSize({width:320,height:900});
         await page.locator('[data-home-next]').scrollIntoViewIfNeeded();
@@ -194,13 +245,7 @@ const uuid = '11111111-2222-3333-4444-555555555555';
             assert.equal(await widget.locator('[data-testimonial-grid], [data-onsite-review-grid]').count(),0);
             if(provider==='loaded') {
                 assert.match(await widget.locator('[data-google-reviews]').innerText(),/4.3 stars/);
-                assert(await widget.locator('[data-google-reviews-note]').isVisible());
-                assert(await widget.locator('[data-google-reviews-note]').evaluate(el=>{
-                    const note=el.getBoundingClientRect(),host=document.querySelector('[data-google-reviews]').getBoundingClientRect(),layout=document.querySelector('.google-reviews-layout').getBoundingClientRect();
-                    return note.top>=host.bottom && note.top-host.bottom<=12 && Math.abs(note.left-host.left)<1 && Math.abs(host.width-layout.width)<1;
-                }));
-                await widget.setViewportSize({width:390,height:844});
-                assert(await widget.locator('[data-google-reviews-note]').evaluate(el=>el.getBoundingClientRect().top>=document.querySelector('[data-google-reviews]').getBoundingClientRect().bottom));
+                assert.equal(await widget.locator('[data-google-reviews-note]').count(),0);
             }
             if(provider!=='loaded') await widget.locator('[data-google-reviews-fallback]').waitFor({state:'visible',timeout:12000});
             await widget.close();

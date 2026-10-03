@@ -1614,11 +1614,16 @@ body.court-viewer-lock {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: #0866ff;
 }
 
 .footer-social-icon svg {
-    width: 15px;
-    height: 15px;
+    width: 12px;
+    height: 16px;
 }
 
 .footer-map-block {

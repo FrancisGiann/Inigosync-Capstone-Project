@@ -33,128 +33,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../Style/typography.css">
     <link rel="stylesheet" href="../Style/LandingPage.css">
+    <link rel="stylesheet" href="../Style/LandingNight.css">
+    <link rel="stylesheet" href="../Style/Policies.css">
 
-    <style>
-        /* Terms & Conditions — long-form policy content. Reuses the design
-           tokens LandingPage.css already defines (fonts/colors), so
-           dark/light theming keeps working via includes/theme.js. These
-           are just the extra rules a wall of policy text needs that the
-           landing page's card/grid sections don't already provide. */
-        .terms-hero-spacer {
-            padding: 170px 0 100px;
-        }
-        .terms-content {
-            max-width: 720px;
-        }
-        .terms-updated {
-            font-family: var(--font-mono);
-            font-size: 0.82rem;
-            color: var(--color-ink-faint);
-            margin-bottom: 36px;
-        }
-        .terms-section {
-            margin-bottom: 40px;
-        }
-        .terms-section h2 {
-            font-family: var(--font-display);
-            font-weight: 600;
-            font-size: 1.4rem;
-            color: var(--color-ink);
-            margin-bottom: 14px;
-        }
-        .terms-section p {
-            font-size: 1rem;
-            line-height: 1.75;
-            color: var(--color-ink-dim);
-            margin-bottom: 14px;
-        }
-        .terms-section ul {
-            padding-left: 22px;
-            margin: 0 0 14px;
-        }
-        .terms-section li {
-            font-size: 1rem;
-            line-height: 1.75;
-            color: var(--color-ink-dim);
-            margin-bottom: 8px;
-        }
-        .terms-placeholder {
-            color: var(--color-primary);
-            font-weight: 600;
-        }
-        .terms-section a {
-            color: var(--color-primary);
-            font-weight: 600;
-            text-decoration: none;
-        }
-        .terms-section a:hover {
-            text-decoration: underline;
-        }
-    </style>
+
 </head>
-<body>
-
-    <main>
-        <!-- Same floating pill navbar as the landing page, trimmed to a single
-             "Home" link since this standalone page has no in-page sections to
-             scroll-spy. includes/landingPage.js (loaded below) wires the theme
-             toggle and mobile off-canvas menu the same way it does everywhere
-             else — it's an existing dependency, not new logic. -->
-        <header class="site-nav">
-            <input type="checkbox" id="menu-toggle" class="menu-toggle-checkbox">
-
-            <div class="site-nav-pill">
-                <div class="logo-brand">
-                    <img src="../assets/Logo/WebLogo.png" alt="IñigoSync logo" class="logo-image">
-                    <div class="logo-text">IñigoSync</div>
-                </div>
-
-                <nav class="site-nav-links" aria-label="Primary">
-                    <ul>
-                        <li><a href="../index.html">Home</a></li>
-                    </ul>
-                </nav>
-
-                <div class="site-nav-actions">
-                    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="5" class="sun-circle"/>
-                            <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
-                            <line x1="12" y1="21" x2="12" y2="23" class="sun-line"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" class="sun-line"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" class="sun-line"/>
-                            <line x1="1" y1="12" x2="3" y2="12" class="sun-line"/>
-                            <line x1="21" y1="12" x2="23" y2="12" class="sun-line"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" class="sun-line"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" class="sun-line"/>
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
-                        </svg>
-                    </button>
-                    <label for="menu-toggle" class="menu-toggle" aria-label="Toggle menu">
-                        <span class="menu-toggle-bar"></span>
-                        <span class="menu-toggle-bar"></span>
-                        <span class="menu-toggle-bar"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Off-canvas mobile menu (mirrors the link above; shown only below the nav-collapse breakpoint) -->
-            <nav class="nav-menu">
-                <div class="nav-menu-brand">
-                    <img src="../assets/Logo/WebLogo.png" alt="IñigoSync logo" class="nav-menu-logo">
-                    <div class="logo-text">IñigoSync</div>
-                </div>
-                <ul>
-                    <li><a href="../index.html">Home</a></li>
-                </ul>
-            </nav>
-        </header>
-
-        <section class="terms-hero-spacer">
-            <div class="section-inner terms-content">
-                <p class="eyebrow">Legal</p>
+<body class="landing-night">
+    <header class="policy-header">
+        <a href="../index.html" aria-label="Iñigos Sports Center home">
+            <img src="../assets/Logo/Logo.png" alt="Iñigos Sports Center" width="2400" height="987">
+        </a>
+        <nav aria-label="Policy navigation"><a href="../index.html">Back to home</a></nav>
+    </header>
+    <main class="policy-content terms-content">
+<p class="eyebrow">Legal</p>
                 <h1 class="section-title">Terms &amp; Conditions</h1>
-                <p class="terms-updated">Last updated: August 27, 2026</p>
+                <p class="policy-date">Last updated: August 27, 2026</p>
 
                 <div class="terms-section">
                     <p>
@@ -268,71 +162,12 @@
                         or <a href="tel:+639281546876">+63 928 154 6876</a>.
                     </p>
                 </div>
-            </div>
-        </section>
+        <nav class="policy-navigation" aria-label="Policy pages">
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="terms.html" aria-current="page">Terms &amp; Conditions</a>
+            <a href="house-rules.html">House Rules</a>
+        </nav>
     </main>
-
-    <footer class="site-footer">
-        <div class="section-inner footer-inner">
-            <div class="footer-brand">
-                <div class="footer-brand-main">
-                    <img src="../assets/Logo/WebLogo.png" alt="IñigoSync logo" class="footer-logo">
-                    <div class="logo-text">IñigoSync</div>
-                </div>
-                <p class="footer-tagline">Book courts, manage schedules, and stay connected with Iñigos Sports Center.</p>
-            </div>
-
-            <div class="footer-grid">
-                <div class="footer-card">
-                    <h3>Visit us</h3>
-                    <p>Iñigos Sports Center</p>
-                    <p>Brgy. Bocohan, Diversion Road</p>
-                    <p>Lucena City</p>
-                </div>
-
-                <div class="footer-card">
-                    <h3>Contact</h3>
-                    <a href="tel:+639281546876">+63 928 154 6876</a>
-                    <a href="mailto:itsrosem8@gmail.com">itsrosem8@gmail.com</a>
-                </div>
-
-                <div class="footer-card">
-                    <h3>Follow</h3>
-                    <a href="https://www.facebook.com/profile.php?id=100064109438955" target="_blank" rel="noopener noreferrer">
-                        <span class="footer-social-icon" aria-hidden="true">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M13.5 22v-8.5h2.8l.4-3.2h-3.2V4.3c0-.9.3-1.6 1.6-1.6h1.7V.1c-.3 0-1.3-.1-2.4-.1-2.4 0-4.1 1.5-4.1 4.2v2.4H7.2v3.2h2.8V22h3.5z"/>
-                            </svg>
-                        </span>
-                        <span>Facebook</span>
-                    </a>
-                </div>
-            </div>
-
-            <div class="footer-map-block">
-                <p class="footer-map-label">Iñigos Sports Center · Brgy. Bocohan, Diversion Road, Lucena City</p>
-                <iframe
-                    class="footer-map-frame"
-                    src="https://www.google.com/maps?q=I%C3%B1igos%20Sports%20Center%20Brgy.%20Bocohan%20Lucena%20City&z=15&output=embed"
-                    loading="lazy"
-                    referrerpolicy="no-referrer-when-downgrade"
-                    title="Iñigos Sports Center location"
-                    allowfullscreen>
-                </iframe>
-            </div>
-        </div>
-    </footer>
-
     <script src="../includes/theme.js"></script>
-    <!-- Shared HTML-escaping helper — must load before landingPage.js. Not
-         used directly on this static page, but landingPage.js references
-         window.escapeHtml at its top level (building window.InigoContent),
-         so it must exist by the time landingPage.js runs. -->
-    <script src="../includes/escape.js"></script>
-    <!-- Reused only for its theme-toggle wiring, scroll-reveal, and mobile
-         off-canvas menu handling (all guarded with `if (element)` checks) —
-         this page has no court/event/testimonial grids, so the
-         Supabase-backed fetches it defines are simply never triggered. -->
-    <script src="../includes/landingPage.js"></script>
 </body>
 </html>

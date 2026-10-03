@@ -1,7 +1,6 @@
 // Google is the only review source displayed on the landing page.
 document.addEventListener('DOMContentLoaded', () => {
     const host = document.querySelector('[data-google-reviews]');
-    const note = document.querySelector('[data-google-reviews-note]');
     const fallback = document.querySelector('[data-google-reviews-fallback]');
     if (!host || !fallback) return;
 
@@ -16,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     widget.setAttribute('data-elfsight-app-lazy', '');
     host.append(widget);
     host.hidden = false;
-    note.hidden = false;
 
     let rendered = false;
     let scriptLoaded = false;
@@ -31,7 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rendered || hasContent()) return;
         observer.disconnect();
         host.hidden = true;
-        note.hidden = true;
         fallback.hidden = false;
     };
     const armTimeout = () => {

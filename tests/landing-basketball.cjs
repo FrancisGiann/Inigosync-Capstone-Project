@@ -8,7 +8,7 @@ fs.mkdirSync(out, { recursive: true });
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
-        async function setup({ motion = 'no-preference', failure = false, webgl = true, touch = false } = {}) {
+        async function setup({ motion = 'no-preference', failure = false, webgl = true, touch = false, dialogFallback = false } = {}) {
             const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: motion, hasTouch: touch, isMobile: touch });
             page.setDefaultTimeout(15000);
             await page.addInitScript(() => {
@@ -25,6 +25,10 @@ fs.mkdirSync(out, { recursive: true });
                 const get = HTMLCanvasElement.prototype.getContext;
                 HTMLCanvasElement.prototype.getContext = function (type, ...args) { return type.startsWith('webgl') ? null : get.call(this, type, ...args); };
             });
+            if (dialogFallback) await page.addInitScript(() => {
+                Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: undefined });
+                Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: undefined });
+            });
             await page.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'load' });
             return page;
         }
@@ -32,6 +36,23 @@ fs.mkdirSync(out, { recursive: true });
         const errors = [];
         page.on('pageerror', e => errors.push(e.message));
         await page.waitForSelector('.floating-basketball canvas', { state: 'attached' });
+        const chatLauncher = page.locator('[data-landing-chat-open]');
+        await chatLauncher.focus();
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('[data-landing-chat]').evaluate(el => el.open), true, 'Keyboard activation opens chat');
+        await page.locator('[data-chat-prompt="Where are you located?"]').click();
+        assert((await page.locator('[data-landing-chat-log]').innerText()).includes('Brgy. Bocohan'), 'Suggested question chip submits a question');
+        await page.locator('#landingChatInput').fill('Where are you located?');
+        await page.keyboard.press('Enter');
+        assert((await page.locator('[data-landing-chat-log]').innerText()).includes('Brgy. Bocohan'));
+        await page.locator('#landingChatInput').fill('<img src=x onerror=alert(1)>');
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('[data-landing-chat-log] img').count(), 0, 'Questions render as text, not HTML');
+        await page.keyboard.press('Escape');
+        assert.equal(await page.locator('[data-landing-chat]').evaluate(el => el.open), false, 'Escape closes chat');
+        await page.waitForFunction(() => document.activeElement?.matches('[data-landing-chat-open]'));
+        await page.waitForFunction(() => !document.querySelector('.floating-basketball').classList.contains('is-obscured'));
+        assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-landing-chat-open]')), true, 'Closing restores launcher focus');
         assert.equal(await page.locator('.hero-equipment').count(), 0);
         for (const width of [320, 390, 768, 1024, 1440]) {
             await page.setViewportSize({ width, height: 900 });
@@ -48,9 +69,10 @@ fs.mkdirSync(out, { recursive: true });
                     return { fixed: getComputedStyle(o).position, pointer: getComputedStyle(o).pointerEvents, width: r.width,
                         overflow: document.documentElement.scrollWidth > innerWidth, before, after,
                         target: getComputedStyle(document.querySelector('.footer-card a')).minHeight,
-                        aria: o.getAttribute('aria-hidden') };
+                        aria: o.getAttribute('aria-label'), launcher: o.tagName === 'BUTTON' };
                 });
-                assert.equal(metrics.fixed, 'fixed'); assert.equal(metrics.pointer, 'none'); assert.equal(metrics.aria, 'true');
+                assert.equal(metrics.fixed, 'fixed'); assert.equal(metrics.pointer, 'auto');
+                assert.equal(metrics.aria, 'Ask about Iñigos Sports Center'); assert(metrics.launcher);
                 assert.equal(metrics.width, width <= 360 ? 96 : width <= 768 ? 110 : 140); assert(!metrics.overflow);
                 assert.deepEqual(metrics.before, metrics.after); assert.equal(metrics.target, '32px');
                 await page.screenshot({ path: path.join(out, `hero-${width}-${theme}.png`) });
@@ -92,16 +114,19 @@ fs.mkdirSync(out, { recursive: true });
         await page.emulateMedia({ reducedMotion: 'reduce' });
         const still = await pose(0), stillScrolled = await pose(150);
         assert.equal(still, stillScrolled, 'Reduced motion must keep the same pose');
-        // The model stays visible over content while clicks pass through it.
+        // The ball is an intentional accessible click target.
         await page.evaluate(() => {
             const b = document.createElement('button'); b.id = 'overlap-probe'; b.textContent = 'Test';
-            b.style.cssText = 'position:fixed;bottom:16px;right:16px;width:140px;height:140px';
+            b.style.cssText = 'position:fixed;bottom:16px;left:16px;width:80px;height:80px';
             document.querySelector('main').append(b);
         });
         assert.equal(await page.locator('.floating-basketball').evaluate(el => getComputedStyle(el).opacity), '1');
         await page.locator('#overlap-probe').click();
         await page.locator('#overlap-probe').evaluate(el => el.remove());
         await page.waitForFunction(() => !document.querySelector('.floating-basketball').classList.contains('is-obscured'));
+        await page.locator('.floating-basketball').click();
+        assert.equal(await page.locator('[data-landing-chat]').evaluate(el => el.open), true, 'Click opens chat');
+        await page.keyboard.press('Escape');
         await page.setViewportSize({ width: 390, height: 900 });
         await page.evaluate(() => scrollTo({top:0,behavior:'instant'}));
         await page.waitForFunction(() => !document.querySelector('.site-nav').classList.contains('is-hidden'));
@@ -112,14 +137,37 @@ fs.mkdirSync(out, { recursive: true });
         const touch = await setup({ touch: true });
         assert.equal(await touch.locator('.footer-card a').first().evaluate(el => getComputedStyle(el).minHeight), '44px');
         await touch.close();
+        const dialogFallback = await setup({ dialogFallback: true });
+        const fallbackLauncher = dialogFallback.locator('[data-landing-chat-open]');
+        await fallbackLauncher.focus();
+        await dialogFallback.keyboard.press('Enter');
+        const fallbackDialog = dialogFallback.locator('[data-landing-chat]');
+        assert.equal(await fallbackDialog.evaluate(el => el.open), true, 'Fallback opens a visible dialog');
+        assert.equal(await dialogFallback.locator('[data-landing-chat-backdrop]').isVisible(), true);
+        assert.equal(await dialogFallback.locator('body').evaluate(el => el.classList.contains('landing-chat-scroll-lock')), true);
+        assert.equal(await dialogFallback.locator('header').first().getAttribute('aria-hidden'), 'true');
+        await dialogFallback.locator('.landing-chat-attribution a').focus();
+        await dialogFallback.keyboard.press('Tab');
+        assert.equal(await dialogFallback.evaluate(() => document.activeElement.matches('[data-landing-chat-close]')), true, 'Tab wraps from last control to close button');
+        await dialogFallback.keyboard.press('Escape');
+        assert.equal(await fallbackDialog.evaluate(el => el.open), false, 'Fallback Escape closes dialog');
+        assert.equal(await dialogFallback.locator('[data-landing-chat-backdrop]').isHidden(), true);
+        assert.equal(await dialogFallback.locator('body').evaluate(el => el.classList.contains('landing-chat-scroll-lock')), false);
+        await dialogFallback.waitForFunction(() => document.activeElement?.matches('[data-landing-chat-open]'));
+        await dialogFallback.close();
         for (const options of [{ failure: true }, { webgl: false }]) {
             const fallback = await setup(options);
             await fallback.waitForTimeout(2500);
-            assert.equal(await fallback.locator('.floating-basketball').count(), 0);
+            assert.equal(await fallback.locator('.floating-basketball').count(), 1);
+            assert.equal(await fallback.locator('.floating-basketball canvas').count(), 0);
+            assert(await fallback.locator('.floating-basketball').isVisible(), 'Fallback launcher remains visible');
+            await fallback.locator('.floating-basketball').click();
+            assert.equal(await fallback.locator('[data-landing-chat]').evaluate(el => el.open), true, 'Fallback opens chat');
+            await fallback.keyboard.press('Escape');
             assert(await fallback.locator('.hero-content').isVisible());
             await fallback.close();
         }
-        console.log('PASS real model, five widths/both themes, no layout shift, scroll/reverse, reduced motion, overlap/menu, touch targets, asset and WebGL failure');
+        console.log('PASS accessible chat, native and fallback dialog focus management, safe FAQ text, 3D model, responsive themes, motion controls, and WebGL fallback');
         console.log('Screenshots: ' + out);
     } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

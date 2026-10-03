@@ -1078,9 +1078,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // The dialog has its own sticky header carrying the title, so drop the
         // page's "Legal" eyebrow and its <h1> to avoid showing the heading
-        // twice. Page furniture only — not one word of the policy text is
-        // altered. Guarded: if terms.html ever loses them, nothing happens.
-        imported.querySelectorAll('.eyebrow, .section-title').forEach((el) => el.remove());
+        // twice. The standalone policy navigation also belongs to the page,
+        // not the dialog; its relative links would otherwise resolve from the
+        // registration page. Page furniture only — not policy text. Guarded:
+        // if terms.html ever loses these elements, nothing happens.
+        imported.querySelectorAll('.eyebrow, .section-title, .policy-navigation').forEach((el) => el.remove());
 
         const fragment = document.createDocumentFragment();
         while (imported.firstChild) fragment.appendChild(imported.firstChild);

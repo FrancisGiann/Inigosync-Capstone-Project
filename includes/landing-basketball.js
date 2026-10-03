@@ -1,8 +1,10 @@
-// Optional decoration: no layout space, input handlers, or perpetual render loop.
+// Optional 3D layer for the accessible chat launcher; no layout space or
+// perpetual render loop is added by the model itself.
 async function startBasketball() {
     let renderer;
     let model;
-    let overlay;
+    const overlay = document.querySelector('.floating-basketball');
+    if (!overlay) return;
     try {
         const [THREE, { GLTFLoader }] = await Promise.all([
             import('./vendor/three/three.module.min.js'),
@@ -29,11 +31,8 @@ async function startBasketball() {
         pivot.scale.setScalar(scale);
         scene.add(pivot);
 
-        overlay = document.createElement('div');
-        overlay.className = 'floating-basketball';
-        overlay.setAttribute('aria-hidden', 'true');
         overlay.append(renderer.domElement);
-        document.body.append(overlay);
+        overlay.classList.add('has-webgl');
         const reduced = matchMedia('(prefers-reduced-motion: reduce)');
         const state = { progress: 0 };
         let frame = 0;
@@ -41,7 +40,12 @@ async function startBasketball() {
         function render() {
             frame = 0;
             if (document.hidden) return;
-            const modal = document.body.classList.contains('landing-menu-open') || [...document.querySelectorAll('[aria-modal="true"], dialog[open]')].some(el => !el.closest('[hidden]') && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+            const modal = document.body.classList.contains('landing-menu-open') || [...document.querySelectorAll('[aria-modal="true"], dialog[open]')].some(el => {
+                if (el.closest('[hidden]')) return false;
+                if (typeof el.checkVisibility === 'function') return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+                const style = getComputedStyle(el);
+                return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0;
+            });
             const footerBottom = document.querySelector('.footer-bottom');
             const footerRect = footerBottom?.getBoundingClientRect();
             const ballRect = overlay.getBoundingClientRect();
@@ -87,11 +91,16 @@ async function startBasketball() {
         document.addEventListener('visibilitychange', requestRender);
         document.addEventListener('themechange', theme);
         reduced.addEventListener('change', motion);
-        renderer.domElement.addEventListener('webglcontextlost', () => { overlay.hidden = true; });
+        renderer.domElement.addEventListener('webglcontextlost', event => {
+            event.preventDefault();
+            overlay.classList.remove('has-webgl');
+            renderer.domElement.remove();
+        });
         resize(); theme(); motion();
     } catch (error) {
         // A failed optional asset must never interfere with booking or navigation.
-        overlay?.remove();
+        renderer?.domElement?.remove();
+        overlay?.classList.remove('has-webgl');
         model?.traverse(node => { node.geometry?.dispose(); });
         renderer?.dispose();
         console.warn('Optional basketball decoration unavailable:', error.message);
