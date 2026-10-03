@@ -1,0 +1,22 @@
+name: Sync Hostinger fork
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    if: github.repository == 'Kiko-Oborza/Inigosync-Capstone-Project'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Sync fork
+        env:
+          GH_TOKEN: ${{ secrets.HOSTINGER_SYNC_TOKEN }}
+        run: |
+          gh repo sync FrancisGiann/Inigosync-Capstone-Project \
+            --source Kiko-Oborza/Inigosync-Capstone-Project \
+            --branch main
