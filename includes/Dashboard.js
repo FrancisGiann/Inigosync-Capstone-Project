@@ -382,6 +382,21 @@ document.addEventListener('DOMContentLoaded', () => {
     let notifTotalCount = 0;
     let notifSearchTimer = null;
     let notifGeneration = 0;
+    let notifItems = [];
+    const selectedNotifKeys = new Set();
+    const notifSelect = document.querySelector('[data-dash-notif-select]');
+    const notifSelectedLabel = document.querySelector('[data-dash-notif-selected]');
+    const notifMarkSelected = document.querySelector('[data-dash-notif-mark-selected]');
+
+    function syncCustomerNotificationSelection() {
+        const checkboxes = notifList?.querySelectorAll('[data-dash-notif-select-row]') || [];
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectedNotifKeys.has(checkbox.dataset.dashNotifSelectRow);
+            checkbox.closest('.dash-notif-row')?.classList.toggle('is-selected', checkbox.checked);
+        });
+        if (notifSelectedLabel) notifSelectedLabel.textContent = `${selectedNotifKeys.size} selected`;
+        if (notifMarkSelected) notifMarkSelected.disabled = selectedNotifKeys.size === 0;
+    }
 
     function closeNotifMenu() {
         if (notif) notif.removeAttribute('data-open');
@@ -425,6 +440,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadCustomerNotifications() {
         if (!notifList || !window.sb || !window.inigosyncProfile) return;
         const generation = ++notifGeneration;
+        selectedNotifKeys.clear();
+        if (notifSelect) notifSelect.value = 'none';
+        syncCustomerNotificationSelection();
         notifList.innerHTML = '<p class="dash-notif-empty">Loading notifications…</p>';
         try {
             const { data, error } = await window.sb.rpc('customer_list_notifications', {
@@ -442,8 +460,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 category: String(item.category || 'Update'), created_at: item.created_at || null,
                 read_at: item.read_at || null, href: item.href || '',
             }));
-            const persistentHtml = persistentItems.map(item => `<button type="button" class="dash-notif-item dash-notif-persistent${item.read_at ? ' is-read' : ' is-unread'}" data-dash-notif-key="${window.escapeHtml(item.key)}" data-dash-notif-href="${window.escapeHtml(item.href)}"><span class="dash-notif-dot ${window.escapeHtml(item.category.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}" aria-hidden="true"></span><span class="dash-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(item.body)}</span><small>${window.escapeHtml(item.category)} · ${window.escapeHtml(notificationTime(item.created_at))} · ${item.read_at ? 'Read' : 'Unread'}</small></span></button>`).join('');
+            notifItems = persistentItems;
+            const persistentHtml = persistentItems.map(item => `<div class="dash-notif-row dash-notif-persistent${item.read_at ? ' is-read' : ' is-unread'}" data-dash-notif-key="${window.escapeHtml(item.key)}"><input type="checkbox" class="dash-notif-select-row" data-dash-notif-select-row="${window.escapeHtml(item.key)}" aria-label="Select ${window.escapeHtml(item.title)}"><button type="button" class="dash-notif-item" data-dash-notif-open data-dash-notif-href="${window.escapeHtml(item.href)}"><span class="dash-notif-dot ${window.escapeHtml(item.category.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}" aria-hidden="true"></span><span class="dash-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(item.body)}</span><small>${window.escapeHtml(item.category)} · ${window.escapeHtml(notificationTime(item.created_at))} · ${item.read_at ? 'Read' : 'Unread'}</small></span></button></div>`).join('');
             notifList.innerHTML = persistentHtml || '<p class="dash-notif-empty">No notifications match your search.</p>';
+            syncCustomerNotificationSelection();
             const unreadCount = Number(result.unread_count) || 0;
             if (notifUnread) notifUnread.textContent = unreadCount ? `${unreadCount} unread` : '';
             if (notifDot) notifDot.hidden = unreadCount === 0;
@@ -455,6 +475,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (next) next.disabled = (notifPage + 1) * NOTIF_LIMIT >= notifTotalCount;
         } catch (error) {
             if (generation !== notifGeneration) return;
+            notifItems = [];
+            selectedNotifKeys.clear();
+            syncCustomerNotificationSelection();
             console.error('[dashboard] notifications could not be loaded', error);
             notifList.innerHTML = '<p class="dash-notif-empty">Notifications could not be loaded. Try again.</p>';
             if (notifDot) notifDot.hidden = true;
@@ -473,14 +496,22 @@ document.addEventListener('DOMContentLoaded', () => {
     window.setInterval(() => { if (!document.hidden) loadCustomerNotifications(); }, 60000);
 
     if (notifList) {
+        notifList.addEventListener('change', (e) => {
+            const checkbox = e.target.closest('[data-dash-notif-select-row]');
+            if (!checkbox) return;
+            if (checkbox.checked) selectedNotifKeys.add(checkbox.dataset.dashNotifSelectRow);
+            else selectedNotifKeys.delete(checkbox.dataset.dashNotifSelectRow);
+            syncCustomerNotificationSelection();
+        });
         notifList.addEventListener('click', (e) => {
-            const persistent = e.target.closest('[data-dash-notif-key]');
+            const openButton = e.target.closest('[data-dash-notif-open]');
+            const persistent = openButton?.closest('[data-dash-notif-key]');
             if (persistent) {
                 const key = persistent.dataset.dashNotifKey;
-                persistent.disabled = true;
+                openButton.disabled = true;
                 window.sb.rpc('mark_notification_read', { p_key: key }).then(({ data, error }) => {
                     if (error || data === false) throw error || new Error('Notification could not be marked read.');
-                    const href = persistent.dataset.dashNotifHref || '';
+                    const href = openButton.dataset.dashNotifHref || '';
                     void loadCustomerNotifications();
                     if (href) {
                         try {
@@ -496,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 }).catch(error => {
-                    persistent.disabled = false;
+                    openButton.disabled = false;
                     console.error('[dashboard] notification read state could not be saved', error);
                     window.InigoToast?.show('Could not mark notification as read.', true);
                 });
@@ -504,6 +535,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    notifSelect?.addEventListener('change', () => {
+        selectedNotifKeys.clear();
+        const mode = notifSelect.value;
+        notifItems.filter(item => mode === 'all' || (mode === 'read' && item.read_at) || (mode === 'unread' && !item.read_at))
+            .forEach(item => selectedNotifKeys.add(item.key));
+        syncCustomerNotificationSelection();
+    });
+    notifMarkSelected?.addEventListener('click', async () => {
+        const keys = [...selectedNotifKeys];
+        if (!keys.length || !window.sb) return;
+        notifMarkSelected.disabled = true;
+        try {
+            const results = await Promise.all(keys.map(key => window.sb.rpc('mark_notification_read', { p_key: key })));
+            const failed = results.find(result => result?.error || result?.data === false);
+            if (failed) throw failed.error || new Error('A notification could not be marked as read.');
+            await loadCustomerNotifications();
+        } catch (error) {
+            console.error('[dashboard] selected notifications could not be marked read', error);
+            window.InigoToast?.show(error.message || 'Could not mark selected notifications as read.', true);
+            await loadCustomerNotifications();
+        } finally {
+            notifMarkSelected.disabled = selectedNotifKeys.size === 0;
+        }
+    });
 
     // ------------------------------------------------------------------
     // Theme toggle — includes/theme.js manages the data-theme attribute

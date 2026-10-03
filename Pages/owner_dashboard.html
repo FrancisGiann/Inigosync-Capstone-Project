@@ -184,10 +184,16 @@
                     </button>
 
                     <div class="admin-notif-menu" data-admin-notif-menu role="region" aria-label="Notifications">
-                        <div class="admin-notif-menu-head">Notifications <button type="button" class="admin-notif-mark-all" data-admin-notif-mark-all>Mark all as seen</button></div>
+                        <div class="admin-notif-menu-head"><span>Notifications</span><button type="button" class="admin-notif-mark-all" data-admin-notif-mark-all aria-expanded="false">Mark All</button><button type="button" class="admin-notif-mark-selected" data-admin-notif-mark-selected disabled hidden>Mark All Read</button></div>
+                        <div class="admin-notif-selection" data-admin-notif-selection hidden>
+                            <label><span class="sr-only">Select notifications</span><select data-admin-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
+                            <span data-admin-notif-selected aria-live="polite">0 selected</span>
+                        </div>
+                        <label class="admin-notif-search"><span class="sr-only">Search owner notifications</span><input type="search" data-admin-notif-search placeholder="Search notifications" autocomplete="off"></label>
                         <div class="admin-notif-list" data-admin-notif-list>
                             <p class="admin-notif-empty">Loading…</p>
                         </div>
+                        <div class="admin-notif-pagination" data-admin-notif-pagination hidden><button type="button" data-admin-notif-prev>Previous</button><span class="admin-notif-pages" data-admin-notif-pages aria-label="Notification pages"></span><button type="button" data-admin-notif-next>Next</button></div>
                     </div>
                 </div>
 

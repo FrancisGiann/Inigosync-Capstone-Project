@@ -149,6 +149,11 @@
                         <div class="dash-notif-menu" data-dash-notif-menu role="region" aria-label="Notifications">
                             <div class="dash-notif-menu-head"><span>Notifications</span><span data-dash-notif-unread aria-live="polite"></span></div>
                             <label class="dash-notif-search"><span class="dash-sr-only">Search notifications</span><input type="search" placeholder="Search notifications…" autocomplete="off" data-dash-notif-search></label>
+                            <div class="dash-notif-selection" data-dash-notif-selection>
+                                <label><span class="dash-sr-only">Select notifications</span><select data-dash-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
+                                <span data-dash-notif-selected aria-live="polite">0 selected</span>
+                                <button type="button" data-dash-notif-mark-selected disabled>Mark as read</button>
+                            </div>
                             <div class="dash-notif-list" data-dash-notif-list>
                                 <p class="dash-notif-empty">Loading…</p>
                             </div>

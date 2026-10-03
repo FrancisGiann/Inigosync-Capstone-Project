@@ -162,8 +162,13 @@
                         <span class="staff-badge-dot" data-staff-notif-dot hidden></span>
                     </button>
 
-                    <div class="staff-notif-menu" data-staff-notif-menu role="menu" aria-label="Notifications">
+                    <div class="staff-notif-menu" data-staff-notif-menu role="region" aria-label="Notifications">
                         <div class="staff-notif-menu-head"><span>Notifications</span><button type="button" data-staff-notif-mark-all>Mark all as seen</button></div>
+                        <div class="staff-notif-selection" data-staff-notif-selection>
+                            <label><span class="sr-only">Select notifications</span><select data-staff-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
+                            <span data-staff-notif-selected aria-live="polite">0 selected</span>
+                            <button type="button" data-staff-notif-mark-selected disabled>Mark as read</button>
+                        </div>
                         <div class="staff-notif-list" data-staff-notif-list>
                             <p class="staff-notif-empty">Loading…</p>
                         </div>

@@ -83,28 +83,6 @@ function buildAdminPerfGroups({ storage, pageLoad, serverResponse, errorCount, c
     ];
 }
 
-async function setOwnerActivitySeen(checkbox, persist, refresh, notify) {
-    const row = checkbox.closest('[data-owner-activity-id]');
-    if (!row || checkbox.disabled) return false;
-    checkbox.disabled = true;
-    let error;
-    try {
-        error = await persist(row.dataset.ownerActivityId);
-    } catch (_error) {
-        error = _error;
-    }
-    if (error) {
-        checkbox.checked = false;
-        checkbox.disabled = false;
-        notify();
-        return false;
-    }
-    checkbox.checked = true;
-    row.classList.add('is-seen');
-    refresh();
-    return true;
-}
-
 function routeOwnerActivityOpen(target, openNotification) {
     const button = target.closest('[data-owner-activity-open]');
     const row = button?.closest('[data-owner-activity-id]');
@@ -2398,9 +2376,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Owner activity: a compact bell list and a paginated detail page.
     const adminNotif = document.querySelector('[data-admin-notif]');
     const adminNotifTrigger = document.querySelector('[data-admin-notif-trigger]');
+    const adminNotifMenu = document.querySelector('[data-admin-notif-menu]');
     const adminNotifList = document.querySelector('[data-admin-notif-list]');
     const adminNotifDot = document.querySelector('[data-admin-notif-dot]');
     const adminNotifMarkAll = document.querySelector('[data-admin-notif-mark-all]');
+    const adminNotifSelection = document.querySelector('[data-admin-notif-selection]');
+    const adminNotifSearch = document.querySelector('[data-admin-notif-search]');
+    const adminNotifPagination = document.querySelector('[data-admin-notif-pagination]');
+    const adminNotifPages = document.querySelector('[data-admin-notif-pages]');
+    const OWNER_NOTIF_PAGE_SIZE = 8;
     const notificationDetail = document.querySelector('[data-owner-notification-detail]');
     const notificationDetailBody = document.querySelector('[data-owner-notification-detail-body]');
     const notificationModal = document.querySelector('[data-owner-notification-modal]');
@@ -2539,12 +2523,19 @@ document.addEventListener('DOMContentLoaded', () => {
         adminNotif?.removeAttribute('data-open');
         adminNotifTrigger?.setAttribute('aria-expanded', 'false');
     }
+    function positionAdminNotifMenu() {
+        if (!adminNotifTrigger) return;
+        const triggerRect = adminNotifTrigger.getBoundingClientRect();
+        adminNotif?.style.setProperty('--admin-notif-menu-top', `${Math.max(8, triggerRect.bottom + 10)}px`);
+    }
     adminNotifTrigger?.addEventListener('click', event => {
         event.stopPropagation();
         const wasOpen = adminNotif.hasAttribute('data-open');
         closeProfileMenu(); closeAdminNotifMenu();
-        if (!wasOpen) { adminNotif.setAttribute('data-open', ''); adminNotifTrigger.setAttribute('aria-expanded', 'true'); refreshOwnerActivityNotifications(); }
+        if (!wasOpen) { positionAdminNotifMenu(); adminNotif.setAttribute('data-open', ''); adminNotifTrigger.setAttribute('aria-expanded', 'true'); refreshOwnerActivityNotifications(); }
     });
+    adminNotifMenu?.addEventListener('click', event => event.stopPropagation());
+    window.addEventListener('resize', () => { if (adminNotif?.hasAttribute('data-open')) positionAdminNotifMenu(); });
     document.addEventListener('click', event => { if (!adminNotif?.contains(event.target)) closeAdminNotifMenu(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeAdminNotifMenu(); });
     async function recordOwnerActivity(title, targetSection, detail = '') {
@@ -2557,19 +2548,63 @@ document.addEventListener('DOMContentLoaded', () => {
         else refreshOwnerActivityNotifications();
     }
     window.InigoOwnerUI.recordActivity = recordOwnerActivity;
+    let ownerActivityNotifCount = 0;
+    let ownerNotifPage = 0;
+    let ownerNotifGeneration = 0;
+    let ownerNotifSearchTimer = null;
     async function refreshOwnerActivityNotifications() {
         if (!window.sb || !window.inigosyncProfile?.id) return;
         const ownerId = window.inigosyncProfile.id;
+        const generation = ++ownerNotifGeneration;
+        selectedOwnerActivityIds.clear();
+        if (ownerNotifSelect) ownerNotifSelect.value = 'none';
+        const search = adminNotifSearch?.value.trim() || '';
+        let rowsQuery = window.sb.from('owner_activity').select('id,title,created_at,seen_at', { count: 'exact' })
+            .eq('owner_id', ownerId).order('created_at', { ascending: false })
+            .range(ownerNotifPage * OWNER_NOTIF_PAGE_SIZE, (ownerNotifPage + 1) * OWNER_NOTIF_PAGE_SIZE - 1);
+        if (search) {
+            const escapedSearch = search.replace(/[\\%_"]/g, character => `\\${character}`);
+            const quotedPattern = `"%${escapedSearch}%"`;
+            rowsQuery = rowsQuery.or(`title.ilike.${quotedPattern},detail.ilike.${quotedPattern}`);
+        }
+        if (adminNotifList) adminNotifList.setAttribute('aria-busy', 'true');
         const [latest, unread] = await Promise.all([
-            window.sb.from('owner_activity').select('id,title,created_at,seen_at').eq('owner_id', ownerId).order('created_at', { ascending: false }).limit(8),
+            rowsQuery,
             window.sb.from('owner_activity').select('id', { count: 'exact', head: true }).eq('owner_id', ownerId).is('seen_at', null),
         ]);
-        if (latest.error) { if (adminNotifList) adminNotifList.textContent = 'Notifications could not be loaded.'; return; }
-        if (adminNotifList) adminNotifList.innerHTML = latest.data?.length ? latest.data.map(item => `<div class="admin-notif-item${item.seen_at ? ' is-seen' : ''}" data-owner-activity-id="${window.escapeHtml(item.id)}"><input type="checkbox" class="admin-notif-seen-toggle" data-owner-notification-seen aria-label="Mark ${window.escapeHtml(item.title)} as seen"${item.seen_at ? ' checked disabled' : ''}><button type="button" class="admin-notif-open" data-owner-activity-open><span class="admin-notif-dot pending" aria-hidden="true"></span><span class="admin-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(formatActivityTime(item.created_at))} · ${item.seen_at ? 'Seen' : 'New'}</span></span></button></div>`).join('') : '<p class="admin-notif-empty">No owner activity yet.</p>';
+        if (generation !== ownerNotifGeneration) return;
+        if (latest.error) {
+            if (adminNotifList) adminNotifList.innerHTML = '<p class="admin-notif-empty">Notifications could not be loaded.</p>';
+            if (adminNotifPagination) adminNotifPagination.hidden = true;
+            if (adminNotifList) adminNotifList.setAttribute('aria-busy', 'false');
+            return;
+        }
+        ownerActivityNotifRows = latest.data || [];
+        ownerActivityNotifCount = Math.max(0, Number(latest.count) || 0);
+        if (adminNotifList) adminNotifList.innerHTML = ownerActivityNotifRows.length ? ownerActivityNotifRows.map(item => `<div class="admin-notif-item${item.seen_at ? ' is-seen' : ' is-unseen'}" data-owner-activity-id="${window.escapeHtml(item.id)}"><input type="checkbox" class="admin-notif-select-row" data-owner-notif-select-row="${window.escapeHtml(item.id)}" aria-label="Select ${window.escapeHtml(item.title)}"><button type="button" class="admin-notif-open" data-owner-activity-open><span class="admin-notif-dot pending" aria-hidden="true"></span><span class="admin-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(formatActivityTime(item.created_at))} · ${item.seen_at ? 'Read' : 'Unread'}</span></span></button></div>`).join('') : `<p class="admin-notif-empty">${search ? 'No notifications match your search.' : 'No owner activity yet.'}</p>`;
+        if (adminNotifList) adminNotifList.scrollTop = 0;
+        const pageCount = Math.max(1, Math.ceil(ownerActivityNotifCount / OWNER_NOTIF_PAGE_SIZE));
+        if (adminNotifPagination) adminNotifPagination.hidden = ownerActivityNotifCount <= OWNER_NOTIF_PAGE_SIZE;
+        if (adminNotifPages) {
+            const pageIndexes = pageCount <= 7
+                ? Array.from({ length: pageCount }, (_, index) => index)
+                : [...new Set([0, ownerNotifPage - 1, ownerNotifPage, ownerNotifPage + 1, pageCount - 1].filter(page => page >= 0 && page < pageCount))].sort((a, b) => a - b);
+            let previousPage = -1;
+            adminNotifPages.innerHTML = pageIndexes.map(page => {
+                const gap = page - previousPage > 1 ? '<span aria-hidden="true">…</span>' : '';
+                previousPage = page;
+                return `${gap}<button type="button" data-owner-notif-page="${page}" aria-label="Page ${page + 1}"${page === ownerNotifPage ? ' aria-current="page"' : ''}>${page + 1}</button>`;
+            }).join('');
+        }
+        const prev = document.querySelector('[data-admin-notif-prev]');
+        const next = document.querySelector('[data-admin-notif-next]');
+        if (prev) prev.disabled = ownerNotifPage <= 0;
+        if (next) next.disabled = ownerNotifPage + 1 >= pageCount;
+        syncOwnerNotificationSelection();
         if (!unread.error) {
             if (adminNotifDot) adminNotifDot.hidden = !unread.count;
-            if (adminNotifMarkAll) adminNotifMarkAll.disabled = !unread.count;
         }
+        if (adminNotifList) adminNotifList.setAttribute('aria-busy', 'false');
     }
     async function openNotification(id) {
         selectedNotificationId = id;
@@ -2588,21 +2623,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         refreshOwnerActivityNotifications();
     }
-    async function markNotificationSeen(checkbox) {
-        const row = checkbox.closest('[data-owner-activity-id]');
-        if (!row || checkbox.disabled) return;
-        const id = row.dataset.ownerActivityId;
-        return setOwnerActivitySeen(checkbox, async () => {
-            const { error } = await window.sb.from('owner_activity').update({ seen_at: new Date().toISOString() })
-                .eq('id', id).eq('owner_id', window.inigosyncProfile.id).is('seen_at', null);
-            return error;
-        }, refreshOwnerActivityNotifications, () => window.InigoToast?.show('Could not mark notification as seen.', true));
+    const selectedOwnerActivityIds = new Set();
+    let ownerActivityNotifRows = [];
+    const ownerNotifSelect = document.querySelector('[data-admin-notif-select]');
+    const ownerNotifSelectedLabel = document.querySelector('[data-admin-notif-selected]');
+    const ownerNotifMarkSelected = document.querySelector('[data-admin-notif-mark-selected]');
+    function syncOwnerNotificationSelection() {
+        const selecting = adminNotif?.hasAttribute('data-selecting');
+        if (adminNotifSelection) adminNotifSelection.hidden = !selecting;
+        if (ownerNotifMarkSelected) ownerNotifMarkSelected.hidden = !selecting;
+        adminNotifMarkAll?.setAttribute('aria-expanded', String(Boolean(selecting)));
+        adminNotifList?.querySelectorAll('[data-owner-notif-select-row]').forEach(checkbox => {
+            checkbox.checked = selectedOwnerActivityIds.has(checkbox.dataset.ownerNotifSelectRow);
+            checkbox.closest('.admin-notif-item')?.classList.toggle('is-selected', checkbox.checked);
+        });
+        if (ownerNotifSelectedLabel) ownerNotifSelectedLabel.textContent = `${selectedOwnerActivityIds.size} selected`;
+        if (ownerNotifMarkSelected) ownerNotifMarkSelected.disabled = selectedOwnerActivityIds.size === 0;
     }
     adminNotifList?.addEventListener('change', event => {
-        const checkbox = event.target.closest('[data-owner-notification-seen]');
+        const checkbox = event.target.closest('[data-owner-notif-select-row]');
         if (!checkbox) return;
         event.stopPropagation();
-        markNotificationSeen(checkbox);
+        if (checkbox.checked) selectedOwnerActivityIds.add(checkbox.dataset.ownerNotifSelectRow);
+        else selectedOwnerActivityIds.delete(checkbox.dataset.ownerNotifSelectRow);
+        syncOwnerNotificationSelection();
     });
     adminNotifList?.addEventListener('click', event => {
         routeOwnerActivityOpen(event.target, id => openNotification(id).catch(() => window.InigoToast?.show('Could not open notification.', true)));
@@ -2615,11 +2659,63 @@ document.addEventListener('DOMContentLoaded', () => {
         notificationBackdropPressed = false;
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && notificationModal && !notificationModal.hidden) window.InigoOwnerUI.close(notificationModal); });
-    adminNotifMarkAll?.addEventListener('click', async () => {
-        if (!window.sb || !window.inigosyncProfile?.id) return;
-        const { error } = await window.sb.from('owner_activity').update({ seen_at: new Date().toISOString() }).eq('owner_id', window.inigosyncProfile.id).is('seen_at', null);
-        if (error) window.InigoToast?.show('Could not mark notifications as read.', true);
-        refreshOwnerActivityNotifications();
+    ownerNotifSelect?.addEventListener('change', () => {
+        selectedOwnerActivityIds.clear();
+        const mode = ownerNotifSelect.value;
+        ownerActivityNotifRows.filter(item => mode === 'all' || (mode === 'read' && item.seen_at) || (mode === 'unread' && !item.seen_at))
+            .forEach(item => selectedOwnerActivityIds.add(String(item.id)));
+        syncOwnerNotificationSelection();
+    });
+    ownerNotifMarkSelected?.addEventListener('click', async () => {
+        const ids = [...selectedOwnerActivityIds];
+        if (!ids.length || !window.sb || !window.inigosyncProfile?.id) return;
+        ownerNotifMarkSelected.disabled = true;
+        try {
+            const { error } = await window.sb.from('owner_activity').update({ seen_at: new Date().toISOString() })
+                .in('id', ids).eq('owner_id', window.inigosyncProfile.id).is('seen_at', null);
+            if (error) throw error;
+            await refreshOwnerActivityNotifications();
+        } catch (error) {
+            console.error('[admin] selected notifications could not be marked read', error);
+            window.InigoToast?.show(error.message || 'Could not mark selected notifications as read.', true);
+            await refreshOwnerActivityNotifications();
+        } finally {
+            ownerNotifMarkSelected.disabled = selectedOwnerActivityIds.size === 0;
+        }
+    });
+    adminNotifMarkAll?.addEventListener('click', () => {
+        if (adminNotif?.hasAttribute('data-selecting')) {
+            adminNotif.removeAttribute('data-selecting');
+            selectedOwnerActivityIds.clear();
+            if (ownerNotifSelect) ownerNotifSelect.value = 'none';
+        } else adminNotif?.setAttribute('data-selecting', '');
+        syncOwnerNotificationSelection();
+    });
+    adminNotifSearch?.addEventListener('input', () => {
+        window.clearTimeout(ownerNotifSearchTimer);
+        ownerNotifPage = 0;
+        selectedOwnerActivityIds.clear();
+        if (ownerNotifSelect) ownerNotifSelect.value = 'none';
+        syncOwnerNotificationSelection();
+        ownerNotifSearchTimer = window.setTimeout(() => refreshOwnerActivityNotifications(), 220);
+    });
+    document.querySelector('[data-admin-notif-prev]')?.addEventListener('click', () => {
+        if (ownerNotifPage > 0) { ownerNotifPage -= 1; refreshOwnerActivityNotifications(); }
+    });
+    document.querySelector('[data-admin-notif-next]')?.addEventListener('click', () => {
+        if ((ownerNotifPage + 1) * OWNER_NOTIF_PAGE_SIZE < ownerActivityNotifCount) {
+            ownerNotifPage += 1;
+            refreshOwnerActivityNotifications();
+        }
+    });
+    adminNotifPages?.addEventListener('click', event => {
+        const button = event.target.closest('[data-owner-notif-page]');
+        if (!button) return;
+        const page = Number(button.dataset.ownerNotifPage);
+        if (Number.isInteger(page) && page >= 0 && page < Math.ceil(ownerActivityNotifCount / OWNER_NOTIF_PAGE_SIZE) && page !== ownerNotifPage) {
+            ownerNotifPage = page;
+            refreshOwnerActivityNotifications();
+        }
     });
     document.addEventListener('inigosync:profile-ready', refreshOwnerActivityNotifications);
     window.setInterval(() => { if (!document.hidden) refreshOwnerActivityNotifications(); }, 15000);

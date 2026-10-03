@@ -547,7 +547,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await singleNotificationErrorPage.waitForFunction(() => document.querySelector('[data-staff-notif-dot]')?.hidden === false);
         const notificationListCallsBefore = await singleNotificationErrorPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_list_notifications').length);
         await singleNotificationErrorPage.locator('[data-staff-notif-trigger]').click();
-        await singleNotificationErrorPage.locator('[data-staff-notif-item]').click();
+        await singleNotificationErrorPage.locator('[data-staff-notif-item] .staff-notif-item').click();
         await singleNotificationErrorPage.waitForFunction(() => window.__toastMessages.some(message => message.message === 'Notification read denied in fixture'));
         assert.equal(await singleNotificationErrorPage.locator('[data-staff-panel="overview"]').evaluate(el => el.classList.contains('is-active')), true, 'failed read does not navigate away from the current panel');
         assert.equal(await singleNotificationErrorPage.locator('[data-staff-panel="walkin"]').evaluate(el => el.classList.contains('is-active')), false);

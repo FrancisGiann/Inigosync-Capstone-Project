@@ -28,7 +28,7 @@ function loadDashboardHelpers() {
         document: { addEventListener() {} },
         console,
     };
-    runInNewContext(`${dashboardScript}\nglobalThis.__helpers = { buildAdminPerfGroups, setOwnerActivitySeen, routeOwnerActivityOpen };`, context);
+    runInNewContext(`${dashboardScript}\nglobalThis.__helpers = { buildAdminPerfGroups, routeOwnerActivityOpen };`, context);
     return context.__helpers;
 }
 
@@ -205,34 +205,12 @@ test('website performance renders exactly three honest groups', () => {
     assert.match(unavailable.details, /Page load unavailable · Service response 120 ms/);
 });
 
-test('notification checkbox marks seen, recovers on failure, and never opens the modal', async () => {
-    const { setOwnerActivitySeen, routeOwnerActivityOpen } = loadDashboardHelpers();
-    const fixture = () => {
-        const row = { dataset: { ownerActivityId: 'activity-7' }, classes: new Set(), classList: { add(name) { row.classes.add(name); } } };
-        const checkbox = { checked: false, disabled: false, closest: () => row };
-        return { row, checkbox };
-    };
-
-    const success = fixture();
-    let persistedId; let refreshes = 0; let notices = 0;
-    assert.equal(await setOwnerActivitySeen(success.checkbox, async id => { persistedId = id; return null; }, () => { refreshes++; }, () => { notices++; }), true);
-    assert.equal(persistedId, 'activity-7');
-    assert.equal(success.checkbox.checked, true);
-    assert.equal(success.checkbox.disabled, true);
-    assert.ok(success.row.classes.has('is-seen'));
-    assert.equal(refreshes, 1);
-    assert.equal(notices, 0);
-
-    const failure = fixture();
-    assert.equal(await setOwnerActivitySeen(failure.checkbox, async () => new Error('write failed'), () => {}, () => { notices++; }), false);
-    assert.equal(failure.checkbox.checked, false);
-    assert.equal(failure.checkbox.disabled, false);
-    assert.equal(failure.row.classes.has('is-seen'), false);
-    assert.equal(notices, 1);
-
+test('owner notification selection does not open details; the separate open button does', () => {
+    const { routeOwnerActivityOpen } = loadDashboardHelpers();
     let opened = 0;
-    assert.equal(routeOwnerActivityOpen({ closest: selector => selector === '[data-owner-activity-open]' ? null : failure.row }, () => { opened++; }), false);
-    assert.equal(opened, 0, 'checkbox click must not open notification details');
+    const selectionCheckbox = { closest: selector => selector === '[data-owner-activity-open]' ? null : null };
+    assert.equal(routeOwnerActivityOpen(selectionCheckbox, () => { opened++; }), false);
+    assert.equal(opened, 0, 'selection checkbox does not open notification details');
     const row = { dataset: { ownerActivityId: 'activity-8' } };
     const openButton = { closest: selector => selector === '[data-owner-activity-id]' ? row : null };
     assert.equal(routeOwnerActivityOpen({ closest: selector => selector === '[data-owner-activity-open]' ? openButton : null }, id => { opened++; assert.equal(id, 'activity-8'); }), true);

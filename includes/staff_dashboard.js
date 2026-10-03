@@ -3196,6 +3196,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     let staffActivityTotal = 0;
     let staffActivitySearchTimer = null;
     let staffNotificationSearchTimer = null;
+    const selectedStaffNotificationKeys = new Set();
+    const staffNotifSelect = document.querySelector('[data-staff-notif-select]');
+    const staffNotifSelectedLabel = document.querySelector('[data-staff-notif-selected]');
+    const staffNotifMarkSelected = document.querySelector('[data-staff-notif-mark-selected]');
+
+    function syncStaffNotificationSelection() {
+        staffNotifList?.querySelectorAll('[data-staff-notif-select-row]').forEach(checkbox => {
+            checkbox.checked = selectedStaffNotificationKeys.has(checkbox.dataset.staffNotifSelectRow);
+            checkbox.closest('.staff-notif-row')?.classList.toggle('is-selected', checkbox.checked);
+        });
+        if (staffNotifSelectedLabel) staffNotifSelectedLabel.textContent = `${selectedStaffNotificationKeys.size} selected`;
+        if (staffNotifMarkSelected) staffNotifMarkSelected.disabled = selectedStaffNotificationKeys.size === 0;
+    }
 
     function allowedStaffNotificationTarget(href) {
         if (!href) return '';
@@ -3208,9 +3221,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderStaffNotificationItem(item) {
         const category = String(item.category || 'booking').toLowerCase().replace(/[^a-z0-9_-]/g, '');
         const key = String(item.key || '');
-        return `<button type="button" class="staff-notif-item${item.read_at ? ' is-read' : ' is-unread'}" data-staff-notif-item data-staff-notification-key="${window.escapeHtml(key)}" data-staff-panel-target="${window.escapeHtml(allowedStaffNotificationTarget(item.href))}">
-            <span class="staff-notif-dot ${window.escapeHtml(category)}"></span><span class="staff-notif-item-body"><strong>${window.escapeHtml(item.title || 'Update')}</strong><span>${window.escapeHtml(item.body || '')}</span></span>
-        </button>`;
+        return `<div class="staff-notif-row${item.read_at ? ' is-read' : ' is-unread'}" data-staff-notif-item data-staff-notification-key="${window.escapeHtml(key)}"><input type="checkbox" class="staff-notif-select-row" data-staff-notif-select-row="${window.escapeHtml(key)}" aria-label="Select ${window.escapeHtml(item.title || 'Update')}">
+            <button type="button" class="staff-notif-item" data-staff-panel-target="${window.escapeHtml(allowedStaffNotificationTarget(item.href))}"><span class="staff-notif-dot ${window.escapeHtml(category)}" aria-hidden="true"></span><span class="staff-notif-item-body"><strong>${window.escapeHtml(item.title || 'Update')}</strong><span>${window.escapeHtml(item.body || '')}</span><small>${item.read_at ? 'Read' : 'Unread'}</small></span></button>
+        </div>`;
     }
 
     async function fetchStaffNotifications(search = '', offset = 0, limit = STAFF_LIST_PAGE_SIZE) {
@@ -3227,8 +3240,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!staffNotifList || !window.sb) return;
         const result = await fetchStaffNotifications('', 0, 15);
         staffNotificationRows = result.rows;
+        selectedStaffNotificationKeys.clear();
+        if (staffNotifSelect) staffNotifSelect.value = 'none';
         staffNotifList.innerHTML = result.error ? `<p class="staff-notif-empty">${window.escapeHtml(result.error)}</p>`
             : (result.rows.length ? result.rows.map(renderStaffNotificationItem).join('') : '<p class="staff-notif-empty">No notifications yet.</p>');
+        syncStaffNotificationSelection();
         if (staffNotifDot) staffNotifDot.hidden = result.error ? true : result.unread === 0;
     }
 
@@ -3281,14 +3297,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (staffNotifMarkAll) staffNotifMarkAll.addEventListener('click', markStaffNotifSeen);
+    if (staffNotifList) staffNotifList.addEventListener('change', event => {
+        const checkbox = event.target.closest('[data-staff-notif-select-row]');
+        if (!checkbox) return;
+        if (checkbox.checked) selectedStaffNotificationKeys.add(checkbox.dataset.staffNotifSelectRow);
+        else selectedStaffNotificationKeys.delete(checkbox.dataset.staffNotifSelectRow);
+        syncStaffNotificationSelection();
+    });
     if (staffNotifList) staffNotifList.addEventListener('click', async (event) => {
-        const item = event.target.closest('[data-staff-notif-item]');
+        const item = event.target.closest('.staff-notif-item')?.closest('[data-staff-notif-item]');
         if (!item) return;
         const key = item.dataset.staffNotificationKey;
         const target = item.dataset.staffPanelTarget;
         if (key && !(await markStaffNotificationRead(key))) return;
         closeStaffNotifMenu();
         setActivePanel(target || 'overview');
+    });
+    staffNotifSelect?.addEventListener('change', () => {
+        selectedStaffNotificationKeys.clear();
+        const mode = staffNotifSelect.value;
+        staffNotificationRows.filter(item => mode === 'all' || (mode === 'read' && item.read_at) || (mode === 'unread' && !item.read_at))
+            .forEach(item => { if (item.key) selectedStaffNotificationKeys.add(String(item.key)); });
+        syncStaffNotificationSelection();
+    });
+    staffNotifMarkSelected?.addEventListener('click', async () => {
+        const keys = [...selectedStaffNotificationKeys];
+        if (!keys.length || !window.sb) return;
+        staffNotifMarkSelected.disabled = true;
+        try {
+            const results = await Promise.all(keys.map(key => window.sb.rpc('mark_notification_read', { p_key: key })));
+            const failed = results.find(result => result?.error || result?.data === false);
+            if (failed) throw failed.error || new Error('A notification could not be marked as read.');
+            await Promise.all([refreshStaffNotifications(), loadStaffNotificationHistory()]);
+        } catch (error) {
+            console.error('[staff] selected notifications could not be marked read', error);
+            window.InigoToast?.show(error.message || 'Could not mark selected notifications as read.', true);
+            await Promise.all([refreshStaffNotifications(), loadStaffNotificationHistory()]);
+        } finally {
+            staffNotifMarkSelected.disabled = selectedStaffNotificationKeys.size === 0;
+        }
     });
     if (staffNotificationHistory) staffNotificationHistory.addEventListener('click', (event) => {
         const button = event.target.closest('[data-staff-history-read]');
