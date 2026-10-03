@@ -36,6 +36,10 @@ fs.mkdirSync(out, { recursive: true });
         const errors = [];
         page.on('pageerror', e => errors.push(e.message));
         await page.waitForSelector('.floating-basketball canvas', { state: 'attached' });
+        assert.equal(await page.locator('[data-basketball-fallback]').evaluate(el => el.hidden), true,
+            'The SVG fallback is removed after the 3D model loads');
+        assert.equal(await page.locator('[data-basketball-fallback]').evaluate(el => getComputedStyle(el).display), 'none',
+            'The fallback disk is not painted beneath the 3D ball');
         const chatLauncher = page.locator('[data-landing-chat-open]');
         await chatLauncher.focus();
         await page.keyboard.press('Enter');
@@ -136,6 +140,8 @@ fs.mkdirSync(out, { recursive: true });
         assert.deepEqual(errors, []);
         const touch = await setup({ touch: true });
         assert.equal(await touch.locator('.footer-card a').first().evaluate(el => getComputedStyle(el).minHeight), '44px');
+        await touch.locator('.floating-basketball').tap();
+        assert.equal(await touch.locator('[data-landing-chat]').evaluate(el => el.open), true, 'Touch activation opens chat');
         await touch.close();
         const dialogFallback = await setup({ dialogFallback: true });
         const fallbackLauncher = dialogFallback.locator('[data-landing-chat-open]');
@@ -161,6 +167,8 @@ fs.mkdirSync(out, { recursive: true });
             assert.equal(await fallback.locator('.floating-basketball').count(), 1);
             assert.equal(await fallback.locator('.floating-basketball canvas').count(), 0);
             assert(await fallback.locator('.floating-basketball').isVisible(), 'Fallback launcher remains visible');
+            assert.equal(await fallback.locator('[data-basketball-fallback]').evaluate(el => el.hidden), false,
+                'The SVG fallback is restored when WebGL is unavailable');
             await fallback.locator('.floating-basketball').click();
             assert.equal(await fallback.locator('[data-landing-chat]').evaluate(el => el.open), true, 'Fallback opens chat');
             await fallback.keyboard.press('Escape');

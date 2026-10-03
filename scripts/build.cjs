@@ -32,7 +32,7 @@ function walkFiles(directory) {
   });
 }
 
-function cacheBustStylesheets(directory) {
+function cacheBustPublicEntrypoints(directory) {
   const stylesheets = walkFiles(directory)
     .filter((filePath) => path.extname(filePath).toLowerCase() === '.css');
   const hashedPaths = new Map();
@@ -85,6 +85,31 @@ function cacheBustStylesheets(directory) {
         return `href=${quote}${rewrittenPath}${suffix}${quote}`;
       });
     });
+    html = html.replace(/<script\b[^>]*>/gi, (tag) => {
+      return tag.replace(/\bsrc\s*=\s*(["'])(.*?)\1/i, (attribute, quote, src) => {
+        const suffixIndex = src.search(/[?#]/);
+        const srcPath = suffixIndex === -1 ? src : src.slice(0, suffixIndex);
+        let decodedPath;
+        try {
+          decodedPath = decodeURIComponent(srcPath);
+        } catch {
+          return attribute;
+        }
+        if (!/(?:^|\/)includes\/(?:landingPage|landing-basketball)\.js$/i.test(decodedPath)) return attribute;
+        const targetPath = path.resolve(
+          directory,
+          decodedPath.startsWith('/')
+            ? `.${decodedPath}`
+            : path.relative(directory, path.dirname(htmlPath)),
+          ...(decodedPath.startsWith('/') ? [] : [decodedPath]),
+        );
+        if (!fs.existsSync(targetPath)) return attribute;
+        const hash = crypto.createHash('sha256').update(fs.readFileSync(targetPath)).digest('hex').slice(0, 12);
+        const suffix = suffixIndex === -1 ? '' : src.slice(suffixIndex);
+        const query = suffix.startsWith('?') ? `&${suffix.slice(1)}` : suffix;
+        return `src=${quote}${srcPath}?v=${hash}${query}${quote}`;
+      });
+    });
     fs.writeFileSync(htmlPath, html);
   }
 }
@@ -98,6 +123,6 @@ for (const directory of publicDirectories) {
   copyPublicDirectory(path.join(root, directory), path.join(output, directory));
 }
 copyPublicDirectory(path.join(root, 'database', 'web'), path.join(output, 'database', 'web'));
-cacheBustStylesheets(output);
+cacheBustPublicEntrypoints(output);
 
 console.log(`Static site built in ${output}`);

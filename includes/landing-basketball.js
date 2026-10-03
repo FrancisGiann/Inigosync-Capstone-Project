@@ -5,6 +5,11 @@ async function startBasketball() {
     let model;
     const overlay = document.querySelector('.floating-basketball');
     if (!overlay) return;
+    const fallback = overlay.querySelector('[data-basketball-fallback]');
+    const showFallback = visible => {
+        if (fallback) fallback.hidden = !visible;
+        overlay.classList.toggle('has-webgl', !visible);
+    };
     try {
         const [THREE, { GLTFLoader }] = await Promise.all([
             import('./vendor/three/three.module.min.js'),
@@ -32,7 +37,7 @@ async function startBasketball() {
         scene.add(pivot);
 
         overlay.append(renderer.domElement);
-        overlay.classList.add('has-webgl');
+        showFallback(false);
         const reduced = matchMedia('(prefers-reduced-motion: reduce)');
         const state = { progress: 0 };
         let frame = 0;
@@ -93,14 +98,14 @@ async function startBasketball() {
         reduced.addEventListener('change', motion);
         renderer.domElement.addEventListener('webglcontextlost', event => {
             event.preventDefault();
-            overlay.classList.remove('has-webgl');
+            showFallback(true);
             renderer.domElement.remove();
         });
         resize(); theme(); motion();
     } catch (error) {
         // A failed optional asset must never interfere with booking or navigation.
         renderer?.domElement?.remove();
-        overlay?.classList.remove('has-webgl');
+        showFallback(true);
         model?.traverse(node => { node.geometry?.dispose(); });
         renderer?.dispose();
         console.warn('Optional basketball decoration unavailable:', error.message);
