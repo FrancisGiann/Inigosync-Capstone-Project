@@ -709,6 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const courtGrid = document.querySelector('[data-court-grid]');
     const status = document.querySelector('[data-courts-status]');
     let clickSequence = 0;
+    let activeCourtCard = null;
     const retryMarkup = (text, target) => '<p class="content-state" role="status">' + text + ' <button type="button" data-content-retry="' + target + '">Try again</button></p>';
 
     async function loadCourts(force = false) {
@@ -731,19 +732,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const card = event.target.closest('.court-card');
         if (!card || !courtGrid.contains(card) || !courtViewer) return;
         const sequence = ++clickSequence;
+        activeCourtCard?.removeAttribute('aria-busy');
+        activeCourtCard = card;
         card.setAttribute('aria-busy', 'true');
-        if (status) status.textContent = 'Loading the latest photos and prices…';
+        if (status) status.textContent = '';
+        window.InigoLoading?.show('Loading the latest photos and prices…');
         try {
             const rows = await getCourts({ force: true });
             if (sequence !== clickSequence) return;
             const court = rows.find(row => row.sportSlug === card.dataset.courtId);
-            if (!court) { if (status) status.textContent = 'This sport is no longer listed. Please refresh the court list.'; return; }
-            if (status) status.textContent = '';
+            if (!court) {
+                window.InigoToast?.show('This sport is no longer listed. Refresh the court list and try again.', true);
+                return;
+            }
             courtViewer.open(court, card);
-        } catch { if (sequence === clickSequence && status) status.textContent = 'The latest photos could not be loaded. Select the sport again to retry.'; }
-        finally { card.removeAttribute('aria-busy'); }
+        } catch {
+            if (sequence === clickSequence) window.InigoToast?.show('The latest photos and prices could not be loaded. Select the sport again to retry.', true);
+        } finally {
+            if (sequence === clickSequence) {
+                card.removeAttribute('aria-busy');
+                activeCourtCard = null;
+                window.InigoLoading?.hide();
+            }
+        }
     });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') { clickSequence++; if (status) status.textContent = ''; } });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && activeCourtCard) {
+            clickSequence++;
+            if (status) status.textContent = '';
+            window.InigoLoading?.hide();
+            activeCourtCard?.removeAttribute('aria-busy');
+            activeCourtCard = null;
+        }
+    });
     document.addEventListener('click', event => {
         const target = event.target.closest('[data-content-retry]')?.dataset.contentRetry;
         if (target === 'courts') loadCourts(true);

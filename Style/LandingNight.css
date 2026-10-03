@@ -343,6 +343,12 @@ body.landing-night::before {
 .landing-night .about { background: #161b1bdb; }
 :root[data-theme="light"] .landing-night .about { background: #eeebe5e8; }
 .landing-night .courts {
+    --surface-card: #292f2f;
+    --surface-card-hover: #333a39;
+    --border-card: #4a5552;
+    background: #000;
+}
+:root[data-theme="light"] .landing-night .courts {
     --color-ink: #202a25;
     --color-ink-dim: #4b5750;
     --color-ink-faint: #59655e;
@@ -353,11 +359,11 @@ body.landing-night::before {
     background: #fff;
     color: #202a25;
 }
-.landing-night .courts .section-title,
-.landing-night .courts .section-intro,
-.landing-night .courts .content-status,
-.landing-night .courts .court-art-note { color: #202a25; }
-.landing-night .courts .content-state { background: #f3f5f2; color: #4b5750; }
+:root[data-theme="light"] .landing-night .courts .section-title,
+:root[data-theme="light"] .landing-night .courts .section-intro,
+:root[data-theme="light"] .landing-night .courts .content-status,
+:root[data-theme="light"] .landing-night .courts .court-art-note { color: #202a25; }
+:root[data-theme="light"] .landing-night .courts .content-state { background: #f3f5f2; color: #4b5750; }
 .landing-night #featured { scroll-margin-top: 0; }
 :root:has(#featured:target) { scroll-padding-top: 0; }
 .landing-night .featured-frame-exit-left { transform: translate(-255%,-50%) scale(.72) rotateY(8deg); }
