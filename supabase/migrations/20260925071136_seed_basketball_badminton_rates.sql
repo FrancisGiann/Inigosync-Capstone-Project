@@ -1,8 +1,3 @@
--- Seed the manager-provided Basketball and Badminton rates by numbered unit.
--- Numbering assumption: Basketball Court 1 is the old court and Court 2 is
--- the new court; Badminton Courts 1-5 are old and Courts 6-9 are new. The
--- owner can change a unit's tier and rates in Court Inventory if onsite order
--- differs.
 update public.court_unit_inventory u
 set pricing_tier = case
         when c.name = 'Basketball' and u.label = 'Court 1' then 'old'

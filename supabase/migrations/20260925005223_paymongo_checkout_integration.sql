@@ -41,8 +41,6 @@ grant usage on schema internal to service_role;
 grant select, insert, update on internal.paymongo_checkout_attempts to service_role;
 grant select, insert on internal.paymongo_webhook_events to service_role;
 
--- Check the authenticated owner and calculate all money from authoritative
--- database rates/settings. A row lock serializes repeated checkout requests.
 create or replace function public.prepare_paymongo_checkout(p_booking_id bigint, p_customer_id uuid)
 returns table (attempt_id uuid, amount_minor bigint, total_minor bigint, payment_option text,
                booking_id bigint, courts text, time_date timestamptz)
@@ -120,8 +118,6 @@ $$;
 revoke all on function public.attach_paymongo_checkout(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.attach_paymongo_checkout(uuid, text, text) to service_role;
 
--- A signed provider event still has to match the stored session and exact
--- expected amount before the payment ledger and booking are changed.
 create or replace function public.record_paymongo_paid(
   p_event_id text, p_session_id text, p_payment_id text, p_amount_minor bigint
 ) returns text language plpgsql security definer set search_path = '' as $$

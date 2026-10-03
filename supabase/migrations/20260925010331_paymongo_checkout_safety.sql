@@ -58,9 +58,6 @@ $$;
 revoke all on function public.prepare_paymongo_checkout(bigint, uuid) from public, anon, authenticated;
 grant execute on function public.prepare_paymongo_checkout(bigint, uuid) to service_role;
 
--- Do not release or manually settle a court while PayMongo may still accept
--- payment. A scheduled server-side expiry job will mark attempts expired only
--- after PayMongo confirms the hosted session is closed.
 create or replace function internal.guard_paymongo_booking_manual_collection()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
@@ -82,9 +79,6 @@ drop trigger if exists booking_guard_paymongo_collection on public.booking;
 create trigger booking_guard_paymongo_collection before update on public.booking
 for each row execute function internal.guard_paymongo_booking_manual_collection();
 
--- Webhook settlement closes the attempt first in the same transaction, so
--- the guard above allows its own verified update while rejecting desk-side
--- double collection.
 create or replace function public.record_paymongo_paid(
   p_event_id text, p_session_id text, p_payment_id text, p_amount_minor bigint
 ) returns text language plpgsql security definer set search_path = '' as $$
@@ -125,9 +119,6 @@ $$;
 revoke all on function public.record_paymongo_paid(text, text, text, bigint) from public, anon, authenticated;
 grant execute on function public.record_paymongo_paid(text, text, text, bigint) to service_role;
 
--- The no-show worker leaves occupancy in place until every provider checkout
--- is confirmed expired or paid. This prevents payment completing against a
--- reservation the database has already released.
 create or replace function internal.cancel_no_show_bookings()
 returns integer language plpgsql security definer set search_path = '' as $$
 declare
@@ -145,7 +136,6 @@ begin
       where a.booking_id = b.booking_id and a.status in ('creating', 'ready', 'review')
     );
   get diagnostics online_count = row_count;
-
   update public.walk_in_booking w
   set status = 'cancelled', auto_cancelled_at = now()
   where w.no_show_policy_applies

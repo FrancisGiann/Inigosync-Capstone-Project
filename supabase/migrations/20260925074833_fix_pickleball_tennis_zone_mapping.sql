@@ -1,5 +1,4 @@
--- Correct the names inherited from the first partitioning pass and link the
--- Pickleball units that use the first zone on each of the two tennis courts.
+-- Correct the two Lawn Tennis zone-1 labels and complete their Pickleball links.
 update public.physical_court_resource r
 set name = 'Lawn Tennis ' || u.label || ' · Pickleball Zone 1'
 from public.court_unit_resource_map m

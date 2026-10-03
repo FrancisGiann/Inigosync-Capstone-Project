@@ -1,6 +1,3 @@
--- Match the dashboard's disabled-account guard at the data layer too. Keep
--- active and pending admins' existing resource-management access unchanged;
--- an admin marked disabled cannot keep writing through a previously issued JWT.
 drop policy if exists court_unit_inventory_admin_write on public.court_unit_inventory;
 create policy court_unit_inventory_admin_write on public.court_unit_inventory
     for all to authenticated

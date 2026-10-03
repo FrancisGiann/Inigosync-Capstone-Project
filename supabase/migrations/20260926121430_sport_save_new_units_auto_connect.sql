@@ -89,4 +89,3 @@ end;
 $$;
 revoke all on function public.admin_save_sport(jsonb) from public,anon;
 grant execute on function public.admin_save_sport(jsonb) to authenticated;
-

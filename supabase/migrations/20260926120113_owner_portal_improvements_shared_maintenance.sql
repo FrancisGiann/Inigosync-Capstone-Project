@@ -226,7 +226,7 @@ grant execute on function public.admin_get_sport_editor(uuid) to authenticated;
 -- resource_ids:[uuid],maintenance:[{id,start_at,end_at,note}]}]}.
 create or replace function public.admin_save_sport(p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare cid uuid; sid uuid; unit_id uuid; resource_id uuid; expected integer; next_version integer; is_new_unit boolean;
+declare cid uuid; sid uuid; unit_id uuid; resource_id uuid; expected integer; next_version integer;
  listing_name text; listing_slug text; listing_unit text; listing_active boolean; item jsonb; mitem jsonb;
  label_value text; next_order integer; submitted uuid[]:=array[]::uuid[]; result_units jsonb:='[]'::jsonb;
 begin
@@ -258,7 +258,7 @@ begin
           editor_version=editor_version+1 where id=cid returning editor_version into next_version;
     end if;
     for item in select value from jsonb_array_elements(p_payload->'units') loop
-        unit_id:=nullif(item->>'id','')::uuid; is_new_unit:=unit_id is null; label_value:=nullif(btrim(item->>'label'),'');
+        unit_id:=nullif(item->>'id','')::uuid; label_value:=nullif(btrim(item->>'label'),'');
         if label_value is null then raise exception 'Every unit needs a name' using errcode='22023'; end if;
         if unit_id is null then
             insert into public.court_unit_inventory(court_id,label,photo_url,rate_day,rate_night,rate_unit,is_active,inventory_verified)
@@ -272,9 +272,8 @@ begin
         end if;
         if unit_id=any(submitted) then raise exception 'Duplicate unit ID' using errcode='22023'; end if;
         submitted:=array_append(submitted,unit_id);
-        if jsonb_typeof(item->'resource_ids') is distinct from 'array' then raise exception 'Physical court connections must be a list' using errcode='22023'; end if;
-        if jsonb_array_length(item->'resource_ids')=0 and not is_new_unit then raise exception 'Every existing unit must remain connected to a physical court space' using errcode='22023'; end if;
-        if jsonb_array_length(item->'resource_ids')>0 then
+        if jsonb_typeof(item->'resource_ids')<>'array' or jsonb_array_length(item->'resource_ids')=0 then raise exception 'Every unit must be connected to a physical court space' using errcode='22023'; end if;
+        if jsonb_typeof(item->'resource_ids')='array' and jsonb_array_length(item->'resource_ids')>0 then
             -- Add first so refresh triggers never observe a disconnected unit.
             for resource_id in select value::uuid from jsonb_array_elements_text(item->'resource_ids') loop
                 if not exists(select 1 from public.physical_court_resource where id=resource_id and is_active) then raise exception 'Unknown physical resource' using errcode='22023'; end if;

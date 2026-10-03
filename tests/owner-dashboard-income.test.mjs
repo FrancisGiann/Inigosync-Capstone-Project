@@ -4,7 +4,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 const chartSource = await readFile(new URL('../event/chart.js', import.meta.url), 'utf8');
-const migration = await readFile(new URL('../supabase/migrations/20261001030000_owner_income_dashboard.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../supabase/migrations/20261001191136_owner_income_dashboard.sql', import.meta.url), 'utf8');
 const dashboardHtml = await readFile(new URL('../Pages/owner_dashboard.html', import.meta.url), 'utf8');
 const dashboardScript = await readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8');
 

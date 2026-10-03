@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { canInviteStaff } from '../supabase/functions/invite-staff/_shared/authorize-owner.ts';
 import { validateStaffInvite } from '../supabase/functions/invite-staff/_shared/validate-staff.ts';
-const birthdateTriggerFix = await readFile(new URL('../supabase/migrations/20261002033202_fix_staff_birthdate_promotion_trigger.sql', import.meta.url), 'utf8');
+const birthdateTriggerFix = await readFile(new URL('../supabase/migrations/20261001193322_fix_staff_birthdate_promotion_trigger.sql', import.meta.url), 'utf8');
 const inviteHandler = await readFile(new URL('../supabase/functions/invite-staff/index.ts', import.meta.url), 'utf8');
 const valid = { email: 'staff@example.test', full_name: 'Court Staff', position: 'Court Attendant', birthdate: '1998-06-12', role: 'staff' };
 test('staff invite accepts only the two positions and persists birthdate', () => {

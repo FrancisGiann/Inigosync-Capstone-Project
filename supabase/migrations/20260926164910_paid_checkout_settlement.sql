@@ -139,7 +139,7 @@ begin
       return 'review';
     end if;
     insert into public.payment(cost,paid,payment_method,down_full)
-      values(v_due/100.0,v_due/100.0,'PayMongo','full') returning payment_id into v_payment_id;
+      values(v_due/100.0,v_due/100.0,'PayMongo','balance') returning payment_id into v_payment_id;
     update internal.paymongo_checkout_attempts set status='paid',paymongo_payment_id=p_payment_id,
       updated_at=now() where id=a.id;
     if a.balance_source='booking' then
@@ -248,7 +248,7 @@ begin
       raise exception 'Online balance checkout is still open' using errcode='55000';
     end if;
     insert into public.payment(cost,paid,payment_method,down_full)
-      values(v_due,v_due,'Cash','full') returning payment_id into v_payment_id;
+      values(v_due,v_due,'Cash','balance') returning payment_id into v_payment_id;
   end if;
   if p_source='booking' then
     update public.booking set checked_in_at=now(),amount_paid=amount_total,

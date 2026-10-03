@@ -1,6 +1,4 @@
 -- Keep booking validation/name derivation separate from contact redaction.
--- This avoids fragile escaping in older function definitions; the ordered
--- booking_review_redact_contacts trigger owns email/mobile redaction.
 create or replace function public.prepare_booking_review()
 returns trigger
 language plpgsql

@@ -1,5 +1,3 @@
--- Retire obsolete single-unit resources from the pre-partition Pickleball map.
--- Guard against changing any resource that is still mapped or holds a booking.
 do $$
 declare
     v_expected_count integer;

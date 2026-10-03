@@ -6,7 +6,7 @@ update public.physical_court_resource r
 set name = case c.slug
     when 'basketball' then 'Basketball Court 2 · Pickleball Zone 1'
     when 'volleyball' then 'Volleyball Court 1 · Pickleball Zone 1'
-    when 'lawn-tennis' then 'Lawn Tennis ' || u.label || ' · Pickleball Zone 1'
+    when 'lawn-tennis' then 'Lawn Tennis Court ' || u.label || ' · Pickleball Zone 1'
 end
 from public.court_unit_resource_map m
 join public.court_unit_inventory u on u.id = m.court_unit_id
@@ -14,7 +14,7 @@ join public.court c on c.id = u.court_id
 where r.id = m.resource_id
   and ((c.slug = 'basketball' and u.label = 'Court 2')
     or (c.slug = 'volleyball' and u.label = 'Court 1')
-    or (c.slug = 'lawn-tennis' and u.label in ('Court 1', 'Court 2'));
+    or (c.slug = 'lawn-tennis' and u.label in ('Court 1', 'Court 2')));
 
 insert into public.physical_court_resource (name)
 select zone.name

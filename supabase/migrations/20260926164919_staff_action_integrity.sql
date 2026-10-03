@@ -33,8 +33,7 @@ declare v_actor uuid:=(select auth.uid()); v_role text; v_action text; v_id text
 begin
   select p.role into v_role from public.profiles p where p.id=v_actor and p.role in ('staff','admin') and p.status='active';
   if v_role is null then return new; end if;
-  if tg_table_name='booking' then v_id:=new.booking_id::text;
-  else v_id:=new.walkin_id::text; end if;
+  v_id:=case when tg_table_name='booking' then new.booking_id::text else new.walkin_id::text end;
   v_info:=jsonb_build_object('court',new.courts,'unit',new.court_unit,'starts_at',new.time_date,
     'total',new.amount_total,'paid',new.amount_paid);
   if tg_op='INSERT' then

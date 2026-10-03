@@ -14,7 +14,7 @@ Set these as Supabase Edge Function secrets for project `xrlwtnwamboucihsamrr`:
 
 Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Edge Functions. Keep all provider and service-role credentials off the browser, repository, and owner settings page. The owner page changes the deposit percentage and enabled payment methods in `app_settings`; it only **reports** PayMongo connection, webhook, and last confirmed payment status.
 
-The expiry worker's shared token is generated in Supabase Vault by migration `20260927025000_enable_checkout_expiry_cron.sql`. The scheduled job sends that token to `paymongo-expire-checkouts`; the worker validates it through a service-only database function. Do not copy the token into frontend code or a second secret.
+The expiry worker's shared token is generated in Supabase Vault by migration `20260926170234_enable_checkout_expiry_cron.sql`. The scheduled job sends that token to `paymongo-expire-checkouts`; the worker validates it through a service-only database function. Do not copy the token into frontend code or a second secret.
 
 ## Webhook and payment behavior
 
@@ -26,7 +26,7 @@ Staff may collect a deposit booking's remaining balance in Cash through the auth
 
 For a walk-in customer paying with GCash, staff can choose **E-wallet QR**. The staff screen locally renders a QR containing that order's PayMongo Checkout URL. The customer scans it with their phone, opens the hosted checkout, and completes the GCash payment there. This is a checkout-link QR, not a PayMongo QR Ph payment code. Its checkout session offers GCash only and returns the customer's phone to a public front-desk instruction page. Staff wait for the signed `checkout_session.payment.paid` webhook and the confirmed acknowledgment before issuing the entry pass. The screenshot event types `qr.paid`, `qr.expired`, and `qrph.expired` belong to different PayMongo QR integrations and are not required for this flow.
 
-For the QR rollout, apply `20261001010000_walkin_checkout_request_recovery.sql` before deploying the updated `staff-walkin-checkout` function and static site. The migration lets a retry reuse the exact registered PayMongo request and identifies a saved GCash checkout so Transactions can reopen its QR. Verify the full scan, mobile GCash authorization, signed webhook, expiry, and retry paths in PayMongo test mode before using live keys.
+For the QR rollout, apply `20261001203600_walkin_checkout_request_recovery.sql` before deploying the updated `staff-walkin-checkout` function and static site. The migration lets a retry reuse the exact registered PayMongo request and identifies a saved GCash checkout so Transactions can reopen its QR. Verify the full scan, mobile GCash authorization, signed webhook, expiry, and retry paths in PayMongo test mode before using live keys.
 
 ## Rollout checks
 

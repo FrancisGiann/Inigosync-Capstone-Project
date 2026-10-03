@@ -1060,9 +1060,7 @@ begin
   delete from internal.contact_phone_validation_proofs proof
     where proof.user_id=new.id and proof.phone_e164=v_stored and proof.expires_at>now()
     returning true into v_proof;
-  -- DELETE ... RETURNING sets v_proof to NULL when no row matched. Treat NULL
-  -- as missing proof explicitly; `IF NOT v_proof` would skip on SQL NULL.
-  if v_proof is distinct from true then
+  if not v_proof then
     raise exception 'Validate this Philippine mobile number before saving it' using errcode='42501';
   end if;
   new.contact_num:=v_stored;
@@ -1790,4 +1788,3 @@ end;
 $$;
 revoke all on function public.staff_get_transaction_payment_history(text,bigint) from public,anon;
 grant execute on function public.staff_get_transaction_payment_history(text,bigint) to authenticated;
-

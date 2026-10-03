@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const migrations = [
-  "../supabase/migrations/20260928010000_staff_booking_rules_walkin_orders_attendance_receipts.sql",
-  "../supabase/migrations/20260929010000_fix_contact_phone_missing_proof.sql",
+  "../supabase/migrations/20260929040335_fix_contact_phone_missing_proof.sql",
 ];
 
 for (const migrationPath of migrations) {

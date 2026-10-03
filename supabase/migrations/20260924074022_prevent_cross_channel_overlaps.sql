@@ -19,7 +19,7 @@ begin
   end if;
 
   court_key := pg_catalog.lower(pg_catalog.btrim(new.courts));
-  unit_key := nullif(pg_catalog.lower(pg_catalog.btrim(new.court_unit)), '');
+  unit_key := pg_catalog.nullif(pg_catalog.lower(pg_catalog.btrim(new.court_unit)), '');
   finish_at := coalesce(new.end_at, new.time_date + pg_catalog.make_interval(mins => coalesce(new.duration_minutes, 60)));
   if court_key is null or court_key = '' or new.time_date is null or finish_at <= new.time_date then
     raise exception 'A valid court and time range are required' using errcode = '22023';
@@ -37,16 +37,16 @@ begin
     select 1 from public.booking b
     where b.status in ('pending', 'confirmed')
       and pg_catalog.lower(pg_catalog.btrim(b.courts)) = court_key
-      and (unit_key is null or nullif(pg_catalog.lower(pg_catalog.btrim(b.court_unit)), '') is null
-           or nullif(pg_catalog.lower(pg_catalog.btrim(b.court_unit)), '') = unit_key)
+      and (unit_key is null or pg_catalog.nullif(pg_catalog.lower(pg_catalog.btrim(b.court_unit)), '') is null
+           or pg_catalog.nullif(pg_catalog.lower(pg_catalog.btrim(b.court_unit)), '') = unit_key)
       and pg_catalog.tstzrange(b.time_date, b.end_at, '[)') && proposed
       and (tg_table_name <> 'booking' or b.booking_id <> own_id)
     union all
     select 1 from public.walk_in_booking w
     where w.status in ('pending', 'confirmed')
       and pg_catalog.lower(pg_catalog.btrim(w.courts)) = court_key
-      and (unit_key is null or nullif(pg_catalog.lower(pg_catalog.btrim(w.court_unit)), '') is null
-           or nullif(pg_catalog.lower(pg_catalog.btrim(w.court_unit)), '') = unit_key)
+      and (unit_key is null or pg_catalog.nullif(pg_catalog.lower(pg_catalog.btrim(w.court_unit)), '') is null
+           or pg_catalog.nullif(pg_catalog.lower(pg_catalog.btrim(w.court_unit)), '') = unit_key)
       and pg_catalog.tstzrange(w.time_date, coalesce(w.end_at, w.time_date + pg_catalog.make_interval(mins => coalesce(w.duration_minutes, 60))), '[)') && proposed
       and (tg_table_name <> 'walk_in_booking' or w.walkin_id <> own_id)
     limit 1

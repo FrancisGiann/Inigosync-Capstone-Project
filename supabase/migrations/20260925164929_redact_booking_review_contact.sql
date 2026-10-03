@@ -11,7 +11,7 @@ begin
         new.comment := regexp_replace(new.comment,
             '[A-Z0-9._%+-]+@[A-Z0-9.-]+[.][A-Z]{2,}', '[email removed]', 'gi');
         new.comment := regexp_replace(new.comment,
-            '([+]?63[[:space:].()/-]*|0)9[0-9[:space:].()/-]{7,}[0-9]', '[phone number removed]', 'g');
+            '([+]?63|0)9[0-9[:space:].()/-]{7,}[0-9]', '[phone number removed]', 'g');
     end if;
     return new;
 end;

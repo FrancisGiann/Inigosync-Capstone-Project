@@ -1,6 +1,3 @@
--- Close a NULL-semantics bypass in the contact-number validation trigger.
--- DELETE ... RETURNING leaves the target NULL when no proof row matched, so
--- the changed-number path must reject every value other than TRUE.
 create or replace function internal.guard_contact_phone_validation()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare v_stored text; v_proof boolean:=false;
@@ -34,7 +31,6 @@ begin
   delete from internal.contact_phone_validation_proofs proof
     where proof.user_id=new.id and proof.phone_e164=v_stored and proof.expires_at>now()
     returning true into v_proof;
-  -- NULL means DELETE found no proof row. It must fail closed.
   if v_proof is distinct from true then
     raise exception 'Validate this Philippine mobile number before saving it' using errcode='42501';
   end if;
@@ -45,4 +41,3 @@ begin
   return new;
 end;
 $$;
-revoke all on function internal.guard_contact_phone_validation() from public,anon,authenticated;

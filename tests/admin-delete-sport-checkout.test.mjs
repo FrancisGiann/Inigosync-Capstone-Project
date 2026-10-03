@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const migration = await readFile(new URL('../supabase/migrations/20261002033700_admin_delete_archived_checkout_history.sql', import.meta.url), 'utf8');
-const settlement = await readFile(new URL('../supabase/migrations/20260928010000_staff_booking_rules_walkin_orders_attendance_receipts.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../supabase/migrations/20261001194029_admin_delete_archived_checkout_history.sql', import.meta.url), 'utf8');
+const settlement = await readFile(new URL('../supabase/migrations/20260929035830_staff_booking_rules_walkin_orders_attendance_receipts.sql', import.meta.url), 'utf8');
 
 test('sport deletion preserves expired checkout records while detaching only inventory foreign keys', () => {
   assert.match(migration, /alter column listing_id drop not null/i);
@@ -16,7 +16,7 @@ test('sport deletion preserves expired checkout records while detaching only inv
 
 test('deletion locks settlement rows and permits only fully expired checkout history', () => {
   assert.ok(migration.indexOf('update internal.reservation_resource_config_lock') < migration.indexOf('for v_row_id in'));
-  assert.ok(migration.indexOf('for v_row_id in') < migration.indexOf('for update;\n  end loop;\n  for v_row_id in'));
+  assert.match(migration, /for v_row_id in[\s\S]*?for update;\s+end loop;\s+for v_row_id in/i);
   assert.ok(migration.indexOf('checkout_intents i') < migration.indexOf('select c.sport_id into sid'));
   assert.match(migration, /i\.status is distinct from 'expired'/i);
   assert.match(migration, /a\.status is distinct from 'expired'/i);
