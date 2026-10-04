@@ -1,58 +1,44 @@
 // IñigoSync — Customer Dashboard controller
 // Handles: sidebar/topbar panel switching, mobile sidebar toggle, profile
-// dropdown, the notifications dropdown, the feedback modal, the Overview
-// panel's sport-grouped, sport-sorted court cards (marketing/showcase only —
-// each with a per-unit combo box + swappable photo, plus the read-only
-// real-time slot-peek widget from PR #1), the 3-step Book a Court wizard
-// (with its dynamic court preview image), time-slot and payment-option
-// selection with a live summary recalculation, My Bookings (no
-// cancellation), the Receipts panel's per-booking cards + PNG download,
+// dropdown, the notifications dropdown, the feedback modal, the 3-step
+// Book a Court wizard (with its dynamic court preview image), time-slot and
+// payment-option selection with a live summary recalculation, My Bookings (no
+// cancellation), the Receipts panel's payment acknowledgment list + filters,
 // Account Settings' name-part fields, and the 2-step Change Password
 // wizard.
 //
-// This file implements Phase 1 (§1 nav, §2 feedback, §3 notifications, §4
-// dashboard courts — implementation_plan.md decisions D1/D2/D6/D7), Phase 2
+// This file implements the customer dashboard navigation, feedback,
+// notifications, booking wizard, receipts, and settings flows.
 // (§5 booking wizard, §6 my-bookings chip removal, §7 receipts, §9 account
 // settings — decisions D3/D4/D5/D8) of the redesign in
 // InigoSync_Dashboard_Feedback_v6.md, AND "Revision 2" (implementation_plan.md,
 // decisions R1-R6 — post-feedback-v6 corrections):
-//   R1 — the Overview Courts section is re-scoped to marketing/showcase
-//        only: no "Book Now" button, no click-to-book hand-off from peek
-//        slots. Peek slots stays as a READ-ONLY availability display (the
-//        user explicitly praised it) — see renderOverviewSlotPill() and the
-//        Overview Courts widget's header comment further below.
-//   R2 — the courts sort <select> defaults to grouping-by-sport
-//        (overviewSortMode), with "Available first"/"Price: Low to High"
-//        retained as alternatives that sort *within* each sport group.
 //   R3 — My Bookings drops cancellation entirely (no Cancel control
-//        anywhere) in favor of the real no-cancellation/no-refund/
-//        30-minute-"Unattended" policy stated in
+//        anywhere) in favor of the real no-cancellation/no-refund and
+//        date-specific "Unattended" policy stated in
 //        Pages/user_dashboard.html's two policy notices.
 //   R4 — "Unattended" is DERIVED for display only, never written to the
 //        database — see displayStatusFor() further below for the full
 //        reasoning (booking.status's CHECK constraint, the 23514 error
 //        branch on the booking INSERT below, and why this can't safely be
 //        persisted from this repo).
-//   R5 — Receipts renders one real card per booking (every booking, not
-//        just ones with a payment_id) instead of a hardcoded empty state —
-//        see renderReceipts() further below.
+//   R5 — Receipts renders saved payment acknowledgments only; unpaid
+//        bookings do not create receipt cards — see renderReceipts() below.
 //
-// Booking (including its court dropdown), the Overview panel's court
-// widget, My Bookings, Receipts, Profile, and Settings talk to the real
-// Supabase database — Booking's court options and the Overview widget's
-// cards both read the same `court`/`sport` tables via window.InigoCourtsData
+// Booking (including its court dropdown), My Bookings, Receipts, Profile,
+// and Settings talk to the real Supabase database. Booking court options
+// read the `court`/`sport` tables via window.InigoCourtsData
 // (includes/courtsData.js; see docs/QA_AUDIT_REPORT.md P0#8). The
-// per-unit combo box + photo swap on each Overview court card AND the
-// Booking wizard's Step 1 preview are both built from
+// Booking wizard's Step 1 preview is built from
 // window.InigoCourtsData.resolveCourtUnits(), ported from
 // includes/landingPage.js into includes/courtsData.js (implementation_plan.md
 // D2) so that file stays untouched. Notifications are derived from the
 // customer's own `booking` rows (no `notification` table — D6). Feedback
-// writes to the new `feedback` table (database/schema/009_feedback.sql),
+// writes to the `feedback` table (supabase/migrations/20261004085347_customer_feedback.sql),
 // failing honestly with a toast if that migration hasn't been applied yet.
-// Receipts (Revision 2, R5) render one card per booking, reusing
-// refreshMyBookings()'s own fetch rather than a second query — rate/amount
-// shows "Rate TBA" whenever a unit's price is genuinely unknown. Account Settings' three
+// Receipts (Revision 2, R5) use saved acknowledgment RPCs plus the existing
+// account-scoped booking rows; unpaid reservations never become receipts.
+// Account Settings' three
 // name boxes read/write profiles.first_name/middle_name/last_name
 // (database/schema/008_profile_name_parts.sql) while keeping full_name — the
 // column the owner/staff dashboards still read — in sync (D3). Everything
@@ -63,19 +49,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const navButtons = document.querySelectorAll('[data-dash-nav]');
     const titleEl = document.querySelector('[data-dash-title]');
     const subtitleEl = document.querySelector('[data-dash-subtitle]');
-    // D8/D9 (implementation_plan.md "Revision 5") — the slim dashboard-only
-    // footer; see setActivePanel() below for the visibility rule and the
-    // "Footer" section further down for its Operating-hours text fill.
-    const dashFooter = document.querySelector('[data-dash-footer]');
 
     const panelMeta = {
         overview: { title: 'Dashboard', subtitle: "Welcome back, here's what's happening with your bookings." },
         // 'courts' removed (§1/D1) — the standalone Courts panel is gone;
         // its content now lives inside 'overview' (§4/D2), which already has
         // its own entry above.
-        booking: { title: 'Book a Court', subtitle: 'Follow the 3 simple steps below to reserve your schedule.' },
+        booking: { title: 'Book a Court', subtitle: 'Choose courts and times, then review your cart.' },
         bookings: { title: 'My Bookings', subtitle: "Track the status of every reservation you've made." },
-        receipts: { title: 'Booking summaries', subtitle: '' },
+        receipts: { title: 'Receipts', subtitle: 'View your booking payments and walk-in payments linked to your account.' },
         profile: { title: 'My Profile', subtitle: 'Your personal details and booking history at a glance.' },
         settings: { title: 'Account Settings', subtitle: 'Update your personal details and manage your password.' },
     };
@@ -85,17 +67,10 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.classList.toggle('is-active', panel.dataset.dashPanel === name);
         });
 
-        // Every navigation into the Booking panel (sidebar link, hero "Book
-        // this slot", the Overview card's quick action, etc.) starts the
-        // §5/D5 wizard fresh at Step 1 — a guided flow that silently resumed
-        // wherever a PREVIOUS visit left off would be confusing, not guided.
-        // Revision 2's R1 (implementation_plan.md) removed the two hand-offs
-        // that used to need a different landing step (the Overview court
-        // cards' "Book Now" button, and peek slots' click-to-book jump to
-        // Step 3): the Overview Courts section is marketing/showcase only
-        // now, so nothing outside this wizard pre-fills a court/date/time
-        // anymore — every entry point always starts here, at Step 1.
+        // Entering the Book a Court panel always starts the guided flow at
+        // Step 1 so a prior partial visit is never resumed unexpectedly.
         if (name === 'booking') goToBookStep(1);
+        if (typeof renderBookingCart === 'function') renderBookingCart();
 
         document.querySelectorAll('[data-dash-nav]').forEach((btn) => {
             // Only sidebar links get the highlighted state (topbar/profile
@@ -111,13 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
             subtitleEl.textContent = meta.subtitle;
         }
 
-        // D8 (implementation_plan.md, "Revision 5") — the slim dashboard
-        // footer (D9) is visible ONLY on the Overview tab; every other
-        // panel hides it entirely, including a notification's own deep
-        // link into Receipts (setActivePanel('receipts'), wired near the
-        // notifications dropdown above) — it is never left showing on a
-        // tab it wasn't designed for.
-        if (dashFooter) dashFooter.hidden = name !== 'overview';
+        // Refresh when customers return to My Bookings so the notice uses the
+        // current venue rule and date-specific status rules stay recent.
+        if (name === 'bookings') refreshMyBookings({ forceCurrentRule: true });
 
         closeMobileSidebar();
         closeProfileMenu();
@@ -134,27 +105,90 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
     const mobileToggle = document.querySelector('[data-dash-mobile-toggle]');
     const scrim = document.querySelector('[data-dash-scrim]');
+    const dashboardShell = document.querySelector('.dash-shell');
+    const dashboardSidebar = document.querySelector('[data-dash-sidebar]');
+    const sidebarCollapse = document.querySelector('[data-dash-sidebar-collapse]');
+    const sidebarReveal = document.querySelector('[data-dash-sidebar-reveal]');
+    const mobileBreakpoint = window.matchMedia('(max-width: 860px)');
+
+    function setDesktopSidebarCollapsed(collapsed) {
+        if (!dashboardShell || !dashboardSidebar) return;
+        dashboardShell.classList.toggle('dash-sidebar-collapsed', collapsed);
+        dashboardSidebar.inert = collapsed;
+        dashboardSidebar.setAttribute('aria-hidden', String(collapsed));
+        [sidebarCollapse, sidebarReveal].forEach((button) => {
+            if (!button) return;
+            button.setAttribute('aria-expanded', String(!collapsed));
+        });
+    }
+
+    if (sidebarCollapse) sidebarCollapse.addEventListener('click', () => {
+        setDesktopSidebarCollapsed(true);
+        sidebarReveal?.focus();
+    });
+    if (sidebarReveal) sidebarReveal.addEventListener('click', () => {
+        setDesktopSidebarCollapsed(false);
+        sidebarCollapse?.focus();
+    });
+
+    function syncSidebarBreakpoint() {
+        if (mobileBreakpoint.matches) {
+            setDesktopSidebarCollapsed(false);
+            if (dashboardSidebar) dashboardSidebar.removeAttribute('aria-hidden');
+            if (dashboardSidebar) dashboardSidebar.inert = false;
+        }
+    }
+    mobileBreakpoint.addEventListener('change', syncSidebarBreakpoint);
+    syncSidebarBreakpoint();
 
     function closeMobileSidebar() {
         document.body.classList.remove('dash-sidebar-open');
+        if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
     }
 
     if (mobileToggle) {
         mobileToggle.addEventListener('click', () => {
-            document.body.classList.toggle('dash-sidebar-open');
+            const isOpen = document.body.classList.toggle('dash-sidebar-open');
+            mobileToggle.setAttribute('aria-expanded', String(isOpen));
         });
     }
     if (scrim) {
         scrim.addEventListener('click', closeMobileSidebar);
     }
 
-    // ------------------------------------------------------------------
-    // Footer: opening hours vary by date and come from the same server rules
-    // used by booking availability. Avoid presenting the fallback defaults
-    // as a daily schedule here.
-    // ------------------------------------------------------------------
-    const dashFooterHoursEl = document.querySelector('[data-dash-footer-hours]');
-    if (dashFooterHoursEl) dashFooterHoursEl.textContent = 'Hours vary by day. Check the selected date before booking.';
+    // Match the landing page's scroll-direction header behavior. The
+    // dashboard page scrolls at window level; focus and the mobile drawer
+    // keep the complete title/control bar available while navigating.
+    const dashTopbar = document.querySelector('.dash-topbar');
+    if (dashTopbar) {
+        let previousY = Math.max(0, window.scrollY);
+        let directionAnchor = previousY;
+        let previousDirection = 0;
+        let syncPending = false;
+        const syncDashTopbar = () => {
+            syncPending = false;
+            const y = Math.max(0, window.scrollY);
+            const direction = Math.sign(y - previousY);
+            if (direction && direction !== previousDirection) {
+                directionAnchor = previousY;
+                previousDirection = direction;
+            }
+            const keepVisible = y < 96 || document.body.classList.contains('dash-sidebar-open')
+                || dashTopbar.contains(document.activeElement);
+            if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) dashTopbar.classList.remove('is-hidden');
+            else if (direction > 0 && y - directionAnchor >= 12) dashTopbar.classList.add('is-hidden');
+            previousY = y;
+        };
+        window.addEventListener('scroll', () => {
+            if (!syncPending) {
+                syncPending = true;
+                window.requestAnimationFrame(syncDashTopbar);
+            }
+        }, { passive: true });
+        dashTopbar.addEventListener('focusin', () => dashTopbar.classList.remove('is-hidden'));
+        dashTopbar.addEventListener('focusout', () => window.requestAnimationFrame(syncDashTopbar));
+        new MutationObserver(syncDashTopbar).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
 
     // ------------------------------------------------------------------
     // Overview — featured hero banner (auto-rotating, same interval /
@@ -181,10 +215,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (heroEl) {
         const heroContainer = heroEl.querySelector('.dash-hero-container');
         const heroDotsContainer = heroEl.querySelector('.dash-hero-dots');
-        const heroPrefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const heroPrevious = heroEl.querySelector('[data-dash-hero-prev]');
+        const heroNext = heroEl.querySelector('[data-dash-hero-next]');
+        const heroPause = heroEl.querySelector('[data-dash-hero-pause]');
+        const heroReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const heroHoverCapable = window.matchMedia('(hover: hover)');
 
         let heroIndex = 0;
         let heroTimer = null;
+        let heroPaused = false;
 
         // Re-queried on every call rather than captured once at parse time —
         // renderHeroSlidesFromEvents() below may have just replaced
@@ -198,44 +237,69 @@ document.addEventListener('DOMContentLoaded', () => {
             const heroDots = heroEl.querySelectorAll('[data-dash-hero-dot]');
             if (heroSlides.length === 0) return;
 
+            function clearHeroAutoplay() {
+                if (heroTimer) clearInterval(heroTimer);
+                heroTimer = null;
+            }
+
+            function syncHeroControls() {
+                const multiple = heroSlides.length > 1;
+                if (heroPrevious) heroPrevious.hidden = !multiple;
+                if (heroNext) heroNext.hidden = !multiple;
+                if (heroPause) {
+                    heroPause.hidden = !multiple;
+                    heroPause.disabled = heroReducedMotion.matches;
+                    const stopped = heroPaused || heroReducedMotion.matches;
+                    heroPause.textContent = stopped ? 'Play' : 'Pause';
+                    heroPause.setAttribute('aria-label', stopped ? 'Play slideshow' : 'Pause slideshow');
+                    heroPause.setAttribute('aria-pressed', String(stopped));
+                }
+                heroEl.setAttribute('aria-live', heroPaused || heroReducedMotion.matches || !multiple ? 'polite' : 'off');
+            }
+
+            function startHeroAutoplay() {
+                clearHeroAutoplay();
+                if (heroPaused || heroReducedMotion.matches || document.hidden || heroSlides.length < 2
+                    || heroEl.contains(document.activeElement)
+                    || (heroHoverCapable.matches && heroEl.matches(':hover'))) return;
+                heroTimer = setInterval(() => updateHeroSlide(heroIndex + 1, true), 5000);
+            }
+
             function updateHeroSlide(newIndex, skipTimer = false) {
                 if (newIndex >= heroSlides.length) newIndex = 0;
                 if (newIndex < 0) newIndex = heroSlides.length - 1;
 
-                heroSlides.forEach((s) => s.classList.remove('is-active'));
+                heroSlides.forEach((slide, index) => {
+                    slide.classList.toggle('is-active', index === newIndex);
+                    slide.setAttribute('aria-hidden', String(index !== newIndex));
+                });
                 heroDots.forEach((d) => {
                     d.classList.remove('is-active');
                     d.setAttribute('aria-current', 'false');
                 });
 
-                heroSlides[newIndex].classList.add('is-active');
-                heroDots[newIndex].classList.add('is-active');
-                heroDots[newIndex].setAttribute('aria-current', 'true');
+                heroDots[newIndex]?.classList.add('is-active');
+                heroDots[newIndex]?.setAttribute('aria-current', 'true');
 
                 heroIndex = newIndex;
 
-                if (!skipTimer) {
-                    clearHeroAutoplay();
-                    startHeroAutoplay();
-                }
-            }
-
-            function startHeroAutoplay() {
-                if (heroPrefersReducedMotion) return;
-                heroTimer = setInterval(() => {
-                    updateHeroSlide(heroIndex + 1, true);
-                }, 5000);
-            }
-
-            function clearHeroAutoplay() {
-                if (heroTimer) {
-                    clearInterval(heroTimer);
-                    heroTimer = null;
-                }
+                if (!skipTimer) startHeroAutoplay();
             }
 
             heroDots.forEach((dot, index) => {
                 dot.addEventListener('click', () => updateHeroSlide(index));
+            });
+            heroPrevious?.addEventListener('click', () => updateHeroSlide(heroIndex - 1));
+            heroNext?.addEventListener('click', () => updateHeroSlide(heroIndex + 1));
+            heroPause?.addEventListener('click', () => {
+                heroPaused = !heroPaused;
+                syncHeroControls();
+                startHeroAutoplay();
+            });
+            heroEl.addEventListener('keydown', (event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                updateHeroSlide(heroIndex + (event.key === 'ArrowRight' ? 1 : -1));
             });
 
             heroEl.addEventListener('mouseenter', clearHeroAutoplay);
@@ -246,7 +310,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!heroEl.contains(document.activeElement)) startHeroAutoplay();
                 }, 0);
             });
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) clearHeroAutoplay();
+                else startHeroAutoplay();
+            });
+            heroReducedMotion.addEventListener('change', () => {
+                syncHeroControls();
+                startHeroAutoplay();
+            });
 
+            updateHeroSlide(0, true);
+            syncHeroControls();
             startHeroAutoplay();
         }
 
@@ -373,14 +447,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const notifTrigger = document.querySelector('[data-dash-notif-trigger]');
     const notifList = document.querySelector('[data-dash-notif-list]');
     const notifDot = document.querySelector('[data-dash-notif-dot]');
-    const notifSearch = document.querySelector('[data-dash-notif-search]');
     const notifUnread = document.querySelector('[data-dash-notif-unread]');
     const notifPagination = document.querySelector('[data-dash-notif-pagination]');
     const notifPageLabel = document.querySelector('[data-dash-notif-page]');
     const NOTIF_LIMIT = 10;
     let notifPage = 0;
     let notifTotalCount = 0;
-    let notifSearchTimer = null;
     let notifGeneration = 0;
     let notifItems = [];
     const selectedNotifKeys = new Set();
@@ -446,7 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
         notifList.innerHTML = '<p class="dash-notif-empty">Loading notifications…</p>';
         try {
             const { data, error } = await window.sb.rpc('customer_list_notifications', {
-                p_search: notifSearch?.value.trim() || '',
+                p_search: '',
                 p_offset: notifPage * NOTIF_LIMIT,
                 p_limit: NOTIF_LIMIT,
             });
@@ -462,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }));
             notifItems = persistentItems;
             const persistentHtml = persistentItems.map(item => `<div class="dash-notif-row dash-notif-persistent${item.read_at ? ' is-read' : ' is-unread'}" data-dash-notif-key="${window.escapeHtml(item.key)}"><input type="checkbox" class="dash-notif-select-row" data-dash-notif-select-row="${window.escapeHtml(item.key)}" aria-label="Select ${window.escapeHtml(item.title)}"><button type="button" class="dash-notif-item" data-dash-notif-open data-dash-notif-href="${window.escapeHtml(item.href)}"><span class="dash-notif-dot ${window.escapeHtml(item.category.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}" aria-hidden="true"></span><span class="dash-notif-item-body"><strong>${window.escapeHtml(item.title)}</strong><span>${window.escapeHtml(item.body)}</span><small>${window.escapeHtml(item.category)} · ${window.escapeHtml(notificationTime(item.created_at))} · ${item.read_at ? 'Read' : 'Unread'}</small></span></button></div>`).join('');
-            notifList.innerHTML = persistentHtml || '<p class="dash-notif-empty">No notifications match your search.</p>';
+            notifList.innerHTML = persistentHtml || '<p class="dash-notif-empty">No notifications yet.</p>';
             syncCustomerNotificationSelection();
             const unreadCount = Number(result.unread_count) || 0;
             if (notifUnread) notifUnread.textContent = unreadCount ? `${unreadCount} unread` : '';
@@ -484,11 +556,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    notifSearch?.addEventListener('input', () => {
-        if (notifSearchTimer) window.clearTimeout(notifSearchTimer);
-        notifPage = 0;
-        notifSearchTimer = window.setTimeout(loadCustomerNotifications, 250);
-    });
     document.querySelector('[data-dash-notif-prev]')?.addEventListener('click', () => { if (notifPage > 0) { notifPage -= 1; loadCustomerNotifications(); } });
     document.querySelector('[data-dash-notif-next]')?.addEventListener('click', () => { if ((notifPage + 1) * NOTIF_LIMIT < notifTotalCount) { notifPage += 1; loadCustomerNotifications(); } });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCustomerNotifications(); });
@@ -562,6 +629,162 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
+    // Feedback modal (§2, D7 — implementation_plan.md). ONE modal, TWO
+    // triggers already in the markup: the sidebar card's "Give Feedback"
+    // button (desktop/tablet) and the topbar's standalone Feedback button
+    // (mobile) — both carry [data-dash-feedback-open] and open this same
+    // dialog. Open/close borrows the court viewer's fade-out timing
+    // (includes/landingPage.js's createCourtViewer — 250ms) rather than the
+    // simpler [data-open] dropdowns above, since this is a full dialog that
+    // needs a `hidden` round-trip, not just an opacity toggle anchored to a
+    // trigger.
+    // ------------------------------------------------------------------
+    const feedbackOverlay = document.querySelector('[data-dash-feedback-overlay]');
+    const feedbackDialog = document.querySelector('[data-dash-feedback-dialog]');
+    const feedbackMessageEl = document.querySelector('[data-dash-feedback-message]');
+    const feedbackSubmitBtn = document.querySelector('[data-dash-feedback-submit]');
+    const feedbackStars = Array.from(document.querySelectorAll('[data-dash-feedback-star]'));
+
+    const FEEDBACK_CLOSE_DELAY_MS = 250;
+    let feedbackHideTimer = null;
+    let feedbackLastFocused = null;
+    let feedbackIsOpen = false;
+    // Optional (§2: "optional 1-5 rating") — stays null until a star is
+    // clicked, and clicking the already-selected star again clears it back
+    // to null, so a customer who changes their mind can un-rate.
+    let feedbackRating = null;
+
+    function paintFeedbackStars(value) {
+        feedbackStars.forEach((btn) => {
+            const starValue = Number(btn.dataset.dashFeedbackStar);
+            const isSelected = value !== null && starValue <= value;
+            btn.classList.toggle('is-selected', isSelected);
+            btn.setAttribute('aria-pressed', String(value !== null && starValue === value));
+        });
+    }
+
+    feedbackStars.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const value = Number(btn.dataset.dashFeedbackStar);
+            feedbackRating = (feedbackRating === value) ? null : value;
+            paintFeedbackStars(feedbackRating);
+        });
+    });
+
+    function openFeedbackModal(invoker) {
+        if (!feedbackOverlay || !feedbackDialog) return;
+        feedbackLastFocused = invoker || document.activeElement;
+        closeProfileMenu();
+        closeNotifMenu();
+
+        if (feedbackHideTimer) {
+            window.clearTimeout(feedbackHideTimer);
+            feedbackHideTimer = null;
+        }
+
+        feedbackOverlay.hidden = false;
+        // Force a synchronous layout flush so the browser commits the
+        // hidden->visible state before [data-open] flips opacity to 1 —
+        // same trick includes/landingPage.js's court viewer uses (see its
+        // open()), otherwise the browser can batch both into one style
+        // recalc and skip the fade entirely.
+        void feedbackOverlay.offsetWidth;
+        feedbackOverlay.setAttribute('data-open', '');
+        feedbackIsOpen = true;
+        feedbackDialog.focus();
+    }
+
+    function closeFeedbackModal() {
+        if (!feedbackIsOpen) return;
+        feedbackIsOpen = false;
+
+        feedbackOverlay.removeAttribute('data-open');
+        if (feedbackHideTimer) window.clearTimeout(feedbackHideTimer);
+        feedbackHideTimer = window.setTimeout(() => {
+            feedbackOverlay.hidden = true;
+            feedbackHideTimer = null;
+        }, FEEDBACK_CLOSE_DELAY_MS);
+
+        if (feedbackLastFocused && typeof feedbackLastFocused.focus === 'function' && document.contains(feedbackLastFocused)) {
+            feedbackLastFocused.focus();
+        }
+        feedbackLastFocused = null;
+    }
+
+    document.querySelectorAll('[data-dash-feedback-open]').forEach((btn) => {
+        btn.addEventListener('click', () => openFeedbackModal(btn));
+    });
+
+    document.querySelectorAll('[data-dash-feedback-close]').forEach((btn) => {
+        btn.addEventListener('click', closeFeedbackModal);
+    });
+
+    if (feedbackOverlay) {
+        // Backdrop click only — a click that starts and ends on the overlay
+        // itself (not one that starts inside the dialog and merely
+        // bubbles), same `e.target === root` guard as the court viewer.
+        feedbackOverlay.addEventListener('click', (e) => {
+            if (e.target === feedbackOverlay) closeFeedbackModal();
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && feedbackIsOpen) closeFeedbackModal();
+    });
+
+    if (feedbackSubmitBtn) {
+        feedbackSubmitBtn.addEventListener('click', async () => {
+            const message = (feedbackMessageEl?.value || '').trim();
+            if (!message) {
+                window.InigoToast?.show('Please enter a message before submitting.', true);
+                feedbackMessageEl?.focus();
+                return;
+            }
+            if (!window.sb || !window.inigosyncProfile) {
+                window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
+                return;
+            }
+
+            const originalLabel = feedbackSubmitBtn.textContent;
+            feedbackSubmitBtn.disabled = true;
+            feedbackSubmitBtn.textContent = 'Submitting…';
+
+            let error = null;
+            try {
+                ({ error } = await window.sb.from('feedback').insert({
+                    profile_id: window.inigosyncProfile.id,
+                    rating: feedbackRating,
+                    message,
+                }));
+            } catch (requestError) {
+                error = requestError;
+            } finally {
+                feedbackSubmitBtn.disabled = false;
+                feedbackSubmitBtn.textContent = originalLabel;
+            }
+
+            if (error) {
+                console.error('[dashboard] feedback insert failed', error);
+                // isDashboardSchemaMismatch() (defined further below) turns
+                // a missing table/column into a clear setup message rather
+                // than a raw database error or a fake success toast.
+                const friendlyMessage = isDashboardSchemaMismatch(error)
+                    ? "Feedback isn't set up yet — this needs a database update. Please try again later."
+                    : (error?.message || 'Could not submit your feedback. Please try again.');
+                window.InigoToast?.show(friendlyMessage, true);
+                return;
+            }
+
+            window.InigoToast?.show('Thanks for your feedback!');
+            if (feedbackMessageEl) feedbackMessageEl.value = '';
+            feedbackRating = null;
+            paintFeedbackStars(null);
+            closeFeedbackModal();
+        });
+    }
+
+    // ------------------------------------------------------------------
+
     // Theme toggle — includes/theme.js manages the data-theme attribute
     // and persistence; this just wires the topbar button to it and keeps
     // the sun/moon icon in sync.
@@ -615,13 +838,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 012_booking_time_range.sql's new end_at/duration_minutes/court_unit
     // columns and its booking_no_overlap EXCLUDE constraint — see
     // refreshTimePickers()/fetchDayOccupancy() further below and that
-    // migration's own header comment. bookingState.time (a single "8:00 AM"
-    // string) is gone, replaced by bookingState.startHour/endHour (24-hour
-    // integers) and bookingState.unit (the Step 1 preview's resolved
-    // Court/Lane/Table label, D3 — persisted now instead of thrown away).
-    // Revision 5, D3 further replaced the clickable button grid itself with
-    // a From/To <select> pair — see that section's own header comment
-    // further below for the full reasoning.
+    // migration's own header comment. Slot selection stores facility-local
+    // whole hours and the chosen inventory unit for each cart item.
     // ------------------------------------------------------------------
     if (!window.InigoBusinessHours) {
         // Should never happen — includes/businessHours.js must load before
@@ -631,42 +849,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const bookSelect = document.querySelector('[data-dash-book-select]');
     const bookDate = document.querySelector('[data-dash-book-date]');
-    // Revision 5, D3 (implementation_plan.md) — the old clickable slot grid
-    // is gone; Step 2 is now a From/To time-range picker whose OPTIONS are
-    // rendered into these two (initially empty) <select>s by
-    // renderTimePickers() below, one <option> per still-free bookable hour,
-    // re-filled on every repaint (same idiom this file's
-    // wireOverviewCourtList() already uses for its own dynamically rendered
-    // scope further below). bookOpenWindowsEl is the "Open on this date: …"
-    // status line underneath both selects.
-    const bookFromSelect = document.querySelector('[data-dash-book-from]');
-    const bookToSelect = document.querySelector('[data-dash-book-to]');
-    const bookOpenWindowsEl = document.querySelector('[data-dash-book-open-windows]');
+    const bookSportGrid = document.querySelector('[data-dash-book-sports]');
+    const bookCourtChoice = document.querySelector('[data-dash-book-court-choice]');
+    const bookingModal = document.querySelector('[data-dash-booking-modal]');
+    const bookingDialog = bookingModal?.querySelector('[role="dialog"]');
+    const bookingCartBar = document.querySelector('[data-dash-book-cart-bar]');
+    const bookingCartBarCount = document.querySelector('[data-dash-book-cart-bar-count]');
+    const bookingCartBarItems = document.querySelector('[data-dash-book-cart-bar-items]');
+    const bookingCartProceed = document.querySelector('[data-dash-book-cart-proceed]');
+    const bookingPanel = document.querySelector('[data-dash-panel="booking"]');
+    const bookSlotsGrid = document.querySelector('[data-dash-book-slots]');
+    const bookSlotStatus = document.querySelector('[data-dash-book-slot-status]');
     const paymentOptions = document.querySelectorAll('[data-dash-payment-option]');
-    const paymentModeOptions = document.querySelectorAll('[data-dash-pay-mode-option]');
-    const paymentModeRadios = document.querySelectorAll('[data-dash-pay-mode]');
     const paymentModeHint = document.querySelector('[data-dash-pay-mode-hint]');
-    const onlineModeLabel = document.querySelector('[data-dash-online-mode-label]');
     const bookSubmit = document.querySelector('[data-dash-book-submit]');
     const bookAddButton = document.querySelector('[data-dash-book-add]');
     const bookCartPanel = document.querySelector('[data-dash-book-cart]');
     const bookCartItemsEl = document.querySelector('[data-dash-book-cart-items]');
     const bookCartCountEl = document.querySelector('[data-dash-book-cart-count]');
-    const bookCartSubmit = document.querySelector('[data-dash-book-cart-submit]');
+    const bookCartEmpty = document.querySelector('[data-dash-book-cart-empty]');
 
-    // Defaults the date input to TODAY and floors it there (Part 3 — this
-    // input used to carry a hardcoded value="2026-07-14" with no `min`,
-    // silently allowing a past date to be "booked"). Computed from local
-    // Y/M/D, not toISOString().slice(0,10) — that reads UTC, which for a PH
-    // user (UTC+8) rolls over to the WRONG calendar date for roughly the
-    // first 8 hours of every local day. Must run before bookingState below
-    // reads bookDate.value as its own initial date.
+    // Booking dates belong to the facility calendar, regardless of the
+    // customer's device timezone.
     function todayDateInputValue() {
-        const now = new Date();
-        const y = now.getFullYear();
-        const m = String(now.getMonth() + 1).padStart(2, '0');
-        const d = String(now.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        return window.InigoBusinessHours?.dateInManila?.() || new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date());
     }
     if (bookDate) {
         const todayStr = todayDateInputValue();
@@ -674,37 +882,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!bookDate.value || bookDate.value < todayStr) bookDate.value = todayStr;
     }
 
-    const summaryCourt = document.querySelector('[data-dash-summary-court]');
-    const summaryDate = document.querySelector('[data-dash-summary-date]');
-    const summaryTime = document.querySelector('[data-dash-summary-time]');
-    const summaryRate = document.querySelector('[data-dash-summary-rate]');
     const summaryPayment = document.querySelector('[data-dash-summary-payment]');
     const summaryTotal = document.querySelector('[data-dash-summary-total]');
-    const rateQuantityWrap = document.querySelector('[data-dash-rate-quantity-wrap]');
-    const rateQuantityInput = document.querySelector('[data-dash-rate-quantity]');
 
-    // Wizard chrome (§5, D5) — step panels, the step indicator, and the
-    // Back/Next nav row. See renderBookWizard()/goToBookStep() below for the
-    // state machine; kept as plain DOM lookups here, same shape as every
-    // other *Select/*Date/etc. const on this page.
+    // The booking panel switches between court choices and cart review;
+    // court/date/time selection itself lives in the dialog below.
     const bookStepPanels = document.querySelectorAll('[data-dash-book-step]');
-    const bookStepIndicators = document.querySelectorAll('[data-dash-book-step-indicator]');
-    const bookBackBtn = document.querySelector('[data-dash-book-back]');
-    const bookNextBtn = document.querySelector('[data-dash-book-next]');
-    const BOOK_STEP_COUNT = bookStepPanels.length || 3;
 
-    // Step 1's dynamic court preview (§5 "Dynamic Court Preview", D5) — the
-    // same img-vs-"Photo coming soon" placeholder mechanism the Overview
-    // panel's court cards use (courtPhotoMarkup()/resolveCourtUnits(),
-    // §4/D2), reused here rather than reimplemented. See paintBookPreview()
-    // below.
+    // Step 1's dynamic court preview uses the shared img/placeholder helper
+    // and resolved inventory-unit data. See paintBookPreview() below.
     const bookPreviewMedia = document.querySelector('[data-dash-book-preview-media]');
     const bookUnitWrap = document.querySelector('[data-dash-book-unit-wrap]');
     const bookUnitLabel = document.querySelector('[data-dash-book-unit-label]');
     const bookUnitSelect = document.querySelector('[data-dash-book-unit-select]');
 
-    // court/rate start empty/null — the real <select> options (and their
-    // data-rate) only exist once window.InigoCourtsData.getCourts() resolves
+    // Court and rate start empty until window.InigoCourtsData.getCourts() resolves
     // below (populateBookSelect). Every court's rate is NULL in the live DB
     // today (the owner hasn't confirmed prices yet — see
     // database/seed/002_seed_content.sql), so "unknown rate" has to be a
@@ -712,15 +904,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // court's REAL related sport (e.g. "Bowling" for the "Bowling —
     // Duckpin" court, not a copy of the court name) — booking.sports is
     // NOT NULL, so this must never still be empty by the time a booking is
-    // submitted; see the insert below. `unit` is the Step 1 preview's
+    // submitted; it is passed to the server checkout function. `unit` is the Step 1 preview's
     // currently resolved Court/Lane/Table label (window.InigoCourtsData
     // .resolveCourtUnits(), kept in sync by paintBookPreview() below) — used
-    // to be preview-only (the chosen unit never left the DOM); Part 3/D3
-    // persists it, since availability/overlap is checked PER UNIT, not per
+    // chosen unit is included in cart items, since availability/overlap is checked PER UNIT, not per
     // sport (booking two different Basketball courts must not conflict with
-    // each other). `startHour`/`endHour` (24-hour integers, or null before
-    // anything is picked) replace the old single `time` string — set by the
-    // From/To <select>s' own change handlers below (Revision 5, D3).
+    // each other). Selected hours are stored as facility-local whole-hour integers.
     let bookingState = {
         court: '',
         sport: '',
@@ -728,16 +917,15 @@ document.addEventListener('DOMContentLoaded', () => {
         rateUnit: '/hr',
         rateDay: null,
         rateNight: null,
-        rateQuantity: 1,
         nightRateStartsAt: null,
         date: bookDate ? bookDate.value : '',
         unit: null,
         unitId: null,
         startHour: null,
         endHour: null,
+        selectedHours: [],
+        sportSlug: '',
         paymentType: 'downpayment',
-        paymentMode: 'online',
-        gcashEnabled: true,
         // Overwritten once window.InigoAppSettings.getSettings() resolves
         // below — 50 is the same fallback that module itself uses when
         // `app_settings` doesn't exist yet, so this default is never
@@ -757,9 +945,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // unlike the <select>'s own <option data-*> attributes, which only carry
     // rate/rateUnit/sport), so a court can be looked up by name whenever the
     // preview needs to repaint. bookSelectedUnitIndex resets to 0 every time
-    // the COURT changes (a new court's units always start at its first one);
-    // there's only ever one active preview on this panel, unlike the
-    // Overview cards' per-court overviewSelectedUnitIndex map.
+    // the COURT changes (a new court's units always start at its first one).
     // ------------------------------------------------------------------
     let bookCourtsCache = [];
     let bookSelectedUnitIndex = 0;
@@ -771,8 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Repaints the preview image + unit combo box for `court` (or a neutral
     // "select a court" placeholder when none is known yet — e.g. before
     // window.InigoCourtsData.getCourts() resolves). Reuses
-    // courtPhotoMarkup()/window.InigoCourtsData.resolveCourtUnits() exactly
-    // as renderOverviewCourtCard() does further below (§4/D2) rather than a
+    // courtPhotoMarkup()/window.InigoCourtsData.resolveCourtUnits() rather than a
     // second implementation — see that function's own header comment for
     // why "no photo yet" always renders the honest "Photo coming soon"
     // placeholder instead of a broken <img> or an invented URL. Also the
@@ -821,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Same broken-photo-URL fallback as paintOverviewCourtMedia() below
         // — a typo'd unit_images URL degrades to the placeholder instead of
         // a broken-image icon.
-        const img = bookPreviewMedia.querySelector('img[data-overview-court-photo]');
+        const img = bookPreviewMedia.querySelector('img[data-dash-book-photo]');
         if (img) {
             img.addEventListener('error', () => {
                 img.remove();
@@ -849,90 +1034,101 @@ document.addEventListener('DOMContentLoaded', () => {
         bookUnitSelect.addEventListener('change', () => {
             const court = findBookCourt(bookingState.court);
             if (!court) return;
-            // Unit choice used to be preview-only — it repainted the photo
-            // and nothing else. Part 3/D3 makes it meaningful: a different
-            // unit can have entirely different availability, so any
-            // in-progress Step 2 selection is cleared and the From/To
-            // pickers re-fetched for the newly chosen unit
-            // (resetTimeSelectionAndRender(), defined with the rest of the
-            // time-picker machinery below — hoisted, safe to call from
-            // here).
+            // A different unit can have entirely different availability,
+            // so clear selected hours and reload occupancy for that unit.
             paintBookPreview(court, Number(bookUnitSelect.value) || 0);
             resetTimeSelectionAndRender();
             updateSummary();
         });
     }
-    if (rateQuantityInput) rateQuantityInput.addEventListener('input', () => {
-        const n = Math.max(1, Math.min(100, Number.parseInt(rateQuantityInput.value, 10) || 1));
-        bookingState.rateQuantity = n;
-        rateQuantityInput.value = String(n);
-        if (bookingState.rateUnit === '/set' && bookingState.startHour !== null) {
-            bookingState.endHour = bookingState.startHour + n - 1;
-            if (Array.from({ length: n }, (_, i) => bookingState.startHour + i).some((hour) =>
-                slotHourStatus(hour) !== 'available')) {
-                bookingState.endHour = null;
-            }
-            renderTimePickers();
-        }
-        updateSummary();
-    });
 
+    let bookingModalTrigger = null;
+    function openBookingModal(trigger) {
+        if (!bookingModal || !bookingDialog) return;
+        bookingModalTrigger = trigger || null;
+        bookingModal.hidden = false;
+        if (bookAddButton) bookAddButton.hidden = false;
+        document.body.classList.add('dash-booking-modal-open');
+        const firstControl = bookingDialog.querySelector('select:not(:disabled), input:not(:disabled), button:not(:disabled)');
+        (firstControl || bookingDialog).focus();
+    }
+
+    function closeBookingModal(restoreFocus = true) {
+        if (!bookingModal || bookingModal.hidden) return;
+        bookingModal.hidden = true;
+        if (bookAddButton) bookAddButton.hidden = true;
+        document.body.classList.remove('dash-booking-modal-open');
+        if (restoreFocus) {
+            const target = bookingModalTrigger?.isConnected ? bookingModalTrigger : bookSportGrid?.querySelector('[data-dash-book-sport]');
+            target?.focus();
+        }
+        bookingModalTrigger = null;
+    }
+
+    if (bookingModal) {
+        bookingModal.addEventListener('click', (event) => {
+            if (event.target.closest('[data-dash-booking-modal-close]')) closeBookingModal();
+        });
+        bookingModal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeBookingModal();
+                return;
+            }
+            if (event.key !== 'Tab' || !bookingDialog) return;
+            const focusable = Array.from(bookingDialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'))
+                .filter((el) => !el.hidden && el.getClientRects().length);
+            if (!focusable.length) { event.preventDefault(); bookingDialog.focus(); return; }
+            const first = focusable[0], last = focusable[focusable.length - 1];
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === bookingDialog)) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
+        });
+    }
+
+    if (bookingCartProceed) bookingCartProceed.addEventListener('click', () => {
+        closeBookingModal(false);
+        goToBookStep(3);
+        document.querySelector('[data-dash-book-cart]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
     // ------------------------------------------------------------------
-    // Wizard step machine (§5, D5) — one step visible at a time, a step
-    // indicator, and Back/Next with Next gated on that step's required
-    // field ("step 1 needs a court, step 2 needs a date+slot" per the spec).
-    // Step 3 has no Next of its own — its own "Request Booking" button
-    // (bookSubmit, wired further below) is the wizard's final action.
+    // The photo grid remains available for repeated selections. Step 3 is
+    // the existing cart review with payment preference and secure checkout.
     // ------------------------------------------------------------------
     let bookWizardStep = 1;
-
-    function bookStepIsReady(step) {
-        if (step === 1) return Boolean(bookingState.court);
-        // Revision 5, D3 (implementation_plan.md) — both From AND To must
-        // now be chosen, even for a 1-hour booking (From = 8:00 AM, To =
-        // 9:00 AM). The old "a single clicked hour is already a complete
-        // 1-hour booking" rule is gone along with the clickable slot grid
-        // it belonged to — there is nothing to click any more, only two
-        // explicit <select>s (see renderTimePickers() below), and Next
-        // stays disabled until both hold a real value.
-        if (step === 2) return Boolean(bookingState.date) && bookingState.startHour !== null && bookingState.endHour !== null;
-        return true;
-    }
 
     function renderBookWizard() {
         bookStepPanels.forEach((panel) => {
             panel.classList.toggle('is-active', Number(panel.dataset.dashBookStep) === bookWizardStep);
         });
-        bookStepIndicators.forEach((el) => {
-            const n = Number(el.dataset.dashBookStepIndicator);
-            el.classList.toggle('is-current', n === bookWizardStep);
-            el.classList.toggle('is-done', n < bookWizardStep);
-            el.setAttribute('aria-current', n === bookWizardStep ? 'step' : 'false');
-        });
-
-        if (bookBackBtn) bookBackBtn.hidden = bookWizardStep === 1;
-        if (bookNextBtn) {
-            bookNextBtn.hidden = bookWizardStep === BOOK_STEP_COUNT;
-            bookNextBtn.disabled = !bookStepIsReady(bookWizardStep);
-        }
     }
 
     function goToBookStep(step) {
-        bookWizardStep = Math.min(Math.max(1, step), BOOK_STEP_COUNT);
+        bookWizardStep = step === 3 ? 3 : 1;
         renderBookWizard();
         updateSummary();
-        if (bookAddButton) bookAddButton.hidden = bookWizardStep !== BOOK_STEP_COUNT || !bookStepIsReady(2) || bookingCart.length >= 7;
+        if (bookAddButton) bookAddButton.hidden = !bookingModal || bookingModal.hidden;
+        if (bookSubmit) bookSubmit.disabled = !bookingCart.length || bookingCartSaving;
+        renderBookingCart();
     }
-
-    if (bookNextBtn) {
-        bookNextBtn.addEventListener('click', () => {
-            if (bookNextBtn.disabled) return;
-            goToBookStep(bookWizardStep + 1);
-        });
-    }
-    if (bookBackBtn) {
-        bookBackBtn.addEventListener('click', () => goToBookStep(bookWizardStep - 1));
-    }
+    document.querySelector('[data-dash-book-new]')?.addEventListener('click', () => {
+        bookingState.sportSlug = '';
+        bookingState.court = '';
+        bookingState.sport = '';
+        bookingState.rate = null;
+        bookingState.unit = null;
+        bookingState.unitId = null;
+        bookingState.selectedHours = [];
+        bookSelect.value = '';
+        bookSelect.disabled = true;
+        if (bookCourtChoice) bookCourtChoice.hidden = true;
+        paintBookPreview(null);
+        renderSportChoices();
+        resetTimeSelectionAndRender();
+        goToBookStep(1);
+    });
 
     function formatDate(value) {
         if (!value) return '—';
@@ -968,98 +1164,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return total;
     }
 
-    // Number of whole hours in the currently chosen From/To range, or 0
-    // before From is even chosen. Falls back to treating startHour as its
-    // own 1-hour end whenever endHour is still null — that fallback is only
-    // ever observed INSIDE Step 2's own transient state (e.g. From is
-    // chosen but To isn't yet), since bookStepIsReady() (Revision 5, D3)
-    // keeps the wizard from reaching Step 3's summary until BOTH From and
-    // To hold a real value.
-    function bookingHoursSelected() {
-        if (bookingState.startHour === null) return 0;
-        const effectiveEnd = bookingState.endHour !== null ? bookingState.endHour : bookingState.startHour;
-        return effectiveEnd - bookingState.startHour + 1;
-    }
-
-    // "8:00 AM – 12:00 PM · 4 hrs" (Part 3) — replaces the old single-slot
-    // label (bookingState.time). Null before any hour is picked, same
-    // "nothing selected yet" signal the old bookingState.time === null used
-    // to give summaryTime's own fallback text below.
-    function bookingTimeRangeLabel() {
-        const hours = bookingHoursSelected();
-        if (hours === 0) return null;
-        const effectiveEnd = bookingState.endHour !== null ? bookingState.endHour : bookingState.startHour;
-        const fmt = window.InigoBusinessHours.formatHourLabel;
-        // effectiveEnd+1 is deliberate — a booking whose last clicked hour
-        // is 11 (11 AM-12 PM) ENDS at 12, per this feature's "clicking 8
-        // then 11 books 8:00-12:00" rule (implementation_plan.md).
-        return `${fmt(bookingState.startHour)} – ${fmt(effectiveEnd + 1)} · ${hours} hr${hours === 1 ? '' : 's'}`;
-    }
-
-    function updateSummary() {
-        const isFull = bookingState.paymentType === 'full';
-        const pct = bookingState.downpaymentPct;
-        const hours = bookingHoursSelected();
-        // Part 3 — total now scales with hours selected (it used to always
-        // be `rate × (pct or 1)`, i.e. hardcoded to exactly 1 hour, because
-        // only one slot was ever selectable). Still null whenever the rate
-        // itself is unknown (every court today — see hasKnownRate() above)
-        // so this never invents a peso figure.
-        const baseAmount = bookingState.rateUnit === '/set'
-            ? (typeof bookingState.rateDay === 'number' ? bookingState.rateDay * bookingState.rateQuantity : null)
-            : bookingHourlyAmount(hours);
-        const amount = baseAmount !== null ? baseAmount * (isFull ? 1 : pct / 100) : null;
-
-        if (summaryCourt) summaryCourt.textContent = bookingState.court || '—';
-        if (rateQuantityWrap) rateQuantityWrap.hidden = bookingState.rateUnit !== '/set';
-        if (summaryDate) summaryDate.textContent = formatDate(bookingState.date);
-        if (summaryTime) summaryTime.textContent = bookingTimeRangeLabel() || '— Select a time —';
-        if (summaryRate) summaryRate.textContent = bookingState.rateUnit === '/set' && typeof bookingState.rateDay === 'number'
-            ? `₱${bookingState.rateDay}/set × ${bookingState.rateQuantity}`
-            : (hasKnownRate() ? (typeof bookingState.rateDay === 'number' && typeof bookingState.rateNight === 'number' && bookingState.rateDay !== bookingState.rateNight
-                ? `₱${bookingState.rateDay} day / ₱${bookingState.rateNight} night per hr` : `₱${bookingState.rateDay ?? bookingState.rate}${bookingState.rateUnit}`) : 'Rate TBA');
-        if (summaryPayment) summaryPayment.textContent = isFull ? 'Full payment preference' : `Downpayment preference (${pct}%)`;
-        if (summaryTotal) summaryTotal.textContent = amount !== null ? `₱${amount.toFixed(2)}` : '—';
-        // Downpayment option's own description line ("Pay N% now, balance
-        // on-site.") — kept in sync with the same real downpayment_pct
-        // rather than left at its hardcoded "50%" (implementation_plan.md
-        // E2, the same duplicated-hardcoded-50% defect Payment
-        // Configuration was built to fix).
-        if (downpaymentDesc) downpaymentDesc.textContent = `Pay ${pct}% securely now; pay the remaining balance at check-in.`;
-
-        if (bookSubmit) {
-            // Revision 5, D3 — both From AND To required (not just
-            // startHour), matching bookStepIsReady()'s own step-2 gate
-            // above; Step 3 is unreachable without both already set, so
-            // this is defensive belt-and-suspenders rather than a normally
-            // reachable branch.
-            const ready = bookingState.startHour !== null && bookingState.endHour !== null
-                && Boolean(bookingState.court) && Boolean(bookingState.unitId)
-                && Number.isFinite(baseAmount) && baseAmount > 0;
-            bookSubmit.disabled = !ready;
-            bookSubmit.textContent = ready
-                ? (bookingCart.length ? `Pay for ${bookingCart.length + 1} bookings` : 'Continue to secure checkout')
-                : 'Select a time range to continue';
-        }
-        const onlineCharge = baseAmount === null ? null : baseAmount * (isFull ? 1 : pct / 100);
-        const onlineAllowed = hasKnownRate() && ['/hr', '/set'].includes(bookingState.rateUnit) && onlineCharge !== null && onlineCharge > 0;
-        paymentModeRadios.forEach((radio) => {
-            if (radio.dataset.dashPayMode !== 'online') return;
-            radio.disabled = !onlineAllowed;
-        });
-        if (paymentModeHint && !onlineAllowed) {
-            paymentModeHint.textContent = 'Online checkout is unavailable until this court or lane has a confirmed rate.';
-        }
-
-        // Re-gates the wizard's Next button and refreshes the step
-        // indicator every time ANY piece of bookingState changes (court,
-        // date, or time) — updateSummary() already runs after every one of
-        // those changes below, so this is the single hook the whole wizard
-        // needs (§5, D5). renderBookWizard() only re-applies whichever step
-        // is already current; it never changes which step is showing.
-        renderBookWizard();
-    }
-
     if (bookSelect) {
         bookSelect.addEventListener('change', () => {
             const opt = bookSelect.selectedOptions[0];
@@ -1068,10 +1172,8 @@ document.addEventListener('DOMContentLoaded', () => {
             bookingState.rate = (opt && opt.dataset.rate) ? Number(opt.dataset.rate) : null;
             bookingState.rateUnit = (opt && opt.dataset.rateUnit) || '/hr';
             syncBookPreviewFromState();
-            // A different court almost always means different availability
-            // (and paintBookPreview() above just reset bookingState.unit
-            // too) — any in-progress Step 2 selection is stale, so it's
-            // cleared and the From/To pickers re-fetched for the new court.
+            // A different court has different availability, so clear the
+            // in-progress slot selection and refetch occupancy.
             resetTimeSelectionAndRender();
             updateSummary();
         });
@@ -1109,60 +1211,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    paymentModeRadios.forEach((radio) => {
-        radio.addEventListener('change', () => {
-            if (!radio.checked) return;
-            if (radio.dataset.dashPayMode === 'online' && (!hasKnownRate() || !['/hr', '/set'].includes(bookingState.rateUnit))) {
-                radio.checked = false;
-                window.InigoToast?.show('Online checkout requires a confirmed court rate.', true);
-                return;
-            }
-            bookingState.paymentMode = 'online';
-            paymentModeOptions.forEach((option) => option.classList.toggle('is-selected', option.contains(radio)));
-            updateSummary();
-        });
-    });
-
     // ------------------------------------------------------------------
-    // Step 2 — From/To time-range picker (Revision 5, D3 —
-    // implementation_plan.md). Replaces Part 3's clickable slot-grid model
-    // (bookingState.startHour/endHour set by clicking hour buttons —
-    // onSlotClick()/extendSelectionTo()/paintSlotGrid(), all three deleted)
-    // after the user's explicit correction: "there should be no slots to
-    // click." Two plain <select>s do the same job now — From (bookFromSelect)
-    // and To (bookToSelect) — with their OPTIONS shrunk to whatever is
-    // actually free, so every value either one can hold is already
-    // guaranteed bookable; see renderTimePickers() further below.
-    // bookingState.startHour/endHour (24-hour integers, or null before both
-    // are chosen) are UNCHANGED in shape and meaning — bookingHoursSelected(),
-    // bookingTimeRangeLabel(), updateSummary(), and the insert payload
-    // further below all keep working exactly as before.
-    //
-    // Bookable hours come from booking_rules_for_date() through
-    // window.InigoBusinessHours.getForDate(); the selected day's exact
-    // opening window drives both this picker and the Overview peek below.
-    //
-    // Availability comes from court_occupancy(), the database's
-    // privacy-limited view over the shared reservation ledger. It includes
-    // active online and walk-in reservations overlapping the selected day.
-    // Named units only block the same normalized unit; a missing/blank unit
-    // blocks every unit because its physical location cannot be narrowed.
-    //
-    // Reuses this file's own overlap primitives — overviewBookingWindow()/
-    // overviewWindowsOverlap()/overviewSlotWindow() further below in the
-    // Overview Courts section — instead of a third copy of the same
-    // `a.start < b.end && b.start < a.end` math. Despite their "overview"
-    // names (kept as-is; see isOverviewSchemaMismatch()'s own "despite its
-    // name" comment further below for why this file doesn't rename a
-    // widely-used helper just because a second, unrelated feature now
-    // shares it), all three are plain, date-agnostic functions — calling
-    // them from here is safe: they're `function` DECLARATIONS in this same
-    // outer scope, hoisted, so it doesn't matter that they're defined later
-    // in this file than this section.
-    //
-    // Online and walk-in rows are fetched in one RPC snapshot, then split
-    // for the shared hour checks below. This keeps both channels and every
-    // unit selector aligned with the overview availability display.
+    // Step 2 — hourly slot availability from booking_rules_for_date and
+    // court_occupancy. Selection is fail-closed and checkout revalidates.
     //
     // RLS CAVEAT — direct booking-table SELECT policies stay unchanged. The
     // availability RPC returns only court/time occupancy, and database
@@ -1187,16 +1238,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // cosmetic rename — they still gate the exact same race guard and hold
     // the exact same fetched rows for renderTimePickers() below.
     let slotGridRequestSeq = 0;
+    let slotGridLoading = false;
 
     async function fetchDayOccupancy(courtName, dateStr) {
         if (!window.sb || !courtName || !dateStr) return { ok: false, rows: [] };
-
-        const dayStart = new Date(`${dateStr}T00:00:00`);
-        const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
+        if (!window.InigoBookingSlots) return { ok: false, rows: [] };
+        const dayStart = window.InigoBookingSlots.localDateHourToIso(dateStr, 0);
+        const dayEnd = window.InigoBookingSlots.localDateHourToIso(window.InigoBookingSlots.nextDate(dateStr), 0);
         let res;
         try {
             res = await window.sb.rpc('court_occupancy', {
-                from_at: dayStart.toISOString(), to_at: dayEnd.toISOString(),
+                from_at: dayStart, to_at: dayEnd,
             });
         } catch (error) {
             console.error('[dashboard] failed to load occupancy for the time pickers', error);
@@ -1222,13 +1274,41 @@ document.addEventListener('DOMContentLoaded', () => {
         return !String(a || '').trim() || !String(b || '').trim() || sameCourtUnit(a, b);
     }
 
+    function bookingSlotWindow(hour, dateBase) {
+        const start = new Date(window.InigoBookingSlots.localDateHourToIso(bookingState.date, hour));
+        return { start, end: new Date(start.getTime() + 60 * 60 * 1000) };
+    }
+
+    function bookingTimeWindow(row) {
+        const start = new Date(row.time_date);
+        if (row.end_at) {
+            const end = new Date(row.end_at);
+            if (!Number.isNaN(end.getTime())) return { start, end };
+        }
+        const minutesRaw = Number(row.duration_minutes);
+        const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? minutesRaw : 60;
+        return { start, end: new Date(start.getTime() + minutes * 60000) };
+    }
+
+    function bookingWindowsOverlap(a, b) {
+        return a.start < b.end && b.start < a.end;
+    }
+
+    function isDashboardSchemaMismatch(error) {
+        if (!error) return false;
+        const code = error.code || '';
+        const message = String(error.message || '').toLowerCase();
+        return code === 'PGRST204' || code === 'PGRST205' || code === '42703' || code === '42P01'
+            || message.includes('could not find') || message.includes('does not exist')
+            || message.includes('schema cache');
+    }
+
     // True when `hour` (on the currently selected date) has already
     // started — the customer's local "now", not the server's, since this
     // is purely a client-side UX guard (the DB doesn't know or care what a
     // browser's clock reads).
     function isSlotHourPast(hour) {
-        const start = new Date(`${bookingState.date}T00:00:00`);
-        start.setHours(hour, 0, 0, 0);
+        const start = new Date(window.InigoBookingSlots.localDateHourToIso(bookingState.date, hour));
         return start.getTime() < Date.now();
     }
 
@@ -1258,18 +1338,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function isSlotHourBooked(hour) {
         if (!slotGridBookings.ok) return false;
         const dateBase = new Date(`${bookingState.date}T00:00:00`);
-        const slot = overviewSlotWindow(hour, dateBase);
+        const slot = bookingSlotWindow(hour, dateBase);
         const currentUnit = bookingState.unit || '';
         const bookingMatch = slotGridBookings.rows.some((row) => {
             if (!courtUnitsOverlap(row.court_unit, currentUnit)) return false;
-            return overviewWindowsOverlap(overviewBookingWindow(row), slot);
+            return bookingWindowsOverlap(bookingTimeWindow(row), slot);
         });
         if (bookingMatch) return true;
 
         if (!slotGridWalkins.ok) return false;
         return slotGridWalkins.rows.some((row) => {
             return courtUnitsOverlap(row.court_unit, currentUnit)
-                && overviewWindowsOverlap(overviewBookingWindow(row), slot);
+                && bookingWindowsOverlap(bookingTimeWindow(row), slot);
         });
     }
 
@@ -1280,300 +1360,147 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'available';
     }
 
-    // Runs of consecutive free (available, non-past) hours for the
-    // currently selected court/unit/date (Revision 5, D3 —
-    // implementation_plan.md) — e.g. with 10-11 AM booked, this returns
-    // [{ startHour: 8, endHourExclusive: 10 }, { startHour: 11,
-    // endHourExclusive: 20 }]. The single source both renderTimePickers()
-    // below (Step 2's From/To options + its "Open on this date" status
-    // line) and the Overview strip's per-hour pills read availability from
-    // (via the same slotHourStatus()/isSlotHourBooked() this function
-    // calls) — so the two views can never disagree about what's free for a
-    // given court/unit/date (D4). hoursRange() always returns a plain
-    // ascending, step-1 sequence, so a run only needs to remember where it
-    // started; it closes the moment a non-free hour interrupts it, or at
-    // CLOSE_HOUR if it reaches the end of the day still open.
-    function computeFreeWindows() {
-        const hours = bookingHoursRange();
-        if (!hours.length) return [];
-        const windows = [];
-        let runStart = null;
-
-        hours.forEach((hour) => {
-            if (slotHourStatus(hour) === 'available') {
-                if (runStart === null) runStart = hour;
-            } else if (runStart !== null) {
-                windows.push({ startHour: runStart, endHourExclusive: hour });
-                runStart = null;
-            }
-        });
-        if (runStart !== null) {
-            windows.push({ startHour: runStart, endHourExclusive: hours[hours.length - 1] + 1 });
-        }
-        return windows;
-    }
-
-    // Fills [data-dash-book-from]/[data-dash-book-to] from
-    // computeFreeWindows() above and writes the "Open on this date" status
-    // line (Revision 5, D3). Both selects get an explicit, UNSELECTED
-    // placeholder <option> — bookStepIsReady() keeps Next disabled until the
-    // customer actively picks both, the same "nothing chosen yet" state a
-    // fresh page load starts in.
-    //
-    // From lists every free hour across every window, labelled with its
-    // OWN start time (formatHourLabel — "8:00 AM"). To only makes sense
-    // once From is picked: it lists every hour from From+1 through the end
-    // of the free run that CONTAINS From, labelled with the END time each
-    // option represents (so picking 8:00 AM inside a run that's open
-    // through 8 PM offers "9:00 AM" … "8:00 PM") — an option's value V
-    // means "book through V:00", stored as bookingState.endHour = V-1 to
-    // keep the existing inclusive-hour convention bookingHoursSelected()/
-    // bookingTimeRangeLabel()/the insert payload above already rely on.
-    // This is the direct replacement for Part 3's paintSlotGrid() — same
-    // "pure re-render from whatever was last fetched into slotGridBookings"
-    // role, just painting two <select>s instead of a button grid.
     function renderTimePickers() {
-        if (!bookFromSelect || !bookToSelect || !window.InigoBusinessHours) return;
-
+        if (!bookSlotsGrid) return;
+        const clear = () => { bookingState.selectedHours = []; bookingState.startHour = null; bookingState.endHour = null; };
         if (!bookingState.court || !bookingState.date) {
-            bookFromSelect.innerHTML = '<option value="">Select a court first</option>';
-            bookToSelect.innerHTML = '<option value="">Select a court first</option>';
-            bookFromSelect.disabled = true;
-            bookToSelect.disabled = true;
-            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Select a court first.';
+            bookSlotsGrid.innerHTML = '';
+            if (bookSlotStatus) bookSlotStatus.textContent = 'Select a court and date to check availability.';
+            clear();
             return;
         }
-
         if (!bookingRules) {
-            bookFromSelect.innerHTML = '<option value="">Checking opening hours…</option>';
-            bookToSelect.innerHTML = '<option value="">Checking opening hours…</option>';
-            bookFromSelect.disabled = true;
-            bookToSelect.disabled = true;
-            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Checking opening hours…';
+            bookSlotsGrid.innerHTML = '';
+            if (bookSlotStatus) bookSlotStatus.textContent = 'Checking opening hours…';
+            clear();
             return;
         }
-
         if (!bookingRules.authoritative) {
-            bookFromSelect.innerHTML = '<option value="">Opening hours unavailable</option>';
-            bookToSelect.innerHTML = '<option value="">Opening hours unavailable</option>';
-            bookFromSelect.disabled = true;
-            bookToSelect.disabled = true;
-            bookingState.startHour = null;
-            bookingState.endHour = null;
-            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Could not check opening hours. Refresh the page and try again.';
+            bookSlotsGrid.innerHTML = '';
+            if (bookSlotStatus) bookSlotStatus.textContent = 'Opening hours could not be verified. Try again later.';
+            clear();
             return;
         }
-
-        if (bookingRules.isClosed) {
-            bookFromSelect.innerHTML = '<option value="">Closed</option>';
-            bookToSelect.innerHTML = '<option value="">Closed</option>';
-            bookFromSelect.disabled = true;
-            bookToSelect.disabled = true;
-            bookingState.startHour = null;
-            bookingState.endHour = null;
-            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'This facility is closed on the selected date.';
+        if (bookingRules.isClosed || !slotGridBookings.ok || !slotGridWalkins.ok) {
+            bookSlotsGrid.innerHTML = '';
+            if (bookSlotStatus) bookSlotStatus.textContent = bookingRules.isClosed
+                ? 'The facility is closed on this date.'
+                : 'Live availability could not be verified. Please refresh and try again.';
+            clear();
             return;
         }
-
-        // M2 fix — either fetch failing means occupancy can't be trusted
-        // (a walk-in fetch failure is just as unsafe to render around as a
-        // booking fetch failure), same fail-safe reasoning
-        // refreshOverviewCourtWidget()'s overviewDataOk uses.
-        if (!slotGridBookings.ok || !slotGridWalkins.ok) {
-            bookFromSelect.innerHTML = '<option value="">Unavailable</option>';
-            bookToSelect.innerHTML = '<option value="">Unavailable</option>';
-            bookFromSelect.disabled = true;
-            bookToSelect.disabled = true;
-            if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Could not check live availability right now — please try a different date, or refresh the page.';
-            return;
+        const hours = bookingHoursRange();
+        const available = new Set(hours.filter((hour) => slotHourStatus(hour) === 'available'));
+        bookingState.selectedHours = bookingState.selectedHours.filter((hour) => available.has(hour));
+        bookSlotsGrid.innerHTML = hours.map((hour) => {
+            const status = slotHourStatus(hour);
+            const disabled = status !== 'available';
+            const selected = bookingState.selectedHours.includes(hour);
+            const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
+            const statusLabel = status === 'booked' ? ' · Booked' : status === 'past' ? ' · Passed' : '';
+            return `<button type="button" class="dash-book-slot${selected ? ' is-selected' : ''}" data-dash-book-slot="${hour}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}>${window.escapeHtml(label)}${statusLabel}</button>`;
+        }).join('') || '<p class="dash-res-state">No bookable hours are configured for this date.</p>';
+        if (bookSlotStatus) {
+            bookSlotStatus.textContent = bookingState.selectedHours.length
+                ? `${bookingState.selectedHours.length} hour${bookingState.selectedHours.length === 1 ? '' : 's'} selected. Gaps create separate cart items.`
+                : 'Choose one or more available hours. Booked and elapsed times cannot be selected.';
         }
-
-        const fmt = window.InigoBusinessHours.formatHourLabel;
-        const windows = computeFreeWindows();
-
-        if (windows.length === 0) {
-            bookFromSelect.innerHTML = '<option value="">No times available</option>';
-            bookToSelect.innerHTML = '<option value="">No times available</option>';
-            bookFromSelect.disabled = true;
-            bookToSelect.disabled = true;
-            bookingState.startHour = null;
-            bookingState.endHour = null;
-            if (bookOpenWindowsEl) {
-                // L3 fix (post-Revision-5 review) — windows.length === 0
-                // means every hour of the day is either 'booked' or 'past'
-                // (an 'available' hour would have produced a window above).
-                // On a future date every one of those must be 'booked', so
-                // "Fully booked" is always accurate there. On TODAY,
-                // though, an evening visit could find every hour simply
-                // elapsed with nothing ever booked — "Fully booked" would
-                // be misleading in that case, so this only says it when at
-                // least one hour is genuinely 'booked'; otherwise the day
-                // just ran out.
-                const isToday = bookingState.date === todayDateInputValue();
-                const noneBooked = bookingHoursRange().every((h) => slotHourStatus(h) !== 'booked');
-                bookOpenWindowsEl.textContent = (isToday && noneBooked)
-                    ? 'No more times available today.'
-                    : 'Fully booked on this date.';
-            }
-            return;
-        }
-
-        // From — every free hour, across every window, in order.
-        const freeHours = [];
-        windows.forEach((w) => {
-            for (let h = w.startHour; h < w.endHourExclusive; h++) {
-                if (bookingState.rateUnit !== '/set' || h + bookingState.rateQuantity <= w.endHourExclusive) freeHours.push(h);
-            }
-        });
-        if (bookingState.startHour !== null && !freeHours.includes(bookingState.startHour)) {
-            // Defensive only — From's OWN change handler below already
-            // clears endHour whenever From itself changes, and every
-            // court/unit/date change goes through resetTimeSelectionAndRender()
-            // (which nulls both directly), so this should never actually
-            // trigger; kept in case a future caller repaints without
-            // resetting first.
-            bookingState.startHour = null;
-            bookingState.endHour = null;
-        }
-
-        bookFromSelect.disabled = false;
-        const fromPlaceholder = `<option value=""${bookingState.startHour === null ? ' selected' : ''} disabled>Select a start time</option>`;
-        const fromOptions = freeHours.map((h) => `<option value="${h}"${h === bookingState.startHour ? ' selected' : ''}>${window.escapeHtml(fmt(h))}</option>`).join('');
-        bookFromSelect.innerHTML = fromPlaceholder + fromOptions;
-
-        // To — only the hours from From+1 through the end of the run that
-        // contains From, so a range can never be chosen that spans a
-        // booked/past hour (the same rule Part 3's extendSelectionTo() used
-        // to enforce for the old clickable grid).
-        if (bookingState.startHour === null) {
-            bookToSelect.innerHTML = '<option value="" selected disabled>Select a start time first</option>';
-            bookToSelect.disabled = true;
-        } else {
-            const run = windows.find((w) => bookingState.startHour >= w.startHour && bookingState.startHour < w.endHourExclusive);
-            const runEndExclusive = run ? run.endHourExclusive : bookingState.startHour + 1;
-
-            const toPlaceholder = `<option value=""${bookingState.endHour === null ? ' selected' : ''} disabled>Select an end time</option>`;
-            const toOptions = [];
-            const firstEnd = bookingState.rateUnit === '/set' ? bookingState.startHour + bookingState.rateQuantity : bookingState.startHour + 1;
-            for (let endExclusive = firstEnd; endExclusive <= runEndExclusive; endExclusive++) {
-                if (bookingState.rateUnit === '/set' && endExclusive !== firstEnd) break;
-                const endHourValue = endExclusive - 1; // stored using the existing inclusive-hour convention
-                toOptions.push(`<option value="${endHourValue}"${endHourValue === bookingState.endHour ? ' selected' : ''}>${window.escapeHtml(fmt(endExclusive))}</option>`);
-            }
-            bookToSelect.innerHTML = toPlaceholder + toOptions.join('');
-            bookToSelect.disabled = bookingState.rateUnit === '/set';
-        }
-
-        if (bookOpenWindowsEl) {
-            const windowLabels = windows.map((w) => `${fmt(w.startHour)} – ${fmt(w.endHourExclusive)}`).join(', ');
-            bookOpenWindowsEl.textContent = `Open on this date: ${windowLabels}`;
-        }
+        if (bookAddButton) bookAddButton.disabled = !bookingState.selectedHours.length || bookingCartSaving || slotGridLoading;
     }
 
-    if (bookFromSelect) {
-        bookFromSelect.addEventListener('change', () => {
-            const value = bookFromSelect.value;
-            bookingState.startHour = value === '' ? null : Number(value);
-            // Changing From always clears To (Revision 5, D3) — the free
-            // run containing the new From hour may not even include the
-            // previously chosen End, so re-deriving To from scratch (via
-            // renderTimePickers() below) is simpler and safer than trying
-            // to carry a possibly-invalid End forward.
-            bookingState.endHour = null;
-            if (bookingState.rateUnit === '/set' && bookingState.startHour !== null) {
-                const end = bookingState.startHour + bookingState.rateQuantity - 1;
-                if (Array.from({ length: bookingState.rateQuantity }, (_, i) => bookingState.startHour + i)
-                    .every((hour) => slotHourStatus(hour) === 'available')) {
-                    bookingState.endHour = end;
-                }
-            }
-            renderTimePickers();
-            updateSummary();
-        });
-    }
-
-    if (bookToSelect) {
-        bookToSelect.addEventListener('change', () => {
-            const value = bookToSelect.value;
-            bookingState.endHour = value === '' ? null : Number(value);
-            updateSummary();
-        });
-    }
-
-    // Re-fetches availability for the currently selected court + date, then
-    // repaints the From/To pickers from the result. Called whenever court,
-    // unit, or date changes (implementation_plan.md) — a unit-only change
-    // re-fetches too, even though fetchDayOccupancy() isn't itself
-    // unit-filtered (filtering happens client-side in isSlotHourBooked()
-    // above); the extra round trip is cheap and keeps this one function the
-    // single "availability might have changed" entry point. Renamed from
-    // Part 3's renderSlotGrid() (Revision 5, D3) now that there's no grid
-    // left to paint — repaints via renderTimePickers() above instead of the
-    // deleted paintSlotGrid().
     async function refreshTimePickers(forceRules = false) {
-        if (!bookFromSelect || !bookToSelect) return;
+        if (!bookSlotsGrid) return;
         const mySeq = ++slotGridRequestSeq;
-
-        if (!bookingState.court || !bookingState.date) {
-            renderTimePickers();
-            return;
-        }
-
-        bookFromSelect.innerHTML = '<option value="">Checking availability…</option>';
-        bookToSelect.innerHTML = '<option value="">Checking availability…</option>';
-        bookFromSelect.disabled = true;
-        bookToSelect.disabled = true;
-        if (bookOpenWindowsEl) bookOpenWindowsEl.textContent = 'Checking availability…';
-
+        if (!bookingState.court || !bookingState.date) { slotGridLoading = false; renderTimePickers(); return; }
+        slotGridLoading = true;
+        bookSlotsGrid.innerHTML = '';
+        if (bookSlotStatus) bookSlotStatus.textContent = 'Checking availability…';
+        if (bookAddButton) bookAddButton.disabled = true;
         if (!window.InigoBusinessHours?.getForDate) {
+            slotGridLoading = false;
+            slotGridBookings = { ok: false, rows: [] }; slotGridWalkins = { ok: false, rows: [] }; bookingRules = null;
+            renderTimePickers(); return;
+        }
+        let result, rules;
+        try {
+            [result, rules] = await Promise.all([
+                fetchDayOccupancy(bookingState.court, bookingState.date),
+                window.InigoBusinessHours.getForDate(bookingState.date, { force: forceRules }),
+            ]);
+        } catch (error) {
+            console.error('[dashboard] failed to refresh authoritative booking availability', error);
+            if (mySeq !== slotGridRequestSeq) return;
+            slotGridLoading = false;
             slotGridBookings = { ok: false, rows: [] };
             slotGridWalkins = { ok: false, rows: [] };
             bookingRules = null;
             renderTimePickers();
             return;
         }
-
-        // M2 fix — fetched together (Promise.all) so a walk-in fetched a
-        // request apart from its booking counterpart can't itself become a
-        // second, separately-racing source of staleness.
-        const [result, rules] = await Promise.all([
-            fetchDayOccupancy(bookingState.court, bookingState.date),
-            window.InigoBusinessHours.getForDate(bookingState.date, { force: forceRules }),
-        ]);
-        // A newer refresh started while this one was in flight — that newer
-        // call already owns the pickers, so this stale response is dropped
-        // instead of flashing outdated availability.
         if (mySeq !== slotGridRequestSeq) return;
+        slotGridLoading = false;
         bookingRules = rules;
         slotGridBookings = { ok: result.ok, rows: result.rows.filter((row) => row.source === 'online') };
-        // Maintenance shares the same occupancy snapshot and blocks selection
-        // exactly like either reservation channel.
         slotGridWalkins = { ok: result.ok, rows: result.rows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source)) };
         renderTimePickers();
+        updateSummary();
     }
 
-    // Clears any in-progress Step 2 selection and re-renders the From/To
-    // pickers — shared by every "the court/unit/date might have just
-    // changed" handler above and below, so none of them has to repeat both
-    // steps. Renamed from Part 3's resetSlotSelectionAndRender() (Revision
-    // 5, D3) now that there's no grid selection left to reset, only
-    // bookingState.startHour/endHour.
     function resetTimeSelectionAndRender() {
+        bookingState.selectedHours = [];
         bookingState.startHour = null;
         bookingState.endHour = null;
         refreshTimePickers();
     }
 
-    function selectedBookingCartItem() {
+    function updateSummary() {
+        const pct = bookingState.downpaymentPct;
+        const gross = bookingCart.reduce((sum, item) => sum + (Number.isFinite(item.estimatedTotal) ? item.estimatedTotal : 0), 0);
+        const amount = gross > 0 ? gross * (bookingState.paymentType === 'full' ? 1 : pct / 100) : null;
+        if (summaryPayment) summaryPayment.textContent = bookingState.paymentType === 'full'
+            ? 'Full payment preference' : `Downpayment preference (${pct}%)`;
+        if (summaryTotal) summaryTotal.textContent = amount !== null ? `₱${amount.toFixed(2)}` : '—';
+        if (downpaymentDesc) downpaymentDesc.textContent = `Pay ${pct}% securely now; pay the remaining balance at check-in.`;
+        if (bookSubmit) {
+            const ready = bookingCart.length > 0 && bookingCart.length <= 8
+                && bookingCart.every((item) => item.listingId && item.unitId && Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0);
+            bookSubmit.disabled = !ready || bookingCartSaving;
+            bookSubmit.textContent = bookingCartSaving ? 'Opening secure checkout…' : 'Book and pay securely';
+            if (paymentModeHint) paymentModeHint.textContent = bookingCart.length && !ready
+                ? 'Every court needs verified inventory and a confirmed rate before online checkout.'
+                : 'Payment is collected securely through PayMongo after cart review.';
+        }
+        if (bookAddButton) bookAddButton.disabled = !bookingState.selectedHours.length || bookingCart.length >= 8 || bookingCartSaving || slotGridLoading;
+        renderBookWizard();
+        renderBookingCart();
+    }
+
+    if (bookSlotsGrid) bookSlotsGrid.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-dash-book-slot]');
+        if (!button || button.disabled) return;
+        const hour = Number(button.dataset.dashBookSlot);
+        const selected = new Set(bookingState.selectedHours);
+        if (selected.has(hour)) selected.delete(hour); else selected.add(hour);
+        bookingState.selectedHours = Array.from(selected).sort((a, b) => a - b);
+        const firstRun = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours)[0];
+        bookingState.startHour = firstRun?.startHour ?? null;
+        bookingState.endHour = firstRun ? firstRun.endHourExclusive - 1 : null;
+        renderTimePickers();
+        updateSummary();
+    });
+
+    function selectedBookingCartItem(startHour, endHourExclusive) {
         const court = findBookCourt(bookingState.court);
         const units = court && window.InigoCourtsData ? window.InigoCourtsData.resolveCourtUnits(court).units : [];
         const selectedUnit = units.find((unit) => bookingState.unitId && String(unit.id) === String(bookingState.unitId));
-        const endHour = bookingState.endHour;
-        const hours = endHour - bookingState.startHour + 1;
-        const startIso = new Date(`${bookingState.date}T${String(bookingState.startHour).padStart(2, '0')}:00:00`).toISOString();
-        const endIso = new Date(`${bookingState.date}T${String(endHour + 1).padStart(2, '0')}:00:00`).toISOString();
+        const start = startHour ?? bookingState.startHour;
+        const endExclusive = endHourExclusive ?? (bookingState.endHour + 1);
+        const endHour = endExclusive - 1;
+        const hours = endExclusive - start;
+        const startIso = window.InigoBookingSlots.localDateHourToIso(bookingState.date, start);
+        const endIso = window.InigoBookingSlots.localDateHourToIso(bookingState.date, endExclusive);
         const total = bookingState.rateUnit === '/set'
-            ? (typeof bookingState.rateDay === 'number' ? bookingState.rateDay * bookingState.rateQuantity : null)
+            ? (typeof bookingState.rateDay === 'number' ? bookingState.rateDay * hours : null)
             : bookingHourlyAmount(hours);
         return {
             key: `item-${++bookingCartSeq}`,
@@ -1584,15 +1511,14 @@ document.addEventListener('DOMContentLoaded', () => {
             unitId: bookingState.unitId || null,
             resourceIds: selectedUnit?.resourceIds || [],
             date: bookingState.date,
-            startHour: bookingState.startHour,
+            startHour: start,
             endHour,
             startIso,
             endIso,
             hours,
             rateUnit: bookingState.rateUnit,
-            rateQuantity: bookingState.rateUnit === '/set' ? bookingState.rateQuantity : 1,
-            paymentType: bookingState.paymentType,
-            paymentMode: bookingState.paymentMode,
+            rateQuantity: bookingState.rateUnit === '/set' ? hours : 1,
+            paymentType: 'downpayment',
             estimatedTotal: total,
         };
     }
@@ -1610,48 +1536,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderBookingCart() {
         if (!bookCartPanel || !bookCartItemsEl) return;
-        bookCartPanel.hidden = bookingCart.length === 0;
+        bookCartPanel.hidden = false;
         if (bookCartCountEl) bookCartCountEl.textContent = `${bookingCart.length} item${bookingCart.length === 1 ? '' : 's'}`;
-        if (bookCartSubmit) bookCartSubmit.disabled = bookingCartSaving || bookingCart.length === 0;
-        if (onlineModeLabel) onlineModeLabel.textContent = 'Pay online now';
-        if (paymentModeHint) paymentModeHint.textContent = 'Pay for the whole cart in one secure PayMongo checkout.';
+        if (bookCartEmpty) bookCartEmpty.hidden = bookingCart.length > 0;
         bookCartItemsEl.innerHTML = bookingCart.map((item) => {
             const unit = item.unit ? ` · ${item.unit}` : '';
             const time = `${window.InigoBusinessHours.formatHourLabel(item.startHour)} – ${window.InigoBusinessHours.formatHourLabel(item.endHour + 1)}`;
             const estimate = Number.isFinite(item.estimatedTotal) ? ` · ₱${item.estimatedTotal.toFixed(2)}` : ' · Rate TBA';
-            const payType = item.paymentType === 'full' ? 'Full payment' : 'Deposit';
-            return `<li><span><strong>${window.escapeHtml(item.court + unit)}</strong><br>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}${estimate}<br>${window.escapeHtml(payType)}</span><button type="button" class="dash-btn-ghost" data-dash-book-cart-remove="${window.escapeHtml(item.key)}" aria-label="Remove booking item"${bookingCartSaving ? ' disabled' : ''}>Remove</button></li>`;
+            const courtLabel = String(item.sport).toLocaleLowerCase() === String(item.court).toLocaleLowerCase()
+                ? item.court + unit : `${item.sport} · ${item.court}${unit}`;
+            return `<li><span><strong>${window.escapeHtml(courtLabel)}</strong><br>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}${estimate}</span><button type="button" class="dash-btn-ghost" data-dash-book-cart-remove="${window.escapeHtml(item.key)}" aria-label="Remove ${window.escapeHtml(courtLabel)} booking"${bookingCartSaving ? ' disabled' : ''}>Remove</button></li>`;
         }).join('');
+        if (bookingCartBar) {
+            bookingCartBar.hidden = !bookingCart.length || !bookingPanel?.classList.contains('is-active');
+            if (bookingCartBarCount) bookingCartBarCount.textContent = `${bookingCart.length} booking${bookingCart.length === 1 ? '' : 's'} selected`;
+            if (bookingCartBarItems) bookingCartBarItems.innerHTML = bookingCart.slice(0, 3).map((item) => {
+                const unit = item.unit ? ` · ${item.unit}` : '';
+                const time = `${window.InigoBusinessHours.formatHourLabel(item.startHour)}–${window.InigoBusinessHours.formatHourLabel(item.endHour + 1)}`;
+                return `<span>${window.escapeHtml(item.court + unit)} · ${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}</span>`;
+            }).join('') + (bookingCart.length > 3 ? `<span>+ ${bookingCart.length - 3} more</span>` : '');
+        }
     }
 
-    function resetCurrentBookingDraft() {
-        bookingState.startHour = null;
-        bookingState.endHour = null;
-        bookingState.date = todayDateInputValue();
-        bookingState.rateQuantity = 1;
-        bookingState.paymentType = 'downpayment';
-        bookingState.paymentMode = 'online';
-        if (bookDate) bookDate.value = bookingState.date;
-        if (rateQuantityInput) rateQuantityInput.value = '1';
-        document.querySelector('[data-dash-payment="downpayment"]')?.click();
-        const onlineRadio = document.querySelector('[data-dash-pay-mode="online"]');
-        if (onlineRadio) onlineRadio.checked = true;
-        refreshTimePickers();
-        updateSummary();
-        goToBookStep(1);
-    }
-
-    async function submitBookingCart(includeCurrent) {
+    async function submitBookingCart() {
         if (bookingCartSaving || !window.sb || !window.inigosyncProfile) return;
-        const current = includeCurrent ? selectedBookingCartItem() : null;
-        const items = [...bookingCart, ...(current ? [current] : [])];
+        const items = bookingCart.map((item) => ({ ...item, paymentType: bookingState.paymentType }));
         if (!items.length) return;
-        if (items.some((item) => !item.listingId || !item.unitId || !Number.isFinite(item.estimatedTotal) || item.estimatedTotal <= 0)) {
-            window.InigoToast?.show('This court needs a confirmed rate and lane before online checkout.', true);
+        if (items.length > 8) {
+            window.InigoToast?.show('A checkout can include up to eight booking items.', true);
             return;
         }
-        if (items.some((item) => item.paymentType !== items[0].paymentType)) {
-            window.InigoToast?.show('Choose the same payment option for every item in this checkout.', true);
+        if (items.some((item) => !item.listingId || !item.unitId || !Number.isFinite(item.estimatedTotal) || item.estimatedTotal <= 0)) {
+            window.InigoToast?.show('This court needs a confirmed rate and lane before online checkout.', true);
             return;
         }
         for (let i = 0; i < items.length; i++) {
@@ -1710,17 +1626,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (bookAddButton) {
-        bookAddButton.addEventListener('click', () => {
-            if (bookingCartSaving || bookingCart.length >= 7) return;
-            const item = selectedBookingCartItem();
-            if (bookingCart.some((saved) => bookingCartItemsConflict(item, saved))) {
-                window.InigoToast?.show('Two items in your list use the same physical court at overlapping times. Change one date or time first.', true);
+        bookAddButton.addEventListener('click', async () => {
+            if (bookingCartSaving || slotGridLoading || !bookingState.selectedHours.length) return;
+            const selectedHours = [...bookingState.selectedHours];
+            await refreshTimePickers(true);
+            if (!bookingRules?.authoritative || !slotGridBookings.ok || !slotGridWalkins.ok) {
+                window.InigoToast?.show('Hours and live availability could not be verified. Please retry before adding times.', true);
                 return;
             }
-            bookingCart.push(item);
-            renderBookingCart();
-            resetCurrentBookingDraft();
-            window.InigoToast?.show('Booking added. Choose another court or pay for the cart above.');
+            if (selectedHours.some((hour) => !bookingState.selectedHours.includes(hour))) {
+                window.InigoToast?.show('Availability changed. Please check the times and select again.', true);
+                return;
+            }
+            const runs = window.InigoBookingSlots.groupConsecutiveHours(selectedHours);
+            if (bookingCart.length + runs.length > 8) {
+                window.InigoToast?.show('A cart can include up to eight booking items. Remove an item or select fewer separate time ranges.', true);
+                return;
+            }
+            const additions = runs.map((run) => {
+                bookingState.startHour = run.startHour;
+                bookingState.endHour = run.endHourExclusive - 1;
+                return selectedBookingCartItem(run.startHour, run.endHourExclusive);
+            });
+            const combined = [...bookingCart, ...additions];
+            for (let i = 0; i < combined.length; i += 1) {
+                if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
+                    window.InigoToast?.show('Two items use the same physical court at overlapping times.', true);
+                    return;
+                }
+            }
+            bookingCart.push(...additions);
+            bookingState.selectedHours = [];
+            bookingState.startHour = null;
+            bookingState.endHour = null;
+            renderTimePickers();
+            updateSummary();
+            closeBookingModal();
+            goToBookStep(1);
+            window.InigoToast?.show(`${runs.length} time range${runs.length === 1 ? '' : 's'} added to your cart.`);
         });
     }
     if (bookCartItemsEl) {
@@ -1732,19 +1675,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (index >= 0) bookingCart.splice(index, 1);
             renderBookingCart();
             updateSummary();
-            if (bookAddButton) bookAddButton.hidden = bookingCart.length >= 7;
         });
     }
-    if (bookCartSubmit) bookCartSubmit.addEventListener('click', () => submitBookingCart(false));
-
     if (bookSubmit) {
         bookSubmit.addEventListener('click', async () => {
             if (bookSubmit.disabled) return;
-            if (!bookingState.date || bookingState.startHour === null || bookingState.endHour === null) {
-                window.InigoToast?.show('Please select a date and time range.', true);
-                return;
-            }
-            await submitBookingCart(true);
+            await submitBookingCart();
         });
     }
 
@@ -1766,38 +1702,83 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.InigoAppSettings) {
         window.InigoAppSettings.getSettings().then((settings) => {
             bookingState.downpaymentPct = settings.downpaymentPct;
-            bookingState.gcashEnabled = settings.gcashEnabled;
             bookingState.nightRateStartsAt = settings.nightRateStartsAt || null;
-            if (paymentModeHint) paymentModeHint.textContent = settings.gcashEnabled && settings.cardEnabled
-                ? 'Pay securely with GCash or card on PayMongo.'
-                : settings.gcashEnabled ? 'Pay securely with GCash on PayMongo.' : 'Pay securely by card on PayMongo.';
+            if (paymentModeHint) paymentModeHint.textContent = 'Payment is collected securely through PayMongo after cart review.';
             updateSummary();
             refreshMyBookings();
         });
     }
 
     // ------------------------------------------------------------------
-    // Court data — the Overview Courts cards (further below, §4/D2) and the
-    // Booking Management court <select> are rendered from the SAME fetch
-    // (window.InigoCourtsData.getCourts(), memoized), so the two can never
-    // disagree about which courts exist or what they cost. courtTags() is
-    // shared by both this file's populateBookSelect() (indirectly, via the
-    // rate it reads) and the Overview cards' own renderOverviewCourtCard()
-    // below. Every interpolated field on this page is escaped — a court
+    // Booking wizard court data comes from window.InigoCourtsData and is
+    // rendered from its shared memoized fetch. Every interpolated field on
+    // this page is escaped — a court
     // named `<img src=x onerror=alert(1)>` (staff/admin can write `court`
     // rows, see database/schema/002_content_tables.sql's RLS policies) must
     // render as literal text, not run.
     // ------------------------------------------------------------------
-    function courtTags(court) {
-        const tags = [];
-        if (court.sportName) tags.push(court.sportName);
-        tags.push(`${court.quantity} ${court.unit}`);
-        String(court.description || '').split('·').forEach((part) => {
-            const trimmed = part.trim();
-            if (trimmed) tags.push(trimmed);
-        });
-        return tags;
+    function courtPhotoMarkup(unit, monogram, alt) {
+        if (unit.imageUrl) {
+            return `<img src="${window.escapeHtml(unit.imageUrl)}" alt="${window.escapeHtml(alt)}" loading="lazy" data-dash-book-photo>`;
+        }
+        return `<span class="dash-court-monogram" aria-hidden="true" data-dash-book-photo>${window.escapeHtml(monogram)}<small class="dash-court-photo-soon">Photo coming soon</small></span>`;
     }
+
+    function sportKey(court) {
+        return String(court.sportSlug || (court.sportName || court.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+    }
+
+    function renderSportChoices() {
+        if (!bookSportGrid) return;
+        const sports = new Map();
+        bookCourtsCache.forEach((court) => {
+            const key = sportKey(court);
+            if (!sports.has(key)) sports.set(key, { key, name: court.sportName || court.name, courts: [] });
+            sports.get(key).courts.push(court);
+        });
+        bookSportGrid.innerHTML = [...sports.values()].map((sport) => {
+            const coverCourt = sport.courts.find((court) => court.imageUrl || window.InigoCourtsData.resolveCourtUnits(court).units.some((unit) => unit.imageUrl)) || sport.courts[0];
+            const coverUnit = window.InigoCourtsData.resolveCourtUnits(coverCourt).units.find((unit) => unit.imageUrl);
+            const coverUrl = coverCourt.imageUrl || coverUnit?.imageUrl || '';
+            const image = coverUrl
+                ? `<img src="${window.escapeHtml(coverUrl)}" alt="" loading="lazy">`
+                : `<span class="dash-court-monogram" aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(sport.key, sport.name))}</span>`;
+            return `<button type="button" class="dash-book-sport-card${bookingState.sportSlug === sport.key ? ' is-selected' : ''}" data-dash-book-sport="${window.escapeHtml(sport.key)}" aria-pressed="${bookingState.sportSlug === sport.key}"><span class="dash-book-sport-photo">${image}</span><span class="dash-book-sport-name">${window.escapeHtml(sport.name)}</span></button>`;
+        }).join('') || '<p class="dash-res-state">No courts with verified inventory are available for booking.</p>';
+    }
+
+    if (bookSportGrid) bookSportGrid.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-dash-book-sport]');
+        if (!button) return;
+        if (bookWizardStep === 3) goToBookStep(1);
+        if (bookSelect) {
+            bookSelect.value = '';
+            bookingState.court = '';
+            bookingState.unit = null;
+            bookingState.unitId = null;
+        }
+        bookingState.sportSlug = button.dataset.dashBookSport;
+        renderSportChoices();
+        const courts = bookCourtsCache.filter((court) => sportKey(court) === bookingState.sportSlug);
+        if (bookSelect) {
+            bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((court) => {
+                const rateHint = window.InigoCourtsData.rateHint?.(court);
+                const label = rateHint ? `${court.name} — ${rateHint}` : `${court.name} — Rate TBA`;
+                return `<option value="${window.escapeHtml(court.name)}" data-rate="${court.rate !== null ? window.escapeHtml(String(court.rate)) : ''}" data-rate-unit="${window.escapeHtml(court.rateUnit || '/hr')}" data-sport="${window.escapeHtml(court.sportName || court.name)}">${window.escapeHtml(label)}</option>`;
+            }).join('');
+            bookSelect.disabled = false;
+            bookSelect.value = courts[0]?.name || '';
+            if (bookSelect.value) bookSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            else {
+                bookingState.court = '';
+                bookingState.sport = '';
+                paintBookPreview(null);
+                resetTimeSelectionAndRender();
+            }
+        }
+        if (bookCourtChoice) bookCourtChoice.hidden = !courts.length;
+        openBookingModal(button);
+    });
 
     // Replaces the "Loading courts…" placeholder <option> with one real
     // option per court, then re-derives bookingState from whichever one
@@ -1815,35 +1796,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // only carry rate/rateUnit/sport, not the full normalized court
         // object (quantity/unit/unitImages) the Step 1 preview needs.
         bookCourtsCache = courts;
-        bookSelect.innerHTML = courts.map((court) => {
-            const rateAttr = court.rate !== null ? window.escapeHtml(String(court.rate)) : '';
-            const rateHint = window.InigoCourtsData.rateHint?.(court);
-            const label = rateHint
-                ? `${court.name} — ${rateHint}`
-                : `${court.name} — Rate TBA`;
-            // data-sport carries the court's REAL related sport (e.g.
-            // "Bowling" for the "Bowling — Duckpin" court, not a copy of
-            // the court name) through to bookingState/the insert in the
-            // bookSubmit handler below — same idea as data-rate /
-            // data-rate-unit. booking.sports is NOT NULL, so this falls
-            // back to the court's own name only if a court somehow has no
-            // linked sport row; it is never left empty.
-            const sportAttr = window.escapeHtml(court.sportName || court.name);
-            return `<option value="${window.escapeHtml(court.name)}" data-rate="${rateAttr}" data-rate-unit="${window.escapeHtml(court.rateUnit)}" data-sport="${sportAttr}">${window.escapeHtml(label)}</option>`;
-        }).join('');
-
-        const firstOpt = bookSelect.selectedOptions[0];
-        bookingState.court = bookSelect.value;
-        bookingState.sport = (firstOpt && firstOpt.dataset.sport) || bookingState.court;
-        bookingState.rate = (firstOpt && firstOpt.dataset.rate) ? Number(firstOpt.dataset.rate) : null;
-        bookingState.rateUnit = (firstOpt && firstOpt.dataset.rateUnit) || '/hr';
-        syncBookPreviewFromState();
-        // First time bookingState.court/unit become real (courts load
-        // asynchronously) — renders Step 2's From/To pickers for real
-        // instead of the "Select a court first." placeholder
-        // refreshTimePickers() showed at setup time above.
-        refreshTimePickers();
+        bookSelect.innerHTML = '<option value="">Choose a sport first</option>';
+        bookSelect.disabled = true;
+        bookingState.court = '';
+        bookingState.sport = '';
+        bookingState.sportSlug = '';
+        if (bookCourtChoice) bookCourtChoice.hidden = true;
+        paintBookPreview(null);
+        renderSportChoices();
         updateSummary();
+        renderTimePickers();
         refreshMyBookings();
     }
 
@@ -1860,693 +1822,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------
-    // Overview — Courts widget (replaces the old, fully-static "Calendar"
-    // and "Live availability" cards). MARKETING/SHOWCASE ONLY as of
-    // Revision 2's R1 (implementation_plan.md) — booking has its own
-    // designated panel (Book a Court); this widget only shows the courts
-    // off. Lists the real courts (window.InigoCourtsData, the same source
-    // as Booking above) grouped by sport (§4's "visual segregation" — a
-    // heading per sport, that sport's court card(s) beneath it), grouping
-    // that stays on regardless of sort mode. The sort <select> defaults to
-    // ordering those sport groups alphabetically (R2); "Available first"
-    // and "Price: Low to High" remain selectable alternatives that instead
-    // order courts *within* each group — see sortOverviewCourts() above.
-    // The widget also lets the customer "peek" a court's real hourly
-    // open/booked slots for TODAY, read-only, without leaving the Overview
-    // tab. The open/booked computation reuses the exact overlap algorithm
-    // the Staff dashboard's Court Schedule already proved
-    // (includes/staff_dashboard.js's bookingWindow/windowsOverlap/
-    // todayRange), adapted to hourly granularity (matching this page's own
-    // Booking-panel slot labels) instead of that file's 2-hour columns.
-    // Peek slots used to hand off a click into the Booking panel
-    // (jumpToBookingFromPeekSlot()) — R1 removed that entirely: an open
-    // slot pill is now purely informational (renderOverviewSlotPill()
-    // above), not a control.
-    //
-    // §4/D2 additionally gives each card a per-unit combo box
-    // (window.InigoCourtsData.resolveCourtUnits()) whose selection swaps the
-    // card's displayed photo — see renderOverviewCourtCard(),
-    // paintOverviewCourtMedia() and the [data-overview-unit-select] wiring
-    // in wireOverviewCourtList() below. This REPLACES the old standalone
-    // Courts dash-panel (deleted) and the compact avail-row list PR #1 put
-    // here; the peek-slot DISPLAY mechanism itself (toggle, hourly pills)
-    // is preserved from PR #1 — the user explicitly praised it — only its
-    // container changed (a one-line row to this richer card) and, per R1,
-    // its former click-to-book hand-off is gone.
-    //
-    // RLS risk (implementation_plan.md's Context/"Open questions" —
-    // documented, pre-existing, not introduced here): `booking` and
-    // `walk_in_booking`'s row-level security policies predate this repo's
-    // schema tracking and are not visible to it (see
-    // database/schema/004_staff_module.sql's header note), so it is
-    // unconfirmed whether the `customer` role can read every row of either
-    // table or only its own. This widget therefore (a) selects only the
-    // minimal columns needed to compute open/booked — never a customer's
-    // name/contact, unlike the staff version's `profiles` join — and (b)
-    // fails safe: if either query errors, every court's peek shows an
-    // honest "unavailable" note instead of ever claiming a slot is open
-    // when that couldn't be verified. Court rows themselves (name/rate/
-    // status dot) still render either way, since those come from
-    // window.InigoCourtsData independently of the booking queries below.
-    // ------------------------------------------------------------------
-    const overviewCourtList = document.querySelector('[data-dash-overview-court-list]');
-    const overviewSortSelect = document.querySelector('[data-dash-overview-sort]');
-
-    // Overview slot pills use the same server-returned date rules as the
-    // Booking pickers, so closed days and shorter/longer opening windows
-    // stay aligned across both customer views.
-    function overviewSlotHours() {
-        return hoursRangeForRules(overviewRules);
-    }
-    // Kept equal to database/schema/004_staff_module.sql's
-    // booking.duration_minutes DEFAULT, same reasoning as
-    // includes/staff_dashboard.js's own DEFAULT_DURATION_MINUTES.
-    const OVERVIEW_DEFAULT_DURATION_MINUTES = 60;
-
-    // Revision 5, D5 (implementation_plan.md) — which calendar day this
-    // widget's peek strips reflect. Defaults to today, min-clamped to
-    // today, same todayDateInputValue() the Booking wizard's own bookDate
-    // uses (defined with that section above — a hoisted function, safe to
-    // call from here). overviewDate is tracked as its own piece of state
-    // (not read from overviewDateInput.value on demand) for the same reason
-    // bookingState.date is: every helper below reads ONE value instead of
-    // re-querying the DOM, and it degrades honestly to today even if this
-    // <input> is ever missing from the markup.
-    const overviewDateInput = document.querySelector('[data-dash-overview-date]');
-    if (overviewDateInput) {
-        const todayStr = todayDateInputValue();
-        overviewDateInput.min = todayStr;
-        if (!overviewDateInput.value || overviewDateInput.value < todayStr) overviewDateInput.value = todayStr;
-    }
-    let overviewDate = overviewDateInput ? overviewDateInput.value : todayDateInputValue();
-
-    // Default sort mode (Revision 2, R2 — implementation_plan.md): groups
-    // the per-sport headings alphabetically, matching the sort <select>'s
-    // own default option (Pages/user_dashboard.html, value="sport",
-    // selected). "Available first" and "Price: Low to High" remain
-    // selectable alternatives that instead sort courts *within* each sport
-    // group — grouping by sport (groupOverviewCourtsBySport() below) stays
-    // always-on no matter which mode is chosen, so the two concerns compose
-    // instead of conflicting. (Phase 1 had dropped this option, reasoning
-    // that always-on grouping made it a no-op duplicate of the default
-    // order; the user later asked for it back explicitly, overruling that
-    // call — see implementation_plan.md's Context section.)
-    let overviewSortMode = 'sport';
-    let overviewCourts = [];
-    let overviewBookings = [];
-    let overviewWalkins = [];
-    let overviewDataOk = true;
-    let overviewDateBase = null;
-    let overviewRules = null;
-    // M3 fix (post-Revision-5 review) — same stale-response race guard as
-    // Step 2's slotGridRequestSeq above: refreshOverviewCourtWidget() is
-    // re-entrant (date change, unit change, the profile-ready event, and
-    // the initial call can all overlap), and network responses are not
-    // guaranteed to resolve in the order their requests were sent. Bumped
-    // at the top of every call; a response only gets to write state/paint
-    // if its own snapshot still matches the latest value when it resolves.
-    let overviewRequestSeq = 0;
-    // Court ids (always compared as strings — see courtId below) currently
-    // expanded — a Set so re-rendering after a sort change or a toggle
-    // click preserves whichever peeks were already open instead of
-    // collapsing everything.
-    const overviewExpandedCourts = new Set();
-    // Court id -> selected unit <select> index (§4/D2). Same reasoning as
-    // overviewExpandedCourts above: renderOverviewCourtList() re-renders
-    // every card from scratch on any peek toggle or sort change, so without
-    // this a customer's "Court 5" pick on one card would silently reset to
-    // "Court 1" the moment they toggled Peek slots on a DIFFERENT card.
-    const overviewSelectedUnitIndex = new Map();
-
-    // "Today" in the browser's local timezone — same 2-line pattern as
-    // includes/staff_dashboard.js's todayRange(). Used directly only as
-    // overviewSelectedDayRange()'s defensive fallback below now (Revision 5,
-    // D5 moved this widget's OWN day off "always today" — see that
-    // function), but kept as its own named helper since that fallback still
-    // needs exactly this "local midnight, +24h" math.
-    function todayRange() {
-        const now = new Date();
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
-        return { start, end };
-    }
-
-    // Revision 5, D5 (implementation_plan.md) — the [start, end) range for
-    // whatever date is currently in overviewDate, replacing this widget's
-    // old hardcoded todayRange() call (below, in refreshOverviewCourtWidget()).
-    // Falls back to todayRange() itself if overviewDate is ever unparsable
-    // (e.g. the <input> is missing from the markup and the fallback
-    // assignment above somehow still produced something invalid) — the
-    // same "degrade to today, never to nothing" honesty this widget's other
-    // fallbacks already use.
-    function overviewSelectedDayRange() {
-        const start = new Date(`${overviewDate}T00:00:00`);
-        if (Number.isNaN(start.getTime())) return todayRange();
-        return { start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1) };
-    }
-
-    // True when overviewDate IS today — the only case where any hour can
-    // read as "past" (D5). A future date never has past hours by
-    // definition; renderOverviewPeekContent() below checks this before ever
-    // calling isOverviewHourPast().
-    function overviewDateIsToday() {
-        return overviewDate === todayDateInputValue();
-    }
-
-    // `dateBase` defaults to overviewDateBase (this widget's own currently
-    // selected date, kept in sync by refreshOverviewCourtWidget() below) —
-    // Step 2's From/To pickers (isSlotHourBooked() above) reuse this SAME
-    // function for an arbitrary customer-picked date by passing one
-    // explicitly, instead of a second near-identical implementation. Despite
-    // the "overview" name (kept as-is — see isOverviewSchemaMismatch()'s own
-    // "despite its name" comment below for why this file doesn't rename a
-    // helper just because a second feature now shares it), this has always
-    // been a plain, date-agnostic window builder.
-    function overviewSlotWindow(hour, dateBase) {
-        const start = new Date(dateBase || overviewDateBase);
-        start.setHours(hour, 0, 0, 0);
-        return { start, end: new Date(start.getTime() + 60 * 60 * 1000) };
-    }
-
-    // True when `hour` on overviewDateBase has already started — mirrors
-    // Step 2's own isSlotHourPast() above, just against this widget's
-    // selected date instead of bookingState.date (D5, Revision 5).
-    function isOverviewHourPast(hour) {
-        const start = new Date(overviewDateBase);
-        start.setHours(hour, 0, 0, 0);
-        return start.getTime() < Date.now();
-    }
-
-    // Same shape as includes/staff_dashboard.js's bookingWindow() — a
-    // missing/invalid duration_minutes falls back to
-    // OVERVIEW_DEFAULT_DURATION_MINUTES, never a fabricated guess. Prefers
-    // the real end_at (database/schema/012_booking_time_range.sql, Part 3)
-    // when the caller's query selected it — both Step 2's fetchDayOccupancy()
-    // and this widget's own fetchOverviewOccupancy() below now do (D4,
-    // Revision 5), so this branch engages for both.
-    function overviewBookingWindow(row) {
-        const start = new Date(row.time_date);
-        if (row.end_at) {
-            const end = new Date(row.end_at);
-            if (!Number.isNaN(end.getTime())) return { start, end };
-        }
-        const minutesRaw = Number(row.duration_minutes);
-        const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? minutesRaw : OVERVIEW_DEFAULT_DURATION_MINUTES;
-        return { start, end: new Date(start.getTime() + minutes * 60000) };
-    }
-
-    function overviewWindowsOverlap(a, b) {
-        return a.start < b.end && b.start < a.end;
-    }
-
-    // A court+unit's hour is occupied if a `pending`/`confirmed` booking
-    // sharing that SAME unit, OR a walk-in, overlaps that hour's [start,
-    // start+1h) window (Revision 5, D4 — implementation_plan.md). `unitLabel`
-    // is the card's CURRENTLY SELECTED unit (renderOverviewCourtCard()
-    // below) — matched against a row's court_unit the exact same way Step
-    // 2's isSlotHourBooked() matches bookingState.unit: null/'' on either
-    // side both mean "no unit distinction", so a legacy pre-012 row (or a
-    // single-unit court) still behaves as a sport-wide block, and the two
-    // views (this peek strip, Step 2's own pickers) can never disagree
-    // about a given court+unit+hour.
-    //
-    // M2 fix (post-Revision-5 review) — this used to treat "anything not
-    // cancelled" (including `completed`) as occupying, while Step 2's
-    // fetchDayOccupancy() only ever fetches `pending`/`confirmed` rows in the
-    // first place (its `.in('status', [...])` filter). A `completed`
-    // booking from earlier the same day therefore still blocked THIS
-    // widget's pill while Step 2 had already stopped counting it — the two
-    // views could disagree about the exact same hour. Matching Step 2's
-    // allow-list (rather than a deny-list) makes them structurally
-    // incapable of disagreeing on status again, per D4's own guarantee.
-    function isOverviewCourtHourOccupied(court, hour, unitLabel) {
-        const slot = overviewSlotWindow(hour);
-        const currentUnit = unitLabel || '';
-
-        const bookingMatch = overviewBookings.some((b) => {
-            const status = String(b.status || '').toLowerCase();
-            if (status !== 'pending' && status !== 'confirmed') return false;
-            if (!sameCourtName(b.courts, court.name)) return false;
-            if (!courtUnitsOverlap(b.court_unit, currentUnit)) return false;
-            return overviewWindowsOverlap(overviewBookingWindow(b), slot);
-        });
-        if (bookingMatch) return true;
-
-        // Occupancy rows retain a walk-in unit when available. Missing
-        // unit labels remain wildcards because the physical unit is unknown.
-        return overviewWalkins.some((w) => {
-            if (!sameCourtName(w.courts, court.name)) return false;
-            if (!courtUnitsOverlap(w.court_unit, currentUnit)) return false;
-            return overviewWindowsOverlap(overviewBookingWindow(w), slot);
-        });
-    }
-
-    // True when a Supabase/PostgREST error means "this column/table doesn't
-    // exist" — same check includes/staff_dashboard.js's own
-    // isSchemaMismatchError() uses. Duplicated locally (this project ships
-    // plain <script> files with no shared module system — see
-    // includes/courtsData.js's own header note on why todayRange()-style
-    // helpers are copied per file rather than imported).
-    function isOverviewSchemaMismatch(error) {
-        if (!error) return false;
-        const code = error.code || '';
-        const message = String(error.message || '').toLowerCase();
-        return code === 'PGRST204' || code === 'PGRST205' || code === '42703' || code === '42P01'
-            || message.includes('could not find') || message.includes('does not exist')
-            || message.includes('schema cache');
-    }
-
-    // Revision 5, D4 (implementation_plan.md) — court_unit/end_at only
-    // exist once database/schema/012_booking_time_range.sql has been
-    // applied. If it hasn't, this first attempt fails with a schema-mismatch
-    // error and retries with only the columns that predate that migration —
-    // same idiom (and the exact same three columns dropped) as Step 2's own
-    // fetchDayOccupancy() above, so the two never disagree about which
-    // columns they can/can't rely on. Without court_unit, occupancy still
-    // degrades to a sport-wide (not per-unit) block, same "approximate
-    // availability instead of nothing" fallback fetchDayOccupancy() uses.
-    async function fetchOverviewOccupancy(start, end) {
-        try {
-            return await window.sb.rpc('court_occupancy', {
-                from_at: start.toISOString(), to_at: end.toISOString(),
-            });
-        } catch (error) {
-            return { data: null, error };
-        }
-    }
-
-    function sortOverviewCourts(courts, mode) {
-        const copy = courts.slice(); // never mutate window.InigoCourtsData's memoized array
-        if (mode === 'available') {
-            copy.sort((a, b) => {
-                const aAvail = String(a.status || '').toLowerCase() === 'available';
-                const bAvail = String(b.status || '').toLowerCase() === 'available';
-                if (aAvail !== bAvail) return aAvail ? -1 : 1;
-                return (a.sportName || '').localeCompare(b.sportName || '') || (a.name || '').localeCompare(b.name || '');
-            });
-        } else if (mode === 'price') {
-            copy.sort((a, b) => {
-                const aNull = a.rate === null || a.rate === undefined;
-                const bNull = b.rate === null || b.rate === undefined;
-                if (aNull && bNull) return (a.name || '').localeCompare(b.name || '');
-                if (aNull !== bNull) return aNull ? 1 : -1; // unknown rate always sorts last, never treated as 0
-                return a.rate - b.rate;
-            });
-        } else {
-            // 'sport' — the DEFAULT mode as of Revision 2's R2 (see
-            // overviewSortMode's declaration above); also the safe fallback
-            // for any unrecognized mode value. Grouping by sport
-            // (groupOverviewCourtsBySport() below) is always-on regardless
-            // of mode, so this sort only decides GROUP order; 'available'/
-            // 'price' above remain selectable alternatives that instead
-            // order courts *within* each group. Courts within the same
-            // sport are secondarily ordered by name (e.g. "Bowling —
-            // Duckpin" before "Bowling — Ten-Pin").
-            copy.sort((a, b) => (a.sportName || '').localeCompare(b.sportName || '') || (a.name || '').localeCompare(b.name || ''));
-        }
-        return copy;
-    }
-
-    // Groups an already-sorted court list into { sportName, courts }
-    // buckets, one per real sportSlug, preserving each group's first-seen
-    // order in `courts` (so the "available"/"price" sort modes still
-    // determine which SPORT heading appears first, not just which card
-    // does) — §4's "visual segregation": a heading per sport, that sport's
-    // card(s) beneath it, never one flat grid.
-    function groupOverviewCourtsBySport(courts) {
-        const order = [];
-        const groups = new Map();
-        courts.forEach((court) => {
-            const key = court.sportSlug || court.sportName || court.name;
-            if (!groups.has(key)) {
-                groups.set(key, { sportName: court.sportName || court.name || 'Other', courts: [] });
-                order.push(key);
-            }
-            groups.get(key).courts.push(court);
-        });
-        return order.map((key) => groups.get(key));
-    }
-
-    // Revision 2, R1 (implementation_plan.md) — these pills are a READ-ONLY
-    // availability display only now: the Overview Courts section is
-    // marketing/showcase, and booking has its own designated panel (the
-    // Book a Court wizard's own Step-1 court picker, unaffected by this
-    // change). Both open and booked pills render as plain, non-interactive
-    // <span>s — not <button>s — since there is nothing left to click, and a
-    // <button> would wrongly suggest there is; Style/Dashboard.css also
-    // neutralizes the shared .dash-slot class's pointer cursor/hover
-    // affordance specifically inside .dash-overview-peek-strip, so these
-    // don't visually invite a click they no longer respond to (the Booking
-    // panel's own From/To <select>s in Step 2 are unaffected — this is
-    // scoped to the peek strip only). Every interpolated value is escaped,
-    // same as renderOverviewCourtCard() below — court/sport names are
-    // admin-authored content that can contain HTML.
-    //
-    // Revision 5, D2/D4/D5 (implementation_plan.md) — the label is now a
-    // SHORT range ("8–9 AM", formatHourRangeLabelShort()) instead of a
-    // single start time, `unitLabel` scopes occupancy to the card's
-    // CURRENTLY SELECTED unit (isOverviewCourtHourOccupied() above), and
-    // `isPast` (true only when overviewDate is today AND the hour has
-    // already started) adds the same .is-past treatment Step 2's pickers
-    // give an elapsed hour.
-    function renderOverviewSlotPill(court, hour, unitLabel, isPast) {
-        const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
-        const occupied = isOverviewCourtHourOccupied(court, hour, unitLabel);
-        const classes = ['dash-slot', 'dash-slot-mini'];
-        if (occupied) classes.push('is-unavailable');
-        if (isPast) classes.push('is-past');
-        return `<span class="${classes.join(' ')}">${window.escapeHtml(label)}</span>`;
-    }
-
-    function renderOverviewPeekContent(court, unitLabel) {
-        if (!overviewRules) {
-            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">Opening hours are unavailable right now.</p>';
-        }
-        if (overviewRules.isClosed) {
-            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">Closed on this date.</p>';
-        }
-        const hours = overviewSlotHours();
-        if (!hours.length) {
-            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">No bookable hours are configured for this date.</p>';
-        }
-        if (!overviewDataOk) {
-            return '<p style="color: var(--color-ink-faint); font-size: 0.78rem; margin: 0; padding: 4px 0;">Live slot status unavailable right now.</p>';
-        }
-        const isToday = overviewDateIsToday();
-        return hours.map((hour) => {
-            const isPast = isToday && isOverviewHourPast(hour);
-            return renderOverviewSlotPill(court, hour, unitLabel, isPast);
-        }).join('');
-    }
-
-    // One unit's photo (or the honest placeholder) as an HTML string — the
-    // ONE place that decides img-vs-placeholder for an Overview court card,
-    // used both by renderOverviewCourtCard()'s initial markup and by
-    // paintOverviewCourtMedia()'s later DOM patch on unit-select change, so
-    // the two can never render a unit's photo differently. Mirrors
-    // includes/landingPage.js's renderMediaSlot()/paintMedia() shape (court
-    // viewer), adapted to this file's existing .dash-court-media/
-    // .dash-court-monogram markup instead of that file's .media-slot.
-    function courtPhotoMarkup(unit, monogram, alt) {
-        if (unit.imageUrl) {
-            return `<img src="${window.escapeHtml(unit.imageUrl)}" alt="${window.escapeHtml(alt)}" loading="lazy" data-overview-court-photo>`;
-        }
-        // Honest placeholder — the monogram square this dashboard already
-        // used (renderCourtCard, now folded into this function), PLUS an
-        // explicit "Photo coming soon" caption matching
-        // includes/landingPage.js's court viewer wording, so the empty
-        // state reads the same everywhere a customer sees it. Never a
-        // broken-image icon, never an invented URL.
-        return `<span class="dash-court-monogram" aria-hidden="true" data-overview-court-photo>${window.escapeHtml(monogram)}<small class="dash-court-photo-soon">Photo coming soon</small></span>`;
-    }
-
-    // Swaps the photo/monogram inside one card's .dash-court-media in place
-    // — called on [data-overview-unit-select] `change` (see
-    // wireOverviewCourtList() below). Leaves the status badge (a sibling
-    // element, appended after the photo) untouched. A unit photo that fails
-    // to load (a typo'd unit_images URL, hand-entered by the owner) falls
-    // back to the same placeholder rather than a broken-image icon — same
-    // idea as includes/landingPage.js's court viewer paintMedia().
-    function paintOverviewCourtMedia(mediaEl, court, unit) {
-        if (!mediaEl) return;
-        const monogram = window.InigoCourtsData ? window.InigoCourtsData.monogramFor(court.sportSlug, court.name) : '?';
-        const alt = unit.label ? `${court.name} — ${unit.label}` : court.name;
-
-        const existingPhoto = mediaEl.querySelector('[data-overview-court-photo]');
-        if (existingPhoto) existingPhoto.remove();
-        mediaEl.insertAdjacentHTML('afterbegin', courtPhotoMarkup(unit, monogram, alt));
-
-        const img = mediaEl.querySelector('img[data-overview-court-photo]');
-        if (img) {
-            img.addEventListener('error', () => {
-                img.remove();
-                mediaEl.insertAdjacentHTML('afterbegin', courtPhotoMarkup({ imageUrl: null }, monogram, alt));
-                console.warn('[dashboard] court photo failed to load for "%s" — showing the placeholder instead.', alt);
-            }, { once: true });
-        }
-    }
-
-    // One sport-grouped Courts card — marketing/showcase only as of
-    // Revision 2's R1 (implementation_plan.md). Combines what the old,
-    // deleted standalone Courts panel's renderCourtCard() drew (photo,
-    // status badge, name, rating, rate, tags) with the per-unit combo box
-    // (window.InigoCourtsData.resolveCourtUnits(), §4's "Combo Box
-    // Integration"/"Imagery") and the read-only peek-slots toggle + strip
-    // PR #1 shipped (§4's "Pixlot Integration", kept per R1 but with its
-    // click-to-book hand-off removed — see renderOverviewSlotPill() above).
-    // There is no "Book Now" button here any more (R1) — booking is
-    // entirely the Book a Court panel's job now; this card only shows off
-    // the court.
-    function renderOverviewCourtCard(court) {
-        const isAvailable = String(court.status || '').toLowerCase() === 'available';
-        const statusClass = isAvailable ? 'confirmed' : 'cancelled';
-        const courtId = String(court.id);
-        const courtIdAttr = window.escapeHtml(courtId);
-        const isExpanded = overviewExpandedCourts.has(courtId);
-
-        // Unit resolution (§4/D2) — see window.InigoCourtsData.resolveCourtUnits()
-        // in includes/courtsData.js for the 2 fallback cases (unit_images,
-        // then derive Court/Lane/Table N from quantity+unit). Always at
-        // least one unit; a lone unit means no combo box (nothing to
-        // choose between).
-        const resolved = window.InigoCourtsData
-            ? window.InigoCourtsData.resolveCourtUnits(court)
-            : { pickerLabel: '', units: [{ label: null, imageUrl: court.imageUrl }] };
-        const units = resolved.units.length ? resolved.units : [{ label: null, imageUrl: court.imageUrl }];
-        const hasUnitChoice = units.length > 1;
-        const savedIndex = overviewSelectedUnitIndex.has(courtId) ? overviewSelectedUnitIndex.get(courtId) : 0;
-        const selectedIndex = Math.min(Math.max(0, savedIndex), units.length - 1);
-        const selectedUnit = units[selectedIndex];
-
-        const monogram = window.InigoCourtsData ? window.InigoCourtsData.monogramFor(court.sportSlug, court.name) : '?';
-        const initialAlt = selectedUnit.label ? `${court.name} — ${selectedUnit.label}` : court.name;
-        const media = courtPhotoMarkup(selectedUnit, monogram, initialAlt);
-
-        // Prefer the lowest server-configured unit rate when the listing has
-        // per-court schedules; the selected unit and time still determine the
-        // actual quote in the booking summary.
-        const rateHint = window.InigoCourtsData.rateHint?.(court);
-        const rateHtml = rateHint
-            ? `<span>${window.escapeHtml(rateHint)}</span>`
-            : '<span>Rate TBA</span>';
-        // Rating: `court.rating` only exists once the owner runs
-        // database/schema/003_court_rating.sql, and only renders when a
-        // court actually has one — no invented ratings.
-        const ratingHtml = (court.rating !== null && court.rating !== undefined)
-            ? `<div class="dash-court-rating">
-                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.9L22 9.6l-5.4 4.9L18 22l-6-3.6L6 22l1.4-7.5L2 9.6l7.1-.7z"/></svg>
-                    ${window.escapeHtml(court.rating.toFixed(1))}<span>/ 5</span>
-               </div>`
-            : '';
-        const tagsHtml = courtTags(court).map((t) => `<span>${window.escapeHtml(t)}</span>`).join('');
-
-        const unitPickerHtml = hasUnitChoice ? `
-            <div class="dash-form-group dash-court-unit-picker">
-                <span class="dash-form-label">${window.escapeHtml(resolved.pickerLabel || 'Choose a unit')}</span>
-                <select class="dash-select" data-overview-unit-select data-overview-court-id="${courtIdAttr}">
-                    ${units.map((u, i) => `<option value="${i}"${i === selectedIndex ? ' selected' : ''}>${window.escapeHtml(u.label || `${court.name} ${i + 1}`)}</option>`).join('')}
-                </select>
-            </div>
-        ` : '';
-
-        return `
-            <article class="dash-court-card">
-                <div class="dash-court-media" data-overview-court-media>
-                    ${media}
-                    <span class="dash-status ${statusClass}">${window.escapeHtml(court.status || 'Unavailable')}</span>
-                </div>
-                <div class="dash-court-body">
-                    <h3>${window.escapeHtml(court.name)}</h3>
-                    ${ratingHtml}
-                    <div class="dash-court-rate">${rateHtml}</div>
-                    <div class="dash-court-tags">${tagsHtml}</div>
-                    ${unitPickerHtml}
-                    <div class="dash-court-peek">
-                        <button type="button" class="dash-mini-btn" data-overview-peek-toggle data-overview-court-id="${courtIdAttr}" aria-expanded="${isExpanded ? 'true' : 'false'}">${isExpanded ? 'Hide availability' : 'Show availability'}</button>
-                    </div>
-                    <!-- data-overview-peek-strip (Revision 5, D4) lets the
-                         unit <select>'s own change handler
-                         (wireOverviewCourtList() below) find and repaint
-                         JUST this card's strip in place when the selected
-                         unit changes availability, without a full
-                         renderOverviewCourtList() re-render that would
-                         disturb every OTHER card's expanded/scroll state. -->
-                    <div class="dash-overview-peek-strip${isExpanded ? ' is-active' : ''}" data-overview-peek-strip data-overview-court-id="${courtIdAttr}">${isExpanded ? renderOverviewPeekContent(court, selectedUnit.label) : ''}</div>
-                </div>
-            </article>
-        `;
-    }
-
-    // Re-wired after every renderOverviewCourtList() call, same
-    // re-wire-after-render idiom wireReceiptDownloads() below also uses for
-    // its own dynamically-rendered scope. [data-overview-peek-toggle]
-    // wiring is unchanged from PR #1 (§4's "Pixlot Integration") — it only
-    // shows/hides the read-only strip, nothing else. There is no
-    // [data-overview-peek-slot] click wiring any more: Revision 2's R1
-    // (implementation_plan.md) removed the peek-slot click-to-book hand-off
-    // (jumpToBookingFromPeekSlot(), deleted) — renderOverviewSlotPill()
-    // above now renders plain, non-interactive <span>s with nothing to wire
-    // a click to. [data-overview-unit-select] is unchanged (§4/D2 — the
-    // per-unit combo box's image swap).
-    function wireOverviewCourtList() {
-        if (!overviewCourtList) return;
-
-        overviewCourtList.querySelectorAll('[data-overview-peek-toggle]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const courtId = btn.dataset.overviewCourtId;
-                if (!courtId) return;
-                if (overviewExpandedCourts.has(courtId)) {
-                    overviewExpandedCourts.delete(courtId);
-                } else {
-                    overviewExpandedCourts.add(courtId);
-                }
-                renderOverviewCourtList();
-            });
-        });
-
-        // Combo box selection swaps that card's photo in place (§4
-        // "Imagery") — does NOT re-render the list, so it neither disturbs
-        // any other card's peek strip nor loses its own; the chosen index
-        // is stashed in overviewSelectedUnitIndex so it also survives the
-        // NEXT full re-render (a peek toggle or sort change elsewhere).
-        overviewCourtList.querySelectorAll('[data-overview-unit-select]').forEach((select) => {
-            select.addEventListener('change', () => {
-                const courtId = select.dataset.overviewCourtId;
-                const court = overviewCourts.find((c) => String(c.id) === courtId);
-                if (!court || !window.InigoCourtsData) return;
-
-                const resolved = window.InigoCourtsData.resolveCourtUnits(court);
-                const units = resolved.units.length ? resolved.units : [{ label: null, imageUrl: court.imageUrl }];
-                const index = Math.min(Math.max(0, Number(select.value) || 0), units.length - 1);
-                overviewSelectedUnitIndex.set(courtId, index);
-
-                const card = select.closest('.dash-court-card');
-                const mediaEl = card ? card.querySelector('[data-overview-court-media]') : null;
-                paintOverviewCourtMedia(mediaEl, court, units[index]);
-
-                // Revision 5, D4 (implementation_plan.md) — occupancy is now
-                // PER SELECTED UNIT, so a unit change can flip which hours
-                // this card's peek strip shows as booked/open. Patched in
-                // place rather than a full renderOverviewCourtList()
-                // re-render, so no OTHER card's expanded state or scroll
-                // position is disturbed; a COLLAPSED strip needs no repaint
-                // here at all — renderOverviewCourtCard() already reads the
-                // just-updated overviewSelectedUnitIndex the next time this
-                // card is expanded.
-                const strip = card ? card.querySelector('[data-overview-peek-strip]') : null;
-                if (strip && strip.classList.contains('is-active')) {
-                    strip.innerHTML = renderOverviewPeekContent(court, units[index].label);
-                }
-            });
-        });
-    }
-
-    // Sort-select changes only re-render (sorting already-fetched data), not
-    // re-fetch — implementation_plan.md's explicit instruction, since
-    // nothing about the underlying court/booking data changes with sort
-    // order. Grouped by sport (§4's "visual segregation") AFTER sorting, so
-    // the chosen sort mode still decides which sport heading comes first —
-    // see groupOverviewCourtsBySport() above.
-    function renderOverviewCourtList() {
-        if (!overviewCourtList) return;
-        if (!overviewCourts.length) {
-            overviewCourtList.innerHTML = '<p style="color: var(--color-ink-faint); padding: 8px 4px;">No courts available right now.</p>';
-            return;
-        }
-        const sorted = sortOverviewCourts(overviewCourts, overviewSortMode);
-        const groups = groupOverviewCourtsBySport(sorted);
-        overviewCourtList.innerHTML = groups.map((group) => `
-            <div class="dash-court-group">
-                <h4 class="dash-court-group-title">${window.escapeHtml(group.sportName)}</h4>
-                <div class="dash-court-grid">${group.courts.map(renderOverviewCourtCard).join('')}</div>
-            </div>
-        `).join('');
-        wireOverviewCourtList();
-    }
-
-    if (overviewSortSelect) {
-        overviewSortSelect.addEventListener('change', () => {
-            overviewSortMode = overviewSortSelect.value;
-            renderOverviewCourtList();
-        });
-    }
-
-    // Revision 5, D5 (implementation_plan.md) — changing the date DOES
-    // re-fetch (unlike the sort <select> above): a different day's bookings
-    // and walk-ins are genuinely different data, not just a different
-    // ordering of what's already in memory. Same past-date clamp idiom as
-    // the Booking wizard's own bookDate change handler above.
-    if (overviewDateInput) {
-        overviewDateInput.addEventListener('change', () => {
-            const todayStr = todayDateInputValue();
-            if (overviewDateInput.value < todayStr) {
-                overviewDateInput.value = todayStr;
-                window.InigoToast?.show("You can't check availability for a past date — showing today instead.", true);
-            }
-            overviewDate = overviewDateInput.value;
-            refreshOverviewCourtWidget();
-        });
-    }
-
-    async function refreshOverviewCourtWidget(forceRules = false) {
-        if (!overviewCourtList || !window.InigoCourtsData) return;
-
-        // M3 fix (post-Revision-5 review) — see overviewRequestSeq's own
-        // declaration above for why this exists.
-        const mySeq = ++overviewRequestSeq;
-
-        // Revision 5, D5 — was always todayRange(); now the customer-picked
-        // overviewDate, defaulting to today (overviewSelectedDayRange()
-        // above).
-        const { start, end } = overviewSelectedDayRange();
-
-        const courtsPromise = window.InigoCourtsData.getCourts();
-        const occupancyPromise = window.sb
-            ? fetchOverviewOccupancy(start, end)
-            : Promise.resolve({ data: null, error: new Error('Supabase client unavailable') });
-        const rulesPromise = window.InigoBusinessHours?.getForDate
-            ? window.InigoBusinessHours.getForDate(overviewDate, { force: forceRules })
-            : Promise.resolve(null);
-
-        const [courts, occupancyRes, rules] = await Promise.all([courtsPromise, occupancyPromise, rulesPromise]);
-
-        // M3 fix — a slower, now-superseded call (e.g. the date was changed
-        // again before this one resolved) must not overwrite state a newer,
-        // already-resolved call already painted. Every write below (state
-        // AND the render call) moves after this guard so a stale response
-        // touches nothing.
-        if (mySeq !== overviewRequestSeq) return;
-
-        overviewDateBase = start;
-        overviewCourts = courts || [];
-        overviewRules = rules;
-
-        if (occupancyRes.error) console.error('[dashboard] failed to load court occupancy for the court peek', occupancyRes.error);
-
-        // Fail-safe, not fabrication (see this block's header comment on the
-        // RLS risk): if EITHER query errors, every court's peek renders the
-        // honest "unavailable" note instead of pills. Court rows themselves
-        // still render regardless, since overviewCourts came from
-        // window.InigoCourtsData independently of these two queries.
-        overviewDataOk = !occupancyRes.error && rules?.authoritative === true;
-        const occupancyRows = overviewDataOk ? (occupancyRes.data || []) : [];
-        overviewBookings = occupancyRows.filter((row) => row.source === 'online');
-        overviewWalkins = occupancyRows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source));
-
-        renderOverviewCourtList();
-    }
-
-    refreshOverviewCourtWidget();
-    document.addEventListener('inigosync:profile-ready', () => {
-        refreshOverviewCourtWidget(true);
-        refreshTimePickers(true);
-    });
-
-    // ------------------------------------------------------------------
     // My Bookings — real data, fetched once the signed-in profile is ready
     // (authGuard.js dispatches this after its own session+profile check).
     // ------------------------------------------------------------------
     const bookingsTableBody = document.querySelector('[data-dash-panel="bookings"] tbody');
+    const upcomingReservationsList = document.querySelector('[data-dash-upcoming-list]');
+    const upcomingReservationsMore = document.querySelector('[data-dash-upcoming-more]');
+    const UPCOMING_RESERVATIONS_INITIAL_LIMIT = 5;
+    const UPCOMING_RESERVATIONS_INCREMENT = 5;
+    let upcomingReservations = [];
+    let upcomingReservationsVisibleCount = UPCOMING_RESERVATIONS_INITIAL_LIMIT;
+
+    function renderUpcomingReservations(bookings, failed = false, resetVisibleCount = true) {
+        if (!upcomingReservationsList) return;
+        if (failed) {
+            upcomingReservations = [];
+            upcomingReservationsList.innerHTML = '<p class="dash-res-state">Could not load your reservations. <button type="button" class="dash-link-btn" data-dash-upcoming-retry>Try again</button></p>';
+            if (upcomingReservationsMore) upcomingReservationsMore.hidden = true;
+            return;
+        }
+
+        upcomingReservations = window.InigoDashboardUpcoming.selectUpcomingReservations(bookings);
+        if (resetVisibleCount) upcomingReservationsVisibleCount = UPCOMING_RESERVATIONS_INITIAL_LIMIT;
+
+        if (!upcomingReservations.length) {
+            upcomingReservationsList.innerHTML = '<p class="dash-res-state">No upcoming reservations. Book a court to get started.</p>';
+            if (upcomingReservationsMore) upcomingReservationsMore.hidden = true;
+            return;
+        }
+
+        const visibleBookings = upcomingReservations.slice(0, upcomingReservationsVisibleCount);
+        upcomingReservationsList.innerHTML = visibleBookings.map((booking) => `
+            <div class="dash-res-row">
+                <div class="dash-res-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v18M3 12h18M6 6c3 3 3 9 0 12M18 6c-3 3-3 9 0 12" stroke="currentColor" stroke-width="1.4"/></svg>
+                </div>
+                <div class="dash-res-info">
+                    <h4>${window.escapeHtml(booking.courts || 'Court reservation')}</h4>
+                    <p>${window.escapeHtml(formatBookingDate(booking.time_date))} · ${window.escapeHtml(formatBookingTime(booking.time_date, booking.end_at))}</p>
+                </div>
+            </div>
+        `).join('');
+        if (upcomingReservationsMore) upcomingReservationsMore.hidden = upcomingReservations.length <= upcomingReservationsVisibleCount;
+    }
+
+    if (upcomingReservationsMore) {
+        upcomingReservationsMore.addEventListener('click', () => {
+            upcomingReservationsVisibleCount = window.InigoDashboardUpcoming.nextVisibleCount(
+                upcomingReservationsVisibleCount,
+                upcomingReservations.length,
+                UPCOMING_RESERVATIONS_INCREMENT,
+            );
+            renderUpcomingReservations(upcomingReservations, false, false);
+        });
+    }
+    if (upcomingReservationsList) {
+        upcomingReservationsList.addEventListener('click', (event) => {
+            if (event.target.closest('[data-dash-upcoming-retry]')) refreshMyBookings();
+        });
+    }
 
     // Same rate lookup already used by the booking form's <select> — read
     // live from its current <option data-rate> on every call rather than a
@@ -2635,8 +1969,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Derived "Unattended" status (Revision 2, R4 — implementation_plan.md).
-    // A booking DISPLAYS as Unattended once ALL of: it is more than 30
-    // minutes past its start time (booking.time_date), nobody checked it in
+    // A booking DISPLAYS as Unattended once ALL of: it is past the
+    // date-specific grace period after booking.time_date, nobody checked it in
     // (booking.checked_in_at is null/absent —
     // database/schema/004_staff_module.sql), and its stored status is still
     // 'pending' or 'confirmed' (a booking already 'completed' or 'cancelled'
@@ -2653,10 +1987,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // server-side automation this repo cannot safely add blind. Deriving it
     // here instead means the rule is visibly enforced the moment it becomes
     // true, with zero migration risk and nothing fabricated — and it can
-    // never drift out of sync between panels, since both My Bookings
-    // (refreshMyBookings() below) and Receipts (normalizeReceipt() further
-    // below) call this SAME function rather than reading booking.status
-    // directly.
+    // never drift out of sync between panels, since My Bookings calls this
+    // SAME function rather than reading booking.status directly.
     //
     // database/schema/010_booking_unattended_status.sql (optional, NOT
     // applied — no Supabase admin access here) extends that CHECK
@@ -2666,13 +1998,61 @@ document.addEventListener('DOMContentLoaded', () => {
     // still display exactly as stored — this function only ever touches a
     // still-open pending/confirmed booking.
     // ------------------------------------------------------------------
-    const UNATTENDED_GRACE_MINUTES = 30;
+    const bookingPolicyNotice = document.querySelector('[data-dash-booking-policy]');
+    const bookingGraceMinutesByDate = new Map();
+    const bookingDateForRules = (value) => {
+        if (window.InigoBusinessHours?.dateInManila) return window.InigoBusinessHours.dateInManila(value);
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(new Date(value));
+        const part = (type) => parts.find((item) => item.type === type)?.value;
+        return `${part('year')}-${part('month')}-${part('day')}`;
+    };
+
+    async function loadBookingGraceRules(bookings, { forceToday = false } = {}) {
+        if (typeof window.InigoBusinessHours?.getForDate !== 'function') return;
+        const today = bookingDateForRules(new Date());
+        const startOfToday = Date.now();
+        const dates = new Set([today, ...(bookings || [])
+            .filter((booking) => ['pending', 'confirmed'].includes(String(booking.status || '').toLowerCase())
+                && !booking.checked_in_at
+                && Number.isFinite(new Date(booking.time_date).getTime())
+                && new Date(booking.time_date).getTime() <= startOfToday)
+            .map((booking) => bookingDateForRules(booking.time_date))]);
+
+        await Promise.all([...dates].map(async (date) => {
+            try {
+                const rules = await window.InigoBusinessHours.getForDate(date, { force: forceToday && date === today });
+                if (rules?.authoritative && Number.isInteger(rules.graceMinutes) && rules.graceMinutes >= 0) {
+                    bookingGraceMinutesByDate.set(date, rules.graceMinutes);
+                } else {
+                    bookingGraceMinutesByDate.delete(date);
+                }
+                if (date === today) renderBookingPolicyNotice(rules?.authoritative ? rules.graceMinutes : null);
+            } catch (error) {
+                bookingGraceMinutesByDate.delete(date);
+                if (date === today) renderBookingPolicyNotice(null);
+                console.warn('[dashboard] booking grace rule could not be loaded', error);
+            }
+        }));
+    }
+
+    function renderBookingPolicyNotice(graceMinutes) {
+        if (!bookingPolicyNotice) return;
+        const graceDescription = Number.isInteger(graceMinutes) && graceMinutes >= 0
+            ? `${graceMinutes} ${graceMinutes === 1 ? 'minute' : 'minutes'}`
+            : 'the grace period set by the venue';
+        bookingPolicyNotice.textContent = `You cannot cancel a booking yourself. Completed payments are non-refundable. If you have not checked in within ${graceDescription} after your start time, your booking will be cancelled as a no-show and the court will become available again.`;
+    }
 
     function displayStatusFor(booking) {
         const rawStatus = String(booking.status || '').toLowerCase();
         // Only a still-open booking can ever be "missed" — one that's
         // already cancelled/completed keeps that real status.
         if (rawStatus !== 'pending' && rawStatus !== 'confirmed') return rawStatus;
+        // Historical bookings explicitly excluded by the server no-show
+        // policy must keep their stored status.
+        if (booking.no_show_policy_applies === false) return rawStatus;
         // Staff already timed this customer in — they showed up, however
         // late; not Unattended.
         if (booking.checked_in_at) return rawStatus;
@@ -2680,7 +2060,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const start = new Date(booking.time_date);
         if (Number.isNaN(start.getTime())) return rawStatus; // defensive — time_date is required, never seen live
 
-        const graceDeadline = start.getTime() + UNATTENDED_GRACE_MINUTES * 60000;
+        const bookingDate = bookingDateForRules(booking.time_date);
+        const graceMinutes = bookingGraceMinutesByDate.get(bookingDate);
+        // Missing or fallback rules are not authoritative, so preserve the
+        // server status rather than guessing a no-show threshold.
+        if (!Number.isInteger(graceMinutes) || graceMinutes < 0) return rawStatus;
+
+        const graceDeadline = start.getTime() + graceMinutes * 60000;
         return Date.now() > graceDeadline ? 'unattended' : rawStatus;
     }
 
@@ -2704,28 +2090,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let activeReviewBookingId = null;
     const bookingReviewModal = document.querySelector('[data-booking-review-modal]');
-    async function refreshMyBookings() {
+    let bookingFetchGeneration = 0;
+    async function refreshMyBookings({ forceCurrentRule = false } = {}) {
         if (!bookingsTableBody || !window.sb || !window.inigosyncProfile) return;
 
-        const { data, error } = await window.sb
-            .from('booking')
-            .select('*')
-            .eq('customer_id', window.inigosyncProfile.id)
-            .order('time_date', { ascending: false });
+        const generation = ++bookingFetchGeneration;
+        let data = null;
+        let error = null;
+        try {
+            ({ data, error } = await window.sb
+                .from('booking')
+                .select('*')
+                .eq('customer_id', window.inigosyncProfile.id)
+                .order('time_date', { ascending: false }));
+        } catch (requestError) {
+            error = requestError;
+        }
+        if (generation !== bookingFetchGeneration) return;
 
         if (error) {
             console.error('[dashboard] failed to load bookings', error);
-            // Receipts (R5, Revision 2) reuses this exact fetch rather than
-            // a second query — see renderReceipts()'s own header comment
-            // below — so a failure here means Receipts can't render either.
-            // Same fail-safe-not-fabrication convention this file already
-            // uses elsewhere (e.g. the Overview peek widget): show the
-            // honest empty state, never a stale or fabricated list.
-            if (receiptsGrid) receiptsGrid.innerHTML = RECEIPT_EMPTY_HTML;
-            loadWalkinAcknowledgments();
+            renderUpcomingReservations(null, true);
+            // Booking acknowledgments depend on this account-scoped query;
+            // renderReceipts still attempts to load linked walk-in records.
+            renderReceipts(null, true);
             return;
         }
 
+        await loadBookingGraceRules(data || [], { forceToday: forceCurrentRule });
+        if (generation !== bookingFetchGeneration) return;
+
+        renderUpcomingReservations(data || []);
         renderProfileBookingStats(data || []);
         // Notifications (§3, D6) — reuses this exact fetch rather than a
         // second query against `booking`; see renderNotifications()'s own
@@ -2759,10 +2154,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // before touching innerHTML so this renders as literal text in
             // the customer's own session instead of running, same as the
             // staff/admin tables. Status shown is the DERIVED one
-            // (displayStatusFor(), R4/Revision 2) — never booking.status
-            // directly — so a booking more than 30 minutes past its start
-            // with no check-in reads "Unattended" here without ever writing
-            // that value to the database.
+            // (displayStatusFor()) — never booking.status directly — so an
+            // overdue booking reads "Unattended" only when its date-specific
+            // grace rule was confirmed, without writing that value to DB.
             const displayStatus = displayStatusFor(booking);
             const courtLabel = window.escapeHtml(booking.courts || '');
             const statusClass = window.escapeHtml(displayStatus);
@@ -2778,9 +2172,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const canReview = booking.status === 'completed' && fullyPaid && !reviewResult.error && !reviewedBookings.has(String(booking.booking_id));
             const reviewButton = canReview ? `<button type="button" class="dash-mini-btn" data-dash-review-booking="${window.escapeHtml(String(booking.booking_id))}">Write a review</button>` : '';
             // R3/Revision 2 — no Cancel control anywhere (see the policy
-            // notices in Pages/user_dashboard.html): the real rule is no
-            // cancellation, no refunds/cashback, and 30+ minutes late
-            // automatically shows as Unattended above. This cell used to
+            // notice in Pages/user_dashboard.html): the real rule is no
+            // cancellation and no refunds/cashback. An overdue booking shows
+            // as Unattended above using its date-specific venue grace rule.
+            // This cell used to
             // hold ONLY a conditional Cancel button (nothing for
             // completed/cancelled rows) — a Receipt shortcut takes its
             // place instead of leaving the Actions column permanently
@@ -2862,113 +2257,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // Receipts (Revision 2, R5 — implementation_plan.md). Renders one
-    // .dash-receipt-card per booking from the customer's own real `booking`
-    // rows — EVERY booking, not just ones that carry a payment_id (the old
-    // Phase 2 behavior, §7/D8, under which this panel could only ever show
-    // its hardcoded "No receipts yet" state, since nothing in this project
-    // sets payment_id yet — no PayMongo/e-wallet integration). The ask for
-    // this revision is explicit: every booking made should show a receipt
-    // here. renderReceipts() below is called from refreshMyBookings() with
-    // the SAME data that fetch already retrieved — no second query against
-    // `booking` (R5's explicit instruction).
-    //
-    // Amount is shown only where genuinely known: getCourtRate() returns
-    // null for every court today (court.rate is NULL in the live DB — see
-    // database/seed/002_seed_content.sql), so a card honestly reads
-    // "Rate TBA" rather than inventing a peso figure — same convention the
-    // booking wizard's own summary and My Bookings' Amount column already
-    // use. There is also no `payment` table anywhere in this project, so a
-    // receipt card has no payment method/reference to show.
-    //
-    // Status shown is the DERIVED one (displayStatusFor(), R4 above) — never
-    // booking.status directly — so a receipt for a booking more than 30
-    // minutes past its start with no check-in reads "Unattended" here too,
-    // exactly matching what My Bookings shows for that same booking; the two
-    // panels can never disagree, since both call the one shared function.
-    //
-    // Each card's Download button rasterizes THAT card (not the whole page)
-    // to a PNG via html2canvas (CDN <script> in Pages/user_dashboard.html)
-    // and canvas.toBlob() + a programmatic <a download> click — the one
-    // path that also works on iOS Safari and Android, unlike an <a href>
-    // pointed at a data: URL for a large image. This mechanism is unchanged
-    // from Phase 2 — only the empty-forever data source above it changed.
+    // Receipts list only saved payment acknowledgments. A booking summary
+    // is not proof of payment, so unpaid bookings never create receipt cards.
     // ------------------------------------------------------------------
-    const receiptsGrid = document.querySelector('[data-dash-booking-receipts]');
-    const walkinReceiptsGrid = document.querySelector('[data-dash-walkin-receipts]');
-    const walkinReceiptPages = document.querySelector('[data-dash-walkin-receipt-pages]');
-    const walkinReceiptPageLabel = document.querySelector('[data-dash-walkin-receipts-page]');
-    const RECEIPT_EMPTY_HTML = '<p class="dash-notif-empty">No booking payment acknowledgments yet.</p>';
+    const receiptsGrid = document.querySelector('[data-dash-receipts]');
+    const receiptSearchInput = document.querySelector('[data-dash-receipt-search]');
+    const receiptDateInput = document.querySelector('[data-dash-receipt-date]');
+    const receiptSourceInput = document.querySelector('[data-dash-receipt-source]');
+    const RECEIPT_LOADING_HTML = '<p class="dash-notif-empty">Loading payment acknowledgments from both sources…</p>';
     let receiptRenderGeneration = 0;
-    let walkinReceiptPage = 0;
-    let walkinReceiptCount = 0;
-    const WALKIN_RECEIPT_PAGE_SIZE = 8;
+    let receiptAcknowledgments = [];
+    let receiptLoadErrors = [];
 
-    if (receiptsGrid) receiptsGrid.innerHTML = '<p class="dash-notif-empty">Loading confirmed booking payments…</p>';
-
-    // booking row -> the small, honest subset of fields a receipt card can
-    // actually show today: nothing here is invented. `sport` is
-    // booking.sports (the court's REAL related sport, e.g. "Bowling" for a
-    // "Bowling — Duckpin" booking — see the big booking-insert comment
-    // further up this file), `rate` comes from the same getCourtRate()
-    // lookup (with the same "Rate TBA" honesty) My Bookings already uses
-    // above, `hours` from receiptHours() below, and `status` is the DERIVED
-    // display status (R4), not the raw stored one.
-    function normalizeReceipt(booking) {
-        const pricing = getBookingUnitPricing(booking);
-        return {
-            id: booking.booking_id,
-            court: booking.courts || 'Booking',
-            sport: booking.sports || '',
-            when: booking.time_date,
-            // Part 3 — booking.end_at (database/schema/
-            // 012_booking_time_range.sql); undefined for a booking made
-            // before that migration, which formatBookingTime()/
-            // receiptHours() below both already handle by falling back to a
-            // single start-time label / duration_minutes respectively.
-            until: booking.end_at,
-            status: displayStatusFor(booking),
-            rate: getCourtRate(booking.courts),
-            total: booking.amount_total === null || booking.amount_total === undefined ? null : Number(booking.amount_total),
-            rateDay: pricing.rateDay,
-            rateNight: pricing.rateNight,
-            rateQuantity: Number(booking.rate_quantity) || 1,
-            // L2 fix — carried alongside `rate` so renderReceiptCard() below
-            // never has to assume "/hr".
-            rateUnit: pricing.rateUnit,
-            hours: receiptHours(booking),
-        };
-    }
-
-    // Whole hours between a booking's start and end (Revision 5, D7 —
-    // implementation_plan.md), for the redesigned receipt's itemised
-    // "Rate/hr × hours" line. Every booking this app writes is whole-hour
-    // by construction (Part 3's Step 2 From/To pickers), so Math.round()
-    // here is just floating-point insurance, not real rounding.
-    //
-    // L1 fix (post-Revision-5 review) — a booking made before database/
-    // schema/012_booking_time_range.sql added end_at has no end_at, but it
-    // DOES still have its original duration_minutes column (Part 3 stopped
-    // writing new values there, it never dropped the column or backfilled
-    // it away) — a real recorded duration, not a guess. Falling straight to
-    // an assumed 1 hour ignored that real value whenever it wasn't exactly
-    // 60. Takes the whole `booking` row (not just two ISO strings) so it can
-    // reach duration_minutes; 60 is only the last-resort default when THAT
-    // is also missing. This is still a display-only computation — it never
-    // invents a rate or amount that isn't already known; "Rate TBA" still
-    // applies independently.
-    function receiptHours(booking) {
-        const endIso = booking.end_at;
-        if (endIso) {
-            const start = new Date(booking.time_date);
-            const end = new Date(endIso);
-            if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-                const hours = Math.round((end.getTime() - start.getTime()) / 3600000);
-                if (hours > 0) return hours;
-            }
-        }
-        return Math.max(1, Math.round((Number(booking.duration_minutes) || 60) / 60));
-    }
+    if (receiptsGrid) receiptsGrid.innerHTML = RECEIPT_LOADING_HTML;
 
     function acknowledgmentAmount(value) {
         if (value === null || value === undefined || value === '') return '—';
@@ -2982,7 +2283,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return '—';
     }
 
-    function renderPaymentAcknowledgment(acknowledgment, cardKey) {
+    function renderPaymentAcknowledgment(acknowledgment, cardKey, referenceLabel) {
         const items = Array.isArray(acknowledgment.items) ? acknowledgment.items : [];
         const safeKey = window.escapeHtml(String(cardKey || acknowledgment.receipt_id || acknowledgment.receipt_number || 'payment'));
         const receiptNo = window.escapeHtml(String(acknowledgment.receipt_number || acknowledgment.receipt_id || 'Payment acknowledgment'));
@@ -2998,7 +2299,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const disclaimer = acknowledgment.disclaimer || 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
         return `<article class="dash-receipt-card dash-payment-ack-card" data-dash-receipt-card="${safeKey}">
             <div class="dash-receipt-brand"><span class="dash-receipt-brand-name">IñigoSync</span><span class="dash-receipt-brand-tag">Payment acknowledgment and entry pass</span></div>
-            <p class="dash-receipt-no">Acknowledgment #${receiptNo}</p>
+            <p class="dash-receipt-no">${window.escapeHtml(String(referenceLabel || 'Payment'))} · Acknowledgment #${receiptNo}</p>
             <div class="dash-receipt-divider"></div>
             <div class="dash-receipt-top"><h4>${window.escapeHtml(String(acknowledgment.customer_name || 'Customer'))}</h4><span class="dash-status ${window.escapeHtml(paymentStatus)}">${statusLabel}</span></div>
             <div class="dash-receipt-meta"><div class="dash-summary-row"><span>Mobile</span><strong>${window.escapeHtml(String(acknowledgment.mobile || '—'))}</strong></div><div class="dash-summary-row"><span>Issued</span><strong>${window.escapeHtml(issuedAt)}</strong></div><div class="dash-summary-row"><span>Payment method</span><strong>${window.escapeHtml(method)}</strong></div></div>
@@ -3011,97 +2312,6 @@ document.addEventListener('DOMContentLoaded', () => {
             <p class="dash-receipt-thanks">${window.escapeHtml(disclaimer)}</p>
             <div class="dash-receipt-actions"><button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button></div>
         </article>`;
-    }
-
-    function renderAcknowledgmentUnavailable(id) {
-        const safeId = window.escapeHtml(String(id));
-        return `<article class="dash-receipt-card" data-dash-receipt-card="${safeId}"><h3>Booking #${safeId}</h3><p class="dash-receipt-thanks">A payment is recorded, but its saved acknowledgment could not be loaded. Refresh and try again.</p></article>`;
-    }
-
-    // Store-receipt/ticket redesign (Revision 5, D7 — implementation_plan.md):
-    // brand header, monospace receipt number, dashed "perforation" dividers,
-    // an itemised Rate/hr × hours line (or the existing "Rate TBA" honesty
-    // convention whenever the rate itself is unknown — every court today),
-    // and a prominent TOTAL row. EXACTLY the same underlying fields as
-    // before this redesign (court, receipt #, status, sport, date, time,
-    // amount) — nothing new is shown, only how it's laid out. Kept
-    // deliberately simple/non-exotic (flexbox, solid backgrounds, plain
-    // dashed borders, no gradients/backdrop-filter/transforms/external
-    // images) so html2canvas — which does not reliably support every modern
-    // CSS feature — captures it correctly and completely, matching the
-    // on-screen card exactly (the user's explicit priority for this
-    // redesign); see downloadReceiptAsPng() below. No logo image for the
-    // same reason: a wordmark rendered as plain text can never fail to load
-    // or render differently between the screen and the captured PNG the way
-    // an <img> could.
-    function renderReceiptCard(receipt) {
-        const hasRate = receipt.rate !== null;
-        const hasSavedTotal = Number.isFinite(receipt.total);
-        const hasSetEstimate = receipt.rateUnit === '/set' && typeof receipt.rateDay === 'number';
-        const hasRateEstimate = (hasRate && receipt.rateUnit === '/hr') || hasSetEstimate;
-        const amount = hasSavedTotal ? receipt.total : hasSetEstimate
-            ? receipt.rateDay * receipt.rateQuantity : hasRateEstimate ? receipt.rate * receipt.hours : null;
-        const rateLineLabel = hasSavedTotal
-            ? 'Saved reservation total'
-            : hasRateEstimate
-                ? (receipt.rateUnit === '/set' && typeof receipt.rateDay === 'number' ? `₱${receipt.rateDay.toFixed(2)}/set × ${receipt.rateQuantity} set${receipt.rateQuantity === 1 ? '' : 's'}`
-                    : (hasRate ? `₱${receipt.rate.toFixed(2)}/hr × ${receipt.hours} hr${receipt.hours === 1 ? '' : 's'}` : 'Saved reservation total'))
-            : hasRate ? `₱${receipt.rate.toFixed(2)}/game`
-            : 'Amount';
-        const rateLineAmount = hasSavedTotal || hasRateEstimate ? `₱${amount.toFixed(2)}` : hasRate ? 'Games not recorded' : 'Rate TBA';
-        const totalAmount = hasSavedTotal || hasRateEstimate ? `₱${amount.toFixed(2)}` : '—';
-        const statusClass = window.escapeHtml(receipt.status);
-        const statusLabel = window.escapeHtml(receipt.status ? receipt.status.charAt(0).toUpperCase() + receipt.status.slice(1) : '—');
-        const idAttr = window.escapeHtml(String(receipt.id));
-        // R4-3 (implementation_plan.md, "Revision 4") — carries the same
-        // booking_id a notification's data-dash-notif-booking carries (see
-        // renderNotificationItem() above), so a notification click can find
-        // THIS exact card via document.querySelectorAll('[data-dash-receipt-card]')
-        // + a dataset match. wireReceiptDownloads()'s own
-        // closest('[data-dash-receipt-card]') below is a presence selector
-        // (matches regardless of the attribute's value), so giving it a real
-        // value here doesn't affect that at all.
-        return `
-            <div class="dash-receipt-card" data-dash-receipt-card="${idAttr}">
-                <div class="dash-receipt-brand">
-                    <span class="dash-receipt-brand-name">IñigoSync</span>
-                    <span class="dash-receipt-brand-tag">Booking summary · Not proof of payment</span>
-                </div>
-                <p class="dash-receipt-no">Booking #${idAttr}</p>
-
-                <div class="dash-receipt-divider"></div>
-
-                <div class="dash-receipt-top">
-                    <h4>${window.escapeHtml(receipt.court)}</h4>
-                    <span class="dash-status ${statusClass}">${statusLabel}</span>
-                </div>
-
-                <div class="dash-receipt-meta">
-                    <div class="dash-summary-row"><span>Sport</span><strong>${window.escapeHtml(receipt.sport || '—')}</strong></div>
-                    <div class="dash-summary-row"><span>Date</span><strong>${window.escapeHtml(formatBookingDate(receipt.when))}</strong></div>
-                    <div class="dash-summary-row"><span>Time</span><strong>${window.escapeHtml(formatBookingTime(receipt.when, receipt.until))}</strong></div>
-                </div>
-
-                <div class="dash-receipt-divider"></div>
-
-                <div class="dash-receipt-meta">
-                    <div class="dash-summary-row"><span>${window.escapeHtml(rateLineLabel)}</span><strong>${window.escapeHtml(rateLineAmount)}</strong></div>
-                </div>
-
-                <div class="dash-receipt-total">
-                    <span>Estimated total</span>
-                    <span>${window.escapeHtml(totalAmount)}</span>
-                </div>
-
-                <div class="dash-receipt-divider"></div>
-
-                <p class="dash-receipt-thanks">Payment is not confirmed by this summary.</p>
-
-                <div class="dash-receipt-actions">
-                    <button type="button" class="dash-btn-primary" data-dash-receipt-download="${idAttr}">Download as PNG</button>
-                </div>
-            </div>
-        `;
     }
 
     // Promisifies HTMLCanvasElement.toBlob (callback-only in every browser)
@@ -3151,7 +2361,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `inigosync-booking-${filenameId}.png`;
+            link.download = `inigosync-payment-acknowledgment-${filenameId}.png`;
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -3185,110 +2395,202 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ok = await downloadReceiptAsPng(card, btn.dataset.dashReceiptDownload || 'receipt');
                 btn.disabled = false;
                 btn.textContent = originalLabel;
-                if (ok) window.InigoToast?.show('Booking summary downloaded.');
+                if (ok) window.InigoToast?.show('Payment acknowledgment downloaded.');
             });
         });
     }
 
-    // Renders every booking's receipt card at once — called from
-    // refreshMyBookings() with the data it already fetched (R5's explicit
-    // "no redundant query" instruction), not a fetcher of its own. Genuinely
-    // empty only when the customer has zero bookings at all; a fetch error
-    // is handled by the caller (refreshMyBookings() falls back to
-    // RECEIPT_EMPTY_HTML itself when its shared query fails, same fail-safe
-    // convention Phase 2's refreshReceipts() used to use on its own error
-    // branch).
-    async function renderReceipts(bookings) {
-        if (!receiptsGrid) return;
-        const generation = ++receiptRenderGeneration;
-
-        if (!bookings || bookings.length === 0) {
-            receiptsGrid.innerHTML = RECEIPT_EMPTY_HTML;
-            await loadWalkinAcknowledgments();
-            return;
-        }
-
-        receiptsGrid.innerHTML = '<p class="dash-notif-empty">Loading saved payment acknowledgments…</p>';
-        const paidBookings = bookings.filter(booking => Number(booking.amount_paid || 0) > 0);
-        const acknowledgments = new Map();
-        const failedAcknowledgments = new Set();
-        for (let offset = 0; offset < paidBookings.length; offset += 5) {
-            const batch = paidBookings.slice(offset, offset + 5);
-            const results = await Promise.all(batch.map(async booking => {
-                const id = String(booking.booking_id);
-                try {
-                    const { data, error } = await window.sb.rpc('get_payment_acknowledgment', { p_source: 'booking', p_id: Number(booking.booking_id) });
-                    if (error) throw error;
-                    const acknowledgment = Array.isArray(data) ? data[0] : data;
-                    if (!acknowledgment || !acknowledgment.receipt_id) throw new Error('No saved acknowledgment was returned.');
-                    return [id, acknowledgment, null];
-                } catch (error) {
-                    console.error('[dashboard] saved booking acknowledgment could not be loaded', error);
-                    return [id, null, error];
-                }
-            }));
-            results.forEach(([id, acknowledgment, error]) => {
-                if (acknowledgment) acknowledgments.set(id, acknowledgment);
-                else if (error) failedAcknowledgments.add(id);
-            });
-        }
-        if (generation !== receiptRenderGeneration) return;
-        receiptsGrid.innerHTML = bookings.map(booking => {
-            const id = String(booking.booking_id);
-            const acknowledgment = acknowledgments.get(id);
-            if (acknowledgment) return renderPaymentAcknowledgment(acknowledgment, id);
-            if (failedAcknowledgments.has(id)) return renderAcknowledgmentUnavailable(id);
-            return renderReceiptCard(normalizeReceipt(booking));
-        }).join('');
-        wireReceiptDownloads();
-        await loadWalkinAcknowledgments();
+    // Reads immutable acknowledgment snapshots for paid bookings. The
+    // multi-ack RPC preserves both deposit and balance receipts; older
+    // deployments fall back to the legacy RPC, which returns the latest one.
+    function isMissingAcknowledgmentHistoryRpc(error) {
+        const code = String(error?.code || '');
+        const message = String(error?.message || '').toLowerCase();
+        return code === 'PGRST202' || code === '42883'
+            || (message.includes('customer_get_booking_payment_acknowledgments')
+                && (message.includes('not found') || message.includes('schema cache') || message.includes('does not exist')));
     }
 
-    async function loadWalkinAcknowledgments() {
-        if (!walkinReceiptsGrid || !window.sb || !window.inigosyncProfile) return;
-        walkinReceiptsGrid.innerHTML = '<p class="dash-notif-empty">Loading linked walk-in visits…</p>';
-        try {
+    function normalizeSavedAcknowledgment(historyEntry) {
+        const snapshot = historyEntry?.acknowledgment && typeof historyEntry.acknowledgment === 'object'
+            ? historyEntry.acknowledgment : historyEntry;
+        if (!snapshot || typeof snapshot !== 'object' || !snapshot.receipt_id) return null;
+        return {
+            ...snapshot,
+            receipt_id: snapshot.receipt_id || historyEntry.receipt_id,
+            receipt_number: snapshot.receipt_number || historyEntry.receipt_number,
+            issued_at: snapshot.issued_at || historyEntry.issued_at,
+            payment_method: snapshot.payment_method || historyEntry.method,
+        };
+    }
+
+    async function fetchBookingAcknowledgments(booking) {
+        const bookingId = Number(booking.booking_id);
+        const { data, error } = await window.sb.rpc('customer_get_booking_payment_acknowledgments', { p_booking_id: bookingId });
+        if (error && !isMissingAcknowledgmentHistoryRpc(error)) throw error;
+        if (!error) {
+            const result = Array.isArray(data) ? data[0] : data;
+            const history = Array.isArray(result?.payment_history) ? result.payment_history : [];
+            return history.map(normalizeSavedAcknowledgment).filter(Boolean);
+        }
+
+        const legacy = await window.sb.rpc('get_payment_acknowledgment', { p_source: 'booking', p_id: bookingId });
+        if (legacy.error) throw legacy.error;
+        const result = Array.isArray(legacy.data) ? legacy.data[0] : legacy.data;
+        const acknowledgment = normalizeSavedAcknowledgment(result);
+        return acknowledgment ? [acknowledgment] : [];
+    }
+
+    function paymentDateKey(value) {
+        if (window.InigoBusinessHours?.dateInManila) {
+            try { return window.InigoBusinessHours.dateInManila(value); } catch { return ''; }
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(date);
+        const part = type => parts.find(item => item.type === type)?.value;
+        return `${part('year')}-${part('month')}-${part('day')}`;
+    }
+
+    function renderFilteredAcknowledgments() {
+        if (!receiptsGrid) return;
+        const query = String(receiptSearchInput?.value || '').trim().toLowerCase();
+        const paymentDate = String(receiptDateInput?.value || '');
+        const source = String(receiptSourceInput?.value || 'all');
+        const filtered = window.InigoCustomerReceipts.filterAcknowledgments(receiptAcknowledgments, {
+            source, idQuery: query, paymentDate,
+        }, paymentDateKey);
+        const cards = filtered.map(entry => renderPaymentAcknowledgment(
+            entry.acknowledgment,
+            entry.cardKey,
+            entry.referenceLabel,
+        ));
+        const message = cards.length
+            ? ''
+            : query || paymentDate
+                ? '<p class="dash-notif-empty">No payment acknowledgments match those filters.</p>'
+                : '<p class="dash-notif-empty">No payment acknowledgments yet.</p>';
+        const errors = receiptLoadErrors.length
+            ? `<p class="dash-receipt-load-warning" role="status">${window.escapeHtml(receiptLoadErrors.join(' '))}</p>`
+            : '';
+        receiptsGrid.innerHTML = `${errors}${cards.join('')}${message}`;
+        wireReceiptDownloads();
+    }
+
+    // The RPC caps each page at 50 rows. Fetch pages serially using its
+    // account-scoped total count so ID/date filters cover the whole walk-in
+    // history without firing an unbounded set of requests.
+    async function fetchAllWalkinAcknowledgments() {
+        const pageSize = 50;
+        const maxRows = 50000;
+        const rows = [];
+        const seen = new Set();
+        let totalCount = null;
+        do {
             const { data, error } = await window.sb.rpc('customer_list_walkin_acknowledgments', {
-                p_offset: walkinReceiptPage * WALKIN_RECEIPT_PAGE_SIZE,
-                p_limit: WALKIN_RECEIPT_PAGE_SIZE,
+                p_offset: rows.length,
+                p_limit: pageSize,
             });
             if (error) throw error;
             const result = Array.isArray(data) ? data[0] : data;
-            const rows = Array.isArray(result?.rows) ? result.rows : [];
-            walkinReceiptCount = Number(result?.total_count) || 0;
-            if (!rows.length) {
-                walkinReceiptsGrid.innerHTML = '<p class="dash-notif-empty">No linked walk-in visits with payment acknowledgments yet.</p>';
-            } else {
-                walkinReceiptsGrid.innerHTML = rows.map(row => {
-                    const snapshot = row.payload && typeof row.payload === 'object' ? row.payload : {};
-                    const acknowledgment = {
-                        ...snapshot,
-                        receipt_id: row.receipt_id || snapshot.receipt_id,
-                        receipt_number: row.receipt_number || snapshot.receipt_number,
-                        issued_at: row.issued_at || snapshot.issued_at,
-                    };
-                    return renderPaymentAcknowledgment(acknowledgment, `walkin-${row.order_id || row.receipt_id}`);
-                }).join('');
+            const pageRows = Array.isArray(result?.rows) ? result.rows : [];
+            if (totalCount === null) totalCount = Math.max(0, Number(result?.total_count) || 0);
+            else if (Math.max(0, Number(result?.total_count) || 0) !== totalCount) throw new Error('Walk-in acknowledgment count changed during paging.');
+            if (totalCount > maxRows) throw new Error('Walk-in acknowledgment history exceeds the safe search limit.');
+            if (!pageRows.length && rows.length < totalCount) throw new Error('Walk-in acknowledgment paging ended before all records were returned.');
+            for (const row of pageRows) {
+                const key = String(row.order_id || row.receipt_id || '');
+                if (!key || seen.has(key)) throw new Error('Walk-in acknowledgment paging returned a duplicate or invalid record.');
+                seen.add(key);
             }
-            if (walkinReceiptPages) walkinReceiptPages.hidden = walkinReceiptCount <= WALKIN_RECEIPT_PAGE_SIZE;
-            if (walkinReceiptPageLabel) walkinReceiptPageLabel.textContent = `Page ${walkinReceiptPage + 1} of ${Math.max(1, Math.ceil(walkinReceiptCount / WALKIN_RECEIPT_PAGE_SIZE))}`;
-            const prev = document.querySelector('[data-dash-walkin-receipts-prev]');
-            const next = document.querySelector('[data-dash-walkin-receipts-next]');
-            if (prev) prev.disabled = walkinReceiptPage === 0;
-            if (next) next.disabled = (walkinReceiptPage + 1) * WALKIN_RECEIPT_PAGE_SIZE >= walkinReceiptCount;
-            wireReceiptDownloads();
-        } catch (error) {
-            console.error('[dashboard] linked walk-in acknowledgments could not be loaded', error);
-            walkinReceiptsGrid.innerHTML = '<p class="dash-notif-empty">Linked walk-in acknowledgments could not be loaded. Try again.</p>';
-        }
+            if (rows.length + pageRows.length > totalCount) throw new Error('Walk-in acknowledgment count changed during paging.');
+            rows.push(...pageRows);
+        } while (rows.length < totalCount);
+        return rows;
     }
 
-    document.querySelector('[data-dash-walkin-receipts-prev]')?.addEventListener('click', () => {
-        if (walkinReceiptPage > 0) { walkinReceiptPage -= 1; loadWalkinAcknowledgments(); }
-    });
-    document.querySelector('[data-dash-walkin-receipts-next]')?.addEventListener('click', () => {
-        if ((walkinReceiptPage + 1) * WALKIN_RECEIPT_PAGE_SIZE < walkinReceiptCount) { walkinReceiptPage += 1; loadWalkinAcknowledgments(); }
-    });
+    // Called with the booking rows already fetched for the customer's
+    // dashboard. Only recorded payment rows are queried, then all returned
+    // acknowledgment snapshots are combined with every paid walk-in page.
+    async function renderReceipts(bookings, bookingsUnavailable = false) {
+        if (!receiptsGrid || !window.sb || !window.inigosyncProfile) return;
+        const generation = ++receiptRenderGeneration;
+        const loadedAcknowledgments = [];
+        const loadErrors = [];
+        if (bookingsUnavailable) loadErrors.push('Online booking payment acknowledgments could not be loaded.');
+        receiptsGrid.innerHTML = RECEIPT_LOADING_HTML;
+        if (receiptSearchInput) receiptSearchInput.disabled = true;
+        if (receiptDateInput) receiptDateInput.disabled = true;
+        if (receiptSourceInput) receiptSourceInput.disabled = true;
+
+        const paidBookings = (bookings || []).filter(booking => Number(booking.amount_paid || 0) > 0
+            || booking.payment_id || booking.balance_payment_id);
+        for (let offset = 0; offset < paidBookings.length; offset += 5) {
+            const batch = paidBookings.slice(offset, offset + 5);
+            const results = await Promise.all(batch.map(async booking => {
+                try {
+                    const saved = await fetchBookingAcknowledgments(booking);
+                    return { booking, saved, error: null };
+                } catch (error) {
+                    console.error('[dashboard] saved booking acknowledgment could not be loaded', error);
+                    return { booking, saved: [], error };
+                }
+            }));
+            results.forEach(({ booking, saved, error }) => {
+                const bookingId = String(booking.booking_id);
+                if (error) loadErrors.push(`Booking #${bookingId} payment acknowledgments could not be loaded.`);
+                saved.forEach(acknowledgment => loadedAcknowledgments.push({
+                    source: 'booking',
+                    acknowledgment,
+                    searchIds: [bookingId.toLowerCase()],
+                    referenceLabel: `Booking #${bookingId}`,
+                    cardKey: `booking-${bookingId}-${acknowledgment.receipt_id}`,
+                }));
+            });
+        }
+
+        try {
+            const walkinRows = await fetchAllWalkinAcknowledgments();
+            walkinRows.forEach(row => {
+                const snapshot = row.payload && typeof row.payload === 'object' ? row.payload : {};
+                const acknowledgment = {
+                    ...snapshot,
+                    receipt_id: row.receipt_id || snapshot.receipt_id,
+                    receipt_number: row.receipt_number || snapshot.receipt_number,
+                    issued_at: row.issued_at || snapshot.issued_at,
+                };
+                const orderId = String(row.order_id || '');
+                const visitIds = Array.isArray(acknowledgment.items)
+                    ? acknowledgment.items.map(item => String(item.reservation_id || '')).filter(Boolean)
+                    : [];
+                loadedAcknowledgments.push({
+                    source: 'walkin',
+                    acknowledgment,
+                    searchIds: [orderId, ...visitIds].filter(Boolean).map(id => id.toLowerCase()),
+                    referenceLabel: `Walk-in order #${orderId || acknowledgment.receipt_id}`,
+                    cardKey: `walkin-${orderId || acknowledgment.receipt_id}`,
+                });
+            });
+        } catch (error) {
+            console.error('[dashboard] linked walk-in acknowledgments could not be loaded', error);
+            loadErrors.push('Walk-in payment acknowledgments could not be loaded; displayed results include online booking payments only. Refresh and try again.');
+        }
+
+        if (generation !== receiptRenderGeneration) return;
+        receiptAcknowledgments = loadedAcknowledgments;
+        receiptLoadErrors = loadErrors;
+        receiptAcknowledgments.sort((left, right) => new Date(right.acknowledgment.issued_at || 0) - new Date(left.acknowledgment.issued_at || 0));
+        if (receiptSearchInput) receiptSearchInput.disabled = false;
+        if (receiptDateInput) receiptDateInput.disabled = false;
+        if (receiptSourceInput) receiptSourceInput.disabled = false;
+        renderFilteredAcknowledgments();
+    }
+
+    receiptSearchInput?.addEventListener('input', renderFilteredAcknowledgments);
+    receiptDateInput?.addEventListener('change', renderFilteredAcknowledgments);
+    receiptSourceInput?.addEventListener('change', renderFilteredAcknowledgments);
 
     // ------------------------------------------------------------------
     // Profile + Settings — prefill from the real signed-in profile, and
@@ -3374,7 +2676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // fail the whole select with Postgres 42703 and sign every user out
     // until database/schema/008_profile_name_parts.sql is applied. Scoping
     // the request to just this panel means a schema mismatch only ever
-    // affects these three boxes, same isOverviewSchemaMismatch() classifier
+    // affects these three boxes, same isDashboardSchemaMismatch() classifier
     // this file already uses for the Overview peek widget and feedback
     // submit — defined further below, but a hoisted function declaration
     // like every other helper on this page, so it's safe to call here.
@@ -3386,7 +2688,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .eq('id', profileId)
             .maybeSingle();
         if (error) {
-            if (!isOverviewSchemaMismatch(error)) {
+            if (!isDashboardSchemaMismatch(error)) {
                 console.error('[dashboard] failed to load profile name parts', error);
             }
             return null;
@@ -3706,7 +3008,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .select('contact_num_validated, contact_num_validated_at')
             .eq('id', profileId).maybeSingle();
         if (error) {
-            if (!isOverviewSchemaMismatch(error)) console.error('[dashboard] failed to load contact validation status', error);
+            if (!isDashboardSchemaMismatch(error)) console.error('[dashboard] failed to load contact validation status', error);
             return null;
         }
         return data;

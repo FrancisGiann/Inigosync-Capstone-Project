@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recovery: { heading: 'Reset your password', backTab: 'forgot', backLabel: '← Use a different email' }
     };
 
-    // Timers for the short-lived toast setAuthNotice() renders further down.
+    // Timer for success notices. Error notices remain visible until dismissed.
     //
     // Declared HERE rather than beside setAuthNotice, and that is the whole
     // point of them being here: consumePendingAuthNotice() runs during this
@@ -101,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // that keeps this from silently coming back.
     let authNoticeDismissTimer = null;
     let authNoticeHideTimer = null;
+    let authNoticeReturnFocus = null;
 
     // Whether the auth modal is currently open, for the focus trap in the
     // keydown handler below. Tracked as a flag rather than derived from
@@ -767,6 +768,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (window.sb) {
         window.sb.auth.getSession().then(({ data: { session } }) => {
+            if (isOauthReturn && !session) {
+                openModal('login');
+                setAuthNotice('Google sign-in did not finish. Please try again.', true);
+                if (window.InigoLoading) window.InigoLoading.hide();
+                return;
+            }
             // A recovery-link OR invite-link session must NOT auto-complete
             // a normal customer login — it exists only so mode === 'reset'
             // below can call updateUser(); routing it into completeLogin()
@@ -780,12 +787,16 @@ document.addEventListener('DOMContentLoaded', () => {
             completeLogin(isOauthReturn ? ['customer'] : ['customer', 'staff', 'admin']).catch(error => {
                 if (isOauthReturn) {
                     openModal('login');
-                    const notice = overlay.querySelector('[data-auth-access-error]');
-                    notice.textContent = friendlyAuthError(error);
-                    notice.hidden = false;
+                    setAuthNotice(friendlyAuthError(error), true);
                 }
                 if (window.InigoLoading) window.InigoLoading.hide();
             });
+        }).catch(error => {
+            if (isOauthReturn) {
+                openModal('login');
+                setAuthNotice(friendlyAuthError(error), true);
+            }
+            if (window.InigoLoading) window.InigoLoading.hide();
         });
     }
 
@@ -1217,6 +1228,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (e.key === 'Escape' && !overlay.hidden) {
+            const notice = overlay.querySelector('[data-auth-notice]');
+            if (notice && !notice.hidden && notice.classList.contains('is-error')) {
+                e.preventDefault();
+                hideAuthNotice();
+                return;
+            }
             closeModal();
             return;
         }
@@ -1481,10 +1498,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    // Renders one step's issues into their own fields' error lines and puts
-    // the cursor on the first field that actually failed — not on the step's
-    // first input, which since the merge is the email box even when it was
-    // the password that was rejected.
+    // Shows step issues in the dismissible auth message box and focuses the
+    // first field that actually failed.
     function showSignupStepIssues(issues) {
         if (!issues || !issues.length) return;
         const step = issues[0].step;
@@ -1503,7 +1518,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         clearSignupStepErrors(step);
-        issues.forEach((issue) => setSignupStepError(issue.step, issue.message, issue.field));
+        setAuthNotice(issues.map((issue) => issue.message).join(' '), true);
     }
 
     async function advanceSignupStep() {
@@ -1516,9 +1531,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (signupStep === 1) {
             signupStepAdvancing = true;
             const next = signupForm.querySelector('[data-signup-next]');
+            const checkedEmail = normalizeLoginEmail(signupForm.elements.email.value);
             next.disabled = true;
             try {
                 const available = await window.InigoSignupEmail.check();
+                const currentEmail = normalizeLoginEmail(signupForm.elements.email.value);
+                if (!available && currentEmail === checkedEmail && signupForm.classList.contains('is-active') && authIsOpen && signupStep === 1) {
+                    const state = signupForm.querySelector('[data-signup-email-status]')?.dataset.state;
+                    const message = state === 'taken'
+                        ? 'This email is already registered. Log in or use a different email address.'
+                        : state === 'rate_limited'
+                            ? 'Too many email checks. Please wait 1 minute and try again.'
+                            : state === 'invalid'
+                                ? 'Enter a valid email address.'
+                                : 'We could not check that email right now. Please try again shortly.';
+                    setAuthNotice(message, true);
+                }
                 if (!available || !signupForm.classList.contains('is-active') || !authIsOpen || signupStep !== 1) return false;
             } finally {
                 signupStepAdvancing = false;
@@ -1655,7 +1683,6 @@ document.addEventListener('DOMContentLoaded', () => {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (form.dataset.authPanel === 'phone') return;
-            overlay.querySelector('[data-auth-access-error]').hidden = true;
 
             // Sign Up's stepped flow owns its own validation, and has to run
             // before checkValidity() below rather than inside the mode ===
@@ -1694,7 +1721,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!form.checkValidity()) {
-                form.reportValidity();
+                const invalidField = Array.from(form.elements).find((field) => field.willValidate && !field.checkValidity());
+                if (invalidField) invalidField.focus();
+                setAuthNotice(invalidField?.validationMessage || 'Please check the information you entered and try again.', true);
                 return;
             }
 
@@ -1817,7 +1846,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // to the customer dashboard.
                     if (otpPurpose === 'login') {
                         if (code.length !== 6 || !pendingLoginOtp) {
-                            if (otpError) otpError.classList.add('is-visible');
+                            setAuthNotice('Enter the 6-digit code we emailed you.', true);
                             return;
                         }
 
@@ -1829,11 +1858,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
 
                         if (error) {
-                            if (otpError) otpError.classList.add('is-visible');
                             throw error;
                         }
 
-                        if (otpError) otpError.classList.remove('is-visible');
                         const allowedRoles = pendingLoginOtp.allowedRoles;
                         pendingLoginOtp = null;
                         await completeLogin(allowedRoles);
@@ -1850,7 +1877,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // new password is set.
                     if (otpPurpose === 'recovery') {
                         if (code.length !== 6 || !pendingRecoveryEmail) {
-                            if (otpError) otpError.classList.add('is-visible');
+                            setAuthNotice('Enter the 6-digit code we emailed you.', true);
                             return;
                         }
 
@@ -1879,11 +1906,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             // place rather than dumping the visitor back to
                             // the start of the flow. The throw is caught below
                             // and hides the loading overlay.
-                            if (otpError) otpError.classList.add('is-visible');
                             throw error;
                         }
 
-                        if (otpError) otpError.classList.remove('is-visible');
                         if (window.InigoLoading) window.InigoLoading.hide();
                         setActivePanel('reset');
                         // setActivePanel() has no focus policy of its own (see
@@ -1898,7 +1923,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     if (code.length !== 6 || !pendingSignupEmail) {
-                        if (otpError) otpError.classList.add('is-visible');
+                        setAuthNotice('Enter the 6-digit code we emailed you.', true);
                         return;
                     }
 
@@ -1910,11 +1935,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (error) {
-                        if (otpError) otpError.classList.add('is-visible');
                         throw error;
                     }
 
-                    if (otpError) otpError.classList.remove('is-visible');
                     await completeLogin(['customer'], true);
 
                     return;
@@ -2037,9 +2060,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         setAuthNotice(`Incorrect email or password. ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining before a 1-minute timeout.`, true);
                     }
                 } else if (err.code === 'account_role_mismatch') {
-                    const notice = overlay.querySelector('[data-auth-access-error]');
-                    notice.textContent = friendlyAuthError(err);
-                    notice.hidden = false;
+                    setAuthNotice(friendlyAuthError(err), true);
                 } else {
                     setAuthNotice(friendlyAuthError(err), true);
                 }
@@ -2053,7 +2074,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // OTP verification UI (design/demo only — no real code is checked yet)
     // ------------------------------------------------------------------
     const otpBoxes = Array.from(overlay.querySelectorAll('[data-otp-box]'));
-    const otpError = overlay.querySelector('[data-otp-error]');
     const otpResendBtn = overlay.querySelector('[data-otp-resend]');
     const otpTimerEl = overlay.querySelector('[data-otp-timer]');
     let otpTimerId = null;
@@ -2063,7 +2083,7 @@ document.addEventListener('DOMContentLoaded', () => {
             box.value = '';
             box.classList.remove('is-filled');
         });
-        if (otpError) otpError.classList.remove('is-visible');
+        setAuthNotice('');
         if (otpBoxes[0]) otpBoxes[0].focus();
         startResendCountdown(30);
     }
@@ -2171,8 +2191,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Short-lived toast: floats above the modal instead of sitting inline in
-    // the form flow, and auto-dismisses on its own — no close button needed.
+    // Floating auth notice. Errors persist until dismissed; success messages
+    // keep their short auto-dismiss behavior.
     //
     // `authNoticeDismissTimer` and `authNoticeHideTimer` used to be declared
     // here. They are now in the top-level declaration block at the head of
@@ -2183,22 +2203,39 @@ document.addEventListener('DOMContentLoaded', () => {
     function getAuthNoticeEl() {
         let notice = overlay.querySelector('[data-auth-notice]');
         if (!notice) {
-            notice = document.createElement('p');
+            notice = document.createElement('div');
             notice.className = 'auth-status';
             notice.dataset.authNotice = '';
+            notice.setAttribute('role', 'status');
             notice.setAttribute('aria-live', 'polite');
+            notice.setAttribute('aria-atomic', 'true');
+            const messageEl = document.createElement('span');
+            messageEl.dataset.authNoticeMessage = '';
+            notice.appendChild(messageEl);
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'auth-status-close';
+            closeButton.dataset.authNoticeClose = '';
+            closeButton.setAttribute('aria-label', 'Dismiss message');
+            closeButton.textContent = '×';
+            closeButton.hidden = true;
+            closeButton.addEventListener('click', hideAuthNotice);
+            notice.appendChild(closeButton);
             notice.hidden = true;
-            overlay.appendChild(notice);
+            (modal || overlay).appendChild(notice);
         }
         return notice;
     }
 
     function hideAuthNotice() {
         const notice = getAuthNoticeEl();
+        const restoreFocus = notice.contains(document.activeElement) ? authNoticeReturnFocus : null;
+        authNoticeReturnFocus = null;
         notice.classList.remove('is-visible');
         if (authNoticeHideTimer) window.clearTimeout(authNoticeHideTimer);
         authNoticeHideTimer = window.setTimeout(() => {
             notice.hidden = true;
+            if (restoreFocus && restoreFocus.isConnected && isRenderedFocusable(restoreFocus)) restoreFocus.focus();
         }, 250);
     }
 
@@ -2219,12 +2256,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         notice.hidden = false;
-        notice.textContent = message;
+        notice.querySelector('[data-auth-notice-message]').textContent = message;
         notice.classList.toggle('is-error', isError);
+        const closeButton = notice.querySelector('[data-auth-notice-close]');
+        closeButton.hidden = !isError;
+        notice.setAttribute('role', isError ? 'alert' : 'status');
+        notice.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+        if (isError && !notice.contains(document.activeElement)) {
+            authNoticeReturnFocus = document.activeElement;
+        }
         requestAnimationFrame(() => notice.classList.add('is-visible'));
 
-        authNoticeDismissTimer = window.setTimeout(hideAuthNotice, duration);
+        if (!isError) authNoticeDismissTimer = window.setTimeout(hideAuthNotice, duration);
     }
+
+    window.InigoAuthNotice = {
+        showError(message) { setAuthNotice(message, true); }
+    };
 
     // ------------------------------------------------------------------
     // Google Sign-In / Sign-Up — via Supabase's native Google OAuth
@@ -2266,7 +2314,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            overlay.querySelector('[data-auth-access-error]').hidden = true;
             button.disabled = true;
             button.classList.add('is-loading');
             if (window.InigoLoading) window.InigoLoading.show('Redirecting to Google…');
@@ -2274,7 +2321,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const { error } = await window.sb.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: window.location.href, queryParams: { prompt: 'select_account' } }
+                options: {
+                    redirectTo: `${window.location.origin}${window.location.pathname}`,
+                    queryParams: { prompt: 'select_account' }
+                }
             });
 
             if (error) {

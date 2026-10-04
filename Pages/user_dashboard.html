@@ -41,22 +41,17 @@
         <div class="dash-sidebar-scrim" data-dash-scrim></div>
 
         <!-- ================= SIDEBAR ================= -->
-        <aside class="dash-sidebar" data-dash-sidebar>
+        <aside class="dash-sidebar" data-dash-sidebar id="customerDashboardSidebar">
+            <button type="button" class="dash-sidebar-collapse" data-dash-sidebar-collapse aria-label="Hide sidebar" aria-controls="customerDashboardSidebar" aria-expanded="true" title="Hide sidebar">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="m14.5 5-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
             <div class="dash-sidebar-brand">
                 <img src="../assets/Logo/WebLogo.png" alt="Iñigos logo">
                 <div class="logo-text">IñigoSync</div>
             </div>
 
-            <!-- Trimmed to exactly 5 items (§1 of the feedback doc, D1 in
-                 implementation_plan.md): Dashboard, Book a Court, My
-                 Bookings, Booking summaries, Account Settings. Courts is gone as a nav
-                 item — its card grid now lives inside the Dashboard/Overview
-                 panel below (§4/D2). Profile is gone as a nav item too, but
-                 its panel (data-dash-panel="profile") is NOT deleted — it
-                 stays reachable from the topbar avatar dropdown's "View
-                 Profile" button a few lines down. Log Out is gone from here
-                 as well; it already exists (and keeps working) in that same
-                 avatar dropdown, wired by includes/authGuard.js. -->
+            <!-- Profile and sign-out are available in the avatar menu;
+                 courts are selected in the booking wizard. -->
             <ul class="dash-nav">
                 <li>
                     <button type="button" class="dash-nav-link is-active" data-dash-nav="overview">
@@ -79,9 +74,10 @@
                 <li>
                     <button type="button" class="dash-nav-link" data-dash-nav="receipts">
                         <svg viewBox="0 0 24 24" fill="none"><path d="M6 2.5h12v19l-2.5-1.5L13 21l-1-1.5-1 1.5-2.5-1.5L6 21.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 8h6M9 11.5h6M9 15h3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                        Booking summaries
+                        Receipts
                     </button>
                 </li>
+                <li class="dash-nav-divider" role="separator" aria-hidden="true"></li>
                 <li>
                     <button type="button" class="dash-nav-link" data-dash-nav="settings">
                         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
@@ -90,15 +86,19 @@
                 </li>
             </ul>
 
-            <!-- Customer review link to the center's public Google Maps listing. -->
+            <!-- Send feedback to the IñigoSync team. -->
             <div class="dash-sidebar-foot">
                 <div class="dash-nav-divider"></div>
                 <div class="dash-feedback-card" data-dash-feedback-card>
                     <p>How are we doing?<br>Let us know!</p>
-                    <a class="dash-feedback-btn" href="https://www.google.com/maps?cid=16628664884079723934" target="_blank" rel="noopener noreferrer">Review on Google</a>
+                    <button type="button" class="dash-feedback-btn" data-dash-feedback-open>Give Feedback</button>
                 </div>
             </div>
         </aside>
+
+        <button type="button" class="dash-sidebar-reveal" data-dash-sidebar-reveal aria-label="Show sidebar" aria-controls="customerDashboardSidebar" aria-expanded="false" title="Show sidebar">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="m9.5 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
 
         <!-- ================= MAIN ================= -->
         <div class="dash-main">
@@ -106,7 +106,7 @@
             <!-- TOPBAR -->
             <header class="dash-topbar">
                 <div style="display:flex; align-items:center; gap:14px;">
-                    <button type="button" class="dash-mobile-toggle" data-dash-mobile-toggle aria-label="Open menu">
+                    <button type="button" class="dash-mobile-toggle" data-dash-mobile-toggle aria-label="Open menu" aria-controls="customerDashboardSidebar" aria-expanded="false">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                     </button>
                     <div class="dash-topbar-title">
@@ -116,11 +116,6 @@
                 </div>
 
                 <div class="dash-topbar-actions">
-                    <!-- The mobile-only Feedback button that used to live
-                         here was removed by R4-1 (implementation_plan.md,
-                         "Revision 4") — the sidebar's .dash-feedback-card
-                         (above) is now the ONE feedback entry point at every
-                         width; see that card's own comment for why. -->
                     <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false" style="margin-right: 8px;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="5" class="sun-circle"/>
@@ -138,7 +133,7 @@
 
                     <!-- Customer notifications are loaded from the account-scoped
                          notification API, including announcements and maintenance
-                         notices. Search, pagination, and read state all belong to
+                         notices. Pagination and read state belong to
                          the signed-in customer. -->
                     <div class="dash-notif" data-dash-notif>
                         <button type="button" class="dash-icon-btn" data-dash-notif-trigger aria-label="Notifications" aria-expanded="false">
@@ -148,7 +143,6 @@
 
                         <div class="dash-notif-menu" data-dash-notif-menu role="region" aria-label="Notifications">
                             <div class="dash-notif-menu-head"><span>Notifications</span><span data-dash-notif-unread aria-live="polite"></span></div>
-                            <label class="dash-notif-search"><span class="dash-sr-only">Search notifications</span><input type="search" placeholder="Search notifications…" autocomplete="off" data-dash-notif-search></label>
                             <div class="dash-notif-selection" data-dash-notif-selection>
                                 <label><span class="dash-sr-only">Select notifications</span><select data-dash-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
                                 <span data-dash-notif-selected aria-live="polite">0 selected</span>
@@ -176,10 +170,7 @@
                                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                 View Profile
                             </button>
-                            <button type="button" data-dash-nav="settings">
-                                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-                                Account Settings
-                            </button>
+
                             <button type="button" class="dash-logout" data-dash-logout>
                                 <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                 Log Out
@@ -241,8 +232,12 @@
                             </article>
                         </div>
 
+                        <div class="dash-hero-arrow-rail">
+                            <button type="button" class="dash-hero-arrow" data-dash-hero-prev aria-label="Previous featured photo" hidden><span aria-hidden="true">←</span></button>
+                            <button type="button" class="dash-hero-arrow" data-dash-hero-next aria-label="Next featured photo" hidden><span aria-hidden="true">→</span></button>
+                        </div>
                         <div class="dash-hero-controls">
-                            <button type="button" class="dash-hero-btn" data-dash-nav="booking">Book this slot</button>
+                            <button type="button" class="dash-hero-pause" data-dash-hero-pause aria-label="Pause slideshow" aria-pressed="false" hidden>Pause</button>
                             <div class="dash-hero-dots">
                                 <button type="button" class="dash-hero-dot is-active" data-dash-hero-dot="0" aria-label="Slide 1" aria-current="true"></button>
                                 <button type="button" class="dash-hero-dot" data-dash-hero-dot="1" aria-label="Slide 2"></button>
@@ -252,49 +247,19 @@
                         </div>
                     </div>
 
-                    <!-- Upcoming reservations — content/behavior unchanged
-                         (§4 of the feedback doc: "current layout is correct
-                         and approved"). No longer wrapped in .dash-grid-2:
-                         its former sibling (the compact Courts card) is
-                         replaced below by the full-width, sport-grouped
-                         Courts section (§4/D2), so this card now takes the
-                         full row itself instead of leaving an empty second
-                         column. -->
-                    <div class="dash-card">
+                    <!-- Live, account-scoped bookings are populated by
+                         includes/Dashboard.js; loading, empty and retry
+                         states stay in this card. -->
+                    <div class="dash-card dash-upcoming-card">
                         <div class="dash-card-head">
                             <h3>Upcoming reservations</h3>
                             <button type="button" class="dash-link-btn" data-dash-nav="bookings">View all</button>
                         </div>
 
-                        <div class="dash-res-row">
-                            <div class="dash-res-icon">
-                                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v18M3 12h18M6 6c3 3 3 9 0 12M18 6c-3 3-3 9 0 12" stroke="currentColor" stroke-width="1.4"/></svg>
-                            </div>
-                            <div class="dash-res-info">
-                                <h4>Basketball — Full Court</h4>
-                                <p>Today · 6:00 PM – 7:00 PM</p>
-                            </div>
+                        <div class="dash-res-list" data-dash-upcoming-list aria-live="polite">
+                            <p class="dash-res-state">Loading your reservations…</p>
                         </div>
-
-                        <div class="dash-res-row">
-                            <div class="dash-res-icon">
-                                <svg viewBox="0 0 24 24" fill="none"><rect x="6" y="9" width="12" height="4" rx="1" stroke="currentColor" stroke-width="1.6"/><line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1.4"/></svg>
-                            </div>
-                            <div class="dash-res-info">
-                                <h4>Badminton — Court 2</h4>
-                                <p>Jul 14 · 5:00 PM – 6:00 PM</p>
-                            </div>
-                        </div>
-
-                        <div class="dash-res-row">
-                            <div class="dash-res-icon">
-                                <svg viewBox="0 0 24 24" fill="none"><rect x="6" y="9" width="12" height="6" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
-                            </div>
-                            <div class="dash-res-info">
-                                <h4>Pickleball — Court 1</h4>
-                                <p>Jul 16 · 3:00 PM – 4:00 PM</p>
-                            </div>
-                        </div>
+                        <button type="button" class="dash-link-btn dash-res-more" data-dash-upcoming-more hidden>Show more</button>
 
                         <div class="dash-quick-actions" style="margin-top: 20px;">
                             <button type="button" class="dash-quick-btn" data-dash-nav="booking">
@@ -303,244 +268,34 @@
                             </button>
                             <button type="button" class="dash-quick-btn" data-dash-nav="receipts">
                                 <svg viewBox="0 0 24 24" fill="none"><path d="M6 2.5h12v19l-2.5-1.5L13 21l-1-1.5-1 1.5-2.5-1.5L6 21.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-                                View booking summaries
+                                View receipts
                             </button>
                         </div>
                     </div>
 
-                    <!-- ========================================================
-                         Courts — §4 of the feedback doc, D2 in
-                         implementation_plan.md; MARKETING/SHOWCASE ONLY as of
-                         Revision 2's R1 (same file, "Revision 2" section) —
-                         booking has its own designated panel (Book a Court
-                         below); this section only shows the courts off. This
-                         REPLACES both the old compact court list PR #1 put
-                         here AND the standalone "Courts / Court Information"
-                         dash-panel that used to follow this section
-                         (data-dash-panel="courts" — deleted outright; its
-                         data-dash-nav="courts" deep links go with it, since
-                         there is no longer a separate "all courts" screen to
-                         view). Rendered by includes/Dashboard.js from the
-                         real `court`/`sport` tables (window.InigoCourtsData)
-                         plus today's `booking`/`walk_in_booking` rows for
-                         each card's peek strip — see
-                         refreshOverviewCourtWidget() /
-                         renderOverviewCourtList() there.
-
-                         Requirements this satisfies:
-                           • "Visual segregation" — courts are grouped under
-                             a heading per sport, not one flat grid.
-                           • "Combo Box Integration" — each card gets a
-                             <select> listing that sport/row's individual
-                             units ("Court 1"…, "Lane 1"…), built by
-                             window.InigoCourtsData.resolveCourtUnits()
-                             (ported from includes/landingPage.js into
-                             includes/courtsData.js — D2 — so landingPage.js
-                             itself stays untouched).
-                           • "Imagery" — picking a unit swaps that card's
-                             photo to the unit's own image_url, falling back
-                             to the sport's single image, then to the
-                             existing "Photo coming soon" placeholder. Never
-                             an invented URL.
-                           • "Pixlot Integration" (read as "peek slot" — the
-                             PR #1 feature the user explicitly praised) is
-                             KEPT inside each card as a READ-ONLY display:
-                             same Peek slots toggle, same hourly open/booked
-                             pills — but per R1, no click-to-book hand-off
-                             into the Booking panel any more. There is also
-                             no "Book Now" button on these cards (R1) — the
-                             Book a Court panel below is the only place to
-                             actually book.
-
-                         The sort <select> DEFAULTS to "Sport (A–Z)" as of
-                         R2, ordering the per-sport groups alphabetically —
-                         restored after Phase 1 had dropped it, reasoning
-                         that always-on grouping made it a no-op duplicate of
-                         the default order; the user later asked for it back
-                         explicitly. "Available first" and "Price: Low to
-                         High" remain as alternatives that instead sort
-                         courts *within* each sport group — grouping stays
-                         always-on regardless of mode, so the two concerns
-                         compose rather than conflict (see
-                         includes/Dashboard.js's sortOverviewCourts()). The
-                         default option here MUST match the JS's own default
-                         overviewSortMode ('sport') — see that file's
-                         declaration comment. -->
-                    <div class="dash-card">
-                        <!-- Availability date (D5, implementation_plan.md
-                             "Revision 5") — lets the customer pick which
-                             calendar day the peek strip below reflects,
-                             instead of always today. `min`/`value` are set by
-                             includes/Dashboard.js (same todayDateInputValue()
-                             the Booking wizard's own date field already
-                             uses), so a past date can't be selected here
-                             either. -->
-                        <div class="dash-card-head dash-overview-controls">
-                            <h3>Courts</h3>
-                            <div class="dash-overview-controls-fields">
-                                <label class="dash-overview-date-field">
-                                    <span class="sr-only">Availability for</span>
-                                    <input type="date" class="dash-input" data-dash-overview-date aria-label="Availability for">
-                                </label>
-                                <label for="dash-overview-sort" class="sr-only">Sort courts</label>
-                                <select id="dash-overview-sort" class="dash-select" data-dash-overview-sort>
-                                    <option value="sport" selected>Sport (A–Z)</option>
-                                    <option value="available">Available first</option>
-                                    <option value="price">Price: Low to High</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="dash-court-groups" data-dash-overview-court-list>
-                            <p style="color: var(--color-ink-faint); padding: 8px 4px;">Loading courts…</p>
-                        </div>
-                    </div>
                 </section>
 
                 <!-- The booking wizard sends the selected inventory unit and
                      time to one PayMongo checkout for the full cart. A verified
                      payment creates the booking; the browser never inserts it. -->
                 <section class="dash-panel" data-dash-panel="booking">
-                    <div class="dash-panel-head">
-                        <div>
-                            <h2>Book a Court</h2>
-                            <p>Follow the 3 simple steps below to reserve your schedule.</p>
-                        </div>
-                    </div>
-
-                    <!-- Step indicator — purely visual/aria; the current
-                         step, and whether Next is enabled, is driven by
-                         includes/Dashboard.js's renderBookWizard(). -->
-                    <div class="dash-wizard-steps" data-dash-book-steps role="list" aria-label="Booking steps">
-                        <div class="dash-wizard-step is-current" data-dash-book-step-indicator="1" role="listitem">
-                            <span class="dash-wizard-step-num">1</span>
-                            <span class="dash-wizard-step-label">Sport &amp; Court</span>
-                        </div>
-                        <div class="dash-wizard-step" data-dash-book-step-indicator="2" role="listitem">
-                            <span class="dash-wizard-step-num">2</span>
-                            <span class="dash-wizard-step-label">Date &amp; Time</span>
-                        </div>
-                        <div class="dash-wizard-step" data-dash-book-step-indicator="3" role="listitem">
-                            <span class="dash-wizard-step-num">3</span>
-                            <span class="dash-wizard-step-label">Confirm</span>
-                        </div>
-                    </div>
-
-                    <div class="dash-book-cart" data-dash-book-cart hidden>
-                        <div class="dash-book-cart-head"><strong>Booking list</strong><span data-dash-book-cart-count>0 items</span></div>
-                        <ul data-dash-book-cart-items></ul>
-                        <p class="dash-form-hint">Pay for every listed court in one secure checkout. Your times become bookings after payment is confirmed.</p>
-                        <button type="button" class="dash-btn-save" data-dash-book-cart-submit>Pay for listed bookings</button>
-                    </div>
-
                     <div class="dash-card dash-wizard-card">
-                        <!-- STEP 1 — Select Sport & Court -->
+                        <!-- STEP 1 — Photo-first sport and court selection -->
                         <div class="dash-wizard-panel is-active" data-dash-book-step="1">
-                            <h3 class="dash-wizard-panel-title">Select your sport &amp; court</h3>
-
-                            <!-- Revision 3, Change 2 (implementation_plan.md's
-                                 "Revision 3" section) — the court/unit pickers
-                                 and the preview now sit SIDE BY SIDE on wide
-                                 screens (preview dominant, per the user's "make
-                                 it more larger" request) instead of stacked in
-                                 one column; see .dash-book-step1-layout in
-                                 Style/Dashboard.css for the full reasoning,
-                                 including why this wrapper's DOM order (fields
-                                 first, preview second) intentionally differs
-                                 from the WIDE-screen visual order (preview
-                                 left/dominant, fields right) and why that's
-                                 safe. Collapses back to one column (fields
-                                 above preview) below 640px. -->
-                            <div class="dash-book-step1-layout">
-                                <div class="dash-book-step1-fields">
-                                    <div class="dash-form-group">
-                                        <span class="dash-form-label">Court</span>
-                                        <!-- Options rendered by includes/Dashboard.js
-                                             from window.InigoCourtsData.getCourts()
-                                             (the real `court` table) — no hardcoded
-                                             court list here anymore, see
-                                             docs/QA_AUDIT_REPORT.md P0#8. -->
-                                        <select class="dash-select" data-dash-book-select>
-                                            <option value="" data-rate="">Loading courts…</option>
-                                        </select>
-                                    </div>
-
-                                    <!-- Per-unit combo box (§4/D2's resolveCourtUnits(),
-                                         reused here per §5) — hidden entirely when the
-                                         selected court resolves to a single unit
-                                         (nothing to choose between). Selecting a unit
-                                         only swaps the preview photo alongside it; see
-                                         this section's header comment on why it never
-                                         changes what gets submitted. -->
-                                    <div class="dash-form-group dash-court-unit-picker" data-dash-book-unit-wrap hidden>
-                                        <span class="dash-form-label" data-dash-book-unit-label>Choose a unit</span>
-                                        <select class="dash-select" data-dash-book-unit-select></select>
-                                    </div>
-                                </div>
-
-                                <!-- Dynamic court preview (§5) — same img-vs-
-                                     "Photo coming soon" placeholder rendering as
-                                     the Overview panel's court cards
-                                     (courtPhotoMarkup() in includes/Dashboard.js),
-                                     now substantially larger since it's this
-                                     step's clear visual focus (Revision 3,
-                                     Change 2). -->
-                                <div class="dash-form-group dash-book-step1-preview">
-                                    <span class="dash-form-label">Preview</span>
-                                    <div class="dash-court-media dash-court-media-lg" data-dash-book-preview-media></div>
-                                </div>
-                            </div>
+                            <h3 class="dash-wizard-panel-title">Choose a court</h3>
+                            <p class="dash-form-hint">Choose a sport photo to view its courts, availability, and booking options.</p>
+                            <div class="dash-book-sport-grid" data-dash-book-sports aria-label="Sports"></div>
                         </div>
 
-                        <!-- STEP 2 — Choose Date & Time -->
-                        <div class="dash-wizard-panel" data-dash-book-step="2">
-                            <h3 class="dash-wizard-panel-title">Choose a date &amp; time</h3>
-
-                            <!-- `min`/`value` are set by includes/Dashboard.js
-                                 (todayDateInputValue()) — this used to carry a
-                                 hardcoded value="2026-07-14" with no `min`,
-                                 silently allowing a past date to be "booked". -->
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Date</span>
-                                <input type="date" class="dash-input" data-dash-book-date>
-                            </div>
-
-                            <!-- Revision 5, D3 (implementation_plan.md) — the
-                                 old 12-button clickable slot grid (Part 3) is
-                                 gone entirely per the user's explicit "there
-                                 should be no slots to click" correction.
-                                 Replaced by a From / To time-range picker:
-                                 two plain <select>s whose OPTIONS shrink to
-                                 what's actually free on the chosen court +
-                                 unit + date, so there is nothing to click
-                                 that isn't already guaranteed bookable.
-                                 includes/Dashboard.js's renderTimePickers()
-                                 fills both from computeFreeWindows() (built
-                                 on the same fetchDayBookings()/
-                                 isSlotHourBooked() this step has always used)
-                                 and writes the "Open on this date" status
-                                 line below them. -->
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Time range</span>
-                                <p class="dash-form-hint">Choose a start and end time within the selected date’s opening hours.</p>
-                                <div class="dash-time-range">
-                                    <div class="dash-form-group">
-                                        <span class="dash-form-label">From</span>
-                                        <select class="dash-select" data-dash-book-from></select>
-                                    </div>
-                                    <div class="dash-form-group">
-                                        <span class="dash-form-label">To</span>
-                                        <select class="dash-select" data-dash-book-to></select>
-                                    </div>
-                                </div>
-                                <p class="dash-form-hint" data-dash-book-open-windows>Select a court first.</p>
-                            </div>
-                        </div>
-
-                        <!-- STEP 3 — Confirm (payment option + booking
-                             summary + submit, per §5) -->
+                        <!-- Cart review and payment choices -->
                         <div class="dash-wizard-panel" data-dash-book-step="3">
-                            <h3 class="dash-wizard-panel-title">Confirm your booking</h3>
+                            <h3 class="dash-wizard-panel-title">Review your cart</h3>
+                            <div class="dash-book-cart" data-dash-book-cart>
+                                <div class="dash-book-cart-head"><strong>Selected bookings</strong><span data-dash-book-cart-count>0 items</span></div>
+                                <p class="dash-form-hint" data-dash-book-cart-empty>Your cart is empty. Add available times to continue.</p>
+                                <ul data-dash-book-cart-items></ul>
+                                <p class="dash-form-hint">You can combine up to eight court bookings in one secure checkout.</p>
+                            </div>
 
                             <div class="dash-form-group">
                                 <span class="dash-form-label">Payment preference</span>
@@ -566,71 +321,62 @@
                                 </div>
                             </div>
 
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Secure payment</span>
-                                <div class="dash-payment-options">
-                                    <label class="dash-payment-option is-selected" data-dash-pay-mode-option>
-                                        <span class="dash-payment-option-head">
-                                            <input type="radio" name="booking-pay-mode" checked data-dash-pay-mode="online">
-                                            <span data-dash-online-mode-label>Pay online now</span>
-                                        </span>
-                                        <p data-dash-pay-mode-hint>Checkout securely with an available online method.</p>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Revision 2, R3 (implementation_plan.md) — the
-                                 real policy: no cancellation, no refunds or
-                                 cashback, and arriving more than 30 minutes
-                                 late automatically marks the booking
-                                 "Unattended" (computed on-screen — see
-                                 includes/Dashboard.js's displayStatusFor(),
-                                 R4). This replaces a stale notice that
-                                 contradicted that rule by claiming a missed
-                                 booking gets auto-cancelled and its payment
-                                 forfeited. Written in plain language for the
-                                 "older, non-tech-savvy users" this redesign
-                                 targets. -->
-                            <div class="dash-notice">
-                                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-                                <span>You cannot cancel a booking yourself. Completed payments are non-refundable. If you have not checked in 30 minutes after your start time, your booking is cancelled as a no-show and the court becomes available again.</span>
-                            </div>
-
                             <div class="dash-wizard-summary">
-                                <div class="dash-summary-row"><span>Court</span><strong data-dash-summary-court>Loading…</strong></div>
-                                <div class="dash-summary-row"><span>Date</span><strong data-dash-summary-date>Loading…</strong></div>
-                                <div class="dash-summary-row"><span>Time</span><strong data-dash-summary-time>— Select a time —</strong></div>
-                                <div class="dash-summary-row"><span>Rate</span><strong data-dash-summary-rate>—</strong></div>
-                                <label class="dash-summary-row" data-dash-rate-quantity-wrap hidden><span>Number of sets</span><input type="number" min="1" max="100" step="1" value="1" data-dash-rate-quantity aria-label="Number of sets"></label>
-
-                                <div class="dash-summary-divider"></div>
-
                                 <div class="dash-summary-row"><span>Payment preference</span><strong data-dash-summary-payment>Downpayment (50%)</strong></div>
-
-                                <div class="dash-summary-divider"></div>
-
-                                <div class="dash-summary-total">
-                                    <span>Estimated payment</span>
-                                    <span data-dash-summary-total>—</span>
-                                </div>
-                                <p class="dash-form-hint">Your time is held during checkout and confirmed only after PayMongo confirms payment. Each bowling set reserves one hour on a lane.</p>
-                                <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Select a time range to continue</button>
-                                <button type="button" class="dash-btn-ghost" data-dash-book-add hidden>Add this booking and choose another</button>
+                                <div class="dash-summary-total"><span>Estimated payment</span><span data-dash-summary-total>—</span></div>
+                                <p class="dash-form-hint" data-dash-pay-mode-hint>Payment happens securely through PayMongo after review.</p>
+                                <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Book and pay securely</button>
+                                <button type="button" class="dash-btn-ghost" data-dash-book-new>Add another booking</button>
                             </div>
                         </div>
 
-                        <!-- Back / Next — Next is disabled until the current
-                             step's required field is set (renderBookWizard()
-                             in includes/Dashboard.js); Back is hidden on step
-                             1 and Next is hidden on step 3, whose own
-                             "Request Booking" button (above) is the wizard's
-                             final action. -->
-                        <div class="dash-wizard-nav">
-                            <button type="button" class="dash-btn-ghost dash-wizard-back" data-dash-book-back hidden>Back</button>
-                            <button type="button" class="dash-btn-save dash-wizard-next" data-dash-book-next disabled>Next</button>
-                        </div>
                     </div>
                 </section>
+
+                <div class="dash-booking-modal" data-dash-booking-modal hidden>
+                    <div class="dash-booking-modal-backdrop" data-dash-booking-modal-close></div>
+                    <section class="dash-booking-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-booking-dialog-title" tabindex="-1">
+                        <button type="button" class="dash-modal-close" data-dash-booking-modal-close aria-label="Close court booking">×</button>
+                        <h2 id="dash-booking-dialog-title">Choose your court and time</h2>
+                        <div class="dash-book-court-choice" data-dash-book-court-choice>
+                            <div class="dash-book-step1-layout">
+                                <div class="dash-book-step1-fields">
+                                    <div class="dash-form-group">
+                                        <label class="dash-form-label" for="dash-book-court">Court</label>
+                                        <select id="dash-book-court" class="dash-select" data-dash-book-select disabled>
+                                            <option value="">Choose a sport first</option>
+                                        </select>
+                                    </div>
+                                    <div class="dash-form-group dash-court-unit-picker" data-dash-book-unit-wrap hidden>
+                                        <label class="dash-form-label" for="dash-book-unit" data-dash-book-unit-label>Choose a unit</label>
+                                        <select id="dash-book-unit" class="dash-select" data-dash-book-unit-select></select>
+                                    </div>
+                                    <div class="dash-form-group">
+                                        <label class="dash-form-label" for="dash-book-date">Date</label>
+                                        <input id="dash-book-date" type="date" class="dash-input" data-dash-book-date>
+                                    </div>
+                                    <p class="dash-form-hint" data-dash-book-open-windows>Select a court and date to check availability.</p>
+                                </div>
+                                <div class="dash-form-group dash-book-step1-preview">
+                                    <span class="dash-form-label">Court photo</span>
+                                    <div class="dash-court-media dash-court-media-lg" data-dash-book-preview-media></div>
+                                </div>
+                            </div>
+                        </div>
+                        <h3 class="dash-booking-time-title">Available times</h3>
+                        <div class="dash-book-slot-grid" data-dash-book-slots role="group" aria-label="Available hourly times"></div>
+                        <p class="dash-form-hint" data-dash-book-slot-status aria-live="polite">Choose a court and date to see available times.</p>
+                        <button type="button" class="dash-btn-primary" data-dash-book-add disabled>Add selected times to cart</button>
+                    </section>
+                </div>
+
+                <aside class="dash-book-cart-bar" data-dash-book-cart-bar aria-label="Booking cart" hidden>
+                    <div class="dash-book-cart-bar-content">
+                        <strong data-dash-book-cart-bar-count>0 bookings selected</strong>
+                        <div class="dash-book-cart-bar-items" data-dash-book-cart-bar-items aria-live="polite"></div>
+                    </div>
+                    <button type="button" class="dash-btn-primary" data-dash-book-cart-proceed>Proceed to Payment</button>
+                </aside>
 
                 <!-- ============================================================
                      MY BOOKINGS PANEL
@@ -644,24 +390,11 @@
                          column below and the rest of the table's layout are
                          unchanged per §6's "retain the current overall visual
                          display". -->
-                    <div class="dash-panel-head">
-                        <div>
-                            <h2>My Bookings</h2>
-                            <p>Track the status of every reservation you've made.</p>
-                        </div>
-                    </div>
-
-                    <!-- Revision 2, R3 (implementation_plan.md) — the real
-                         policy: no cancellation, no refunds or cashback, and
-                         arriving more than 30 minutes late automatically
-                         marks the booking "Unattended" (computed on-screen
-                         per row below — see includes/Dashboard.js's
-                         displayStatusFor(), R4). Replaces a stale notice
-                         that contradicted this by claiming a missed booking
-                         gets auto-cancelled and its payment forfeited. -->
+                    <!-- Venue booking policy; the date-specific grace period
+                         is populated from the current admin rule. -->
                     <div class="dash-notice">
                         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
-                        <span>You cannot cancel a booking yourself. Completed payments are non-refundable. If you have not checked in 30 minutes after your start time, your booking is cancelled as a no-show and the court becomes available again.</span>
+                        <span data-dash-booking-policy>You cannot cancel a booking yourself. Completed payments are non-refundable. If you have not checked in before the grace period set by the venue ends, your booking will be cancelled as a no-show and the court will become available again.</span>
                     </div>
 
                     <div class="dash-card">
@@ -756,35 +489,13 @@
                      BOOKING SUMMARY PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="receipts">
-                    <div class="dash-panel-head">
-                        <div>
-                            <h2>Payment acknowledgments</h2>
-                            <p>View confirmed booking payments and linked walk-in visits. These acknowledgments confirm payment and entry only; they are not BIR invoices or official receipts.</p>
+                    <div class="dash-receipts-group">
+                        <div class="dash-receipt-filters">
+                            <label class="dash-receipt-filter" for="customerReceiptSearch">Search booking or visit ID<input id="customerReceiptSearch" type="search" data-dash-receipt-search placeholder="Enter a booking or walk-in ID" autocomplete="off"></label>
+                            <label class="dash-receipt-filter" for="customerReceiptDate">Payment date<input id="customerReceiptDate" type="date" data-dash-receipt-date></label>
+                            <label class="dash-receipt-filter" for="customerReceiptSource">Payment source<select id="customerReceiptSource" data-dash-receipt-source><option value="all">All payments</option><option value="booking">Online bookings</option><option value="walkin">Walk-ins</option></select></label>
                         </div>
-                    </div>
-
-                    <!-- §7 of the feedback doc, D8 in implementation_plan.md;
-                         rewritten for Revision 2's R5 (implementation_plan.md,
-                         "Revision 2" section). includes/Dashboard.js's
-                         renderReceipts() renders one .dash-receipt-card (with
-                         a Download-as-PNG button, powered by the html2canvas
-                         CDN <script> below) per real `booking` row belonging
-                         to the signed-in customer — EVERY booking, not only
-                         ones that carry a payment_id (Phase 2's rule, which
-                         meant this panel could only ever show "No receipts
-                         yet", since nothing in this project sets payment_id
-                         yet). Amount reads "Rate TBA" rather than an
-                         invented peso figure whenever a court unit's price
-                         isn't configured. renderReceipts() reuses the exact fetch
-                         refreshMyBookings() already makes — no second query
-                         against `booking`. The empty state above only
-                         appears for a customer with genuinely zero
-                         bookings. -->
-                    <div class="dash-receipt-grid" data-dash-booking-receipts aria-live="polite"></div>
-                    <div class="dash-walkin-receipts">
-                        <div class="dash-panel-head"><div><h3>Walk-in visits</h3><p>Payment acknowledgments for walk-ins linked to your account.</p></div></div>
-                        <div class="dash-receipt-grid dash-walkin-receipt-grid" data-dash-walkin-receipts aria-live="polite"><p class="dash-notif-empty">Loading linked walk-in visits…</p></div>
-                        <nav class="dash-walkin-receipt-pages" data-dash-walkin-receipt-pages aria-label="Walk-in acknowledgment pages" hidden><button type="button" class="dash-mini-btn" data-dash-walkin-receipts-prev>Previous</button><span data-dash-walkin-receipts-page aria-live="polite"></span><button type="button" class="dash-mini-btn" data-dash-walkin-receipts-next>Next</button></nav>
+                        <div class="dash-receipt-grid" data-dash-receipts aria-live="polite"><p class="dash-notif-empty">Loading payment acknowledgments…</p></div>
                     </div>
                 </section>
 
@@ -853,13 +564,6 @@
                      ACCOUNT SETTINGS PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="settings">
-                    <div class="dash-panel-head">
-                        <div>
-                            <h2>Account Settings</h2>
-                            <p>Update your personal details and manage your password.</p>
-                        </div>
-                    </div>
-
                     <!-- Profile Photo — R4-4, implementation_plan.md
                          "Revision 4". FIRST card in this panel per that
                          spec. profiles.avatar_url already existed (already
@@ -1002,7 +706,7 @@
                             <div class="dash-form-group">
                                 <span class="dash-form-label">Current password</span>
                                 <div class="dash-input-wrap">
-                                    <input type="password" class="dash-input" placeholder="••••••••" data-dash-pw-current>
+                                    <input type="password" class="dash-input" placeholder="Enter your password" data-dash-pw-current>
                                     <button type="button" class="dash-toggle-visibility" data-dash-toggle-password aria-label="Show password">
                                         <svg viewBox="0 0 24 24" width="18" height="18"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
                                     </button>
@@ -1046,76 +750,38 @@
 
             </main>
 
-            <!-- Revision 5, D8/D9 (implementation_plan.md) — a slim,
-                 dashboard-only footer, replacing the landing-page footer
-                 clone this page used to render on every tab. Still appended
-                 after <main> rather than inside any [data-dash-panel] (same
-                 position as before) so exactly one instance exists
-                 regardless of which tab is active — includes/Dashboard.js's
-                 setActivePanel() (D8) is what actually shows/hides it,
-                 toggling `hidden` so it is visible ONLY on the Dashboard/
-                 Overview tab (name === 'overview') and hidden everywhere
-                 else, including the notification -> Receipts deep link. No
-                 `hidden` attribute here in the raw markup — Overview is
-                 ALSO the default-active `[data-dash-panel]` without any JS
-                 having run yet (see its own "is-active" class above), so
-                 the footer starts visible to match that same no-JS
-                 baseline; setActivePanel() only ever needs to hide it from
-                 that point on, never show it for the very first paint.
-                 Quick links reuse the existing [data-dash-nav] tab switcher
-                 — no separate navigation logic. The Google Maps <iframe>
-                 the old footer embedded is gone (D9): it was the single
-                 heaviest element on this page and already had to be
-                 special-cased out of every receipt's html2canvas capture
-                 (see downloadReceiptAsPng()'s `ignoreElements` in
-                 includes/Dashboard.js) — a plain "Get directions" link
-                 replaces it. Styled by the new .dash-footer* rules in
-                 Style/Dashboard.css (dashboard tokens, not
-                 Style/LandingPage.css's .site-footer/.footer-* — those stay
-                 untouched for Pages/Index.html). -->
+            <!-- Compact help, directions, and terms footer. -->
             <footer class="dash-footer" data-dash-footer>
                 <div class="dash-footer-inner">
-                    <div class="dash-footer-col dash-footer-brand">
-                        <div class="dash-footer-brand-main">
-                            <img src="../assets/Logo/WebLogo.png" alt="IñigoSync logo">
-                            <span class="dash-footer-brand-name">IñigoSync</span>
-                        </div>
-                        <p>Book courts, manage schedules, and stay connected with Iñigos Sports Center.</p>
-                    </div>
-
-                    <div class="dash-footer-col">
-                        <h4>Quick links</h4>
-                        <button type="button" data-dash-nav="booking">Book a Court</button>
-                        <button type="button" data-dash-nav="bookings">My Bookings</button>
-                        <button type="button" data-dash-nav="receipts">Booking summaries</button>
-                        <button type="button" data-dash-nav="settings">Account Settings</button>
-                    </div>
-
-                    <div class="dash-footer-col">
-                        <h4>Need help?</h4>
-                        <a href="tel:+639281546876">+63 928 154 6876</a>
-                        <a href="mailto:itsrosem8@gmail.com">itsrosem8@gmail.com</a>
-                        <span>Iñigos Sports Center, Brgy. Bocohan, Diversion Road, Lucena City</span>
-                        <span data-dash-footer-hours>Hours vary by day. Check the selected date before booking.</span>
-                        <a href="https://www.google.com/maps?q=I%C3%B1igos%20Sports%20Center%20Brgy.%20Bocohan%20Lucena%20City&z=15" target="_blank" rel="noopener noreferrer">Get directions</a>
-                    </div>
-
-                    <div class="dash-footer-col">
-                        <h4>Policies</h4>
-                        <a href="terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
-                        <span>You cannot cancel a booking yourself. A booking without check-in after the posted grace period is marked unattended; payments follow the agreed terms.</span>
-                        <a href="https://www.facebook.com/profile.php?id=100064109438955" target="_blank" rel="noopener noreferrer" class="dash-footer-social">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 22v-8.5h2.8l.4-3.2h-3.2V4.3c0-.9.3-1.6 1.6-1.6h1.7V.1c-.3 0-1.3-.1-2.4-.1-2.4 0-4.1 1.5-4.1 4.2v2.4H7.2v3.2h2.8V22h3.5z"/></svg>
-                            Facebook
-                        </a>
-                    </div>
-                </div>
-
-                <div class="dash-footer-bottom">
-                    <span>© 2026 IñigoSync · Iñigos Sports Center, Lucena City. All rights reserved.</span>
+                    <a href="tel:+639281546876">Help: +63 928 154 6876</a>
+                    <a href="mailto:itsrosem8@gmail.com">itsrosem8@gmail.com</a>
+                    <a href="https://www.google.com/maps?q=I%C3%B1igos%20Sports%20Center%20Brgy.%20Bocohan%20Lucena%20City&amp;z=15" target="_blank" rel="noopener noreferrer">Directions</a>
+                    <a href="terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+                    <span class="dash-footer-copyright">© 2026 IñigoSync · Lucena City</span>
                 </div>
             </footer>
         </div>
+    </div>
+
+    <button type="button" class="customer-faq-launcher" data-customer-faq-open aria-label="Open frequently asked questions" aria-haspopup="dialog" aria-expanded="false">
+        <span class="customer-faq-launcher-label">Have a questions</span>
+        <span class="customer-faq-launcher-icon" aria-hidden="true">?</span>
+    </button>
+    <div class="customer-faq-overlay" data-customer-faq-overlay hidden>
+        <section class="customer-faq-dialog" role="dialog" aria-modal="true" aria-labelledby="customerFaqTitle" aria-describedby="customerFaqIntro" tabindex="-1" data-customer-faq-dialog>
+            <button type="button" class="customer-faq-close" data-customer-faq-close aria-label="Close frequently asked questions">×</button>
+            <h2 id="customerFaqTitle">Frequently asked questions</h2>
+            <p id="customerFaqIntro" class="customer-faq-intro">Choose a question to see the answer.</p>
+            <div class="customer-faq-questions" role="group" aria-label="Common booking questions">
+                <button type="button" data-customer-faq-question="booking" aria-controls="customerFaqAnswer" aria-expanded="false">How do I book a court?</button>
+                <button type="button" data-customer-faq-question="cart" aria-controls="customerFaqAnswer" aria-expanded="false">Can I book more than one court?</button>
+                <button type="button" data-customer-faq-question="payment" aria-controls="customerFaqAnswer" aria-expanded="false">How does payment work?</button>
+                <button type="button" data-customer-faq-question="records" aria-controls="customerFaqAnswer" aria-expanded="false">Where can I find my bookings and receipts?</button>
+                <button type="button" data-customer-faq-question="policy" aria-controls="customerFaqAnswer" aria-expanded="false">Can I cancel, and what if I miss check-in?</button>
+                <button type="button" data-customer-faq-question="contact" aria-controls="customerFaqAnswer" aria-expanded="false">Where is the sports center, and how can I contact it?</button>
+            </div>
+            <p id="customerFaqAnswer" class="customer-faq-answer" data-customer-faq-answer aria-live="polite" hidden></p>
+        </section>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -1139,12 +805,7 @@
          fetch-with-fallback shape as courtsData.js above. Must load before
          Dashboard.js, which reads the downpayment percentage from it. -->
     <script src="../includes/appSettings.js"></script>
-    <!-- Shared operating-hours constants (Part 3, multi-hour booking —
-         implementation_plan.md; CLOSE_HOUR updated by Revision 5, D1). Must
-         load before Dashboard.js, whose Step 2 From/To pickers and Overview
-         peek widget both read window.InigoBusinessHours.OPEN_HOUR/
-         CLOSE_HOUR/formatHourLabel/formatHourRangeLabelShort at parse
-         time. -->
+    <!-- Shared authoritative operating-hours reader for booking availability. -->
     <script src="../includes/businessHours.js"></script>
     <!-- Receipt PNG download (§7, D8) — same no-build-step CDN <script>
          convention as the supabase-js tag above. Must load before
@@ -1160,6 +821,33 @@
          is now a thin wrapper around window.InigoImageTools. Must load before
          Dashboard.js. -->
     <script src="../includes/imageTools.js"></script>
+    <!-- Customer feedback is private to the IñigoSync team; booking reviews
+         remain available only for completed, fully paid bookings below. -->
+    <div class="dash-modal-overlay" data-dash-feedback-overlay hidden>
+        <div class="dash-modal" role="dialog" aria-modal="true" aria-labelledby="dashFeedbackTitle" tabindex="-1" data-dash-feedback-dialog>
+            <button type="button" class="dash-modal-close" data-dash-feedback-close aria-label="Close">×</button>
+            <h3 id="dashFeedbackTitle">Give Feedback</h3>
+            <p class="dash-modal-sub">Tell us how your experience with IñigoSync has been.</p>
+            <div class="dash-form-group">
+                <span class="dash-form-label">Rating (optional)</span>
+                <div class="dash-feedback-rating" data-dash-feedback-rating>
+                    <button type="button" data-dash-feedback-star="1" aria-label="1 star" aria-pressed="false">★</button>
+                    <button type="button" data-dash-feedback-star="2" aria-label="2 stars" aria-pressed="false">★</button>
+                    <button type="button" data-dash-feedback-star="3" aria-label="3 stars" aria-pressed="false">★</button>
+                    <button type="button" data-dash-feedback-star="4" aria-label="4 stars" aria-pressed="false">★</button>
+                    <button type="button" data-dash-feedback-star="5" aria-label="5 stars" aria-pressed="false">★</button>
+                </div>
+            </div>
+            <div class="dash-form-group">
+                <label class="dash-form-label" for="dashFeedbackMessage">Your message</label>
+                <textarea id="dashFeedbackMessage" class="dash-input dash-textarea" rows="4" maxlength="2000" placeholder="What is working well? What could be better?" data-dash-feedback-message></textarea>
+            </div>
+            <div class="dash-form-actions">
+                <button type="button" class="dash-btn-ghost" data-dash-feedback-close>Cancel</button>
+                <button type="button" class="dash-btn-save" data-dash-feedback-submit>Submit Feedback</button>
+            </div>
+        </div>
+    </div>
     <div class="dash-modal-overlay" data-booking-review-modal hidden>
         <div class="dash-modal" role="dialog" aria-modal="true" aria-labelledby="bookingReviewTitle" tabindex="-1">
             <button type="button" class="dash-modal-close" data-booking-review-close aria-label="Close">×</button>
@@ -1172,6 +860,10 @@
             <div class="dash-form-actions"><button type="button" class="dash-btn-ghost" data-booking-review-close>Cancel</button><button type="button" class="dash-btn-primary" data-booking-review-submit>Publish review</button></div>
         </div>
     </div>
+    <script src="../includes/dashboardUpcoming.js"></script>
+    <script src="../includes/bookingSlots.js"></script>
+    <script src="../includes/customerReceipts.js"></script>
     <script src="../includes/Dashboard.js"></script>
+    <script src="../includes/customer-faq.js"></script>
 </body>
 </html>

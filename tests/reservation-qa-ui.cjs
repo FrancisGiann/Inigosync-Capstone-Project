@@ -20,6 +20,7 @@ function clientFixture(options) {
     window.__reservationQa = { data, calls, insertError: options.insertError || null, insertErrorAfter: options.insertErrorAfter,
         insertErrorOnce: options.insertErrorOnce || false, insertDelayMs: options.insertDelayMs || 0,
         authoritativeAmountTotal: options.authoritativeAmountTotal, rpcError: null, rpcDelayForDay: {},
+        rules: { open_hour: 8, close_hour: 20, is_closed: false, grace_minutes: 30, timezone: 'Asia/Manila' },
         owner: options.owner || null };
     const result = (table, query) => {
         const ownerData = window.__reservationQa.owner;
@@ -102,6 +103,9 @@ function clientFixture(options) {
         from,
         rpc: async (name, args) => {
             calls.push({ kind: 'rpc', name, args });
+            if (name === 'booking_rules_for_date') return window.__reservationQa.rulesRpcError
+                ? { data: null, error: window.__reservationQa.rulesRpcError }
+                : { data: window.__reservationQa.rules, error: null };
             if (name !== 'court_occupancy') return { data: [], error: null };
             const start = Date.parse(args.from_at), end = Date.parse(args.to_at);
             const snapshot = data.filter(row => ['pending', 'confirmed'].includes(row.status)
@@ -217,16 +221,35 @@ function courtDataFixture(options = {}) {
             return { page, context, errors, checkoutCalls };
         }
         const values = locator => locator.evaluate(select => Array.from(select.options).map(option => option.value).filter(Boolean));
+        async function customerChooseCourt(page, sport, court = sport, unit = null) {
+            await page.locator(`[data-dash-book-sport="${sport.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}"]`).click();
+            await page.locator('[data-dash-book-select]').selectOption(court);
+            if (unit) await page.locator('[data-dash-book-unit-select]').selectOption({ label: unit });
+        }
+        async function customerChooseHours(page, hours) {
+            for (const hour of hours) await page.locator(`[data-dash-book-slot="${hour}"]`).click();
+            await page.locator('[data-dash-book-add]').click();
+            await page.locator('[data-dash-book-cart-bar]').waitFor({ state: 'visible' });
+        }
         async function customerReadyToSubmit(page) {
             await page.locator('[data-dash-nav="booking"]').first().click();
-            await page.locator('[data-dash-book-unit-select] option').first().waitFor({ state: 'attached' });
-            await page.locator('[data-dash-book-unit-select]').selectOption({ label: 'Court 2' });
-            await page.locator('[data-dash-book-next]').click();
+            await page.locator('[data-dash-book-sport="basketball"]').waitFor({ state: 'visible' });
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 2');
             await page.locator('[data-dash-book-date]').fill(tomorrow);
-            await page.waitForFunction(() => Array.from(document.querySelector('[data-dash-book-from]').options).some(o => o.value === '10'));
-            await page.locator('[data-dash-book-from]').selectOption('10');
-            await page.locator('[data-dash-book-to]').selectOption('10');
-            await page.locator('[data-dash-book-next]').click();
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            assert.equal(await page.locator('[data-dash-payment-option]').first().isVisible(), false,
+                'payment choices stay hidden while selecting a court and time');
+            await customerChooseHours(page, [10]);
+            assert.equal(await page.locator('[data-dash-payment-option]').first().isVisible(), false,
+                'payment choices stay in the review opened from the cart bar');
+        }
+        async function customerProceedToPayment(page) {
+            await page.locator('[data-dash-book-cart-proceed]').click();
+            await page.locator('[data-dash-book-submit]').waitFor({ state: 'visible' });
+        }
+        async function customerSubmit(page) {
+            await customerProceedToPayment(page);
+            await page.locator('[data-dash-book-submit]').click();
         }
         async function staffReadyToSubmit(page) {
             await page.locator('[data-staff-nav="walkin"]').first().click();
@@ -254,17 +277,14 @@ function courtDataFixture(options = {}) {
         ]) {
             const { page, context, errors } = await setup('customer', rows);
             await page.locator('[data-dash-nav="booking"]').first().click();
-            await page.locator('[data-dash-book-unit-select] option').first().waitFor({ state: 'attached' });
-            await page.locator('[data-dash-book-next]').click();
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 1');
             await page.locator('[data-dash-book-date]').fill(tomorrow);
-            await page.waitForFunction(() => !document.querySelector('[data-dash-book-from]').disabled);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
             const unitSelect = page.locator('[data-dash-book-unit-select]');
-            assert.equal((await values(page.locator('[data-dash-book-from]'))).includes('10'), court1Free, `${label}: Court 1`);
-            await page.locator('[data-dash-book-back]').click();
+            assert.equal(await page.locator('[data-dash-book-slot="10"]').isDisabled(), !court1Free, `${label}: Court 1`);
             await unitSelect.selectOption({ label: 'Court 2' });
-            await page.locator('[data-dash-book-next]').click();
-            await page.waitForFunction(() => !document.querySelector('[data-dash-book-from]').disabled);
-            assert.equal((await values(page.locator('[data-dash-book-from]'))).includes('10'), court2Free, `${label}: Court 2`);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            assert.equal(await page.locator('[data-dash-book-slot="10"]').isDisabled(), !court2Free, `${label}: Court 2`);
             assert.deepEqual(errors, [], `${label}: browser errors`);
             await context.close();
         }
@@ -276,14 +296,12 @@ function courtDataFixture(options = {}) {
             const sharedHolds = ['Court 1', 'Court 2', 'Court 3'].map(unit => occupied('online', 'Pickleball', unit, tomorrow, 10));
             const { page, context, errors } = await setup('customer', sharedHolds);
             await page.locator('[data-dash-nav="booking"]').first().click();
-            await page.locator('[data-dash-book-select]').selectOption('Pickleball');
+            await customerChooseCourt(page, 'Pickleball', 'Pickleball', 'Court 1');
             for (const unit of ['Court 1', 'Court 2', 'Court 3']) {
-                await page.locator('[data-dash-book-unit-select]').selectOption({ label: unit });
-                await page.locator('[data-dash-book-next]').click();
+                if (unit !== 'Court 1') await page.locator('[data-dash-book-unit-select]').selectOption({ label: unit });
                 await page.locator('[data-dash-book-date]').fill(tomorrow);
-                await page.waitForFunction(() => !document.querySelector('[data-dash-book-from]').disabled);
-                assert.equal((await values(page.locator('[data-dash-book-from]'))).includes('10'), false, `customer sees Basketball Court 2 block ${unit}`);
-                await page.locator('[data-dash-book-back]').click();
+                await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+                assert.equal(await page.locator('[data-dash-book-slot="10"]').isDisabled(), true, `customer sees Basketball Court 2 block ${unit}`);
             }
             assert.deepEqual(errors, [], 'customer shared resource: browser errors');
             await context.close();
@@ -308,7 +326,7 @@ function courtDataFixture(options = {}) {
             const { page, context, errors, checkoutCalls } = await setup('customer', []);
             page.on('dialog', dialog => dialog.accept());
             await customerReadyToSubmit(page);
-            await page.locator('[data-dash-book-submit]').click();
+            await customerSubmit(page);
             await page.waitForTimeout(300);
             assert.equal(checkoutCalls.length, 1, 'one checkout starts for a single reservation');
             assert.equal(checkoutCalls[0].name, 'paymongo-checkout');
@@ -319,23 +337,87 @@ function courtDataFixture(options = {}) {
             assert.deepEqual(errors, [], 'customer checkout browser errors');
             await context.close();
         }
+        // Admin hours changed after a slot was selected: forced refresh clears it before it can enter cart.
+        {
+            const { page, context, errors } = await setup('customer', []);
+            await page.locator('[data-dash-nav="booking"]').first().click();
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 1');
+            await page.locator('[data-dash-book-date]').fill(tomorrow);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            await page.locator('[data-dash-book-slot="10"]').click();
+            await page.evaluate(() => { window.__reservationQa.rules.close_hour = 10; });
+            await page.locator('[data-dash-book-add]').click();
+            await page.waitForTimeout(100);
+            assert.equal(await page.locator('[data-dash-book-cart-count]').innerText(), '0 items', 'stale slot was not added');
+            assert.deepEqual(errors, [], 'changed opening hours browser errors');
+            await context.close();
+        }
+        // Fallback operating hours are display-only and cannot produce a bookable slot.
+        {
+            const { page, context, errors } = await setup('customer', []);
+            await page.locator('[data-dash-nav="booking"]').first().click();
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 1');
+            await page.evaluate(() => { window.__reservationQa.rulesRpcError = { message: 'offline' }; });
+            await page.locator('[data-dash-book-date]').fill('2026-09-26');
+            await page.waitForTimeout(100);
+            assert.equal(await page.locator('[data-dash-book-slot]').count(), 0, 'non-authoritative hours expose no slots');
+            assert.equal(await page.locator('[data-dash-book-add]').isEnabled(), false, 'fallback hours cannot be added');
+            assert.deepEqual(errors, [], 'fallback hours browser errors');
+            await context.close();
+        }
+        // Missing authoritative court inventory stays unavailable even when fallback court records exist.
+        {
+            const { page, context, errors } = await setup('customer', [], null, true);
+            await page.locator('[data-dash-nav="booking"]').first().click();
+            assert.equal(await page.locator('[data-dash-book-sport]').count(), 0, 'fallback inventory does not create sport choices');
+            assert.equal(await page.locator('[data-dash-book-slots] [data-dash-book-slot]').count(), 0, 'no fallback inventory slots');
+            assert.deepEqual(errors, [], 'non-authoritative inventory browser errors');
+            await context.close();
+        }
+        // Owner-configured opening hours define the visible chips; a closed date exposes none.
+        {
+            const { page, context, errors, checkoutCalls } = await setup('customer', [], null, false, true);
+            await page.locator('[data-dash-nav="booking"]').first().click();
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 1');
+            await page.evaluate(() => { window.__reservationQa.rules = { open_hour: 9, close_hour: 12, is_closed: false, grace_minutes: 30, timezone: 'Asia/Manila' }; });
+            await page.locator('[data-dash-book-date]').fill(tomorrow);
+            await page.locator('[data-dash-book-slot="9"]').waitFor({ state: 'visible' });
+            assert.equal(await page.locator('[data-dash-book-slot]').count(), 3, 'only configured 9–12 hours are offered');
+            assert.equal(await page.locator('[data-dash-book-slot="8"]').count(), 0, 'hours before opening are omitted');
+            assert.equal(await page.locator('[data-dash-book-slot="12"]').count(), 0, 'closing boundary is omitted');
+            await customerChooseHours(page, [11]);
+            await customerSubmit(page);
+            await page.waitForTimeout(100);
+            assert.equal(checkoutCalls.length, 1);
+            assert.equal((Date.parse(checkoutCalls[0].options.body.items[0].starts_at) - Date.parse(`${tomorrow}T00:00:00+08:00`)) / 3600000, 11);
+            await context.close();
+
+            const closed = await setup('customer', []);
+            await closed.page.locator('[data-dash-nav="booking"]').first().click();
+            await customerChooseCourt(closed.page, 'Basketball', 'Basketball', 'Court 1');
+            await closed.page.evaluate(() => { window.__reservationQa.rules = { open_hour: 9, close_hour: 12, is_closed: true, grace_minutes: 30, timezone: 'Asia/Manila' }; });
+            await closed.page.locator('[data-dash-book-date]').fill('2026-09-26');
+            await closed.page.waitForTimeout(100);
+            assert.equal(await closed.page.locator('[data-dash-book-slot]').count(), 0, 'closed date has no slots');
+            assert.equal(await closed.page.locator('[data-dash-book-add]').isEnabled(), false, 'closed date cannot enter the cart');
+            assert.deepEqual(closed.errors, [], 'configured/closed hours browser errors');
+            await closed.context.close();
+        }
         {
             const { page, context, errors, checkoutCalls } = await setup('customer', []);
             page.on('dialog', dialog => dialog.accept());
             await page.locator('[data-dash-nav="booking"]').first().click();
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 1');
             for (const unit of ['Court 1', 'Court 2']) {
-                await page.locator('[data-dash-book-unit-select] option').first().waitFor({ state: 'attached' });
-                await page.locator('[data-dash-book-unit-select]').selectOption({ label: unit });
-                await page.locator('[data-dash-book-next]').click();
+                if (unit === 'Court 2') {
+                    await customerChooseCourt(page, 'Basketball', 'Basketball', unit);
+                }
                 await page.locator('[data-dash-book-date]').fill(tomorrow);
-                await page.waitForFunction(() => Array.from(document.querySelector('[data-dash-book-from]').options).some(o => o.value === '10'));
-                await page.locator('[data-dash-book-from]').selectOption('10');
-                await page.locator('[data-dash-book-to]').selectOption('10');
-                await page.locator('[data-dash-book-next]').click();
-                await page.locator('[data-dash-book-add]').click();
+                await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+                await customerChooseHours(page, [10]);
             }
             assert.equal(await page.locator('[data-dash-book-cart-count]').innerText(), '2 items');
-            await page.locator('[data-dash-book-cart-submit]').click();
+            await customerSubmit(page);
             await page.waitForTimeout(300);
             assert.equal(checkoutCalls.length, 1, 'two items share one checkout');
             assert.equal(checkoutCalls[0].options.body.items.length, 2);
@@ -346,14 +428,11 @@ function courtDataFixture(options = {}) {
             const { page, context, errors, checkoutCalls } = await setup('customer', [], null, false, false, true);
             page.on('dialog', dialog => dialog.accept());
             await page.locator('[data-dash-nav="booking"]').first().click();
-            await page.locator('[data-dash-book-select]').selectOption('Bowling — Duckpin');
-            await page.locator('[data-dash-book-next]').click();
+            await customerChooseCourt(page, 'Bowling', 'Bowling — Duckpin', 'Lane 1');
             await page.locator('[data-dash-book-date]').fill(tomorrow);
-            await page.waitForFunction(() => Array.from(document.querySelector('[data-dash-book-from]').options).some(o => o.value === '10'));
-            await page.locator('[data-dash-book-from]').selectOption('10');
-            await page.locator('[data-dash-book-next]').click();
-            await page.locator('[data-dash-rate-quantity]').fill('2');
-            await page.locator('[data-dash-book-submit]').click();
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            await customerChooseHours(page, [10, 11]);
+            await customerSubmit(page);
             await page.waitForTimeout(300);
             assert.equal(checkoutCalls.length, 1);
             assert.equal(checkoutCalls[0].options.body.items[0].rate_quantity, 2);

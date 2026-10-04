@@ -122,3 +122,13 @@ button, input, select, textarea {
     font-family: var(--font-numeric);
     font-variant-numeric: tabular-nums;
 }
+
+/* Native date/time picker icons follow the active theme on every page that
+   uses the shared typography sheet (customer, staff, owner, and landing). */
+:root:not([data-theme="light"]) input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]) {
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]) {
+    color-scheme: light;
+}

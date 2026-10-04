@@ -54,6 +54,11 @@
                     cancel = () => {};
                     resolve(result);
                 }
+                function showError(message) {
+                    status.textContent = '';
+                    if (window.InigoAuthNotice?.showError) window.InigoAuthNotice.showError(message);
+                    else status.textContent = message;
+                }
                 cancel = () => finish('cancelled');
 
                 form.addEventListener('submit', async event => {
@@ -61,11 +66,11 @@
                     if (!active || busy || saved) return;
                     const check = window.validatePhMobile?.(phone || '');
                     if (!check?.valid) {
-                        status.textContent = check?.message || 'Enter a valid Philippine mobile number.';
+                        showError(check?.message || 'Enter a valid Philippine mobile number.');
                         return;
                     }
                     if (!window.sb?.functions || !userId) {
-                        status.textContent = 'Phone validation is unavailable. You can continue without a number.';
+                        showError('Phone validation is unavailable. You can continue without a number.');
                         return;
                     }
 
@@ -80,12 +85,12 @@
                         if (!active) return;
                         if (error) throw new Error(await edgeErrorMessage(error));
                         if (data?.valid !== true) {
-                            status.textContent = reasonMessage(data?.reason);
+                            showError(reasonMessage(data?.reason));
                             return;
                         }
                         if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
                             || data.normalized !== `+63${check.normalized.slice(1)}`) {
-                            status.textContent = 'The provider returned an unsupported validation result. Try again later.';
+                            showError('The provider returned an unsupported validation result. Try again later.');
                             return;
                         }
 
@@ -102,7 +107,7 @@
                         status.textContent = 'Validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.';
                         skip.textContent = 'Continue';
                     } catch (error) {
-                        if (active) status.textContent = error.message || 'Phone validation is temporarily unavailable. You can continue without a number.';
+                        if (active) showError(error.message || 'Phone validation is temporarily unavailable. You can continue without a number.');
                     } finally {
                         if (active) {
                             busy = false;

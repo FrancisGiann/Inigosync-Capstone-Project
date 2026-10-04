@@ -71,6 +71,8 @@ Deno.serve(async (req: Request) => {
   let prepared: any;
   let label = "court reservation";
   if (Array.isArray(body.items)) {
+    if (body.items.length < 1 || body.items.length > 8)
+      return json({ message: "Choose between one and eight court times per checkout." }, 400, origin);
     const option = body.payment_option === "full" ? "full" : "downpayment";
     const { data, error } = await admin.rpc("prepare_paid_checkout_cart", {
       p_customer_id: authData.user.id, p_items: body.items, p_payment_option: option,

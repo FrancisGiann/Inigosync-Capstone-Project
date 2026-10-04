@@ -3571,6 +3571,47 @@ document.addEventListener('DOMContentLoaded', () => {
         if (prev) prev.disabled = reviewPage <= 0;
         if (next) next.disabled = reviewPage + 1 >= pages;
     }
+    // Private feedback is separate from public booking reviews: it has no
+    // booking eligibility requirement and is visible to active staff/admin
+    // accounts through the feedback table's RLS policy.
+    const ownerDirectFeedback = document.querySelector('[data-owner-direct-feedback]');
+    const ownerFeedbackMore = document.querySelector('[data-owner-feedback-more]');
+    const OWNER_FEEDBACK_PAGE_SIZE = 10;
+    let ownerFeedbackVisibleCount = OWNER_FEEDBACK_PAGE_SIZE;
+    let ownerFeedbackRequest = 0;
+    async function loadOwnerFeedback(reset = true) {
+        if (!ownerDirectFeedback || !window.sb) return;
+        if (reset) ownerFeedbackVisibleCount = OWNER_FEEDBACK_PAGE_SIZE;
+        const request = ++ownerFeedbackRequest;
+        ownerDirectFeedback.setAttribute('aria-busy', 'true');
+        try {
+            const { data, count, error } = await window.sb.from('feedback')
+                .select('id,rating,message,created_at', { count: 'exact' })
+                .order('created_at', { ascending: false })
+                .range(0, ownerFeedbackVisibleCount - 1);
+            if (request !== ownerFeedbackRequest) return;
+            ownerDirectFeedback.setAttribute('aria-busy', 'false');
+            if (error) throw error;
+            ownerDirectFeedback.innerHTML = data?.length ? data.map((entry) => {
+                const rating = Number(entry.rating);
+                const stars = Number.isInteger(rating) && rating >= 1 && rating <= 5
+                    ? `<span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span>`
+                    : '';
+                return `<article class="admin-review-item"><div class="admin-review-item-head"><strong>Customer feedback</strong>${stars}</div><p>${window.escapeHtml(entry.message || '')}</p><time datetime="${window.escapeHtml(entry.created_at)}">${window.escapeHtml(new Date(entry.created_at).toLocaleDateString())}</time></article>`;
+            }).join('') : '<p class="admin-form-hint">No direct customer feedback yet.</p>';
+            if (ownerFeedbackMore) ownerFeedbackMore.hidden = (count || 0) <= ownerFeedbackVisibleCount;
+        } catch (error) {
+            if (request !== ownerFeedbackRequest) return;
+            ownerDirectFeedback.setAttribute('aria-busy', 'false');
+            ownerDirectFeedback.innerHTML = '<p class="admin-form-hint">Direct feedback could not be loaded. Check your owner access and try again.</p>';
+            if (ownerFeedbackMore) ownerFeedbackMore.hidden = true;
+            console.error('[admin] direct customer feedback query failed', error);
+        }
+    }
+    ownerFeedbackMore?.addEventListener('click', () => {
+        ownerFeedbackVisibleCount += OWNER_FEEDBACK_PAGE_SIZE;
+        loadOwnerFeedback(false);
+    });
     document.querySelectorAll('[data-admin-review-rating]').forEach((button) => button.addEventListener('click', () => {
         reviewRatingFilter = button.dataset.adminReviewRating || 'all'; reviewPage = 0;
         document.querySelectorAll('[data-admin-review-rating]').forEach((item) => { item.classList.toggle('is-active', item === button); item.setAttribute('aria-pressed', String(item === button)); });
@@ -3578,8 +3619,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     document.querySelector('[data-admin-review-prev]')?.addEventListener('click', () => { if (reviewPage > 0) { reviewPage -= 1; loadOwnerReviews(); } });
     document.querySelector('[data-admin-review-next]')?.addEventListener('click', () => { reviewPage += 1; loadOwnerReviews(); });
-    document.addEventListener('inigosync:owner-panel', event => { if (event.detail === 'feedback') loadOwnerReviews(); });
-    window.setInterval(() => { if (!document.hidden && document.querySelector('[data-admin-panel="feedback"].is-active')) loadOwnerReviews(); }, 15000);
-    document.addEventListener('inigosync:profile-ready', loadOwnerReviews);
-    if (window.inigosyncProfile) loadOwnerReviews();
+    document.addEventListener('inigosync:owner-panel', event => { if (event.detail === 'feedback') { loadOwnerReviews(); loadOwnerFeedback(); } });
+    window.setInterval(() => { if (!document.hidden && document.querySelector('[data-admin-panel="feedback"].is-active')) { loadOwnerReviews(); loadOwnerFeedback(false); } }, 15000);
+    document.addEventListener('inigosync:profile-ready', () => { loadOwnerReviews(); loadOwnerFeedback(); });
+    if (window.inigosyncProfile) { loadOwnerReviews(); loadOwnerFeedback(); }
 });

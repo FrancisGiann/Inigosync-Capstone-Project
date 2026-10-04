@@ -1066,29 +1066,44 @@ body.auth-lock {
     height: 100%;
 }
 
-/* Auth toast — floats above the modal, doesn't push form layout, and
-   auto-dismisses on its own (see setAuthNotice in auth.js) */
+/* Auth message box — floats over the modal without shifting the form. Errors
+   include a keyboard accessible dismiss control and remain until dismissed. */
 .auth-status {
     position: fixed;
-    top: 28px;
+    top: 12px;
     left: 50%;
-    z-index: 200;
-    max-width: min(420px, calc(100vw - 32px));
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(420px, calc(100% - 24px));
+    box-sizing: border-box;
     margin: 0;
-    padding: 12px 22px;
-    border-radius: 999px;
+    padding: 10px 10px 10px 16px;
+    border-radius: 14px;
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-line);
     color: var(--color-ink);
     font-family: var(--font-body);
     font-size: var(--fs-md);
     font-weight: 600;
-    text-align: center;
+    text-align: left;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
     opacity: 0;
-    pointer-events: none;
     transform: translate(-50%, -12px);
     transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.auth-status[hidden],
+.auth-status-close[hidden] {
+    display: none;
+}
+
+.auth-status > [data-auth-notice-message] {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 
 .auth-status.is-visible {
@@ -1103,6 +1118,33 @@ body.auth-lock {
 .auth-status.is-error {
     border-color: var(--color-alert);
     color: var(--color-alert-text);
+}
+
+.auth-status-close {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 25px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.auth-status-close:hover {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.auth-status-close:focus-visible {
+    outline: 2px solid var(--color-accent-text);
+    outline-offset: 1px;
 }
 
 /* Field-level validation state */
@@ -1536,8 +1578,7 @@ body.auth-lock {
 .auth-phone-button.is-verified { color: var(--auth-verified-color); border-color: var(--auth-verified-color); opacity: 1; }
 .auth-phone-button:focus-visible { outline: 2px solid var(--color-accent-text); outline-offset: 3px; }
 
-.auth-access-error { color: var(--color-ink); border-left: 3px solid var(--color-accent-text); padding: 10px 12px; margin: 0 0 16px; font-size: var(--fs-sm); line-height: 1.5; }
-[data-auth-panel="phone"] [hidden], .auth-access-error[hidden] { display: none; }
+[data-auth-panel="phone"] [hidden] { display: none; }
 [data-auth-panel="phone"] > * + * { margin-top: 14px; }
 
 @media (pointer: coarse) {

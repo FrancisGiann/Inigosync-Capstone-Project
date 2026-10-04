@@ -8,7 +8,7 @@ function mockClient(options) {
         const calls = JSON.parse(sessionStorage.getItem('fixture-calls') || '[]');
         calls.push({ kind, data }); sessionStorage.setItem('fixture-calls', JSON.stringify(calls));
     };
-    if (options.oauth) sessionStorage.setItem('inigosync-oauth-pending', '1');
+    if (options.oauth || options.oauthReturn) sessionStorage.setItem('inigosync-oauth-pending', '1');
     window.InigoAuthStorage = { setRememberSession() {} };
     window.sb = {
         rpc: (name, data) => {
@@ -24,7 +24,13 @@ function mockClient(options) {
             } };
         },
         auth: {
-            getSession: async () => ({ data: { session } }),
+            getSession: async () => {
+                if (options.sessionReadError) {
+                    window.InigoLoading?.show('Restoring session…');
+                    throw new Error(options.sessionReadError);
+                }
+                return { data: { session } };
+            },
             onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
             signOut: async () => { record('signOut'); session = null; return {}; },
             signInWithPassword: async () => { session = { user }; return { data: { user, session } }; },
@@ -80,7 +86,7 @@ function mockClient(options) {
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
-        async function setup(options = {}) {
+        async function setup(options = {}, startUrl = 'http://127.0.0.1:4178/index.html') {
             const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
             page.setDefaultTimeout(10000);
             await page.route(/^https:\/\//, r => r.abort());
@@ -88,7 +94,7 @@ function mockClient(options) {
             await page.route('**/includes/landingPage.js', r => r.fulfill({ contentType: 'application/javascript', body: '' }));
             await page.route('https://elfsightcdn.com/**', r => r.abort());
             await page.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
-            await page.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'domcontentloaded' });
+            await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
             return page;
         }
         async function setupDashboard(options = {}) {
@@ -101,6 +107,14 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        const oauthRedirect = await setup();
+        await oauthRedirect.evaluate(() => history.replaceState(null, '', '/index.html?fixture=auth-query##access_token=fixture-fragment#access_token=fixture-fragment-two&refresh_token=fixture-refresh'));
+        await oauthRedirect.locator('.cta-buttons [data-auth-open]').click();
+        await oauthRedirect.locator('#google-signin-login button').click();
+        const oauthRequest = (await calls(oauthRedirect)).find(call => call.kind === 'oauth');
+        assert.equal(oauthRequest.data.options.redirectTo, 'http://127.0.0.1:4178/index.html', 'Google OAuth return URL excludes existing query and auth fragment');
+        assert.deepEqual(oauthRequest.data.options.queryParams, { prompt: 'select_account' });
+        await oauthRedirect.close();
         async function firstStep(page, email) {
             await page.locator('.cta-buttons [data-auth-open]').click();
             await page.locator('[role="tab"][data-auth-tab="signup"]').click();
@@ -129,12 +143,38 @@ function mockClient(options) {
                 await page.close();
             }
         }
+        for (const width of [320, 390]) {
+            for (const theme of ['light', 'dark']) {
+                const page = await setup({ oauth: true, role: 'admin' });
+                await page.setViewportSize({ width, height: 844 });
+                await page.evaluate(themeName => document.documentElement.dataset.theme = themeName, theme);
+                const notice = page.locator('[data-auth-notice]');
+                await notice.waitFor({ state: 'visible' });
+                await page.waitForTimeout(300);
+                const geometry = await notice.evaluate(el => {
+                    const box = el.getBoundingClientRect();
+                    const close = el.querySelector('[data-auth-notice-close]').getBoundingClientRect();
+                    return { left: box.left, right: box.right, closeWidth: close.width, closeHeight: close.height, background: getComputedStyle(el).backgroundColor };
+                });
+                assert(geometry.left >= 0 && geometry.right <= width, `${width}px ${theme}: auth message stays within viewport`);
+                assert.equal(geometry.closeWidth, 44, `${width}px ${theme}: close button has a 44px target`);
+                assert.equal(geometry.closeHeight, 44, `${width}px ${theme}: close button has a 44px target`);
+                assert.notEqual(geometry.background, 'rgba(0, 0, 0, 0)', `${width}px ${theme}: message has a theme surface`);
+                await notice.locator('[data-auth-notice-close]').focus();
+                await page.keyboard.press('Enter');
+                await page.waitForFunction(() => document.querySelector('[data-auth-notice]').hidden);
+                assert.equal(await page.locator('[data-auth-overlay]').isVisible(), true, 'closing the message leaves the auth dialog open');
+                assert.equal(await page.locator('[data-auth-panel="login"] [name="email"]').evaluate(el => document.activeElement === el), true, 'keyboard dismissal restores the prior form focus');
+                await page.close();
+            }
+        }
         const taken = await setup();
         const takenForm = await firstStep(taken, 'Taken@Example.test');
         await taken.waitForFunction(() => document.querySelector('[data-signup-email-status]').textContent.includes('Not available'));
         await taken.screenshot({ path: require('node:path').join(require('node:os').tmpdir(), 'inigosync-email-taken.png') });
         await takenForm.locator('[data-signup-next]').click();
         assert(await takenForm.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')));
+        assert.match(await taken.locator('[data-auth-notice]').innerText(), /already registered/);
         assert(!(await calls(taken)).some(c => c.kind === 'signUp'));
         await takenForm.locator('[name="email"]').fill('new@example.test');
         await takenForm.locator('[data-signup-next]').click();
@@ -145,6 +185,8 @@ function mockClient(options) {
             const form = await firstStep(page, 'new@example.test');
             await form.locator('[data-signup-next]').click();
             await page.waitForFunction(() => /Try again|Wait 1 min/.test(document.querySelector('[data-signup-email-status]').textContent));
+            await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+            assert.match(await page.locator('[data-auth-notice]').innerText(), emailMode === 'error' ? /could not check that email/i : /Too many email checks/);
             assert(await form.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')));
             await page.close();
         }
@@ -172,22 +214,48 @@ function mockClient(options) {
         }
         for (const role of ['admin', 'staff']) {
             const page = await setup({ oauth: true, role });
-            await page.locator('[data-auth-access-error]').waitFor({ state: 'visible' });
-            assert.match(await page.locator('[data-auth-access-error]').innerText(), /cannot be used for customer/);
+            const notice = page.locator('[data-auth-notice]');
+            await notice.waitFor({ state: 'visible' });
+            assert.match(await notice.innerText(), /cannot be used for customer/);
+            assert.equal(await notice.getAttribute('role'), 'alert');
+            assert.equal(await notice.locator('[data-auth-notice-close]').getAttribute('aria-label'), 'Dismiss message');
             assert((await calls(page)).some(c => c.kind === 'signOut'));
             assert(!(await calls(page)).some(c => ['profileWrite', 'sessionWrite'].includes(c.kind)));
             assert(await page.evaluate(async () => !(await sb.auth.getSession()).data.session));
+            await page.keyboard.press('Escape');
+            await page.waitForFunction(() => document.querySelector('[data-auth-notice]').hidden);
+            assert.equal(await page.locator('[data-auth-overlay]').isVisible(), true, 'Escape dismisses the popup before closing the auth modal');
             await page.close();
         }
         const disabled = await setup({ oauth: true, disabled: true });
-        await disabled.locator('[data-auth-access-error]').waitFor({ state: 'visible' });
-        assert.match(await disabled.locator('[data-auth-access-error]').innerText(), /disabled/);
+        await disabled.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+        assert.match(await disabled.locator('[data-auth-notice]').innerText(), /disabled/);
         await disabled.close();
-        const customer = await setup({ oauth: true });
+        const customer = await setup(
+            { oauth: true },
+            'http://127.0.0.1:4178/index.html#access_token=fixture-access&refresh_token=fixture-refresh'
+        );
         await customer.waitForURL('**/user_dashboard.html');
         const customerSessionEvents = (await calls(customer)).filter(call => call.kind === 'accountSessionEvent');
         assert.deepEqual(customerSessionEvents.map(call => call.data), [{ p_kind: 'sign_in', p_reason: 'app_login' }], 'successful authentication records sign-in through the server-derived account session RPC without a client actor ID');
         await customer.close();
+        const missingOauthSession = await setup({ oauthReturn: true });
+        await missingOauthSession.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+        assert.match(await missingOauthSession.locator('[data-auth-notice]').innerText(), /Google sign-in did not finish/);
+        assert.equal(await missingOauthSession.locator('[data-auth-overlay]').isVisible(), true);
+        await missingOauthSession.close();
+        const rejectedOauthSession = await setup({ oauthReturn: true, sessionReadError: 'Session lookup failed.' });
+        const loading = rejectedOauthSession.locator('.inigo-loading-overlay');
+        await rejectedOauthSession.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+        assert.match(await rejectedOauthSession.locator('[data-auth-notice]').innerText(), /Session lookup failed/);
+        assert.equal(await rejectedOauthSession.locator('[data-auth-overlay]').isVisible(), true);
+        await rejectedOauthSession.waitForFunction(() => {
+            const el = document.querySelector('.inigo-loading-overlay');
+            return el?.hasAttribute('hidden') && getComputedStyle(el).opacity === '0';
+        });
+        assert.equal(await loading.getAttribute('hidden'), '');
+        assert.equal(await loading.evaluate(el => getComputedStyle(el).opacity), '0');
+        await rejectedOauthSession.close();
         for (const role of ['staff', 'admin', 'customer']) {
             const page = await setup({ role });
             await page.locator('.cta-buttons [data-auth-open]').click();
@@ -197,7 +265,7 @@ function mockClient(options) {
             await form.locator('input[type="email"]').fill('account@example.test');
             await form.locator('input[type="password"]').fill('Fixture2026!');
             await form.locator('button[type="submit"]').click();
-            await page.locator('[data-auth-access-error]').waitFor({ state: 'visible' });
+            await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
             assert(!(await calls(page)).some(c => ['emailOtp', 'sessionWrite'].includes(c.kind)));
             assert((await calls(page)).some(c => c.kind === 'signOut'));
             await page.close();
@@ -214,7 +282,7 @@ function mockClient(options) {
         for (const registrationRace of ['error', 'identities']) {
             const page = await setup({ registrationRace }); await signup(page);
             await page.locator('[data-signup-step="1"].is-active').waitFor();
-            assert.match(await page.locator('[data-signup-error-for="email"]').innerText(), /already registered/);
+            assert.match(await page.locator('[data-auth-notice]').innerText(), /already registered/);
             assert(page.url().includes('index.html')); await page.close();
         }
 
@@ -247,7 +315,7 @@ function mockClient(options) {
         for (const validationReason of ['invalid', 'not_mobile', 'inactive', 'status_unknown']) {
             const page = await setup({ validationReason }); await signup(page, '09171234567');
             await page.locator('[data-signup-phone-validate]').click();
-            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.length > 0);
+            await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
             assert(!(await calls(page)).some(c => c.kind === 'profileWrite'), validationReason);
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html'); await page.close();
@@ -256,7 +324,8 @@ function mockClient(options) {
             const page = await setup({ validationError, validationStatus: validationError === 'budget exceeded' ? 429 : 503 });
             await signup(page, '09171234567');
             await page.locator('[data-signup-phone-validate]').click();
-            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('unavailable') || document.querySelector('[data-signup-phone-status]').textContent.includes('budget'));
+            await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+            assert.match(await page.locator('[data-auth-notice]').innerText(), /unavailable|budget/i);
             assert(!(await calls(page)).some(c => c.kind === 'profileWrite'));
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html'); await page.close();

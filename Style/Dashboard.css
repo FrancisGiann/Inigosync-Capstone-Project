@@ -11,14 +11,50 @@
    ========================================================================== */
 
 body.dash-body {
-    background-color: var(--color-bg);
+    position: relative;
+    isolation: isolate;
+    background-color: transparent;
     min-height: 100vh;
+}
+
+/* Match the landing page's venue backdrop on the customer dashboard only. */
+body.dash-body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--color-bg);
+    background-image: url('../assets/landing/featured-bg-dark-landscape.jpg');
+    background-position: center 42%;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+:root[data-theme="light"] body.dash-body::before {
+    background-image: url('../assets/landing/featured-bg-light-landscape.jpg');
+}
+
+@media (max-width: 768px) {
+    body.dash-body::before {
+        background-image: url('../assets/landing/featured-bg-dark-portrait.jpg');
+        background-position: center 35%;
+    }
+
+    :root[data-theme="light"] body.dash-body::before {
+        background-image: url('../assets/landing/featured-bg-light-portrait.jpg');
+    }
 }
 
 .dash-shell {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 260px minmax(0, 1fr);
     min-height: 100vh;
+    transition: grid-template-columns 0.28s ease;
+}
+
+.dash-shell.dash-sidebar-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
 }
 
 /* ==========================================================================
@@ -33,6 +69,7 @@ body.dash-body {
     position: sticky;
     top: 0;
     height: 100vh;
+    transition: transform 0.28s ease;
     /* R4-1 (implementation_plan.md, "Revision 4") — the sidebar's own
        content (nav + the feedback card, now shown at every width — see
        .dash-feedback-card's comment below) can exceed 100vh on a short
@@ -40,6 +77,68 @@ body.dash-body {
        feedback card unreachable there. Scrolls independently of the page
        itself, same idea as the off-canvas drawer below 860px. */
     overflow-y: auto;
+}
+
+.dash-sidebar-collapse,
+.dash-sidebar-reveal {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-line);
+    border-radius: 9px;
+    background: var(--color-bg-card);
+    color: var(--color-ink);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.dash-sidebar-collapse:hover,
+.dash-sidebar-reveal:hover {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #14110d;
+}
+
+.dash-sidebar-collapse {
+    position: absolute;
+    top: 22px;
+    right: 12px;
+}
+
+.dash-sidebar-reveal {
+    display: none;
+    position: fixed;
+    z-index: 10;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.dash-sidebar-collapse:focus-visible,
+.dash-sidebar-reveal:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.dash-shell.dash-sidebar-collapsed .dash-sidebar {
+    transform: translateX(-100%);
+    overflow: hidden;
+}
+
+.dash-shell.dash-sidebar-collapsed .dash-sidebar-reveal {
+    display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dash-shell,
+    .dash-sidebar {
+        transition: none;
+    }
 }
 
 .dash-sidebar-brand {
@@ -54,6 +153,16 @@ body.dash-body {
     width: 30px;
     height: 30px;
     object-fit: contain;
+}
+
+.dash-sidebar-brand .logo-text {
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    letter-spacing: -.035em;
+    line-height: var(--lh-tight);
+    white-space: nowrap;
 }
 
 .dash-nav {
@@ -75,7 +184,8 @@ body.dash-body {
     color: var(--color-ink-dim);
     font-family: var(--font-body);
     font-weight: 600;
-    font-size: var(--fs-md);
+    font-size: var(--fs-base);
+    line-height: var(--lh-snug);
     cursor: pointer;
     text-align: left;
     transition: background 0.2s, color 0.2s;
@@ -98,6 +208,7 @@ body.dash-body {
 }
 
 .dash-nav-divider {
+    flex: 0 0 1px;
     height: 1px;
     background: var(--color-line);
     margin: 16px 6px;
@@ -132,7 +243,7 @@ body.dash-body {
 }
 
 .dash-feedback-card p {
-    font-size: var(--fs-md);
+    font-size: var(--fs-base);
     color: var(--color-ink-dim);
     line-height: 1.4;
     margin: 0;
@@ -165,6 +276,7 @@ body.dash-body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 100vh;
 }
 
 .dash-topbar {
@@ -178,6 +290,11 @@ body.dash-body {
     position: sticky;
     top: 0;
     z-index: 4;
+    transition: transform 0.25s ease;
+}
+
+.dash-topbar.is-hidden {
+    transform: translateY(-100%);
 }
 
 .dash-mobile-toggle {
@@ -201,7 +318,7 @@ body.dash-body {
 
 .dash-topbar-title p {
     font-size: var(--fs-md);
-    color: var(--color-ink-faint);
+    color: var(--color-ink-dim);
     margin-top: 2px;
 }
 
@@ -299,9 +416,6 @@ body.dash-body {
     color: var(--color-ink);
 }
 .dash-notif-menu-head [data-dash-notif-unread] { color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); }
-.dash-notif-search { display: block; padding: 0 10px 8px; }
-.dash-notif-search input { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-bg-elevated); color: var(--color-ink); font: 400 var(--fs-sm) var(--font-body); }
-.dash-notif-search input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .dash-notif-selection { display: flex; align-items: center; gap: 7px; padding: 0 10px 8px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .dash-notif-selection select { max-width: 100px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
 .dash-notif-selection [data-dash-notif-selected] { flex: 1; }
@@ -538,6 +652,7 @@ body.dash-body {
    Content / Panels
    ========================================================================== */
 .dash-content {
+    flex: 1 0 auto;
     padding: 32px 36px 60px;
 }
 
@@ -547,44 +662,49 @@ body.dash-body {
    ========================================================================== */
 .dash-hero {
     position: relative;
-    height: 340px;
+    width: min(100%, 900px);
+    margin-inline: auto;
     border-radius: 20px;
     overflow: hidden;
     border: 1px solid var(--color-line);
     background: var(--color-bg-card);
 }
 
+.dash-upcoming-card {
+    width: min(100%, 900px);
+    margin-inline: auto;
+}
+
 .dash-hero-container {
-    position: relative;
+    display: grid;
     width: 100%;
-    height: 100%;
 }
 
 .dash-hero-slide {
-    position: absolute;
-    inset: 0;
+    grid-area: 1 / 1;
+    min-width: 0;
+    visibility: hidden;
     opacity: 0;
     transition: opacity 0.5s ease;
 }
 
 .dash-hero-slide.is-active {
+    visibility: visible;
     opacity: 1;
 }
 
 .dash-hero-image {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
     display: block;
+    background: var(--color-bg-elevated);
 }
 
 .dash-hero-scrim {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(20, 17, 13, 0.05) 0%, rgba(20, 17, 13, 0.85) 100%);
-    display: flex;
-    align-items: flex-end;
-    padding: 26px 190px 26px 28px;
+    min-height: 112px;
+    padding: 16px 120px 20px 22px;
+    background: var(--color-bg-card);
 }
 
 .dash-hero-text {
@@ -599,7 +719,7 @@ body.dash-body {
     font-size: var(--fs-xs);
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #FFFCF4;
+    color: #14110d;
     background: var(--color-primary);
     padding: 4px 10px;
     border-radius: 999px;
@@ -611,7 +731,7 @@ body.dash-body {
     font-weight: 600;
     font-size: var(--fs-2xl);
     line-height: 1.2;
-    color: #FFFCF4;
+    color: var(--color-ink);
     margin: 0 0 4px;
 }
 
@@ -619,39 +739,68 @@ body.dash-body {
     /* Revision A2 (implementation_plan.md) — date + free-text sentence,
        inherits the body font. */
     font-size: var(--fs-sm);
-    color: rgba(255, 252, 244, 0.84);
+    color: var(--color-ink-dim);
     margin: 0;
 }
 
+.dash-hero-arrow-rail {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    padding: 0 12px;
+    pointer-events: none;
+}
+
+.dash-hero-arrow {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--color-line);
+    border-radius: 50%;
+    color: var(--color-ink);
+    background: var(--color-bg-card);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+    font-size: 24px;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.dash-hero-arrow:hover { color: #14110d; background: var(--color-primary); border-color: var(--color-primary); }
+.dash-hero-arrow[hidden], .dash-hero-pause[hidden] { display: none; }
+.dash-hero-arrow:focus-visible, .dash-hero-pause:focus-visible, .dash-hero-dot:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
+
 .dash-hero-controls {
     position: absolute;
-    right: 28px;
-    bottom: 26px;
+    right: 22px;
+    bottom: 22px;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
     z-index: 2;
 }
 
-.dash-hero-btn {
-    background: var(--color-primary);
-    color: #14110d;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 999px;
-    font-family: var(--font-body);
-    font-weight: 700;
-    font-size: var(--fs-md);
+.dash-hero-pause {
+    min-width: 60px;
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-line);
+    border-radius: 8px;
+    color: var(--color-ink);
+    background: var(--color-bg-elevated);
+    font: 600 var(--fs-xs) var(--font-body);
     cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.2s ease, transform 0.2s ease;
 }
 
-.dash-hero-btn:hover {
-    background: var(--color-primary-dim);
-    transform: translateY(-1px);
-}
+.dash-hero-pause:hover:not(:disabled) { border-color: var(--color-primary); }
+.dash-hero-pause:disabled { opacity: .6; cursor: default; }
 
 .dash-hero-dots {
     display: flex;
@@ -664,27 +813,28 @@ body.dash-body {
     border-radius: 999px;
     border: none;
     padding: 0;
-    background: rgba(255, 252, 244, 0.4);
+    background: var(--color-ink-faint);
     cursor: pointer;
     transition: background 0.2s ease;
 }
 
 .dash-hero-dot:hover {
-    background: rgba(255, 252, 244, 0.65);
+    background: var(--color-ink-dim);
 }
 
 .dash-hero-dot.is-active {
-    background: #FFFCF4;
+    background: var(--color-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .dash-topbar {
+        transition: none;
+    }
+
     .dash-hero-slide {
         transition: none;
     }
 
-    .dash-hero-btn {
-        transition: none;
-    }
 }
 
 .dash-panel {
@@ -718,7 +868,7 @@ body.dash-body {
 }
 
 .dash-panel-head p {
-    color: var(--color-ink-faint);
+    color: var(--color-ink-dim);
     font-size: var(--fs-md);
     margin-top: 4px;
 }
@@ -788,8 +938,9 @@ body.dash-body {
 
 .dash-card-head h3 {
     font-family: var(--font-display);
-    font-size: var(--fs-base);
-    font-weight: 600;
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-snug);
 }
 
 .dash-link-btn {
@@ -807,158 +958,12 @@ body.dash-body {
     text-decoration: underline;
 }
 
-/* Sort <select> sitting inline in a .dash-card-head (Overview's Courts
-   card). .dash-select's base width:100% would otherwise stretch it to fill
-   the whole card-head row; constrained here by ancestor context instead of
-   on .dash-select itself, so the Booking panel's own court <select>
-   (inside .dash-form-group, not .dash-card-head) is unaffected. */
-.dash-card-head .dash-select {
-    width: auto;
-    min-width: 150px;
-    padding: 8px 10px;
-    font-size: var(--fs-sm);
-}
-
-/* Overview Courts card header (Revision 5, D5 — implementation_plan.md) —
-   groups the new Availability date field (data-dash-overview-date) with
-   the existing sort <select> into ONE flex child, so .dash-card-head's own
-   h3-vs-controls space-between layout above needs no changes. Wraps onto
-   its own line under "Courts" (via .dash-card-head's own flex-wrap) if the
-   card gets too narrow for both controls plus the heading. */
-.dash-overview-controls-fields {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-/* Same width/padding/font-size as .dash-card-head .dash-select immediately
-   above, so the date field and the sort <select> beside it read as one
-   deliberate control pair rather than two differently-sized inputs. */
-.dash-overview-date-field .dash-input {
-    width: auto;
-    min-width: 150px;
-    padding: 8px 10px;
-    font-size: var(--fs-sm);
-}
-
 /* Two column layout */
 .dash-grid-2 {
     display: grid;
     grid-template-columns: 1.5fr 1fr;
     gap: 20px;
     align-items: start;
-}
-
-/* Overview — Courts widget (replaces the old Calendar + Live availability
-   cards). Rows still use .dash-avail-row/-name/-time and .dot.available/
-   .booked directly below — this block only adds what those didn't already
-   cover: the row's right-side rate+toggle cluster, the compact peek-strip
-   slot pills, and the peek strip container itself. */
-.dash-avail-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-/* Compact modifier for .dash-slot, used inside the peek strip
-   (class="dash-slot dash-slot-mini") — same open/booked/past color logic as
-   .dash-slot's own base rules, just smaller. Revision 5, D2/D5
-   (implementation_plan.md) — the pill's own label is now a short RANGE
-   (formatHourRangeLabelShort(), e.g. "8–9 AM", up to "11 AM–12 PM" for the
-   one hour that crosses noon) instead of a single start time, so
-   white-space: nowrap keeps that longer label on one line inside its own
-   small pill instead of wrapping mid-word. */
-.dash-slot-mini {
-    padding: 5px 8px;
-    border-radius: 8px;
-    font-size: var(--fs-xs);
-    white-space: nowrap;
-}
-
-/* Revision 2, R1 (implementation_plan.md) — peek-strip pills are a
-   READ-ONLY availability display now (includes/Dashboard.js's
-   renderOverviewSlotPill() renders plain <span>s, not <button>s), but they
-   still share the base .dash-slot class for their open/booked coloring, so
-   its pointer cursor + hover "you can click this" affordance need
-   overriding HERE, scoped to this strip only — the Booking panel's own
-   [data-dash-slot] step-2 buttons (which ARE clickable) must keep their
-   normal interactive styling. */
-.dash-overview-peek-strip .dash-slot {
-    cursor: default;
-}
-
-.dash-overview-peek-strip .dash-slot:hover {
-    border-color: var(--color-line);
-    color: var(--color-ink-dim);
-}
-
-/* Expanded per-court peek strip. Hidden/shown via .is-active (same idiom as
-   .dash-panel.is-active elsewhere on this page) rather than the `hidden`
-   attribute — an unconditional `display` rule here would otherwise silently
-   override `hidden`, since author rules beat the UA stylesheet regardless
-   of source order. */
-.dash-overview-peek-strip {
-    display: none;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 10px 14px 2px;
-}
-
-.dash-overview-peek-strip.is-active {
-    display: flex;
-}
-
-/* Availability list */
-.dash-avail-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.dash-avail-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 14px;
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-}
-
-.dash-avail-name {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-weight: 600;
-    font-size: var(--fs-md);
-}
-
-.dash-avail-name .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.dash-avail-name .dot.available {
-    background: var(--color-court-green);
-    box-shadow: 0 0 6px var(--color-court-green);
-}
-
-.dash-avail-name .dot.booked {
-    background: var(--color-alert);
-    box-shadow: 0 0 6px var(--color-alert);
-}
-
-.dash-avail-time {
-    /* Revision A2 (implementation_plan.md) — a clock time, so it takes
-       --font-numeric (tabular-nums) instead of the removed --font-mono. */
-    font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--fs-xs);
-    color: var(--color-ink-faint);
 }
 
 /* Upcoming reservation preview rows */
@@ -974,6 +979,16 @@ body.dash-body {
 
 .dash-res-row + .dash-res-row {
     margin-top: 10px;
+}
+
+.dash-res-state {
+    color: var(--color-ink-faint);
+    font-size: var(--fs-sm);
+    padding: 14px 2px;
+}
+
+.dash-res-more {
+    margin-top: 12px;
 }
 
 .dash-res-icon {
@@ -1000,12 +1015,14 @@ body.dash-body {
 
 .dash-res-info h4 {
     font-size: var(--fs-base);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-snug);
 }
 
 .dash-res-info p {
-    font-size: var(--fs-sm);
-    color: var(--color-ink-faint);
+    font-size: var(--fs-md);
+    color: var(--color-ink-dim);
+    line-height: var(--lh-normal);
     margin-top: 2px;
 }
 
@@ -1045,7 +1062,7 @@ body.dash-body {
 }
 
 /* Revision 2, R4 (implementation_plan.md) — DISPLAY-only status for a
-   booking more than 30 minutes past its start with no check-in (see
+   booking past its date-specific grace period with no check-in (see
    includes/Dashboard.js's displayStatusFor(); never written to the
    database). Uses --color-alert-text rather than --color-alert/.cancelled's
    own rgba tint — both read as "this didn't go as planned", but an
@@ -1088,90 +1105,6 @@ body.dash-body {
 .dash-quick-btn svg {
     width: 18px;
     height: 18px;
-}
-
-/* ==========================================================================
-   Courts (§4/D2 — the Overview panel's sport-grouped court cards).
-   .dash-filter-row/.dash-chip (the My Bookings status filter chips) were
-   removed from here in §6 — they had no other consumer on this page (only
-   Pages/user_dashboard.html's now-deleted markup and
-   includes/Dashboard.js's now-deleted click handler referenced them), so
-   there is nothing left to keep styled.
-   ========================================================================== */
-/* Revision 3, Change 1 (implementation_plan.md's "Revision 3" section) —
-   FLUID instead of a fixed 3-column grid. The real data (see
-   includes/courtsData.js's fallback, which mirrors the live `court` table)
-   is 9 courts under 8 sport headings and only Bowling has 2 rows (Duckpin
-   + Ten-Pin) — every OTHER sport has exactly 1. A fixed `repeat(3, 1fr)`
-   therefore rendered 7 of 8 groups as a single card in a 3-column row,
-   leaving two-thirds of that row permanently empty — the "too much empty
-   space on the right side" the user reported.
-   Flex-wrap, not CSS Grid's own `repeat(auto-fit, minmax(...))`, is
-   deliberate: auto-fit only collapses a column that is empty across the
-   WHOLE grid, so an UNEVEN last row (e.g. a hypothetical future 3-card
-   group landing in a viewport only wide enough for 2 columns) would still
-   leave a hole in that specific row — the exact bug this change exists to
-   remove, just relocated. A wrapped flex row instead redistributes each
-   ROW's own leftover space across whatever cards actually landed in it
-   (browsers do this per-line for a wrapped flex container), so there is
-   never a dead track regardless of card count or viewport width. See
-   .dash-court-card's flex-basis just below for the per-card sizing this
-   relies on, and further down (after .dash-court-body) for the solo-card
-   "landscape" treatment this enables — the actual fix for the 1-card case,
-   which is 7 of the 8 real sport groups today. */
-.dash-court-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-}
-
-/* Sport-grouped wrapper for the Overview panel's Courts card (§4 "visual
-   segregation", D2) — one heading + one .dash-court-grid per sport, stacked
-   with room to breathe between groups. Replaces the old .dash-avail-list
-   (still defined further below, unused here but left in place — it's not
-   worth pruning a still-harmless rule for a class nothing currently
-   renders). */
-.dash-court-groups {
-    display: flex;
-    flex-direction: column;
-    gap: 26px;
-}
-
-.dash-court-group-title {
-    font-family: var(--font-display);
-    font-weight: 600;
-    font-size: var(--fs-base);
-    color: var(--color-ink);
-    margin-bottom: 14px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--color-line);
-}
-
-.dash-court-card {
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-line);
-    border-radius: 16px;
-    overflow: hidden;
-    transition: transform 0.25s ease, border-color 0.25s ease;
-    display: flex;
-    flex-direction: column;
-    /* Revision 3, Change 1 — the flex ITEM sizing that makes
-       .dash-court-grid's own flex-wrap (above) actually fluid: grow AND
-       shrink from a 300px basis, so a lone card in its row grows to fill
-       the full width, two cards (Bowling) split it evenly, and enough
-       cards wrap to a new row instead of ever squeezing below ~300px.
-       min-width: 0 overrides the flex default of `auto`, which otherwise
-       refuses to shrink a flex item below its content's own min-content
-       width — defensive here (nothing in a card is long enough to hit
-       this today) so a future long court/sport name can wrap instead of
-       forcing this card, and potentially the page, wider than intended. */
-    flex: 1 1 300px;
-    min-width: 0;
-}
-
-.dash-court-card:hover {
-    transform: translateY(-4px);
-    border-color: var(--color-primary);
 }
 
 .dash-court-media {
@@ -1236,93 +1169,6 @@ body.dash-body {
     right: 12px;
 }
 
-.dash-court-body {
-    padding: 18px 20px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    flex: 1;
-}
-
-.dash-court-body h3 {
-    font-family: var(--font-display);
-    font-size: var(--fs-lg);
-    font-weight: 600;
-}
-
-.dash-court-rating {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--color-primary);
-    font-size: var(--fs-sm);
-}
-
-.dash-court-rating svg {
-    width: 13px;
-    height: 13px;
-}
-
-.dash-court-rating span {
-    color: var(--color-ink-faint);
-    margin-left: 4px;
-}
-
-.dash-court-rate {
-    /* Revision A2 (implementation_plan.md) — a peso amount, so it takes
-       --font-numeric (tabular-nums) instead of the removed --font-mono. */
-    font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--fs-lg);
-    color: var(--color-primary);
-}
-
-.dash-court-rate span {
-    font-size: var(--fs-xs);
-    color: var(--color-ink-faint);
-}
-
-.dash-court-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.dash-court-tags span {
-    font-size: var(--fs-xs);
-    color: var(--color-ink-faint);
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-line);
-    padding: 3px 9px;
-    border-radius: 999px;
-}
-
-/* Per-unit combo box (§4 "Combo Box Integration", D2) — reuses
-   .dash-form-group/.dash-form-label/.dash-select as-is; this only tightens
-   the spacing for that trio when nested inside a .dash-court-body, whose
-   own `gap` already spaces siblings (the shared .dash-form-group's
-   margin-bottom is meant for stacked form rows, not a flex-gapped card). */
-.dash-court-body .dash-court-unit-picker {
-    margin-bottom: 0;
-    gap: 6px;
-}
-
-/* Peek slots toggle row (§4 "Pixlot Integration") — same .dash-mini-btn the
-   button already used in the old compact avail-row; this just right-aligns
-   it inside the card body. The toggle itself still shows/hides the strip
-   exactly as before; only the strip's CONTENTS changed (Revision 2, R1 —
-   read-only now, see .dash-overview-peek-strip .dash-slot above). */
-.dash-court-peek {
-    display: flex;
-    justify-content: flex-end;
-}
-
-.dash-court-actions {
-    display: flex;
-    gap: 10px;
-    margin-top: 6px;
-}
-
 .dash-btn-primary,
 .dash-btn-secondary {
     flex: 1;
@@ -1373,65 +1219,6 @@ body.dash-body {
     color: var(--color-ink);
 }
 
-/* Revision 3, Change 1 — a SOLO card (the ONLY card under its sport
-   heading; true for 7 of the 8 real sports today — every sport except
-   Bowling has exactly one court row) gets a LANDSCAPE layout instead of
-   simply stretching the normal portrait card to the full row width via
-   the flex-basis above. A full-width but still-portrait card would just
-   be a very short, very wide banner strip with a tiny fixed-height photo
-   on top and a much narrower body under it — "a stretched portrait card",
-   per the user's own framing of what to avoid — so the whole card is
-   rotated instead: the photo fills the card's full height on the left,
-   everything else (name, rating, rate, tags, the per-unit combo box, the
-   read-only peek-availability toggle/strip) sits in a normal-width column
-   on the right, which is what actually makes a lone card read as
-   deliberately designed rather than padded out.
-   Pure CSS, no JS needed: `:only-child` here inspects .dash-court-grid's
-   REAL children, which are always .dash-court-card elements and nothing
-   else (see includes/Dashboard.js's renderOverviewCourtList() — each
-   group's grid is built from exactly one <article class="dash-court-card">
-   per court, no other markup in between), so this can never drift out of
-   sync with however many courts a sport actually has.
-   Bowling's 2-card group is deliberately NOT included here: at the
-   narrower end of the width range this still has to support (see the
-   640px override further down), a card that's already sharing its row
-   with a sibling would only have roughly half the width a solo card gets,
-   which isn't enough room for a landscape split's body column to hold the
-   per-unit <select> and the "Show availability" toggle without wrapping
-   or clipping. Two cards filling the row evenly (the flex-basis above
-   already does this) already reads as "full width, deliberate" on its
-   own — see this file's end-of-file Revision 3 audit note for the widths
-   this was checked at. */
-.dash-court-grid > .dash-court-card:only-child {
-    flex-direction: row;
-    align-items: stretch;
-}
-
-.dash-court-grid > .dash-court-card:only-child .dash-court-media {
-    flex: 0 0 38%;
-    height: auto;
-    min-height: 220px;
-    border-bottom: none;
-    border-right: 1px solid var(--color-line);
-}
-
-.dash-court-grid > .dash-court-card:only-child .dash-court-media svg {
-    width: 64px;
-    height: 64px;
-}
-
-.dash-court-grid > .dash-court-card:only-child .dash-court-monogram {
-    font-size: var(--fs-3xl);
-}
-
-/* Same min-width: 0 reasoning as .dash-court-card's own rule above, one
-   flex context further in: without it, this column would refuse to
-   shrink below its content's min-content width inside the now-horizontal
-   card, risking overflow from a long court name or the unit <select>. */
-.dash-court-grid > .dash-court-card:only-child .dash-court-body {
-    min-width: 0;
-}
-
 /* ==========================================================================
    Booking panel
    ========================================================================== */
@@ -1450,10 +1237,11 @@ body.dash-body {
     /* Revision A2 (implementation_plan.md) — label role, so it moves to
        --font-display, not --font-numeric. */
     font-family: var(--font-display);
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--color-ink-faint);
+    color: var(--color-ink-dim);
 }
 
 .dash-select,
@@ -1465,7 +1253,8 @@ body.dash-body {
     padding: 12px 14px;
     color: var(--color-ink);
     font-family: var(--font-body);
-    font-size: var(--fs-md);
+    font-size: var(--fs-base);
+    line-height: var(--lh-snug);
     transition: border-color 0.2s;
 }
 
@@ -1502,8 +1291,8 @@ body.dash-body {
    weight as .dash-panel-head's own subtitle <p>, just scoped to a card
    instead of a whole panel. */
 .dash-card-hint {
-    color: var(--color-ink-faint);
-    font-size: var(--fs-md);
+    color: var(--color-ink-dim);
+    font-size: var(--fs-base);
     margin: -8px 0 20px;
 }
 
@@ -1540,60 +1329,6 @@ body.dash-body {
    same reason. */
 .dash-time-range .dash-form-group {
     margin-bottom: 0;
-}
-
-/* .dash-slot-grid (Step 2's old clickable hour-button grid, Part 3) is
-   removed as of Revision 5, D3 (implementation_plan.md) — Step 2 is a
-   From/To <select> pair now (.dash-time-range further below), with nothing
-   left to click. .dash-slot itself, its hover rule, and .is-unavailable/
-   .is-past below all STAY: the Overview panel's read-only peek strip
-   (.dash-overview-peek-strip .dash-slot-mini) still uses them for its
-   open/booked/past pill coloring. */
-.dash-slot {
-    padding: 10px 6px;
-    border-radius: 10px;
-    border: 1px solid var(--color-line);
-    background: var(--color-bg-elevated);
-    color: var(--color-ink-dim);
-    /* Revision A2 (implementation_plan.md) — an hour-range label ("8-9 AM"),
-       so it takes --font-numeric (tabular-nums) instead of the removed
-       --font-mono. */
-    font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
-    font-size: var(--fs-xs);
-    cursor: pointer;
-    text-align: center;
-    transition: background 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.dash-slot:hover:not(.is-unavailable):not(.is-past) {
-    border-color: var(--color-primary);
-    color: var(--color-ink);
-}
-
-/* .is-selected/.is-in-range/.is-range-start/.is-range-end (Part 3's
-   clickable-range selection states) are removed as of Revision 5, D3 —
-   nothing sets those classes any more now that Step 2 is a From/To
-   <select> pair instead of clickable buttons. */
-.dash-slot.is-unavailable {
-    color: var(--color-ink-faint);
-    text-decoration: line-through;
-    cursor: not-allowed;
-    opacity: 0.5;
-}
-
-/* An hour earlier than "now" on the currently selected date. Distinct from
-   .is-unavailable (booked by someone else): less opaque, since "not
-   bookable today" is a less urgent signal than "already taken". Used by
-   the Overview peek strip (renderOverviewSlotPill() in
-   includes/Dashboard.js, Revision 5 D5) — Step 2's own past-hour handling
-   now lives entirely in its From/To <select> OPTIONS (an elapsed hour is
-   simply never offered), so this class has no consumer there any more. */
-.dash-slot.is-past {
-    color: var(--color-ink-faint);
-    text-decoration: line-through;
-    cursor: not-allowed;
-    opacity: 0.35;
 }
 
 .dash-payment-options {
@@ -1689,11 +1424,20 @@ body.dash-body {
     gap: 10px;
     padding: 13px 14px;
     border-radius: 10px;
-    background: rgba(255, 106, 44, 0.08);
-    border: 1px solid rgba(255, 106, 44, 0.25);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-line);
     font-size: var(--fs-sm);
-    color: var(--color-ink-dim);
+    color: var(--color-ink);
     line-height: 1.5;
+    box-shadow: var(--shadow-card);
+}
+
+/* My Bookings sits over the venue photo; give its table the same opaque,
+   elevated surface used by other dashboard cards in both themes. */
+.dash-panel[data-dash-panel="bookings"] > .dash-card {
+    background: var(--color-bg-card);
+    border-color: var(--border-card, var(--color-line));
+    box-shadow: var(--shadow-card);
 }
 
 .dash-notice svg {
@@ -1813,6 +1557,10 @@ body.dash-body {
     border-top: 1px solid var(--color-line);
 }
 
+.dash-wizard-nav > [hidden] {
+    display: none !important;
+}
+
 /* Pushes Back/Go Back to the left edge of the nav row while Next/Save stays
    right-aligned — simpler than swapping justify-content depending on which
    buttons happen to be hidden on a given step. */
@@ -1845,10 +1593,7 @@ body.dash-body {
     overflow: hidden;
 }
 
-/* The placeholder monogram/icon get a matching size bump so they don't
-   look lost in the middle of the much taller box above — same idea as the
-   Overview Courts section's own solo-card landscape treatment further up
-   this file. */
+/* Keep the placeholder monogram/icon legible in the larger booking preview. */
 .dash-court-media-lg .dash-court-monogram {
     font-size: var(--fs-3xl);
 }
@@ -1920,7 +1665,7 @@ body.dash-body {
 }
 
 .dash-book-cart {
-    border: 1px solid var(--color-border, #d8ded9);
+    border: 1px solid var(--color-line);
     border-radius: 12px;
     padding: 12px;
     background: var(--color-bg-card, #fff);
@@ -1952,6 +1697,132 @@ body.dash-body {
 .dash-book-cart li span { min-width: 0; overflow-wrap: anywhere; }
 .dash-book-cart [data-dash-book-cart-remove] { flex: 0 0 auto; }
 
+/* Photo-first court booking choices and hour-by-hour availability. */
+.dash-book-sport-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+    gap: 14px;
+    margin: 16px 0 24px;
+}
+
+.dash-book-sport-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    text-align: left;
+    color: var(--color-ink);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.dash-book-sport-card:hover { transform: translateY(-2px); }
+.dash-book-sport-card:focus-visible, .dash-book-slot:focus-visible { outline: 3px solid var(--color-primary, #34795a); outline-offset: 2px; }
+.dash-book-sport-card.is-selected { border-color: var(--color-primary, #34795a); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary, #34795a) 18%, transparent); }
+.dash-book-sport-photo { display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden; background: var(--color-bg-elevated); }
+.dash-book-sport-photo img { width: 100%; height: 100%; object-fit: cover; }
+.dash-book-sport-photo .dash-court-monogram { width: 100%; height: 100%; border-radius: 0; }
+.dash-book-sport-name { padding: 12px 14px; font-weight: 700; }
+.dash-book-court-choice { margin-top: 12px; }
+.dash-booking-modal[hidden], .dash-book-cart-bar[hidden] { display: none; }
+.dash-booking-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+}
+.dash-booking-modal-backdrop { position: absolute; inset: 0; background: rgba(12, 20, 16, .72); }
+.dash-booking-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 920px);
+    max-height: min(92vh, 940px);
+    overflow: auto;
+    padding: 28px;
+    border: 1px solid var(--color-line, #d8ded9);
+    border-radius: 18px;
+    background: var(--color-bg-card, #fff);
+    color: var(--color-ink, #1f2a25);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .32);
+}
+.dash-booking-dialog h2 { margin: 0 48px 18px 0; font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit); }
+.dash-booking-dialog .dash-modal-close { position: absolute; top: 14px; right: 14px; }
+.dash-booking-dialog .dash-book-step1-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; }
+.dash-booking-dialog .dash-court-media-lg { height: 290px; }
+.dash-booking-dialog .dash-book-step1-fields { gap: 10px; }
+.dash-booking-time-title { margin: 20px 0 0; font-size: var(--fs-base, 1rem); }
+.dash-booking-dialog > [data-dash-book-add] {
+    display: flex;
+    width: fit-content;
+    margin: 12px 0 0 auto;
+}
+body.dash-booking-modal-open { overflow: hidden; }
+.dash-book-cart-bar {
+    position: fixed;
+    z-index: 1000;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: max(20px, env(safe-area-inset-left));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    width: min(1040px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 14px 18px;
+    border: 1px solid var(--color-line, #d8ded9);
+    border-radius: 16px;
+    color: var(--color-ink, #1f2a25);
+    background: var(--color-bg-card, #fff);
+    box-shadow: 0 12px 40px rgba(15, 25, 19, .24);
+}
+.dash-book-cart-bar-content { min-width: 0; }
+.dash-book-cart-bar-items { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; color: var(--color-ink-dim); font-size: var(--fs-xs, .78rem); }
+.dash-book-cart-bar-items span { overflow-wrap: anywhere; }
+.dash-book-cart-bar > button { flex: 0 0 auto; }
+.dash-book-cart-bar:focus-within { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.dash-panel[data-dash-panel="booking"].is-active { padding-bottom: 120px; }
+.dash-book-slot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+.dash-book-slot {
+    min-height: 46px;
+    padding: 9px 12px;
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    color: var(--color-ink);
+    background: var(--color-bg-card);
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+}
+.dash-book-slot:hover:not(:disabled) { border-color: var(--color-primary, #34795a); }
+.dash-book-slot.is-selected { color: #14110d; background: var(--color-primary); border-color: var(--color-primary); }
+.dash-book-slot:disabled { color: var(--color-ink-faint); background: var(--color-bg-elevated); cursor: not-allowed; text-decoration: line-through; opacity: .76; }
+
+@media (max-width: 640px) {
+    .dash-booking-modal { padding: 8px; }
+    .dash-booking-dialog { max-height: 96vh; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); border-radius: 14px; }
+    .dash-booking-dialog > [data-dash-book-add] { width: min(100%, 320px); min-height: 48px; }
+    .dash-booking-dialog .dash-book-step1-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "fields" "preview"; }
+    .dash-booking-dialog .dash-court-media-lg { height: 190px; }
+    .dash-book-cart-bar { right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; width: calc(100% - 16px); align-items: stretch; flex-direction: column; gap: 10px; padding: 12px; }
+    .dash-book-cart-bar-items { max-height: 54px; overflow: auto; }
+    .dash-book-cart-bar > button { width: 100%; }
+}
+.dash-book-slot-status { min-height: 1.5em; }
+.dash-book-cart-empty { margin: 12px 0; }
+.dash-book-cart ul:empty { display: none; }
+.dash-book-cart + .dash-form-group { margin-top: 22px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .dash-book-sport-card { transition: none; }
+    .dash-book-sport-card:hover { transform: none; }
+}
+
 /* ==========================================================================
    Table / list panels (Bookings, Receipts)
    ========================================================================== */
@@ -1970,10 +1841,11 @@ body.dash-body {
     /* Revision A2 (implementation_plan.md) — column header label, so it
        moves to --font-display, not --font-numeric. */
     font-family: var(--font-display);
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--color-ink-faint);
+    color: var(--color-ink-dim);
     padding: 0 14px 12px;
     border-bottom: 1px solid var(--color-line);
 }
@@ -1981,7 +1853,8 @@ body.dash-body {
 .dash-table td {
     padding: 14px;
     border-bottom: 1px solid var(--color-line);
-    font-size: var(--fs-md);
+    font-size: var(--fs-base);
+    line-height: var(--lh-snug);
     color: var(--color-ink-dim);
     vertical-align: middle;
 }
@@ -2025,6 +1898,27 @@ body.dash-body {
 }
 
 /* Receipts grid */
+.dash-receipts-group {
+    padding: 22px;
+    border: 1px solid var(--color-line);
+    border-radius: 16px;
+    background: var(--color-bg-elevated);
+}
+
+.dash-receipts-group > .dash-panel-head {
+    margin-bottom: 16px;
+}
+
+.dash-receipts-group > .dash-panel-head h3 {
+    font: 600 var(--fs-lg) var(--font-display);
+}
+
+.dash-receipts-group > .dash-panel-head p {
+    color: var(--color-ink-dim);
+    font-size: var(--fs-sm);
+    margin-top: 4px;
+}
+
 .dash-receipt-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -2041,6 +1935,8 @@ body.dash-body {
     gap: 12px;
     transition: outline-color 0.3s ease;
 }
+.dash-receipt-grid > .dash-notif-empty,
+.dash-receipt-grid > .dash-receipt-load-warning { grid-column: 1 / -1; }
 .dash-payment-ack-card { width: 100%; max-width: 80mm; justify-self: center; padding: 14px; gap: 8px; border-radius: 7px; }
 .dash-payment-ack-card .dash-receipt-brand-name { font-size: var(--fs-md); }
 .dash-payment-ack-card .dash-receipt-brand-tag { line-height: 1.35; }
@@ -2054,11 +1950,49 @@ body.dash-body {
 .dash-payment-ack-card .dash-receipt-total { margin-top: 0; padding: 9px 0; }
 .dash-payment-ack-card .dash-receipt-actions { margin-top: 2px; }
 .dash-payment-ack-card .dash-receipt-actions button { width: 100%; }
-.dash-walkin-receipts { margin-top: 26px; }
-.dash-walkin-receipts > .dash-panel-head { margin-bottom: 14px; }
-.dash-walkin-receipts > .dash-panel-head h3 { font: 600 var(--fs-lg) var(--font-display); }
-.dash-walkin-receipt-pages { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.dash-walkin-receipt-pages[hidden] { display: none; }
+.dash-receipt-filters {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) minmax(180px, 220px);
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.dash-receipt-filter {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+    color: var(--color-ink-dim);
+    font: 600 var(--fs-sm) var(--font-body);
+}
+
+.dash-receipt-filter input,
+.dash-receipt-filter select {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font: 500 var(--fs-base) var(--font-body);
+}
+
+.dash-receipt-filter input:focus-visible,
+.dash-receipt-filter select:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.dash-receipt-filter input:disabled,
+.dash-receipt-filter select:disabled { opacity: .6; cursor: progress; }
+.dash-receipt-load-warning { margin: 0; padding: 12px 14px; border: 1px solid var(--color-line); border-radius: 10px; color: var(--color-ink-dim); background: var(--color-bg); font-size: var(--fs-sm); }
+.dash-receipt-no { overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+    .dash-receipts-group { padding: 16px; }
+    .dash-receipt-filters { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
 
 /* R4-3 (implementation_plan.md, "Revision 4") — brief highlight flashed by
    a notification click (includes/Dashboard.js's notifList click delegate)
@@ -2481,123 +2415,46 @@ body.dash-body {
     transform: none;
 }
 
-/* ==========================================================================
-   Dashboard footer (D8/D9, implementation_plan.md "Revision 5"). A slim,
-   dashboard-only footer replacing the landing-page footer clone this page
-   used to render on every tab (Pages/user_dashboard.html) — uses this
-   file's own dashboard card/line tokens (--color-bg-elevated/--color-line/
-   --color-ink*) rather than Style/LandingPage.css's .site-footer/.footer-*
-   rules, which stay untouched for Pages/Index.html. Visibility itself
-   (D8 — shown only on the Overview tab) is a plain `hidden` toggle in
-   includes/Dashboard.js's setActivePanel(); nothing here controls that.
-   ========================================================================== */
+/* Compact utility footer below whichever dashboard panel is active. */
 .dash-footer {
-    border-top: 1px solid var(--color-line);
+    width: min(900px, calc(100% - 48px));
+    margin: auto auto 24px;
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
     background: var(--color-bg-elevated);
-    padding: 40px 36px 24px;
+    padding: 14px 24px;
+}
+
+@media (max-width: 600px) {
+    .dash-footer {
+        width: calc(100% - 32px);
+        padding: 14px 16px;
+    }
 }
 
 .dash-footer-inner {
-    display: grid;
-    grid-template-columns: 1.3fr repeat(3, 1fr);
-    gap: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px 24px;
     max-width: 1200px;
     margin: 0 auto;
 }
 
-.dash-footer-col {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-width: 0;
-}
-
-.dash-footer-col h4 {
-    /* Revision A2 (implementation_plan.md) — uppercase column heading
-       label; --font-display matches the h1-h4 base rule in
-       Style/typography.css (this override exists for the smaller size). */
-    font-family: var(--font-display);
-    font-size: var(--fs-xs);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-ink-faint);
-    margin-bottom: 2px;
-}
-
-/* Quick links (data-dash-nav buttons) and the Contact/Policies <a> links
-   share one look — a plain-text row, brand-colored on hover — so a mixed
-   column of buttons and anchors (Need help?, Policies) still reads as one
-   consistent list. */
-.dash-footer-col a,
-.dash-footer-col button {
-    background: none;
-    border: none;
-    padding: 0;
-    text-align: left;
-    font-family: var(--font-body);
-    font-size: var(--fs-md);
+.dash-footer-inner a {
     color: var(--color-ink-dim);
-    cursor: pointer;
+    font-size: var(--fs-sm);
+    text-decoration: none;
     transition: color 0.2s;
 }
 
-.dash-footer-col a:hover,
-.dash-footer-col button:hover {
-    color: var(--color-primary);
-}
+.dash-footer-inner a:hover { color: var(--color-primary); }
 
-.dash-footer-col span {
-    font-size: var(--fs-md);
-    color: var(--color-ink-dim);
-    line-height: 1.5;
-}
-
-.dash-footer-brand-main {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.dash-footer-brand-main img {
-    width: 26px;
-    height: 26px;
-    object-fit: contain;
-}
-
-.dash-footer-brand-name {
-    font-family: var(--font-display);
-    font-weight: 600;
-    font-size: var(--fs-base);
-    color: var(--color-ink);
-}
-
-.dash-footer-brand p {
-    font-size: var(--fs-sm);
+.dash-footer-copyright {
     color: var(--color-ink-faint);
-    line-height: 1.5;
-    margin: 0;
-}
-
-.dash-footer-social {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.dash-footer-bottom {
-    max-width: 1200px;
-    margin: 24px auto 0;
-    padding-top: 18px;
-    border-top: 1px solid var(--color-line);
     font-size: var(--fs-xs);
-    color: var(--color-ink-faint);
-    text-align: center;
 }
-/* Responsive overrides for .dash-footer-inner's column count live in the
-   Responsive section further below (this file's own convention — every
-   breakpoint override lives together, grouped by width, not scattered
-   next to each component's base rules), not here. */
-
 /* ==========================================================================
    Generic dialog + Feedback modal (§2, D7). One overlay/dialog pair, reused
    for the one feedback form this phase adds — a shared .dash-modal-* prefix
@@ -2727,6 +2584,128 @@ body.dash-body {
     }
 }
 
+/* Customer help launcher and deterministic FAQ dialog. */
+.customer-faq-launcher {
+    position: fixed;
+    z-index: 40;
+    right: max(18px, env(safe-area-inset-right));
+    bottom: max(20px, env(safe-area-inset-bottom));
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    padding: 6px 7px 6px 16px;
+    border: 1px solid color-mix(in srgb, var(--color-ink) 24%, transparent);
+    border-radius: 999px;
+    color: var(--color-ink);
+    background: color-mix(in srgb, var(--color-bg-card) 94%, transparent);
+    box-shadow: 0 5px 20px rgba(0, 0, 0, .25);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font: 600 var(--fs-sm, .9rem)/1.2 var(--font-body, inherit);
+    cursor: pointer;
+    animation: customer-faq-pulse 3.2s ease-in-out infinite;
+}
+.customer-faq-launcher-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--color-primary-dim, #c4430a);
+    font: 700 1.4rem/1 var(--font-display, inherit);
+}
+.customer-faq-launcher-label { white-space: nowrap; }
+body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: max(136px, calc(116px + env(safe-area-inset-bottom))); }
+.customer-faq-launcher:hover { border-color: var(--color-primary); }
+.customer-faq-launcher:focus-visible,
+.customer-faq-close:focus-visible,
+.customer-faq-questions button:focus-visible,
+.customer-faq-answer a:focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 3px;
+}
+@keyframes customer-faq-pulse {
+    0%, 100% { box-shadow: 0 5px 20px rgba(0, 0, 0, .25), 0 0 0 0 color-mix(in srgb, var(--color-primary) 0%, transparent); }
+    50% { box-shadow: 0 5px 20px rgba(0, 0, 0, .25), 0 0 0 7px color-mix(in srgb, var(--color-primary) 20%, transparent); }
+}
+.customer-faq-overlay {
+    position: fixed;
+    z-index: 1100;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(10, 8, 6, .64);
+}
+.customer-faq-overlay[hidden] { display: none; }
+body.customer-faq-open { overflow: hidden; }
+.customer-faq-dialog {
+    position: relative;
+    width: min(100%, 540px);
+    max-height: min(86vh, 760px);
+    overflow: auto;
+    padding: 28px;
+    border: 1px solid var(--color-line);
+    border-radius: 18px;
+    color: var(--color-ink);
+    background: var(--color-bg-card);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+}
+.customer-faq-dialog h2 { margin: 0 44px 6px 0; font: 600 var(--fs-lg, 1.25rem)/1.25 var(--font-display, inherit); }
+.customer-faq-intro { margin: 0 0 18px; color: var(--color-ink-dim); }
+.customer-faq-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--color-line);
+    border-radius: 50%;
+    color: var(--color-ink);
+    background: var(--color-bg-elevated);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+.customer-faq-questions { display: grid; gap: 8px; }
+.customer-faq-questions button {
+    min-height: 46px;
+    padding: 10px 13px;
+    border: 1px solid var(--color-line);
+    border-radius: 10px;
+    color: var(--color-ink);
+    background: var(--color-bg-elevated);
+    font: 500 var(--fs-sm, .9rem)/1.4 var(--font-body, inherit);
+    text-align: left;
+    cursor: pointer;
+}
+.customer-faq-questions button:hover,
+.customer-faq-questions button[aria-expanded="true"] { border-color: var(--color-primary); }
+.customer-faq-answer {
+    margin: 16px 0 0;
+    padding: 14px;
+    border-left: 3px solid var(--color-primary);
+    border-radius: 4px 10px 10px 4px;
+    color: var(--color-ink);
+    background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-elevated));
+    line-height: 1.55;
+}
+.customer-faq-answer[hidden] { display: none; }
+.customer-faq-answer a { color: var(--color-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 640px) {
+    .customer-faq-launcher { right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
+    body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: calc(158px + env(safe-area-inset-bottom)); }
+    .customer-faq-overlay { padding: 12px; }
+    .customer-faq-dialog { max-height: 90vh; padding: 24px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .customer-faq-launcher { animation: none; }
+}
+
 /* ==========================================================================
    Mobile sidebar overlay
    ========================================================================== */
@@ -2750,9 +2729,7 @@ body.dash-sidebar-open {
    Responsive
    ========================================================================== */
 @media (max-width: 1080px) {
-    .dash-hero {
-        height: 300px;
-    }
+
 
     .dash-stat-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -2782,17 +2759,15 @@ body.dash-sidebar-open {
         grid-template-columns: 1fr;
     }
 
-    /* D9 (implementation_plan.md, "Revision 5") — the footer's brand +
-       Quick links / Need help? / Policies columns drop from 4 to 2 here,
-       same tier every other 4-column-ish grid on this page already
-       collapses at. */
-    .dash-footer-inner {
-        grid-template-columns: repeat(2, 1fr);
-    }
 }
 
 @media (max-width: 860px) {
     .dash-shell {
+        grid-template-columns: 1fr;
+        transition: none;
+    }
+
+    .dash-shell.dash-sidebar-collapsed {
         grid-template-columns: 1fr;
     }
 
@@ -2804,6 +2779,11 @@ body.dash-sidebar-open {
         transform: translateX(-100%);
         transition: transform 0.28s ease;
         z-index: 20;
+    }
+
+    .dash-sidebar-collapse,
+    .dash-sidebar-reveal {
+        display: none !important;
     }
 
     body.dash-sidebar-open .dash-sidebar {
@@ -2846,14 +2826,12 @@ body.dash-sidebar-open {
         padding: 22px 18px 50px;
     }
 
-    .dash-hero {
-        height: 260px;
-        border-radius: 16px;
-    }
+    .dash-hero { border-radius: 16px; }
 
-    .dash-hero-scrim {
-        padding: 20px 18px 70px;
-    }
+    .dash-hero-arrow-rail { padding: 0 8px; }
+    .dash-hero-arrow { width: 36px; height: 36px; font-size: 20px; }
+
+    .dash-hero-scrim { min-height: 0; padding: 14px 16px 12px; }
 
     .dash-hero-text {
         max-width: 100%;
@@ -2868,59 +2846,18 @@ body.dash-sidebar-open {
     }
 
     .dash-hero-controls {
-        left: 18px;
-        right: 18px;
-        bottom: 16px;
+        position: static;
+        width: 100%;
+        padding: 0 16px 14px;
+        background: var(--color-bg-card);
         flex-direction: row;
         align-items: center;
         justify-content: space-between;
         gap: 10px;
     }
 
-    .dash-hero-btn {
-        padding: 9px 16px;
-        font-size: var(--fs-xs);
-    }
-
     .dash-stat-grid {
         grid-template-columns: 1fr 1fr;
-    }
-
-    /* Revision 3, Change 1 — below this width every card, solo-landscape
-       or not, goes back to one full-width PORTRAIT column: flex-basis:
-       100% forces exactly one card per row (the fluid flex-wrap above
-       would technically already land on 1 column around here on its own,
-       but stating it outright keeps this guaranteed rather than
-       incidental if that basis value ever changes), and the solo-card
-       landscape rules further up this file are reverted below — a
-       side-by-side split needs real width for its body column (the
-       per-unit <select> plus the "Show availability" toggle) that a
-       narrow phone card sharing this space with the sidebar/content
-       padding doesn't reliably have; see this file's end-of-file
-       Revision 3 audit note for the widths this was actually checked at. */
-    .dash-court-grid > .dash-court-card {
-        flex-basis: 100%;
-    }
-
-    .dash-court-grid > .dash-court-card:only-child {
-        flex-direction: column;
-    }
-
-    .dash-court-grid > .dash-court-card:only-child .dash-court-media {
-        flex: none;
-        height: 130px;
-        min-height: 0;
-        border-right: none;
-        border-bottom: 1px solid var(--color-line);
-    }
-
-    .dash-court-grid > .dash-court-card:only-child .dash-court-media svg {
-        width: 46px;
-        height: 46px;
-    }
-
-    .dash-court-grid > .dash-court-card:only-child .dash-court-monogram {
-        font-size: var(--fs-2xl);
     }
 
     .dash-payment-options {
@@ -2972,15 +2909,6 @@ body.dash-sidebar-open {
         flex-wrap: wrap;
     }
 
-    /* D9 (implementation_plan.md, "Revision 5") — one column, tighter
-       outer padding to match .dash-content's own narrow-viewport padding. */
-    .dash-footer {
-        padding: 32px 18px 20px;
-    }
-
-    .dash-footer-inner {
-        grid-template-columns: 1fr;
-    }
 }
 
 /* Revision 5, D3 (implementation_plan.md) — Step 2's From/To picker
@@ -3023,15 +2951,13 @@ body.dash-sidebar-open {
        Changes) wraps instead of squeezing two buttons onto one line.
      • The booking/change-password wizard's step circles shrink a touch
        further, giving the 3 step labels a little more breathing room.
-   Everything else audited at these 2 widths (receipt cards, court cards +
-   unit combo boxes, the wide .dash-table, Account Settings' name fields)
+   Everything else audited at these 2 widths (receipt cards, court preview
+   and unit combo box, the wide .dash-table, Account Settings' name fields)
    was already safe: .dash-table-wrap's overflow-x: auto already turns the
    table into a horizontal-scroll region instead of stretching the page,
    .dash-name-fields/.dash-settings-grid and the receipt grid already
-   collapse to 1 column by 1080px, and the court grid already collapsed to
-   1 column by 640px (now handled by Revision 3, Change 1's fluid
-   flex-wrap instead of that fixed breakpoint — see the Revision 3 audit
-   note at the end of this file) — all three with content that wraps
+   collapse to 1 column by 1080px, and the booking preview stacks below
+   640px — all with content that wraps
    rather than overflows.
    ========================================================================== */
 @media (max-width: 480px) {
@@ -3087,48 +3013,4 @@ body.dash-sidebar-open {
     }
 }
 
-/* ==========================================================================
-   Revision 3 — Dashboard courts redesign + larger booking preview
-   (implementation_plan.md's "Revision 3" section). Two changes, both
-   requested directly by the user:
-     1. The Overview Courts section's per-sport grid no longer leaves 2 of
-        3 grid columns permanently empty for a sport with only one court
-        (7 of the real 8 sports) — see .dash-court-grid's flex-wrap
-        conversion and .dash-court-card's flex-basis near the top of the
-        Courts section above, and the solo-card landscape rules right
-        before this file's "Booking panel" section header for the actual
-        fix to the 1-card case.
-     2. Book a Court Step 1's preview is substantially larger and, on wide
-        screens, sits beside the court/unit pickers instead of stacked
-        below them — see .dash-court-media-lg and .dash-book-step1-layout
-        in the Booking panel section above.
-   Re-audited at the same 1280/1024/768/480/360px this file's Revision 2,
-   R6 pass used (same method — a headless-browser scrollWidth check,
-   plus the arithmetic below cross-checked against .dash-content's and
-   .dash-card's own padding). No NEW breakpoint was needed for either
-   change — both reuse the existing 640px tier as their one "things get
-   tight, simplify" cutoff, same as .dash-court-media-lg's own height
-   already did before this revision:
-     • .dash-court-grid is fluid above 640px, so 1280/1024/768 each
-       resolve to a different, correct column count computed from the
-       actual available width rather than a fixed breakpoint list — a
-       solo card always gets the full row (and the landscape treatment),
-       Bowling's 2 cards always split it evenly, and nothing is ever left
-       empty. Verified at all three widths for both the 1-card case (7 of
-       8 sports) and Bowling's 2-card case. Below 640px every card stacks
-       to one full-width portrait column exactly as it did before this
-       revision (flex-basis: 100%, landscape rules reverted).
-     • .dash-book-step1-layout's side-by-side split was checked comfortable
-       at 768/1024/1280px — the Court <select>'s own column never drops
-       below roughly 210px at the narrow end of that range (641px), well
-       short of causing a native <select> to overflow its column (unlike a
-       `white-space: nowrap` button, a <select> never forces its container
-       wider — it just lays out at whatever width it's given). It's
-       deliberately turned off at/below 640px, where a half-width form
-       column would start crowding the per-unit <select>, and stacks to
-       one full-width column (Court picker first, preview below — see that
-       rule's own comment on why that order, not the reverse, is correct
-       for a narrow/one-column phone view) instead.
-   No other panel changed in this revision, so the rest of Revision 2 R6's
-   audit above still stands unchanged.
-   ========================================================================== */
+/* Booking wizard responsive behavior is defined alongside its panel rules above. */
