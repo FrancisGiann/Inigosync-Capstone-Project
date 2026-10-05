@@ -32,6 +32,70 @@ function walkFiles(directory) {
   });
 }
 
+function resolveLocalAsset(directory, htmlPath, url) {
+  // Absolute and protocol-relative URLs (such as CDN scripts) are not local files.
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(url)) return null;
+
+  const suffixIndex = url.search(/[?#]/);
+  const urlPath = suffixIndex === -1 ? url : url.slice(0, suffixIndex);
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(urlPath);
+  } catch {
+    return null;
+  }
+
+  const targetPath = path.resolve(
+    directory,
+    decodedPath.startsWith('/')
+      ? `.${decodedPath}`
+      : path.relative(directory, path.dirname(htmlPath)),
+    ...(decodedPath.startsWith('/') ? [] : [decodedPath]),
+  );
+  return { targetPath };
+}
+
+function withContentVersion(url, hash) {
+  const hashIndex = url.indexOf('#');
+  const beforeHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const fragment = hashIndex === -1 ? '' : url.slice(hashIndex);
+  const queryIndex = beforeHash.indexOf('?');
+  const urlPath = queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex);
+  const query = queryIndex === -1 ? '' : beforeHash.slice(queryIndex + 1);
+  if (!query) return `${urlPath}?v=${hash}${fragment}`;
+
+  const segments = query.split(/(&amp;|&)/);
+  let foundVersion = false;
+  for (let index = 0; index < segments.length; index += 2) {
+    const segment = segments[index];
+    const equalsIndex = segment.indexOf('=');
+    const rawName = equalsIndex === -1 ? segment : segment.slice(0, equalsIndex);
+    let name;
+    try {
+      name = decodeURIComponent(rawName.replace(/\+/g, ' '));
+    } catch {
+      continue;
+    }
+    if (name !== 'v') continue;
+
+    if (!foundVersion) {
+      const rawValue = `v=${hash}`;
+      segments[index] = equalsIndex === -1 ? rawValue : `${segment.slice(0, equalsIndex + 1)}${hash}`;
+      foundVersion = true;
+    } else {
+      segments[index] = '';
+      segments[index - 1] = '';
+    }
+  }
+
+  const preservedQuery = segments.join('');
+  if (foundVersion) return `${urlPath}?${preservedQuery}${fragment}`;
+  const separators = [...query.matchAll(/&amp;|&/g)];
+  const separator = separators.length ? separators.at(-1)[0] : '&';
+  const suffix = /(?:&amp;|&)$/.test(query) ? '' : separator;
+  return `${urlPath}?${query}${suffix}v=${hash}${fragment}`;
+}
+
 function cacheBustPublicEntrypoints(directory) {
   const stylesheets = walkFiles(directory)
     .filter((filePath) => path.extname(filePath).toLowerCase() === '.css');
@@ -87,42 +151,30 @@ function cacheBustPublicEntrypoints(directory) {
     });
     html = html.replace(/<script\b[^>]*>/gi, (tag) => {
       return tag.replace(/\bsrc\s*=\s*(["'])(.*?)\1/i, (attribute, quote, src) => {
-        const suffixIndex = src.search(/[?#]/);
-        const srcPath = suffixIndex === -1 ? src : src.slice(0, suffixIndex);
-        let decodedPath;
-        try {
-          decodedPath = decodeURIComponent(srcPath);
-        } catch {
-          return attribute;
-        }
-        if (!/(?:^|\/)includes\/(?:landingPage|landing-basketball)\.js$/i.test(decodedPath)) return attribute;
-        const targetPath = path.resolve(
-          directory,
-          decodedPath.startsWith('/')
-            ? `.${decodedPath}`
-            : path.relative(directory, path.dirname(htmlPath)),
-          ...(decodedPath.startsWith('/') ? [] : [decodedPath]),
-        );
-        if (!fs.existsSync(targetPath)) return attribute;
-        const hash = crypto.createHash('sha256').update(fs.readFileSync(targetPath)).digest('hex').slice(0, 12);
-        const suffix = suffixIndex === -1 ? '' : src.slice(suffixIndex);
-        const query = suffix.startsWith('?') ? `&${suffix.slice(1)}` : suffix;
-        return `src=${quote}${srcPath}?v=${hash}${query}${quote}`;
+        const localAsset = resolveLocalAsset(directory, htmlPath, src);
+        if (!localAsset || path.extname(localAsset.targetPath).toLowerCase() !== '.js') return attribute;
+        if (!fs.existsSync(localAsset.targetPath)) return attribute;
+        const hash = crypto.createHash('sha256').update(fs.readFileSync(localAsset.targetPath)).digest('hex').slice(0, 12);
+        return `src=${quote}${withContentVersion(src, hash)}${quote}`;
       });
     });
     fs.writeFileSync(htmlPath, html);
   }
 }
 
-fs.rmSync(output, { recursive: true, force: true });
-fs.mkdirSync(output, { recursive: true });
-for (const file of rootFiles) {
-  fs.copyFileSync(path.join(root, file), path.join(output, file));
-}
-for (const directory of publicDirectories) {
-  copyPublicDirectory(path.join(root, directory), path.join(output, directory));
-}
-copyPublicDirectory(path.join(root, 'database', 'web'), path.join(output, 'database', 'web'));
-cacheBustPublicEntrypoints(output);
+if (require.main === module) {
+  fs.rmSync(output, { recursive: true, force: true });
+  fs.mkdirSync(output, { recursive: true });
+  for (const file of rootFiles) {
+    fs.copyFileSync(path.join(root, file), path.join(output, file));
+  }
+  for (const directory of publicDirectories) {
+    copyPublicDirectory(path.join(root, directory), path.join(output, directory));
+  }
+  copyPublicDirectory(path.join(root, 'database', 'web'), path.join(output, 'database', 'web'));
+  cacheBustPublicEntrypoints(output);
 
-console.log(`Static site built in ${output}`);
+  console.log(`Static site built in ${output}`);
+}
+
+module.exports = { cacheBustPublicEntrypoints, withContentVersion };
