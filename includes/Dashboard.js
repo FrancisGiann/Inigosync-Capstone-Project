@@ -1926,11 +1926,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(court.sportSlug || (court.sportName || court.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
     }
 
-    // Bowling's two court rows share the real sport slug, but customers book
-    // Duckpin and Ten-Pin as separate products with separate availability.
-    // Keep their card keys tied to each court name while retaining the real
-    // sport name in the booking option sent through checkout.
+    function isBowlingVariant(court) {
+        return /^bowling-(duckpin|tenpin)$/.test(String(court.slug || '').toLowerCase());
+    }
+
+    // Bowling's two listings can share one parent sport row in Supabase, but
+    // customers book Duckpin and Ten-Pin as separate products with separate
+    // availability. Keep each card, filtered court list, and booking label
+    // tied to its own court listing slug/name.
     function bookSportChoiceKey(court) {
+        if (isBowlingVariant(court)) return String(court.slug).toLowerCase();
         if (sportKey(court) === 'bowling') {
             return String(court.name || 'bowling').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         }
@@ -1942,7 +1947,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sports = new Map();
         bookCourtsCache.forEach((court) => {
             const key = bookSportChoiceKey(court);
-            if (!sports.has(key)) sports.set(key, { key, name: sportKey(court) === 'bowling' ? court.name : court.sportName || court.name, courts: [] });
+            if (!sports.has(key)) sports.set(key, { key, name: isBowlingVariant(court) || sportKey(court) === 'bowling' ? court.name : court.sportName || court.name, courts: [] });
             sports.get(key).courts.push(court);
         });
         bookSportGrid.innerHTML = [...sports.values()].map((sport) => {
@@ -1973,7 +1978,8 @@ document.addEventListener('DOMContentLoaded', () => {
             bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((court) => {
                 const rateHint = window.InigoCourtsData.rateHint?.(court);
                 const label = rateHint ? `${court.name} — ${rateHint}` : `${court.name} — Rate TBA`;
-                return `<option value="${window.escapeHtml(court.name)}" data-rate="${court.rate !== null ? window.escapeHtml(String(court.rate)) : ''}" data-rate-unit="${window.escapeHtml(court.rateUnit || '/hr')}" data-sport="${window.escapeHtml(court.sportName || court.name)}">${window.escapeHtml(label)}</option>`;
+                const sportName = isBowlingVariant(court) ? court.name : (court.sportName || court.name);
+                return `<option value="${window.escapeHtml(court.name)}" data-rate="${court.rate !== null ? window.escapeHtml(String(court.rate)) : ''}" data-rate-unit="${window.escapeHtml(court.rateUnit || '/hr')}" data-sport="${window.escapeHtml(sportName)}">${window.escapeHtml(label)}</option>`;
             }).join('');
             bookSelect.disabled = false;
             bookSelect.value = courts[0]?.name || '';
@@ -2935,7 +2941,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchCustomerAccountFields(profileId) {
         if (!window.sb || !profileId) return null;
         const { data, error } = await window.sb.from('customer_private_details')
-            .select('birthdate, civil_status, emergency_contact_name, emergency_contact_number')
+            .select('birthdate, gender, civil_status, emergency_contact_name, emergency_contact_number')
             .eq('user_id', profileId).maybeSingle();
         if (error) {
             if (!isDashboardSchemaMismatch(error)) console.error('[dashboard] failed to load account details', error);
@@ -2975,6 +2981,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsLast = document.querySelector('[data-dash-settings-lastname]');
     const settingsEmail = document.querySelector('[data-dash-settings-email]');
     const settingsBirthdate = document.querySelector('[data-dash-settings-birthdate]');
+    const settingsGender = document.querySelector('[data-dash-settings-gender]');
     const settingsCivilStatus = document.querySelector('[data-dash-settings-civil-status]');
     const settingsEmergencyName = document.querySelector('[data-dash-settings-emergency-name]');
     const birthdateAge = document.querySelector('[data-dash-birthdate-age]');
@@ -3113,6 +3120,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fillNameInputs(parseFullName(profile.full_name));
             if (settingsEmail) settingsEmail.value = profile.email || '';
             if (settingsBirthdate) settingsBirthdate.value = profile.birthdate || '';
+            if (settingsGender) setGenderSelection(profile.gender || '');
             if (settingsCivilStatus) settingsCivilStatus.value = profile.civil_status || '';
             if (settingsEmergencyName) settingsEmergencyName.value = profile.emergency_contact_name || '';
             updateBirthdateAge(settingsBirthdate?.value || '');
@@ -3127,6 +3135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const profile = window.inigosyncProfile || {};
         fillNameInputs(parseFullName(profile.full_name));
         if (settingsBirthdate) { settingsBirthdate.value = profile.birthdate || ''; delete settingsBirthdate.dataset.dirty; }
+        if (settingsGender) { setGenderSelection(profile.gender || ''); delete settingsGender.dataset.dirty; }
         if (settingsCivilStatus) { settingsCivilStatus.value = profile.civil_status || ''; delete settingsCivilStatus.dataset.dirty; }
         if (settingsEmergencyName) { settingsEmergencyName.value = profile.emergency_contact_name || ''; delete settingsEmergencyName.dataset.dirty; }
         if (mobileInput) { mobileInput.value = profile.contact_num || ''; delete mobileInput.dataset.dirty; }
@@ -3155,7 +3164,8 @@ document.addEventListener('DOMContentLoaded', () => {
             updateBirthdateAge(settingsBirthdate.value);
         });
     }
-    [settingsCivilStatus, settingsEmergencyName].filter(Boolean).forEach(input => input.addEventListener('input', () => { input.dataset.dirty = 'true'; }));
+    [settingsGender, settingsCivilStatus].filter(Boolean).forEach(input => input.addEventListener('change', () => { input.dataset.dirty = 'true'; }));
+    [settingsEmergencyName].filter(Boolean).forEach(input => input.addEventListener('input', () => { input.dataset.dirty = 'true'; }));
 
     function setEmailProposalStatus(message, isError = false) {
         if (!emailProposalStatus) return;
@@ -3388,6 +3398,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const fullName = composeFullName({ first, middle, last });
         const birthdate = settingsBirthdate?.value || null;
+        const gender = settingsGender?.value || null;
         if (birthdate && birthdate > getManilaToday()) {
             window.InigoToast?.show('Birthdate cannot be in the future.', true);
             settingsBirthdate.focus();
@@ -3396,9 +3407,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const civilStatus = settingsCivilStatus?.value || null;
         const emergencyName = settingsEmergencyName?.value.trim() || null;
         const profileChanges = { full_name: fullName, first_name: first, middle_name: middle, last_name: last };
-        const privateChanges = { birthdate, civil_status: civilStatus, emergency_contact_name: emergencyName };
+        const privateChanges = { birthdate, gender, civil_status: civilStatus, emergency_contact_name: emergencyName };
         const changed = fullName !== profile.full_name
             || (birthdate || null) !== (profile.birthdate || null)
+            || (gender || null) !== (profile.gender || null)
             || (civilStatus || null) !== (profile.civil_status || null)
             || (emergencyName || null) !== (profile.emergency_contact_name || null);
         const emailChanged = Boolean(stagedEmailChange) && stagedEmailChange.toLowerCase() !== String(profile.email || '').toLowerCase();
@@ -3416,6 +3428,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_middle_name: middle,
                 p_last_name: last,
                 p_birthdate: privateChanges.birthdate,
+                p_gender: privateChanges.gender,
                 p_civil_status: privateChanges.civil_status,
                 p_emergency_contact_name: privateChanges.emergency_contact_name,
             });
@@ -3426,7 +3439,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             invalidateCustomerAccountFieldsFetch(profile.id);
             Object.assign(profile, profileChanges, privateChanges);
-            [settingsBirthdate, settingsCivilStatus, settingsEmergencyName].filter(Boolean).forEach(input => { delete input.dataset.dirty; });
+            [settingsBirthdate, settingsGender, settingsCivilStatus, settingsEmergencyName].filter(Boolean).forEach(input => { delete input.dataset.dirty; });
             renderProfile(profile);
         }
         savedName = [first, middle, last];
@@ -3499,7 +3512,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // A photo remains a local draft until the user presses Save and confirms.
     // ------------------------------------------------------------------
-    const AVATAR_MAX_RAW_BYTES = 5 * 1024 * 1024; // 5 MB raw file ceiling, checked before downscaling
     const AVATAR_OUTPUT_SIZE = 256;               // px, square — the final stored image
     const AVATAR_JPEG_QUALITY = 0.82;             // ~20-50KB per image at 256x256
 
@@ -3551,12 +3563,8 @@ document.addEventListener('DOMContentLoaded', () => {
             avatarFileInput.value = '';
             if (!file) return;
 
-            if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-                window.InigoToast?.show('Please choose a JPG, PNG, or WebP image.', true);
-                return;
-            }
-            if (file.size > AVATAR_MAX_RAW_BYTES) {
-                window.InigoToast?.show('That image is too large — please choose one under 5 MB.', true);
+            if (!file.type || !file.type.startsWith('image/')) {
+                window.InigoToast?.show('Please choose an image file.', true);
                 return;
             }
 
@@ -3852,12 +3860,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderCustomerAccountFields(profile) {
         if (settingsBirthdate && !settingsBirthdate.dataset.dirty) settingsBirthdate.value = profile.birthdate || '';
+        if (settingsGender && !settingsGender.dataset.dirty) setGenderSelection(profile.gender || '');
         if (settingsCivilStatus && !settingsCivilStatus.dataset.dirty) settingsCivilStatus.value = profile.civil_status || '';
         if (settingsEmergencyName && !settingsEmergencyName.dataset.dirty) settingsEmergencyName.value = profile.emergency_contact_name || '';
         if (emergencyMobileInput && !emergencyMobileInput.dataset.dirty) emergencyMobileInput.value = profile.emergency_contact_number || '';
         updateBirthdateAge(profile.birthdate || '');
         const birthdateDisplay = document.querySelector('[data-dash-settings-display-birthdate]');
         if (birthdateDisplay) birthdateDisplay.textContent = formatAccountBirthdate(profile.birthdate);
+        const genderDisplay = document.querySelector('[data-dash-settings-display-gender]');
+        if (genderDisplay) genderDisplay.textContent = profile.gender || '—';
         const civilDisplay = document.querySelector('[data-dash-settings-display-civil-status]');
         if (civilDisplay) civilDisplay.textContent = profile.civil_status || '—';
         const emergencyDisplay = document.querySelector('[data-dash-settings-display-emergency]');
@@ -3869,6 +3880,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const age = ageFromBirthdate(profile.birthdate || '');
             profileAge.textContent = age === null ? '—' : String(age);
         }
+        const profileGender = document.querySelector('[data-dash-profile-gender]');
+        if (profileGender) profileGender.textContent = profile.gender || '—';
         const profileCivilStatus = document.querySelector('[data-dash-profile-civil-status]');
         if (profileCivilStatus) profileCivilStatus.textContent = profile.civil_status || '—';
         const profileEmergencyName = document.querySelector('[data-dash-profile-emergency-name]');
@@ -3876,6 +3889,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const profileEmergencyNumber = document.querySelector('[data-dash-profile-emergency-number]');
         if (profileEmergencyNumber) profileEmergencyNumber.textContent = profile.emergency_contact_number || '—';
         if (emergencyRemoveBtn) emergencyRemoveBtn.hidden = !profile.emergency_contact_number;
+    }
+
+    function setGenderSelection(value) {
+        if (!settingsGender) return;
+        const gender = String(value || '');
+        if (gender && !Array.from(settingsGender.options).some(option => option.value === gender)) {
+            const option = document.createElement('option');
+            option.value = gender;
+            option.textContent = gender;
+            settingsGender.append(option);
+        }
+        settingsGender.value = gender;
     }
 
     function populateCustomerAccountFields(profile) {

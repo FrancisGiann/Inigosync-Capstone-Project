@@ -1003,7 +1003,7 @@
                 <label class="ioc-field"><span>Description</span><textarea class="admin-input" rows="2" maxlength="500" placeholder="A short description of this facility" data-ioc-description></textarea></label>
                 <div class="ioc-photo-feature">
                     <div class="ioc-photo-preview" data-ioc-cover-preview><span>Cover photo preview</span></div>
-                    <div class="ioc-photo-controls"><strong>Landing page cover photo</strong><p>Choose a JPG, PNG, or WebP photo up to 10 MB. Adjust its 16:9 crop before saving.</p><label class="ioc-button ioc-button-secondary" for="ioc-cover-file">Choose cover photo</label><input class="ioc-file-input" id="ioc-cover-file" type="file" accept="image/jpeg,image/png,image/webp" data-ioc-cover-file></div>
+                    <div class="ioc-photo-controls"><strong>Landing page cover photo</strong><p>Choose any image and adjust its 16:9 crop before saving.</p><label class="ioc-button ioc-button-secondary" for="ioc-cover-file">Choose cover photo</label><input class="ioc-file-input" id="ioc-cover-file" type="file" accept="image/*" data-ioc-cover-file></div>
                 </div>
             </section>
             <section class="ioc-editor-section" aria-labelledby="iocUnitsTitle">
@@ -1116,9 +1116,9 @@
             <div class="admin-avatar-upload-actions">
                 <button type="button" class="owner-photo-choice" data-admin-avatar-upload-trigger>Choose new photo</button>
                 <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove photo</button>
-                <input type="file" accept="image/jpeg,image/png,image/webp" class="admin-visually-hidden" data-admin-avatar-file>
+                <input type="file" accept="image/*" class="admin-visually-hidden" data-admin-avatar-file>
             </div>
-            <p class="admin-form-hint">Choose a JPG, PNG, or WebP image up to 5 MB. Adjust the square crop preview before saving.</p>
+            <p class="admin-form-hint">Choose any image. Adjust the square crop preview before saving.</p>
         </div>
         <div class="admin-form-actions">
             <button type="button" class="admin-btn-ghost" data-admin-avatar-cancel>Cancel</button>

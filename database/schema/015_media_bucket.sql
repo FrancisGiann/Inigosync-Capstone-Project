@@ -25,11 +25,10 @@
 -- below, which require the caller to be an ACTIVE ADMIN profile (re-checked
 -- server-side on every request, never trusted from the client). A
 -- publishable/anon key can therefore always read but never write into this
--- bucket. `file_size_limit`/`allowed_mime_types` on the bucket itself are a
--- second, server-side backstop behind the client-side checks in
--- includes/imageTools.js — a client that skips or tampers with the
--- frontend validation still can't upload an oversized file or an
--- unexpected type.
+-- bucket. The bucket has no per-bucket raw-file size limit; the storage
+-- provider's project-wide limit still applies. The app accepts any image/*
+-- source and canonicalizes uploads to JPEG before storage; the bucket keeps
+-- an image/* guard as a server-side image-only backstop.
 -- ============================================================================
 
 -- No `comment on` statement here on purpose — storage.buckets/storage.objects
@@ -41,7 +40,7 @@
 -- for pure documentation; this file's own header comment covers the same
 -- information as the alternative.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('media', 'media', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+values ('media', 'media', true, null, array['image/*'])
 on conflict (id) do update set
     public = excluded.public,
     file_size_limit = excluded.file_size_limit,

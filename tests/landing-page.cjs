@@ -21,16 +21,18 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         let courtRequests=0;
         page.on('request',request=>{if(request.url().includes('/rest/v1/court?'))courtRequests++;});
         await page.goto(base+'/index.html');
-        await page.waitForFunction(()=>document.querySelectorAll('.court-card').length===8);
+        await page.waitForFunction(()=>document.querySelectorAll('.court-card').length===9);
         await page.waitForFunction(()=>document.querySelectorAll('.hero-copy').length===4);
-        const coverAssets = ['basketball','badminton','bowling','billiards','lawn-tennis','pickleball','table-tennis','volleyball'];
+        const coverAssets = ['basketball','badminton','bowling','bowling-duckpin','bowling-tenpin','billiards','lawn-tennis','pickleball','table-tennis','volleyball'];
         const coverLoads = await page.evaluate(async sports => Promise.all(sports.map(slug => new Promise(resolve => {
             const image = new Image();
             image.onload = () => resolve({ slug, width: image.naturalWidth, height: image.naturalHeight });
             image.onerror = () => resolve({ slug, width: 0, height: 0 });
             image.src = window.InigoVisuals.sportCover(slug);
         }))), coverAssets);
-        assert(coverLoads.every(image => image.width > 0 && image.height > 0), 'all eight exact sport cover crops load as individual images');
+        assert(coverLoads.every(image => image.width > 0 && image.height > 0), 'all sport cover crops, including both Bowling card aliases, load');
+        assert.equal(coverLoads.find(image => image.slug === 'bowling-duckpin').width, coverLoads.find(image => image.slug === 'bowling').width);
+        assert.equal(coverLoads.find(image => image.slug === 'bowling-tenpin').height, coverLoads.find(image => image.slug === 'bowling').height);
         const databaseCoverCard = await page.evaluate(() => renderCourtCard({
             sportSlug: 'basketball', name: 'Basketball', quantity: 1, unit: 'courts',
             imageUrl: 'https://cdn.example.test/shared-basketball-cover.png', rate: null,
@@ -41,7 +43,8 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         assert.equal(await page.locator('.google-reviews-link,.map-external-link').count(),0);
         assert.match(await page.locator('.court-card[data-court-id="basketball"] .court-rate').innerText(),/From ₱700\/hr/);
         assert.match(await page.locator('.court-card[data-court-id="pickleball"] .court-rate').innerText(),/Rate TBA/);
-        assert.match(await page.locator('.court-card[data-court-id="bowling"] .court-rate').innerText(),/From ₱100\/set/);
+        assert.match(await page.locator('.court-card[data-court-id="bowling-duckpin"] .court-rate').innerText(),/From ₱100\/set/);
+        assert.match(await page.locator('.court-card[data-court-id="bowling-tenpin"] .court-rate').innerText(),/From ₱150\/set/);
         const initialRequests=courtRequests;
         await page.locator('[data-court-id="basketball"]').click();
         await page.waitForSelector('[data-court-viewer][data-open]');
@@ -55,17 +58,22 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         await page.keyboard.press('Escape');
         await page.waitForFunction(()=>document.querySelector('[data-court-viewer]').hidden);
         assert(await page.locator('[data-court-id="basketball"]').evaluate(el=>el===document.activeElement));
-        await page.locator('[data-court-id="bowling"]').click();
+        await page.locator('[data-court-id="bowling-duckpin"]').click();
         await page.waitForSelector('[data-court-viewer][data-open]');
-        assert.equal(await page.locator('[data-court-viewer-type] option').count(),2);
+        assert.equal(await page.locator('[data-court-viewer-type] option').count(),0);
         assert.equal(await page.locator('[data-court-viewer-select] option').count(),8);
-        await page.locator('[data-court-viewer-type]').selectOption('1');
-        assert.equal(await page.locator('[data-court-viewer-select] option').count(),12);
-        await page.locator('[data-court-viewer-select]').selectOption('11');
-        assert.match(await page.locator('[data-court-viewer-book]').innerText(),/Ten-Pin · Lane 12/);
+        assert.match(await page.locator('[data-court-viewer-title]').innerText(),/Bowling — Duckpin/);
         await page.keyboard.press('Escape');
         await page.waitForFunction(()=>document.querySelector('[data-court-viewer]').hidden);
-        console.log('PASS actual Supabase per-unit rates, honest photo placeholder, 8/12 bowling lanes, unit selection and focus return');
+        await page.locator('[data-court-id="bowling-tenpin"]').click();
+        await page.waitForSelector('[data-court-viewer][data-open]');
+        assert.equal(await page.locator('[data-court-viewer-select] option').count(),12);
+        await page.locator('[data-court-viewer-select]').selectOption('11');
+        assert.match(await page.locator('[data-court-viewer-title]').innerText(),/Bowling — Ten-Pin/);
+        assert.match(await page.locator('[data-court-viewer-book]').innerText(),/Lane 12/);
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(()=>document.querySelector('[data-court-viewer]').hidden);
+        console.log('PASS separate Duckpin/Ten-Pin landing cards, rates, 8/12 lanes, lane selection and focus return');
         const partial = await page.evaluate(() => resolveCourtUnits({name:'Bowling — Duckpin',unit:'lanes',quantity:8,imageUrl:'general.jpg',unitImages:[{label:'Lane 3',imageUrl:'specific.jpg'}]}));
         assert.equal(partial.units.length,8);
         assert.equal(partial.units[0].specific,false);

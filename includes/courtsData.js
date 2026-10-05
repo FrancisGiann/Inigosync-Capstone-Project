@@ -50,6 +50,8 @@
         'lawn-tennis': 'LT',
         'pickleball': 'PB',
         'bowling': 'BW',
+        'bowling-duckpin': 'BW',
+        'bowling-tenpin': 'BW',
         'billiards': 'BL',
         'table-tennis': 'TT',
         'volleyball': 'VB',

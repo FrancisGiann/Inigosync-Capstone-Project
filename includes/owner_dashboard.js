@@ -2740,7 +2740,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // in profiles.avatar_url. Cancelling the crop leaves the current draft
     // untouched; only Save writes the resulting image.
     // ------------------------------------------------------------------
-    const AVATAR_MAX_RAW_BYTES = 5 * 1024 * 1024;
     const AVATAR_OUTPUT_SIZE = 256;
     const AVATAR_JPEG_QUALITY = 0.82;
 
@@ -2810,10 +2809,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!file.type || !file.type.startsWith('image/')) {
                 window.InigoToast?.show('Please choose an image file.', true);
-                return;
-            }
-            if (file.size > AVATAR_MAX_RAW_BYTES) {
-                window.InigoToast?.show('That image is too large — please choose one under 5 MB.', true);
                 return;
             }
             if (!window.InigoImageTools) return;

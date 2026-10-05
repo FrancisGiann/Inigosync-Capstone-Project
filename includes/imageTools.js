@@ -10,7 +10,7 @@
 //     (R4-4) — that function now just calls this one (see its own comment),
 //     so behaviour for the customer dashboard is byte-identical to before
 //     this file existed. Validation here matches that original function's
-//     own inline checks (any `image/*` type, <= 5 MB) rather than the
+//     own inline checks (any `image/*` type) rather than the
 //     stricter list below, specifically so moving it here changes nothing
 //     about what a customer/owner can pick as an avatar.
 //   - downscaleImageToBlob(file, {maxW, maxH, quality}) — aspect-FIT (never
@@ -18,33 +18,19 @@
 //     Manager slideshow and Court Listings photo uploads (A5/A6), which go
 //     to the new public Storage bucket `media`
 //     (database/schema/015_media_bucket.sql). That bucket's own
-//     `allowed_mime_types` is the server-side backstop; the stricter
-//     jpeg/png/webp check here is the client-side half of the same rule
-//     (implementation_plan.md's security requirements — never rely on the
-//     client check alone, but don't make the user wait for a round trip to
-//     find out their file type is rejected either).
+//     all image/* source types are accepted. Canvas processing decodes and
+//     re-encodes them as JPEG before public storage, so active formats such
+//     as SVG are never stored or served in their original form.
 //
 // No build step; plain <script src>, attaches to window like every other
 // includes/*.js file. Must load before includes/Dashboard.js and
 // includes/owner_dashboard.js (see the <script> order in
 // Pages/user_dashboard.html / Pages/owner_dashboard.html).
 (function () {
-    const MAX_RAW_BYTES = 5 * 1024 * 1024; // Default raw-file ceiling; court cropping may opt into 10 MB.
-    const STRICT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-
-    // `strict` true → only jpeg/png/webp (Media Manager/Court photo path,
-    // A5/A6). `strict` false → any image/* (avatar path, unchanged from the
-    // pre-existing customer dashboard behaviour this file now centralizes).
-    function assertValidImageFile(file, strict, maxRawBytes = MAX_RAW_BYTES) {
+    function assertValidImageFile(file) {
         if (!file) throw new Error('No file selected.');
         const type = file.type || '';
-        const typeOk = strict ? STRICT_TYPES.includes(type) : type.startsWith('image/');
-        if (!typeOk) {
-            throw new Error(strict ? 'Please choose a JPEG, PNG, or WEBP image.' : 'Please choose an image file.');
-        }
-        if (file.size > maxRawBytes) {
-            throw new Error(`That image is too large — please choose one under ${maxRawBytes / (1024 * 1024)} MB.`);
-        }
+        if (!/^image\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(type)) throw new Error('Please choose an image file.');
     }
 
     function loadImage(file) {
@@ -78,7 +64,7 @@
     // may render/crop a rotated photo (accepted) — downscaleImageToBlob()
     // below reads the same img and inherits this identically.
     async function downscaleImageToDataUrl(file, { size = 256, quality = 0.82 } = {}) {
-        assertValidImageFile(file, false);
+        assertValidImageFile(file);
         const img = await loadImage(file);
 
         const canvas = document.createElement('canvas');
@@ -101,7 +87,7 @@
     // data: URL (a 1600×900 JPEG is far too large for a `text` column, and
     // Storage is exactly what buckets are for).
     async function downscaleImageToBlob(file, { maxW = 1600, maxH = 900, quality = 0.85 } = {}) {
-        assertValidImageFile(file, true);
+        assertValidImageFile(file);
         const img = await loadImage(file);
 
         const scale = Math.min(1, maxW / img.naturalWidth, maxH / img.naturalHeight);
@@ -132,10 +118,9 @@
     //
     // openCropEditor(file, { aspect, maxW, maxH, quality }) → Promise that
     // resolves to a cropped/resized JPEG Blob, or `null` if the user backs
-    // out (Cancel, the backdrop, the × button, or Esc). It DOES reject
-    // (readable Error, via assertValidImageFile's own two checks) for an
-    // invalid file — wrong type or over the caller's raw-file limit (5 MB by
-    // default) — before any UI is shown; an
+    // out (Cancel, the backdrop, the × button, or Esc). It DOES reject with
+    // a readable error for a missing or non-image file before any UI is
+    // shown; an
     // `async function` body means that throw becomes a rejected Promise
     // automatically, so callers can `await` either helper the same way.
     //
@@ -209,8 +194,8 @@
         return overlay;
     }
 
-    async function openCropEditor(file, { aspect = 16 / 10, maxW = 1600, maxH = 1000, quality = 0.85, maxRawBytes = MAX_RAW_BYTES } = {}) {
-        assertValidImageFile(file, true, maxRawBytes);
+    async function openCropEditor(file, { aspect = 16 / 10, maxW = 1600, maxH = 1000, quality = 0.85 } = {}) {
+        assertValidImageFile(file);
         const img = await loadImage(file);
 
         return new Promise((resolve) => {

@@ -22,7 +22,3 @@ config_file = "agents/browser_debugger.toml"
 [agents.reviewer]
 description = "Independent reviewer for correctness, security, and regressions. Read-only; reports findings without fixes."
 config_file = "agents/reviewer.toml"
-
-[mcp_servers.playwright]
-command = "npx"
-args = ["@playwright/mcp@latest"]

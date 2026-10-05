@@ -570,6 +570,10 @@
                                 <span data-dash-profile-age>—</span>
                             </div>
                             <div class="dash-profile-meta-item">
+                                <span>Gender</span>
+                                <span data-dash-profile-gender>—</span>
+                            </div>
+                            <div class="dash-profile-meta-item">
                                 <span>Civil status</span>
                                 <span data-dash-profile-civil-status>—</span>
                             </div>
@@ -606,9 +610,9 @@
                                 <div class="dash-avatar-upload-actions">
                                     <button type="button" class="dash-btn-save" data-dash-avatar-upload-trigger>Upload Photo</button>
                                     <button type="button" class="dash-btn-ghost" data-dash-avatar-remove hidden>Remove Photo</button>
-                                    <input type="file" accept="image/jpeg,image/png,image/webp" data-dash-avatar-file hidden>
+                                    <input type="file" accept="image/*" data-dash-avatar-file hidden>
                                 </div>
-                                <p class="dash-avatar-upload-hint">Choose a JPG, PNG, or WebP image up to 5&nbsp;MB. Adjust the square crop before saving.</p>
+                                <p class="dash-avatar-upload-hint">Choose any image. Adjust the square crop before saving.</p>
                             </div>
                         </div>
                     </div>
@@ -623,6 +627,7 @@
                             <div class="dash-profile-meta-item"><span>Email address</span><span data-dash-settings-display-email>—</span></div>
                             <div class="dash-profile-meta-item"><span>Mobile number</span><span data-dash-settings-display-mobile>—</span></div>
                             <div class="dash-profile-meta-item"><span>Birthdate · age</span><span data-dash-settings-display-birthdate>—</span></div>
+                            <div class="dash-profile-meta-item"><span>Gender</span><span data-dash-settings-display-gender>—</span></div>
                             <div class="dash-profile-meta-item"><span>Civil status</span><span data-dash-settings-display-civil-status>—</span></div>
                             <div class="dash-profile-meta-item"><span>Emergency contact</span><span data-dash-settings-display-emergency>—</span></div>
                         </div>
@@ -642,6 +647,12 @@
                                     <label class="dash-form-label" for="dashSettingsBirthdate">Birthdate</label>
                                     <input id="dashSettingsBirthdate" type="date" class="dash-input" data-dash-settings-birthdate>
                                     <span class="dash-mobile-status" role="status" data-dash-birthdate-age>Age will be calculated from your birthdate.</span>
+                                </div>
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsGender">Gender</label>
+                                    <select id="dashSettingsGender" class="dash-input" data-dash-settings-gender>
+                                        <option value="">Select if you wish</option><option value="Male">Male</option><option value="Female">Female</option><option value="Prefer not to say">Prefer not to say</option>
+                                    </select>
                                 </div>
                                 <div class="dash-form-group">
                                     <label class="dash-form-label" for="dashSettingsCivilStatus">Civil status</label>

@@ -28,6 +28,8 @@ const SPORT_MONOGRAM = {
     'lawn-tennis': 'LT',
     'pickleball': 'PB',
     'bowling': 'BW',
+    'bowling-duckpin': 'BW',
+    'bowling-tenpin': 'BW',
     'billiards': 'BL',
     'table-tennis': 'TT',
     'volleyball': 'VB',
@@ -82,17 +84,18 @@ function formatEventMeta(ev) {
 // database/schema/006_court_unit_images.sql, shaped
 // [{"label": "Court 1", "image_url": "https://…"}, …].
 //
-// `public.court` is one row per SPORT, not per bookable unit: Badminton is a
-// single row with quantity = 9 and exactly one image_url. This column is what
-// lets the court viewer's combobox show a *different* photo for Court 1 vs
-// Court 2 (resolveCourtUnits case 1 below).
+// `public.court` is one listing per sport/product, not per bookable unit:
+// Badminton is a single row with quantity = 9 and exactly one image_url.
+// Bowling's Duckpin and Ten-Pin listings share a sport but remain separate
+// cards. This column lets the court viewer's combobox show a *different*
+// photo for Court 1 vs Court 2 (resolveCourtUnits case 1 below).
 //
 // It is optional in the strongest sense: the column does not exist in the live
 // database until the owner applies 006, and getCourts() asks for `select('*')`
 // rather than naming columns, so `row.unit_images` is simply `undefined` until
 // then. undefined, null, and a malformed value all normalize to [] here, and
-// resolveCourtUnits() falls through to the sport's merged rows (Bowling) or to
-// "Court N" derived from quantity — so the combobox already works today and
+// resolveCourtUnits() falls through to "Court N" derived from quantity — so
+// the combobox already works today and
 // upgrades in place the moment the owner fills this in.
 function normalizeUnitImages(value, contextLabel) {
     if (value === null || value === undefined || value === '') return [];
@@ -127,14 +130,19 @@ function normalizeUnitImages(value, contextLabel) {
 }
 
 function normalizeCourtFromDb(row) {
+    const courtSlug = String(row.slug || '');
+    const sportSlug = (row.sport && row.sport.slug) || courtSlug.replace(/-duckpin$|-tenpin$/, '') || 'general';
+    // Bowling's two configured listings share a sport record, but each is a
+    // distinct bookable product. Keep their court slugs as the landing-card
+    // keys so each card opens only its own lanes and rate schedule.
+    const cardSportSlug = /^bowling-(duckpin|tenpin)$/.test(courtSlug)
+        ? courtSlug
+        : sportSlug;
     return {
         id: row.id,
-        // The embedded sport(slug) is the real grouping key. If that embed
-        // is ever missing for some reason, fall back to the court's own
-        // slug with the duckpin/ten-pin suffix stripped — same trick
-        // normalizeCourtFromFallback uses — so the merge below still finds
-        // Bowling's two rows instead of silently splitting them apart.
-        sportSlug: (row.sport && row.sport.slug) || String(row.slug || '').replace(/-duckpin$|-tenpin$/, '') || 'general',
+        // The embedded sport(slug) identifies its configured sport. The two
+        // Bowling product slugs above deliberately become separate card keys.
+        sportSlug: cardSportSlug,
         name: row.name || '',
         quantity: Number(row.quantity) || 0,
         unit: row.unit || 'courts',

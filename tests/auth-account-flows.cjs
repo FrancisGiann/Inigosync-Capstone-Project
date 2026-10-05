@@ -101,15 +101,19 @@ function mockClient(options) {
                 in() { return query; }, gte() { return query; }, lte() { return query; }, is() { return query; }, not() { return query; }, or() { return query; },
                 update(data) { record(table === 'customer_private_details' ? 'privateWrite' : 'profileWrite', data); write = true; return query; },
                 upsert: async data => { record('sessionWrite', data); return {}; },
-                single: async () => write ? { data: { id: user.id } } : profile(),
-                maybeSingle: async () => write ? { data: { id: user.id } } : profile(),
+                single: async () => write ? { data: { id: user.id } } : rowData(),
+                maybeSingle: async () => write ? { data: { id: user.id } } : rowData(),
                 then(resolve, reject) { return Promise.resolve(write ? { data: null, error: null } : { data: [], error: null }).then(resolve, reject); }
             };
+            function rowData() {
+                if (table === 'customer_private_details') return { data: { user_id: user.id, birthdate: null, gender: options.gender || null, civil_status: null, emergency_contact_name: null, emergency_contact_number: null } };
+                return profile();
+            }
             return query;
         }
     };
     function profile() {
-        return { data: { id: user.id, role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active', email: 'customer@example.test', full_name: 'Fixture Customer', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null, birthdate: null, civil_status: null, emergency_contact_name: null, emergency_contact_number: null } };
+        return { data: { id: user.id, role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active', email: 'customer@example.test', full_name: 'Fixture Customer', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null } };
     }
 }
 (async () => {
@@ -442,10 +446,15 @@ function mockClient(options) {
         assert(!(await calls(cancelled)).some(c => ['profileWrite', 'sessionWrite', 'function'].includes(c.kind)));
         await cancelled.close();
 
-        const dashboard = await setupDashboard();
+        const dashboard = await setupDashboard({ gender: 'Female' });
+        await dashboard.locator('[data-dash-nav="profile"]').first().click();
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-profile-gender]').textContent === 'Female');
+        assert.equal(await dashboard.locator('[data-dash-profile-gender]').innerText(), 'Female', 'customer profile view shows the saved gender');
         await dashboard.locator('[data-dash-nav="settings"]').first().click();
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-settings-display-gender]').textContent === 'Female');
         await dashboard.locator('[data-dash-personal-edit]').click();
-        await dashboard.locator('[data-dash-settings-firstname]').fill('Updated');
+        assert.equal(await dashboard.locator('[data-dash-settings-gender]').inputValue(), 'Female', 'edit profile loads the saved gender');
+        await dashboard.locator('[data-dash-settings-gender]').selectOption('Male');
         await dashboard.locator('[data-dash-personal-save]').click();
         await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
         assert.equal((await calls(dashboard)).filter(c => c.kind === 'personalSave').length, 0, 'personal information is not saved before confirmation');
@@ -453,9 +462,11 @@ function mockClient(options) {
         await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'personalSave'));
         const nameWrite = (await calls(dashboard)).find(c => c.kind === 'personalSave');
         assert.deepEqual(nameWrite.data, {
-            p_full_name: 'Updated Customer', p_first_name: 'Updated', p_middle_name: '', p_last_name: 'Customer',
-            p_birthdate: null, p_civil_status: null, p_emergency_contact_name: null,
+            p_full_name: 'Fixture Customer', p_first_name: 'Fixture', p_middle_name: '', p_last_name: 'Customer',
+            p_birthdate: null, p_gender: 'Male', p_civil_status: null, p_emergency_contact_name: null,
         });
+        assert.equal(await dashboard.locator('[data-dash-profile-gender]').innerText(), 'Male', 'saved gender updates the customer profile view');
+        assert.equal(await dashboard.locator('[data-dash-settings-display-gender]').innerText(), 'Male', 'saved gender updates the settings summary');
 
         await dashboard.locator('[data-dash-personal-edit]').click();
         assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'current email remains read-only');

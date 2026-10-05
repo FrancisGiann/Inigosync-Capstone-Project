@@ -164,10 +164,10 @@ function courtDataFixture(options = {}) {
         { id: 3, name: 'Pickleball', sportName: 'Pickleball', sportSlug: 'pickleball',
             quantity: 10, unit: 'courts', rate: null, rateUnit: '/hr', status: 'available', imageUrl: null,
             bookableUnits: pickleballUnits },
-        { id: 4, name: 'Bowling — Duckpin', sportName: 'Bowling', sportSlug: 'bowling',
+        { id: 4, slug: 'bowling-duckpin', name: 'Bowling — Duckpin', sportName: 'Bowling — Duckpin', sportSlug: 'bowling-duckpin',
             quantity: 8, unit: 'lanes', rate: null, rateUnit: '/game', status: 'available', imageUrl: null,
             bookableUnits: duckpinUnits },
-        { id: 7, name: 'Bowling — Ten-Pin', sportName: 'Bowling', sportSlug: 'bowling',
+        { id: 7, slug: 'bowling-tenpin', name: 'Bowling — Ten-Pin', sportName: 'Bowling — Duckpin', sportSlug: 'bowling-duckpin',
             quantity: 12, unit: 'lanes', rate: null, rateUnit: '/game', status: 'available', imageUrl: null,
             bookableUnits: [{ id: 'tenpin-unit-1', label: 'Lane 1' }] },
         { id: 5, name: 'Volleyball', sportName: 'Volleyball', sportSlug: 'volleyball',
@@ -517,7 +517,7 @@ function courtDataFixture(options = {}) {
             const { page, context, errors } = await setup('customer', [heldDuckpinLane]);
             await page.locator('[data-dash-nav="booking"]').first().click();
             const duckpin = page.locator('[data-dash-book-sport="bowling-duckpin"]');
-            const tenpin = page.locator('[data-dash-book-sport="bowling-ten-pin"]');
+            const tenpin = page.locator('[data-dash-book-sport="bowling-tenpin"]');
             assert.equal(await duckpin.locator('.dash-book-sport-name').innerText(), 'Bowling — Duckpin');
             assert.equal(await tenpin.locator('.dash-book-sport-name').innerText(), 'Bowling — Ten-Pin');
             await duckpin.click();

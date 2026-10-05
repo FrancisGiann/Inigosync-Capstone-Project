@@ -5,8 +5,10 @@
     window.InigoVisuals = Object.freeze({
         sportIndex(slug) { return sports.indexOf(slug); },
         sportCover(slug) {
-            if (!sports.includes(slug)) return null;
-            try { return new URL(`../assets/landing/sports-covers/${slug}.png`, document.baseURI).href; }
+            // Both bowling listings use the venue's shared Bowling cover.
+            const coverSlug = slug === 'bowling-duckpin' || slug === 'bowling-tenpin' ? 'bowling' : slug;
+            if (!sports.includes(coverSlug)) return null;
+            try { return new URL(`../assets/landing/sports-covers/${coverSlug}.png`, document.baseURI).href; }
             catch { return null; }
         },
         venuePhoto(value) {

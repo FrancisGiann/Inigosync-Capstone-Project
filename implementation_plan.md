@@ -781,8 +781,8 @@ R4-4 — Profile photo stored as a data URL in `profiles.avatar_url`.
 New "Profile Photo" card at the top of the Account Settings panel: live preview
 (the existing `.dash-avatar` when empty, an `<img>` when set), an "Upload Photo"
 button driving a hidden `<input type="file" accept="image/*">`, and a "Remove
-Photo" button shown only when an image exists. On pick: validate type + a 5 MB
-raw ceiling, then downscale through a `<canvas>` to a 256x256 center-cropped
+Photo" button shown only when an image exists. On pick: validate that the file
+is an image, then downscale through a `<canvas>` to a 256x256 center-cropped
 JPEG (quality 0.82, roughly 20-50 KB) and store that data URL in
 `profiles.avatar_url` via the same self-`update()` path the Personal Information
 save already uses. `renderProfile()` becomes the single place that paints every

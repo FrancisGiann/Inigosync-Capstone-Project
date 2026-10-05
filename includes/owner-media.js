@@ -70,7 +70,7 @@
     function formMarkup(slide, isNew) {
         const image = slide.image_url || '';
         return `<form class="owner-media-form" data-media-form novalidate>
-            <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="owner-photo-choice owner-media-replace" data-media-replace><span data-media-replace-label>${isNew ? 'Choose photo' : 'Replace photo'}</span></button><input class="admin-visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" data-media-file><p class="owner-media-crop-hint">Choose a photo, adjust the 16:9 crop, then save to stage it.</p></div>
+            <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="owner-photo-choice owner-media-replace" data-media-replace><span data-media-replace-label>${isNew ? 'Choose photo' : 'Replace photo'}</span></button><input class="admin-visually-hidden" type="file" accept="image/*" data-media-file><p class="owner-media-crop-hint">Choose an image, adjust the 16:9 crop, then save to stage it.</p></div>
             <div class="owner-media-fields">
                 <label class="admin-form-group"><span class="admin-form-label">Title</span><input required maxlength="120" type="text" class="admin-input" data-media-title value="${escape(slide.title || '')}"></label>
                 <label class="admin-form-group"><span class="admin-form-label">Caption</span><textarea maxlength="500" class="admin-input owner-media-textarea" data-media-caption>${escape(slide.meta || '')}</textarea></label>
@@ -134,9 +134,9 @@
         file.addEventListener('change', async () => {
             const next = file.files?.[0];
             if (!next) return;
-            if (!/^image\/(jpeg|png|webp)$/.test(next.type) || next.size > 5 * 1024 * 1024) {
+            if (!next.type || !next.type.startsWith('image/')) {
                 file.value = '';
-                toast('Choose a JPG, PNG, or WebP photo up to 5 MB.', true);
+                toast('Choose an image file.', true);
                 return;
             }
             file.value = '';
