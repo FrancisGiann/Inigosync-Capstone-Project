@@ -2279,24 +2279,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return Date.now() > graceDeadline ? 'unattended' : rawStatus;
     }
 
-    // Profile panel's Total bookings / Completed / Cancelled tiles
-    // ([3]/[4]/[5] of .dash-profile-meta-item — Member since is [2],
-    // handled separately in renderProfile() via the auth session).
-    // Computed from the exact same booking rows refreshMyBookings() already
-    // fetches for the My Bookings table below, rather than a second query.
-    // booking.status is CHECK-constrained to pending/confirmed/cancelled/
-    // completed (confirmed live against the database), so those are the
-    // only values ever seen here.
-    function renderProfileBookingStats(bookings) {
-        const metaItems = document.querySelectorAll('[data-dash-panel="profile"] .dash-profile-meta-item');
-        const total = bookings.length;
-        const completed = bookings.filter((b) => b.status === 'completed').length;
-        const cancelled = bookings.filter((b) => b.status === 'cancelled').length;
-        if (metaItems[3]) metaItems[3].querySelector('span:last-child').textContent = String(total);
-        if (metaItems[4]) metaItems[4].querySelector('span:last-child').textContent = String(completed);
-        if (metaItems[5]) metaItems[5].querySelector('span:last-child').textContent = String(cancelled);
-    }
-
     let activeReviewBookingId = null;
     const bookingReviewModal = document.querySelector('[data-booking-review-modal]');
     let bookingFetchGeneration = 0;
@@ -2330,7 +2312,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (generation !== bookingFetchGeneration) return;
 
         renderUpcomingReservations(data || []);
-        renderProfileBookingStats(data || []);
         // Notifications (§3, D6) — reuses this exact fetch rather than a
         // second query against `booking`; see renderNotifications()'s own
         // header comment near the notifications dropdown wiring above.
@@ -2894,10 +2875,16 @@ document.addEventListener('DOMContentLoaded', () => {
         birthdateAge.classList.toggle('is-error', Boolean(value) && age === null);
     }
 
-    function formatAccountBirthdate(value) {
+    function formatAccountBirthday(value) {
         if (!value || ageFromBirthdate(value) === null) return '—';
         const date = new Date(`${value}T00:00:00Z`);
-        return `${date.toLocaleDateString('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' })} · ${ageFromBirthdate(value)}`;
+        return date.toLocaleDateString('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' });
+    }
+
+    function formatAccountBirthdate(value) {
+        const birthday = formatAccountBirthday(value);
+        const age = ageFromBirthdate(value);
+        return birthday === '—' || age === null ? '—' : `${birthday} · ${age}`;
     }
 
     function composeFullName(parts) {
@@ -3000,18 +2987,124 @@ document.addEventListener('DOMContentLoaded', () => {
     const emailStagedStatus = document.querySelector('[data-dash-email-staged-status]');
     const emailOtpModal = document.querySelector('[data-dash-email-otp-modal]');
     const emailOtpDialog = emailOtpModal?.querySelector('[data-dash-email-otp-dialog]');
+    const emailOtpTitle = document.querySelector('[data-dash-email-otp-title]');
     const emailOtpHint = document.querySelector('[data-dash-email-otp-hint]');
-    const emailOtpInput = document.querySelector('[data-dash-email-otp-input]');
+    const emailOtpBoxes = Array.from(document.querySelectorAll('[data-dash-email-otp-box]'));
     const emailOtpStatus = document.querySelector('[data-dash-email-otp-status]');
     const emailOtpVerifyBtn = document.querySelector('[data-dash-email-otp-verify]');
+    const emailOtpResendBtn = document.querySelector('[data-dash-email-otp-resend]');
+    const emailOtpTimer = document.querySelector('[data-dash-email-otp-timer]');
     let stagedEmailChange = '';
+    let pendingOtpCurrentEmail = '';
     let pendingOtpEmail = '';
+    let emailOtpStep = 'current';
     let emailAvailabilityRevision = 0;
     let emailAvailabilityTimer = null;
     let emailAvailabilityCache = null;
     let emailAvailabilityController = null;
+    let emailOtpTimerId = null;
+    let emailOtpOperationGeneration = 0;
     let savedName = null;
     let personalReturnFocus = null;
+
+    function getEmailOtpCode() {
+        return emailOtpBoxes.map(box => box.value).join('');
+    }
+
+    function clearEmailOtpCode() {
+        emailOtpBoxes.forEach(box => {
+            box.value = '';
+            box.classList.remove('is-filled');
+        });
+    }
+
+    function startEmailOtpResendCountdown(seconds = 30) {
+        if (emailOtpTimerId) window.clearInterval(emailOtpTimerId);
+        let remaining = seconds;
+        if (emailOtpResendBtn) emailOtpResendBtn.disabled = true;
+        const tick = () => {
+            if (emailOtpTimer) emailOtpTimer.textContent = `Resend available in ${remaining}s`;
+            if (remaining <= 0) {
+                window.clearInterval(emailOtpTimerId);
+                emailOtpTimerId = null;
+                if (emailOtpTimer) emailOtpTimer.textContent = '';
+                if (emailOtpResendBtn) emailOtpResendBtn.disabled = false;
+                return;
+            }
+            remaining -= 1;
+        };
+        tick();
+        emailOtpTimerId = window.setInterval(tick, 1000);
+    }
+
+    function setEmailOtpStep(step) {
+        emailOtpStep = step;
+        const currentStep = step === 'current';
+        if (emailOtpTitle) emailOtpTitle.textContent = currentStep ? 'Verify your current email' : 'Verify your new email';
+        if (emailOtpHint) {
+            const address = currentStep ? pendingOtpCurrentEmail : pendingOtpEmail;
+            emailOtpHint.textContent = `Enter the code sent to ${address} to approve the email change to ${pendingOtpEmail}. Your saved email remains ${window.inigosyncProfile?.email || 'unchanged'} until both codes are confirmed.`;
+        }
+        if (emailOtpVerifyBtn) emailOtpVerifyBtn.textContent = currentStep ? 'Verify current code' : 'Verify new code';
+    }
+
+    function openEmailOtpModal() {
+        setEmailOtpStep(emailOtpStep);
+        if (emailOtpStatus) {
+            emailOtpStatus.textContent = '';
+            emailOtpStatus.classList.remove('is-error');
+        }
+        emailOtpModal.hidden = false;
+        personalModal.hidden = true;
+        emailOtpDialog?.focus();
+        clearEmailOtpCode();
+        startEmailOtpResendCountdown();
+        emailOtpBoxes[0]?.focus();
+        if (emailStagedStatus) emailStagedStatus.textContent = `Verification codes were sent to ${pendingOtpCurrentEmail} and ${pendingOtpEmail}; saved email remains ${window.inigosyncProfile?.email || 'unchanged'}.`;
+    }
+
+    emailOtpBoxes.forEach((box, index) => {
+        box.addEventListener('input', () => {
+            const digits = box.value.replace(/[^0-9]/g, '');
+            if (digits.length > 1) {
+                clearEmailOtpCode();
+                digits.slice(0, emailOtpBoxes.length).split('').forEach((digit, digitIndex) => {
+                    emailOtpBoxes[digitIndex].value = digit;
+                    emailOtpBoxes[digitIndex].classList.add('is-filled');
+                });
+                if (emailOtpStatus) {
+                    emailOtpStatus.textContent = '';
+                    emailOtpStatus.classList.remove('is-error');
+                }
+                emailOtpBoxes[Math.min(digits.length, emailOtpBoxes.length - 1)]?.focus();
+                return;
+            }
+            box.value = digits.slice(0, 1);
+            box.classList.toggle('is-filled', box.value.length === 1);
+            if (emailOtpStatus) {
+                emailOtpStatus.textContent = '';
+                emailOtpStatus.classList.remove('is-error');
+            }
+            if (box.value && emailOtpBoxes[index + 1]) emailOtpBoxes[index + 1].focus();
+        });
+        box.addEventListener('keydown', event => {
+            if (event.key === 'Backspace' && !box.value && emailOtpBoxes[index - 1]) emailOtpBoxes[index - 1].focus();
+        });
+        box.addEventListener('paste', event => {
+            const pasted = (event.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
+            if (!pasted) return;
+            event.preventDefault();
+            pasted.split('').slice(0, emailOtpBoxes.length).forEach((digit, digitIndex) => {
+                emailOtpBoxes[digitIndex].value = digit;
+                emailOtpBoxes[digitIndex].classList.add('is-filled');
+            });
+            if (emailOtpStatus) {
+                emailOtpStatus.textContent = '';
+                emailOtpStatus.classList.remove('is-error');
+            }
+            emailOtpBoxes[Math.min(pasted.length, emailOtpBoxes.length - 1)]?.focus();
+        });
+    });
 
     function setPersonalEditing(editing) {
         if (editing) {
@@ -3177,7 +3270,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     emailOtpModal?.querySelectorAll('[data-dash-email-otp-close]').forEach(button => button.addEventListener('click', () => {
         emailOtpModal.hidden = true;
-        if (pendingOtpEmail && emailStagedStatus) emailStagedStatus.textContent = `A code was sent to ${pendingOtpEmail}. Your saved email is still ${window.inigosyncProfile?.email || 'unchanged'} until verification succeeds.`;
+        if (pendingOtpEmail && emailStagedStatus) emailStagedStatus.textContent = `Verification codes were sent to ${pendingOtpCurrentEmail} and ${pendingOtpEmail}. Your saved email is still ${window.inigosyncProfile?.email || 'unchanged'} until both are confirmed.`;
         personalModal.hidden = false;
         personalDialog?.focus();
     }));
@@ -3185,7 +3278,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.key === 'Escape') {
             event.preventDefault();
             emailOtpModal.hidden = true;
-            if (pendingOtpEmail && emailStagedStatus) emailStagedStatus.textContent = `A code was sent to ${pendingOtpEmail}. Your saved email is still ${window.inigosyncProfile?.email || 'unchanged'} until verification succeeds.`;
+            if (pendingOtpEmail && emailStagedStatus) emailStagedStatus.textContent = `Verification codes were sent to ${pendingOtpCurrentEmail} and ${pendingOtpEmail}. Your saved email is still ${window.inigosyncProfile?.email || 'unchanged'} until both are confirmed.`;
             personalModal.hidden = false;
             personalDialog?.focus();
         } else if (event.key === 'Tab' && emailOtpDialog) {
@@ -3196,35 +3289,92 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     emailOtpVerifyBtn?.addEventListener('click', async () => {
-        const code = emailOtpInput?.value.trim() || '';
-        if (!pendingOtpEmail || !code) {
-            if (emailOtpStatus) emailOtpStatus.textContent = 'Enter the code sent to your new email.';
-            emailOtpInput?.focus();
+        const code = getEmailOtpCode();
+        if (!pendingOtpEmail || code.length !== emailOtpBoxes.length) {
+            if (emailOtpStatus) emailOtpStatus.textContent = `Enter the 6-digit code sent to your ${emailOtpStep} email.`;
+            emailOtpBoxes.find(box => !box.value)?.focus();
             return;
         }
-        if (!await confirmSettingsChange('Are you sure you want to verify and save this email?')) return;
+        const confirmMessage = emailOtpStep === 'current'
+            ? 'Are you sure you want to verify this current email code?'
+            : 'Are you sure you want to verify and confirm this email change?';
+        if (!await confirmSettingsChange(confirmMessage)) return;
+        const operationGeneration = ++emailOtpOperationGeneration;
         emailOtpVerifyBtn.disabled = true;
+        if (emailOtpResendBtn) emailOtpResendBtn.disabled = true;
         try {
-            const { data, error } = await window.sb.auth.verifyOtp({ email: pendingOtpEmail, token: code, type: 'email_change' });
+            const stepEmail = emailOtpStep === 'current' ? pendingOtpCurrentEmail : pendingOtpEmail;
+            const { error } = await window.sb.auth.verifyOtp({ email: stepEmail, token: code, type: 'email_change' });
+            if (operationGeneration !== emailOtpOperationGeneration) return;
             if (error) throw error;
-            const confirmedEmail = data?.user?.email || pendingOtpEmail;
-            if (confirmedEmail.toLowerCase() !== pendingOtpEmail.toLowerCase()) throw new Error('The verified email did not match the requested address. Contact support before retrying.');
+            if (emailOtpStep === 'current') {
+                setEmailOtpStep('new');
+                clearEmailOtpCode();
+                if (emailOtpStatus) emailOtpStatus.textContent = `Current email confirmed. Now enter the code sent to ${pendingOtpEmail}.`;
+                startEmailOtpResendCountdown();
+                emailOtpBoxes[0]?.focus();
+                return;
+            }
+            const { data: userData, error: userError } = await window.sb.auth.getUser();
+            if (operationGeneration !== emailOtpOperationGeneration) return;
+            if (userError) throw userError;
+            const confirmedEmail = userData?.user?.email || '';
+            if (!confirmedEmail || confirmedEmail.toLowerCase() !== pendingOtpEmail.toLowerCase()) {
+                throw new Error('Supabase has not confirmed the requested new email yet. Your current email remains saved.');
+            }
             window.inigosyncProfile.email = confirmedEmail;
             renderProfile(window.inigosyncProfile);
             stagedEmailChange = '';
+            pendingOtpCurrentEmail = '';
             pendingOtpEmail = '';
+            emailOtpStep = 'current';
             if (emailStagedStatus) emailStagedStatus.textContent = '';
-            if (emailOtpInput) emailOtpInput.value = '';
+            clearEmailOtpCode();
+            if (emailOtpTimerId) window.clearInterval(emailOtpTimerId);
+            emailOtpTimerId = null;
             emailOtpModal.hidden = true;
             personalModal.hidden = false;
             personalDialog?.focus();
             window.InigoToast?.show('Email address updated.');
         } catch (error) {
-            if (emailOtpStatus) {
+            if (operationGeneration === emailOtpOperationGeneration && emailOtpStatus) {
                 emailOtpStatus.textContent = error.message || 'That code could not be verified. Check it and try again.';
                 emailOtpStatus.classList.add('is-error');
             }
-        } finally { emailOtpVerifyBtn.disabled = false; }
+        } finally {
+            if (operationGeneration === emailOtpOperationGeneration) emailOtpVerifyBtn.disabled = false;
+        }
+    });
+
+    emailOtpResendBtn?.addEventListener('click', async () => {
+        if (emailOtpResendBtn.disabled || !pendingOtpEmail || !window.sb?.auth?.resend) return;
+        const operationGeneration = ++emailOtpOperationGeneration;
+        emailOtpResendBtn.disabled = true;
+        if (emailOtpVerifyBtn) emailOtpVerifyBtn.disabled = true;
+        if (emailOtpStatus) {
+            emailOtpStatus.textContent = 'Sending new verification codes…';
+            emailOtpStatus.classList.remove('is-error');
+        }
+        try {
+            const { error } = await window.sb.auth.resend({ type: 'email_change', email: pendingOtpEmail });
+            if (operationGeneration !== emailOtpOperationGeneration) return;
+            if (error) throw error;
+            // Supabase resends both recipient-specific codes and resets both
+            // confirmation arms, so require the current address again first.
+            setEmailOtpStep('current');
+            clearEmailOtpCode();
+            if (emailOtpStatus) emailOtpStatus.textContent = 'New verification codes were sent to both addresses. Start again with the current email code.';
+            startEmailOtpResendCountdown();
+            emailOtpBoxes[0]?.focus();
+        } catch (error) {
+            if (operationGeneration === emailOtpOperationGeneration && emailOtpStatus) {
+                emailOtpStatus.textContent = error.message || 'Could not resend the code. Please try again.';
+                emailOtpStatus.classList.add('is-error');
+            }
+            if (operationGeneration === emailOtpOperationGeneration) emailOtpResendBtn.disabled = false;
+        } finally {
+            if (operationGeneration === emailOtpOperationGeneration && emailOtpVerifyBtn) emailOtpVerifyBtn.disabled = false;
+        }
     });
     personalSaveBtn?.addEventListener('click', async () => {
         const profile = window.inigosyncProfile;
@@ -3274,28 +3424,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.InigoToast?.show(error.message || 'Could not save your personal information.', true);
                 return;
             }
+            invalidateCustomerAccountFieldsFetch(profile.id);
             Object.assign(profile, profileChanges, privateChanges);
             [settingsBirthdate, settingsCivilStatus, settingsEmergencyName].filter(Boolean).forEach(input => { delete input.dataset.dirty; });
             renderProfile(profile);
         }
         savedName = [first, middle, last];
         if (emailChanged) {
-            const { error } = await window.sb.auth.updateUser({ email: stagedEmailChange });
-            if (error) {
-                personalSaveBtn.disabled = false;
-                window.InigoToast?.show(error.message || 'Your personal information was saved, but the email change could not be requested.', true);
-                return;
+            const canResumePendingChange = pendingOtpEmail.toLowerCase() === stagedEmailChange.toLowerCase()
+                && pendingOtpCurrentEmail.toLowerCase() === String(profile.email || '').toLowerCase();
+            if (canResumePendingChange) {
+                openEmailOtpModal();
+            } else {
+                const { error } = await window.sb.auth.updateUser({ email: stagedEmailChange });
+                if (error) {
+                    personalSaveBtn.disabled = false;
+                    window.InigoToast?.show(error.message || 'Your personal information was saved, but the email change could not be requested.', true);
+                    return;
+                }
+                pendingOtpCurrentEmail = String(profile.email || '');
+                pendingOtpEmail = stagedEmailChange;
+                emailOtpStep = 'current';
+                openEmailOtpModal();
             }
-            pendingOtpEmail = stagedEmailChange;
-            emailOtpHint.textContent = `Enter the code sent to ${pendingOtpEmail}. Your current email stays saved until verification succeeds.`;
-            emailOtpStatus.textContent = '';
-            emailOtpStatus.classList.remove('is-error');
-            emailOtpModal.hidden = false;
-            personalModal.hidden = true;
-            emailOtpDialog?.focus();
-            emailOtpInput?.focus();
-            if (emailStagedStatus) emailStagedStatus.textContent = `Code sent to ${pendingOtpEmail}; saved email remains ${profile.email}.`;
-            window.InigoToast?.show('Your changes were saved. A verification code was sent to your new email.');
+            window.InigoToast?.show('Your changes were saved. Verification codes were sent to both email addresses.');
         } else {
             if (personalModal) personalModal.hidden = true;
             personalEditBtn?.focus();
@@ -3616,7 +3768,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 profile.contact_num = check.normalized;
                 profile.contact_num_validated = true;
                 profile.contact_num_validated_at = new Date().toISOString();
-            } else profile.emergency_contact_number = check.normalized;
+            } else {
+                invalidateCustomerAccountFieldsFetch(profile.id);
+                profile.emergency_contact_number = check.normalized;
+            }
             delete input.dataset.dirty;
             delete input.dataset.validatedNumber;
             delete input.dataset.cachedValidNumber;
@@ -3643,6 +3798,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const key = field === 'emergency_contact_number' ? 'user_id' : 'id';
             const { error } = await window.sb.from(table).update({ [field]: null }).eq(key, profile.id);
             if (error) throw error;
+            if (field === 'emergency_contact_number') invalidateCustomerAccountFieldsFetch(profile.id);
             profile[field] = null;
             if (field === 'contact_num') {
                 profile.contact_num_validated = false;
@@ -3688,6 +3844,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let accountFieldsFetchFor = null;
+    let accountFieldsFetchRevision = 0;
+
+    function invalidateCustomerAccountFieldsFetch(profileId) {
+        if (accountFieldsFetchFor === profileId) accountFieldsFetchRevision += 1;
+    }
+
     function renderCustomerAccountFields(profile) {
         if (settingsBirthdate && !settingsBirthdate.dataset.dirty) settingsBirthdate.value = profile.birthdate || '';
         if (settingsCivilStatus && !settingsCivilStatus.dataset.dirty) settingsCivilStatus.value = profile.civil_status || '';
@@ -3700,6 +3862,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (civilDisplay) civilDisplay.textContent = profile.civil_status || '—';
         const emergencyDisplay = document.querySelector('[data-dash-settings-display-emergency]');
         if (emergencyDisplay) emergencyDisplay.textContent = [profile.emergency_contact_name, profile.emergency_contact_number].filter(Boolean).join(' · ') || '—';
+        const profileBirthday = document.querySelector('[data-dash-profile-birthday]');
+        if (profileBirthday) profileBirthday.textContent = formatAccountBirthday(profile.birthdate);
+        const profileAge = document.querySelector('[data-dash-profile-age]');
+        if (profileAge) {
+            const age = ageFromBirthdate(profile.birthdate || '');
+            profileAge.textContent = age === null ? '—' : String(age);
+        }
+        const profileCivilStatus = document.querySelector('[data-dash-profile-civil-status]');
+        if (profileCivilStatus) profileCivilStatus.textContent = profile.civil_status || '—';
+        const profileEmergencyName = document.querySelector('[data-dash-profile-emergency-name]');
+        if (profileEmergencyName) profileEmergencyName.textContent = profile.emergency_contact_name || '—';
+        const profileEmergencyNumber = document.querySelector('[data-dash-profile-emergency-number]');
+        if (profileEmergencyNumber) profileEmergencyNumber.textContent = profile.emergency_contact_number || '—';
         if (emergencyRemoveBtn) emergencyRemoveBtn.hidden = !profile.emergency_contact_number;
     }
 
@@ -3707,8 +3882,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderCustomerAccountFields(profile);
         if (accountFieldsFetchFor === profile.id) return;
         accountFieldsFetchFor = profile.id;
+        const requestRevision = ++accountFieldsFetchRevision;
         fetchCustomerAccountFields(profile.id).then(data => {
-            if (!data || window.inigosyncProfile?.id !== profile.id) return;
+            if (!data || requestRevision !== accountFieldsFetchRevision || window.inigosyncProfile?.id !== profile.id) return;
             Object.assign(profile, data);
             renderCustomerAccountFields(profile);
         }).catch(error => console.error('[dashboard] account details request failed', error));
@@ -3764,7 +3940,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (metaItems[2] && window.sb) {
             window.sb.auth.getSession().then(({ data }) => {
                 const createdAt = data && data.session && data.session.user ? data.session.user.created_at : null;
-                metaItems[2].querySelector('span:last-child').textContent = createdAt ? formatMemberSince(createdAt) : '—';
+                const memberSince = createdAt ? formatMemberSince(createdAt) : null;
+                metaItems[2].querySelector('span:last-child').textContent = memberSince || '—';
+                const profileSubtitle = document.querySelector('[data-dash-panel="profile"] .dash-profile-card-info p');
+                if (profileSubtitle) profileSubtitle.textContent = memberSince ? `Customer since ${memberSince}` : 'Customer';
             });
         }
 

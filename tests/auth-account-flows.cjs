@@ -3,6 +3,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 function mockClient(options) {
     const user = { id: 'fixture-user', identities: [{ provider: 'email' }] };
+    let authUserEmail = 'customer@example.test';
+    let currentEmailChangeOtp = '111111';
+    let newEmailChangeOtp = '222222';
     let session = options.oauth || options.dashboard ? { user } : null;
     const record = (kind, data) => {
         const calls = JSON.parse(sessionStorage.getItem('fixture-calls') || '[]');
@@ -48,14 +51,35 @@ function mockClient(options) {
             },
             updateUser: async data => {
                 record('updateUser', data);
+                if (data.email) user.pendingEmailChange = data.email;
                 return {};
             },
             verifyOtp: async data => {
                 record('verifyOtp', data);
                 if (data.type === 'signup') { session = { user }; return {}; }
+                if (data.type === 'email_change') {
+                    if (data.email === 'customer@example.test' && data.token === currentEmailChangeOtp) {
+                        if (options.delayEmailChangeToken === data.token) await new Promise(resolve => setTimeout(resolve, 200));
+                        return {};
+                    }
+                    if (data.email === 'new-customer@example.test' && data.token === newEmailChangeOtp && user.pendingEmailChange === data.email) {
+                        authUserEmail = data.email;
+                        delete user.pendingEmailChange;
+                        return {};
+                    }
+                    return { error: { message: 'Email change token expired' } };
+                }
                 return data.token === '123456' ? {} : { error: { message: 'Token expired' } };
             },
-            getUser: async () => ({ data: { user } }),
+            resend: async data => {
+                record('resend', data);
+                if (data.type === 'email_change') {
+                    currentEmailChangeOtp = '333333';
+                    newEmailChangeOtp = '444444';
+                }
+                return {};
+            },
+            getUser: async () => { record('getUser'); return { data: { user: { ...user, email: authUserEmail } } }; },
             signInWithOAuth: async data => { record('oauth', data); return { error: { message: 'Fixture stopped redirect' } }; }
         },
         functions: {
@@ -112,6 +136,80 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        if (process.env.EMAIL_CHANGE_ONLY === '1') {
+            const dashboard = await setupDashboard({ delayEmailChangeToken: '111111' });
+            await dashboard.locator('[data-dash-nav="settings"]').first().click();
+            await dashboard.locator('[data-dash-personal-edit]').click();
+            await dashboard.locator('[data-dash-email-edit]').click();
+            await dashboard.locator('[data-dash-email-proposal-input]').fill('new-customer@example.test');
+            await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-proposal-status]').textContent === 'Available');
+            await dashboard.locator('[data-dash-email-proposal-save]').click();
+            await dashboard.locator('[data-dash-personal-save]').click();
+            await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+            await dashboard.locator('[data-dash-confirm-accept]').click();
+            await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'updateUser'));
+            assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'new email is not displayed as saved after it is requested');
+
+            const fillCode = async code => {
+                for (let i = 0; i < code.length; i++) await dashboard.locator('[data-dash-email-otp-box]').nth(i).fill(code[i]);
+            };
+            const autofillCode = async code => dashboard.locator('[data-dash-email-otp-box]').first().evaluate((input, value) => {
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }, code);
+            assert.equal(await dashboard.locator('[data-dash-email-otp-box]').count(), 6);
+            assert.equal(await dashboard.locator('[data-dash-email-otp-title]').innerText(), 'Verify your current email');
+            assert.equal(await dashboard.locator('[data-dash-email-otp-box]').first().getAttribute('maxlength'), '6', 'first box can accept native one-time-code autofill');
+            await autofillCode('111111');
+            assert.equal(await dashboard.locator('[data-dash-email-otp-box]').evaluateAll(boxes => boxes.map(box => box.value).join('')), '111111', 'multi-digit one-time-code autofill distributes digits across boxes');
+            await dashboard.locator('[data-dash-email-otp-box]').nth(5).fill('0');
+            await dashboard.locator('[data-dash-email-otp-verify]').click();
+            await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+            await dashboard.locator('[data-dash-confirm-accept]').click();
+            await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-otp-status]').textContent.includes('Email change token expired'));
+            assert.equal(await dashboard.locator('[data-dash-email-otp-title]').innerText(), 'Verify your current email', 'an invalid code does not advance the verification step');
+            assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'an invalid code leaves the saved email unchanged');
+            await autofillCode('111111');
+            await dashboard.locator('[data-dash-email-otp-verify]').click();
+            await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+            await dashboard.locator('[data-dash-confirm-accept]').click();
+            const resendButton = dashboard.locator('[data-dash-email-otp-resend]');
+            assert.equal(await resendButton.isDisabled(), true, 'resend is disabled while OTP verification is in flight');
+            await resendButton.evaluate(button => button.dispatchEvent(new Event('click', { bubbles: true })));
+            assert.equal((await calls(dashboard)).filter(c => c.kind === 'resend').length, 0, 'a synthetic click cannot resend while verification is in flight');
+            await resendButton.evaluate(button => {
+                button.disabled = false;
+                button.dispatchEvent(new Event('click', { bubbles: true }));
+            });
+            await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'resend'));
+            await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-otp-title]').textContent === 'Verify your current email');
+            assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'late verification cannot advance the UI after a concurrent resend resets codes');
+            const resendCall = (await calls(dashboard)).find(c => c.kind === 'resend');
+            assert.deepEqual(resendCall.data, { type: 'email_change', email: 'new-customer@example.test' });
+            await fillCode('333333');
+            await dashboard.locator('[data-dash-email-otp-verify]').click();
+            await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+            await dashboard.locator('[data-dash-confirm-accept]').click();
+            await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-otp-title]').textContent === 'Verify your new email');
+            assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'confirming the current address leaves the saved email unchanged');
+
+            await fillCode('444444');
+            await dashboard.locator('[data-dash-email-otp-verify]').click();
+            await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+            await dashboard.locator('[data-dash-confirm-accept]').click();
+            await dashboard.waitForFunction(() => document.querySelector('[data-dash-settings-email]').value === 'new-customer@example.test');
+            const verifications = (await calls(dashboard)).filter(c => c.kind === 'verifyOtp');
+            assert.deepEqual(verifications.map(c => c.data), [
+                { email: 'customer@example.test', token: '111110', type: 'email_change' },
+                { email: 'customer@example.test', token: '111111', type: 'email_change' },
+                { email: 'customer@example.test', token: '333333', type: 'email_change' },
+                { email: 'new-customer@example.test', token: '444444', type: 'email_change' },
+            ]);
+            assert((await calls(dashboard)).some(c => c.kind === 'getUser'), 'Auth user email is checked before profile email updates');
+            await dashboard.close();
+            console.log('PASS secure customer email change: current and new OTPs are verified in sequence, and profile email changes only after Supabase confirms the new address');
+            return;
+        }
         const oauthRedirect = await setup();
         await oauthRedirect.evaluate(() => history.replaceState(null, '', '/index.html?fixture=auth-query##access_token=fixture-fragment#access_token=fixture-fragment-two&refresh_token=fixture-refresh'));
         await oauthRedirect.locator('.cta-buttons [data-auth-open]').click();
@@ -374,13 +472,30 @@ function mockClient(options) {
         const emailRequest = (await calls(dashboard)).find(c => c.kind === 'updateUser');
         assert.deepEqual(emailRequest.data, { email: 'new-customer@example.test' });
         assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'requested but unverified address is not shown as saved');
-        await dashboard.locator('[data-dash-email-otp-input]').fill('123456');
+        const fillEmailOtp = async code => {
+            for (let i = 0; i < code.length; i++) await dashboard.locator('[data-dash-email-otp-box]').nth(i).fill(code[i]);
+        };
+        assert.equal(await dashboard.locator('[data-dash-email-otp-title]').innerText(), 'Verify your current email');
+        await fillEmailOtp('111111');
         await dashboard.locator('[data-dash-email-otp-verify]').click();
         await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
         await dashboard.locator('[data-dash-confirm-accept]').click();
-        await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'verifyOtp'));
-        const emailVerify = (await calls(dashboard)).find(c => c.kind === 'verifyOtp');
-        assert.deepEqual(emailVerify.data, { email: 'new-customer@example.test', token: '123456', type: 'email_change' });
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-otp-title]').textContent === 'Verify your new email');
+        const afterCurrentConfirm = await calls(dashboard);
+        const currentEmailVerify = afterCurrentConfirm.find(c => c.kind === 'verifyOtp');
+        assert.deepEqual(currentEmailVerify.data, { email: 'customer@example.test', token: '111111', type: 'email_change' });
+        assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'confirming the old address does not update the saved profile email');
+        await fillEmailOtp('222222');
+        await dashboard.locator('[data-dash-email-otp-verify]').click();
+        await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+        await dashboard.locator('[data-dash-confirm-accept]').click();
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-settings-email]').value === 'new-customer@example.test');
+        const emailVerifications = (await calls(dashboard)).filter(c => c.kind === 'verifyOtp');
+        assert.deepEqual(emailVerifications.map(c => c.data), [
+            { email: 'customer@example.test', token: '111111', type: 'email_change' },
+            { email: 'new-customer@example.test', token: '222222', type: 'email_change' },
+        ]);
+        assert((await calls(dashboard)).some(c => c.kind === 'getUser'), 'confirmed profile email is checked against the current Auth user');
         assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'new-customer@example.test');
 
         const mobileInput = dashboard.locator('[data-dash-settings-mobile]');

@@ -78,18 +78,39 @@
     let dismissTimer = null;
     let hideTimer = null;
 
+    function getTopNativeDialog() {
+        try { return document.querySelector('dialog:modal'); }
+        catch (_) { return null; }
+    }
+
+    function placeToastAboveOpenDialog() {
+        if (!toastEl || toastEl.hidden || !toastEl.classList.contains('is-visible')) return;
+        const nativeDialog = getTopNativeDialog();
+        const parent = nativeDialog || document.body;
+        if (toastEl.parentElement !== parent) parent.appendChild(toastEl);
+        toastEl.classList.toggle('is-in-modal', Boolean(nativeDialog));
+    }
+
+    if (document.documentElement && 'MutationObserver' in window) {
+        new MutationObserver(placeToastAboveOpenDialog).observe(document.documentElement, {
+            subtree: true, childList: true, attributes: true, attributeFilter: ['open'],
+        });
+    }
+
     function ensureToast() {
         if (toastEl) return toastEl;
         toastEl = document.createElement('p');
         toastEl.className = 'inigo-toast';
         toastEl.setAttribute('aria-live', 'polite');
         toastEl.hidden = true;
-        document.body.appendChild(toastEl);
         return toastEl;
     }
 
     function show(message, isError = false, duration = isError ? 5000 : 3500) {
         const el = ensureToast();
+        // Native modal dialogs occupy the browser's top layer, above every
+        // page z-index. Put the toast inside the active dialog when present.
+        placeToastAboveOpenDialog();
         if (dismissTimer) window.clearTimeout(dismissTimer);
         if (hideTimer) window.clearTimeout(hideTimer);
 

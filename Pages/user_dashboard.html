@@ -544,7 +544,7 @@
                             <div class="dash-avatar">JD</div>
                             <div class="dash-profile-card-info">
                                 <h3>Juan Dela Cruz</h3>
-                                <p>Customer since July 2026</p>
+                                <p>Customer</p>
                             </div>
                         </div>
 
@@ -557,28 +557,29 @@
                                 <span>Mobile number</span>
                                 <span>0912 345 6789</span>
                             </div>
-                            <!-- Values below are pre-fetch placeholders ("—"),
-                                 same honesty convention as this page's "Rate
-                                 TBA"/"Loading…" states — not invented numbers.
-                                 includes/Dashboard.js's renderProfile()
-                                 overwrites all four: Member since from the
-                                 auth session's created_at, the other three
-                                 from the customer's own `booking` rows. -->
                             <div class="dash-profile-meta-item">
                                 <span>Member since</span>
                                 <span>—</span>
                             </div>
                             <div class="dash-profile-meta-item">
-                                <span>Total bookings</span>
-                                <span>—</span>
+                                <span>Birthday</span>
+                                <span data-dash-profile-birthday>—</span>
                             </div>
                             <div class="dash-profile-meta-item">
-                                <span>Completed</span>
-                                <span>—</span>
+                                <span>Age</span>
+                                <span data-dash-profile-age>—</span>
                             </div>
                             <div class="dash-profile-meta-item">
-                                <span>Cancelled</span>
-                                <span>—</span>
+                                <span>Civil status</span>
+                                <span data-dash-profile-civil-status>—</span>
+                            </div>
+                            <div class="dash-profile-meta-item">
+                                <span>Emergency contact name</span>
+                                <span data-dash-profile-emergency-name>—</span>
+                            </div>
+                            <div class="dash-profile-meta-item">
+                                <span>Emergency contact number</span>
+                                <span data-dash-profile-emergency-number>—</span>
                             </div>
                         </div>
 
@@ -701,15 +702,23 @@
                     <div class="dash-settings-modal" data-dash-email-otp-modal hidden>
                         <div class="dash-settings-modal-backdrop" data-dash-email-otp-close></div>
                         <section class="dash-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="dashEmailOtpTitle" aria-describedby="dashEmailOtpHint" tabindex="-1" data-dash-email-otp-dialog>
-                            <h2 id="dashEmailOtpTitle">Verify your new email</h2>
-                            <p id="dashEmailOtpHint" data-dash-email-otp-hint>A verification code will be sent to the new email address.</p>
-                            <label class="dash-form-label" for="dashEmailOtpInput">Verification code</label>
-                            <input type="text" class="dash-input" id="dashEmailOtpInput" inputmode="numeric" autocomplete="one-time-code" maxlength="10" data-dash-email-otp-input>
+                            <h2 id="dashEmailOtpTitle" data-dash-email-otp-title>Verify your current email</h2>
+                            <p id="dashEmailOtpHint" data-dash-email-otp-hint>Verify the current email first, then verify the new email address. Your current email stays saved until Supabase confirms both codes.</p>
+                            <span class="dash-form-label">Verification code</span>
+                            <div class="dash-email-otp-row" role="group" aria-label="6-digit verification code" data-dash-email-otp-row>
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="dash-email-otp-box" autocomplete="one-time-code" data-dash-email-otp-box aria-label="Digit 1">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-email-otp-box" data-dash-email-otp-box aria-label="Digit 2">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-email-otp-box" data-dash-email-otp-box aria-label="Digit 3">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-email-otp-box" data-dash-email-otp-box aria-label="Digit 4">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-email-otp-box" data-dash-email-otp-box aria-label="Digit 5">
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-email-otp-box" data-dash-email-otp-box aria-label="Digit 6">
+                            </div>
                             <span class="dash-mobile-status" role="status" data-dash-email-otp-status></span>
                             <div class="dash-settings-dialog-actions">
                                 <button type="button" class="dash-btn-ghost" data-dash-email-otp-close>Cancel</button>
-                                <button type="button" class="dash-btn-save" data-dash-email-otp-verify>Verify code</button>
+                                <button type="button" class="dash-btn-save" data-dash-email-otp-verify>Verify current code</button>
                             </div>
+                            <p class="dash-email-otp-resend">Didn't get the codes? <button type="button" class="dash-btn-ghost" data-dash-email-otp-resend>Resend codes</button> <span data-dash-email-otp-timer></span></p>
                         </section>
                     </div>
 

@@ -2206,6 +2206,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // during setup — i.e. long before this line runs. Do not move them back;
     // see assertEarlySetupBindings() for what breaks and how it is caught.
 
+    function syncAuthNoticeLayer() {
+        const notice = document.querySelector('[data-auth-notice]');
+        if (!notice || notice.hidden || !notice.classList.contains('is-visible')) return;
+        let nativeDialog = null;
+        try { nativeDialog = document.querySelector('dialog:modal'); }
+        catch (_) { /* Older browsers use the body-level fallback. */ }
+        const parent = nativeDialog || document.body;
+        if (notice.parentElement !== parent) parent.appendChild(notice);
+        notice.classList.toggle('is-in-modal', Boolean(nativeDialog));
+    }
+
+    if (document.documentElement && 'MutationObserver' in window) {
+        new MutationObserver(syncAuthNoticeLayer).observe(document.documentElement, {
+            subtree: true, childList: true, attributes: true, attributeFilter: ['open'],
+        });
+    }
+
     function getAuthNoticeEl() {
         let notice = document.querySelector('[data-auth-notice]');
         if (!notice) {
@@ -2228,8 +2245,10 @@ document.addEventListener('DOMContentLoaded', () => {
             closeButton.addEventListener('click', hideAuthNotice);
             notice.appendChild(closeButton);
             notice.hidden = true;
-            document.body.appendChild(notice);
         }
+        // A native modal dialog is above the document stacking context. Keep
+        // auth errors above it by placing the notice within that dialog.
+        syncAuthNoticeLayer();
         return notice;
     }
 

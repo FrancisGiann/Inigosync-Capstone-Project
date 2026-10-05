@@ -3,7 +3,9 @@
 alter table public.profiles
   add column if not exists first_name text,
   add column if not exists middle_name text,
-  add column if not exists last_name text;
+  add column if not exists last_name text,
+  add column if not exists emergency_contact_name text,
+  add column if not exists emergency_contact_number text;
 
 -- Shared profiles retain the contact-number guard only. Customer emergency
 -- validation is attached to the private table below.

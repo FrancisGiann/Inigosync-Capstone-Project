@@ -1095,6 +1095,12 @@ body.auth-lock {
     transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
+.auth-status.is-in-modal {
+    position: absolute;
+    top: 12px;
+    z-index: 2147483647;
+}
+
 .auth-status[hidden],
 .auth-status-close[hidden] {
     display: none;

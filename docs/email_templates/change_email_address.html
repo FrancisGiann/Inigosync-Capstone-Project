@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  IñigoSync — Supabase "Change Email Address" email template (CHANGE CODE)
+  ============================================================================
+
+  WHERE THIS GOES
+  Supabase Dashboard -> Authentication -> Email Templates ->
+  "Change Email Address". Paste this entire file into the Message body box.
+  Suggested subject: Confirm your new IñigoSync email address.
+
+  WHAT SENDS THIS EMAIL
+  The customer dashboard calls auth.updateUser({ email }) and verifies the
+  code in the same browser with auth.verifyOtp({ email, token,
+  type: 'email_change' }). Resend uses auth.resend({ type: 'email_change',
+  email }). The current address remains displayed and saved until verification
+  succeeds.
+
+  TEMPLATE VARIABLES USED
+    .Token    the one-time verification code; keep this in the message
+    .NewEmail the requested new address
+    .SiteURL  the configured project URL, used in the footer
+
+  With Secure email change enabled, Supabase sends this same template to both
+  the current and requested address, with a different recipient-specific code
+  in each email. Keep the body wording neutral so it works in both inboxes.
+
+  This is a code-only template. Do not add .ConfirmationURL or another link:
+  the dashboard expects the recipient to enter each code in its six-digit
+  verification panel. Keep Secure email change enabled in Supabase
+  Authentication -> Providers -> Email so both addresses must be confirmed.
+
+  The table layout and inline styles match the other checked-in auth emails
+  for compatibility with Outlook and clients that strip embedded CSS.
+  ============================================================================
+-->
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <title>Confirm your new I&ntilde;igoSync email address</title>
+
+    <!--[if mso]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+    <style type="text/css">
+      body, table, td, a { font-family: Arial, Helvetica, sans-serif !important; }
+    </style>
+    <![endif]-->
+
+    <style type="text/css">
+        /* PROGRESSIVE ENHANCEMENT ONLY.
+           Gmail's webmail client keeps this block, Outlook desktop ignores
+           most of it, and some clients drop it entirely — which is fine,
+           because every rule here only refines what the inline styles have
+           already laid down. Nothing below is load-bearing. */
+
+        /* Stop Apple/Outlook auto-linking number-shaped strings — including,
+           on some clients, the 6-digit code itself. */
+        a[x-apple-data-detectors] {
+            color: inherit !important;
+            text-decoration: none !important;
+            font-size: inherit !important;
+            font-family: inherit !important;
+            font-weight: inherit !important;
+            line-height: inherit !important;
+        }
+
+        /* Small screens: let the 600px shell go fluid and tighten the gutters.
+           The code shrinks with it; keep text-indent equal to letter-spacing
+           so the digits stay optically centred (the trailing letter-space
+           after the last digit would otherwise pull them left). */
+        @media only screen and (max-width: 620px) {
+            .em-shell { width: 100% !important; }
+            .em-pad { padding-left: 24px !important; padding-right: 24px !important; }
+            .em-h1 { font-size: 24px !important; line-height: 32px !important; }
+            .em-code { font-size: 32px !important; letter-spacing: 8px !important; text-indent: 8px !important; }
+        }
+
+        /* Dark inboxes. !important is required to beat the inline styles.
+           The [data-ogsc] duplicates cover Outlook.com's dark mode, which
+           rewrites colours and exposes that attribute instead of honouring
+           prefers-color-scheme. */
+        @media (prefers-color-scheme: dark) {
+            .em-page      { background-color: #14110d !important; }
+            .em-card      { background-color: #201a14 !important; }
+            .em-hairline  { border-color: #3a332b !important; }
+            .em-h1,
+            .em-strong    { color: #F4EFE6 !important; }
+            .em-text      { color: #C9C2B4 !important; }
+            .em-muted     { color: #988E83 !important; }
+            .em-link      { color: #FF8A4C !important; }
+            .em-eyebrow   { color: #FF8A4C !important; }
+            .em-codebox   { background-color: #191410 !important; border-color: #3a332b !important; }
+            .em-code      { color: #F4EFE6 !important; }
+        }
+
+        [data-ogsc] .em-page     { background-color: #14110d !important; }
+        [data-ogsc] .em-card     { background-color: #201a14 !important; }
+        [data-ogsc] .em-hairline { border-color: #3a332b !important; }
+        [data-ogsc] .em-h1,
+        [data-ogsc] .em-strong   { color: #F4EFE6 !important; }
+        [data-ogsc] .em-text     { color: #C9C2B4 !important; }
+        [data-ogsc] .em-muted    { color: #988E83 !important; }
+        [data-ogsc] .em-link     { color: #FF8A4C !important; }
+        [data-ogsc] .em-eyebrow  { color: #FF8A4C !important; }
+        [data-ogsc] .em-codebox  { background-color: #191410 !important; border-color: #3a332b !important; }
+        [data-ogsc] .em-code     { color: #F4EFE6 !important; }
+    </style>
+</head>
+
+<body class="em-page" style="margin:0; padding:0; width:100%; background-color:#F7F0E4;">
+
+    <!-- Preheader: the grey line of preview text the inbox shows next to the
+         subject. Kept off-screen, then padded with zero-width spaces so the
+         client cannot pull the body copy in after it. -->
+    <div style="display:none; font-size:1px; color:#F7F0E4; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+        Confirm your new I&ntilde;igoSync email address with this one-time code.
+        &#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;
+    </div>
+
+    <table role="presentation" class="em-page" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse; background-color:#F7F0E4;">
+        <tr>
+            <td align="center" style="padding:32px 12px;">
+
+                <!--[if mso]>
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" align="center"><tr><td>
+                <![endif]-->
+
+                <table role="presentation" class="em-shell" border="0" cellpadding="0" cellspacing="0" width="600" style="width:600px; max-width:600px; border-collapse:collapse;">
+
+                    <!-- ============================================================
+                         BRAND HEADER — dark band, live text wordmark.
+
+                         LOGO SLOT
+                         To use the real mark instead of the text wordmark, upload
+                         assets/Logo/WebLogo.png to a PUBLIC bucket (Supabase
+                         Storage -> New bucket -> tick Public), copy its public URL,
+                         and replace the two <span> lines in the cell below with:
+
+                           <img src="https://YOUR-PROJECT.supabase.co/storage/v1/object/public/brand/WebLogo.png"
+                                width="132" height="36" alt="IñigoSync"
+                                style="display:block; border:0; outline:none; text-decoration:none; height:auto;">
+
+                         The src must be a public, absolute https URL. A path
+                         inside this repo, or anything on localhost, will not
+                         load: the inbox is a different machine.
+                         Keep the alt text — many clients block images by default.
+                         ============================================================ -->
+                    <tr>
+                        <td align="center" bgcolor="#14110d" style="background-color:#14110d; border-radius:16px 16px 0 0; padding:28px 24px 24px;">
+                            <span style="display:block; font-family:'Arial Narrow', Arial, Helvetica, sans-serif; font-size:27px; line-height:32px; font-weight:bold; letter-spacing:0.4px; color:#F4EFE6;">
+                                I&ntilde;igo<span style="color:#FF6115;">Sync</span>
+                            </span>
+                            <span style="display:block; padding-top:6px; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; letter-spacing:1.2px; text-transform:uppercase; color:#C9C2B4;">
+                                I&ntilde;igos Sports Center &middot; Lucena City
+                            </span>
+                        </td>
+                    </tr>
+
+                    <!-- Accent rule under the header -->
+                    <tr>
+                        <td bgcolor="#FF6115" style="background-color:#FF6115; font-size:0; line-height:0; height:4px;">&nbsp;</td>
+                    </tr>
+
+                    <!-- ============================================================
+                         CARD
+                         ============================================================ -->
+                    <tr>
+                        <td class="em-card em-pad" bgcolor="#FFFFFF" align="left" style="background-color:#FFFFFF; border-radius:0 0 16px 16px; padding:36px 40px 32px;">
+
+                            <h1 class="em-h1" style="margin:0 0 16px; font-family:'Arial Narrow', Arial, Helvetica, sans-serif; font-size:28px; line-height:34px; font-weight:bold; letter-spacing:0.2px; color:#1F1B16;">
+                                Approve an email change
+                            </h1>
+
+                            <p class="em-text" style="margin:0 0 14px; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:16px; line-height:26px; color:#4A423A;">
+                                You asked to change the email address on your I&ntilde;igoSync account to
+                                <strong class="em-strong" style="color:#1F1B16;">{{ .NewEmail }}</strong>.
+                            </p>
+
+                            <p class="em-text" style="margin:0 0 24px; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:16px; line-height:26px; color:#4A423A;">
+                                Enter this six-digit code in I&ntilde;igoSync to approve the email change to
+                                <strong class="em-strong" style="color:#1F1B16;">{{ .NewEmail }}</strong>.
+                            </p>
+
+                            <!-- ====================================================
+                                 THE CODE — the hero of this email.
+                                 One cell, one text node, real selectable text.
+                                 Never an image, never one <td> per digit: both
+                                 break copy/paste, and an image breaks entirely
+                                 for the majority of inboxes that block images
+                                 by default.
+                                 ==================================================== -->
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse; margin:0 0 22px;">
+                                <tr>
+                                    <td class="em-codebox" bgcolor="#F7F0E4" align="center" style="background-color:#F7F0E4; border:1px solid #E6D8C2; border-radius:14px; padding:22px 16px 24px;">
+                                        <div class="em-eyebrow" style="font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase; color:#B93E08;">
+                                            Your email change code
+                                        </div>
+                                        <div class="em-code" style="padding-top:8px; font-family:'Courier New', Courier, monospace; font-size:38px; line-height:48px; font-weight:bold; letter-spacing:10px; text-indent:10px; color:#1F1B16;">{{ .Token }}</div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p class="em-muted" style="margin:0 0 26px; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; line-height:21px; color:#6B6055;">
+                                Your current email remains on your account until both codes are entered successfully. After confirmation, sign in with your new email address.
+                            </p>
+
+                            <!-- Hairline -->
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+                                <tr>
+                                    <td class="em-hairline" style="border-top:1px solid #E6D8C2; font-size:0; line-height:0; height:1px;">&nbsp;</td>
+                                </tr>
+                            </table>
+
+                            <!-- Expiry + the standard "you didn't ask for this" line.
+                                 "About an hour" tracks this project's
+                                 configured 3600-second OTP lifetime; if you
+                                 change it under
+                                 Authentication -> Sign In / Providers -> Email ->
+                                 Email OTP Expiration, update this sentence too. -->
+                            <p class="em-muted" style="margin:22px 0 0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; line-height:21px; color:#6B6055;">
+                                This code can only be used once and expires about an hour after
+                                it was sent. If it has already lapsed, choose
+                                <strong class="em-strong" style="color:#1F1B16;">Resend codes</strong>
+                                in I&ntilde;igoSync and we'll send fresh codes to both email addresses.
+                            </p>
+                            <p class="em-muted" style="margin:12px 0 0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; line-height:21px; color:#6B6055;">
+                                <strong class="em-strong" style="color:#1F1B16;">Didn't request this change?</strong>
+                                You can safely ignore this email. Your current email address stays on your account unless this code is entered in the dashboard.
+                            </p>
+                            <p class="em-muted" style="margin:12px 0 0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; line-height:21px; color:#6B6055;">
+                                Never share this code. I&ntilde;igos Sports Center staff will never
+                                ask you for it &mdash; not by phone, not by text, not in person.
+                            </p>
+
+                        </td>
+                    </tr>
+
+                    <!-- ============================================================
+                         FOOTER — sits on the page background, outside the card
+                         ============================================================ -->
+                    <tr>
+                        <td class="em-pad" align="center" style="padding:24px 40px 8px;">
+                            <p class="em-muted" style="margin:0 0 6px; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:20px; color:#6B6055;">
+                                <strong class="em-strong" style="color:#1F1B16;">I&ntilde;igos Sports Center</strong><br>
+                                Lucena City, Quezon Province, Philippines
+                            </p>
+                            <p class="em-muted" style="margin:0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:20px; color:#6B6055;">
+                                You are getting this email because an email change was requested to
+                                {{ .NewEmail }} at <a class="em-link" href="{{ .SiteURL }}" style="color:#B93E08; text-decoration:underline;">{{ .SiteURL }}</a>.
+                                This is an automated message &mdash; please don't reply to it.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+
+                <!--[if mso]>
+                </td></tr></table>
+                <![endif]-->
+
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>
