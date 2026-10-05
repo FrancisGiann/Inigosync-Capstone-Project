@@ -40,7 +40,7 @@ test('booking picker is wired to authoritative availability and keeps checkout s
     assert.match(html, /Proceed to Payment/);
     assert.doesNotMatch(html, /data-dash-book-court-choice[^>]*hidden/);
     assert.match(html, /data-dash-book-submit/);
-    assert.match(html, /<script src="\.\.\/includes\/bookingSlots\.js"><\/script>\s*<script src="\.\.\/includes\/Dashboard\.js"><\/script>/);
+    assert.match(html, /<script src="\.\.\/includes\/bookingSlots\.js"><\/script>[\s\S]*?<script src="\.\.\/includes\/Dashboard\.js"><\/script>/);
     assert.match(dashboard, /if \(!bookingRules\.authoritative\)/);
     assert.match(dashboard, /getForDate\(bookingState\.date, \{ force: forceRules \}\)/);
     assert.match(dashboard, /groupConsecutiveHours\(selectedHours\)/);

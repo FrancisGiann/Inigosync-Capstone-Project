@@ -902,6 +902,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function closeModal() {
+        authNoticeReturnFocus = null;
+        hideAuthNotice();
         window.InigoSignupPhone?.cancel();
         if (pendingLoginOtp) {
             // Backing out of the new-device OTP gate without finishing it.
@@ -1208,6 +1210,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.addEventListener('keydown', (e) => {
+        const errorNotice = document.querySelector('[data-auth-notice].is-error:not([hidden])');
+        if (errorNotice && (e.key === 'Escape' || e.key === 'Tab')) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hideAuthNotice();
+            } else {
+                trapTab(e, errorNotice, errorNotice);
+            }
+            return;
+        }
         // The Terms dialog stacks on top of this modal, so while it is open it
         // owns Escape and the Tab rotation and this modal ignores both.
         if (isTermsOpen()) {
@@ -1228,12 +1240,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (e.key === 'Escape' && !overlay.hidden) {
-            const notice = overlay.querySelector('[data-auth-notice]');
-            if (notice && !notice.hidden && notice.classList.contains('is-error')) {
-                e.preventDefault();
-                hideAuthNotice();
-                return;
-            }
             closeModal();
             return;
         }
@@ -2201,7 +2207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // see assertEarlySetupBindings() for what breaks and how it is caught.
 
     function getAuthNoticeEl() {
-        let notice = overlay.querySelector('[data-auth-notice]');
+        let notice = document.querySelector('[data-auth-notice]');
         if (!notice) {
             notice = document.createElement('div');
             notice.className = 'auth-status';
@@ -2222,7 +2228,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeButton.addEventListener('click', hideAuthNotice);
             notice.appendChild(closeButton);
             notice.hidden = true;
-            (modal || overlay).appendChild(notice);
+            document.body.appendChild(notice);
         }
         return notice;
     }

@@ -144,9 +144,11 @@
                         <div class="dash-notif-menu" data-dash-notif-menu role="region" aria-label="Notifications">
                             <div class="dash-notif-menu-head"><span>Notifications</span><span data-dash-notif-unread aria-live="polite"></span></div>
                             <div class="dash-notif-selection" data-dash-notif-selection>
-                                <label><span class="dash-sr-only">Select notifications</span><select data-dash-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
-                                <span data-dash-notif-selected aria-live="polite">0 selected</span>
-                                <button type="button" data-dash-notif-mark-selected disabled>Mark as read</button>
+                                <label><span>Select notifications</span><select data-dash-notif-select><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
+                                <div class="dash-notif-selection-actions">
+                                    <span data-dash-notif-selected aria-live="polite">0 selected</span>
+                                    <button type="button" data-dash-notif-mark-selected disabled>Mark as read</button>
+                                </div>
                             </div>
                             <div class="dash-notif-list" data-dash-notif-list>
                                 <p class="dash-notif-empty">Loading…</p>
@@ -287,9 +289,38 @@
                             <div class="dash-book-sport-grid" data-dash-book-sports aria-label="Sports"></div>
                         </div>
 
-                        <!-- Cart review and payment choices -->
-                        <div class="dash-wizard-panel" data-dash-book-step="3">
-                            <h3 class="dash-wizard-panel-title">Review your cart</h3>
+                    </div>
+
+                    <aside class="dash-book-cart-bar" data-dash-book-cart-bar aria-label="Booking cart" hidden>
+                        <div class="dash-book-cart-bar-content">
+                            <div class="dash-book-cart-bar-head"><strong data-dash-book-cart-bar-count>0 bookings selected</strong><span><small>Estimated total</small><strong data-dash-book-cart-bar-total>—</strong></span></div>
+                            <div class="dash-book-cart-bar-items" data-dash-book-cart-bar-items aria-live="polite"></div>
+                            <span class="dash-book-cart-bar-more" data-dash-book-cart-bar-more hidden></span>
+                        </div>
+                        <div class="dash-book-cart-bar-actions">
+                            <button type="button" class="dash-btn-ghost" data-dash-book-cart-details>View details</button>
+                            <button type="button" class="dash-btn-primary" data-dash-book-cart-proceed>Proceed to Payment</button>
+                        </div>
+                    </aside>
+
+                    <div class="dash-book-cart-details-modal" data-dash-book-cart-details-modal hidden>
+                        <div class="dash-book-cart-details-backdrop" data-dash-book-cart-details-close></div>
+                        <section class="dash-book-cart-details-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-cart-details-title" tabindex="-1">
+                            <button type="button" class="dash-modal-close" data-dash-book-cart-details-close aria-label="Close cart details">×</button>
+                            <h2 id="dash-book-cart-details-title">Booking details</h2>
+                            <p class="dash-form-hint" data-dash-book-cart-details-count></p>
+                            <ul class="dash-book-cart-details-list" data-dash-book-cart-details-list></ul>
+                            <div class="dash-book-cart-details-total"><span>Estimated booking total</span><strong data-dash-book-cart-details-total>—</strong></div>
+                            <button type="button" class="dash-btn-primary" data-dash-book-cart-details-proceed>Proceed to Payment</button>
+                        </section>
+                    </div>
+
+                    <!-- Cart review and payment choices stay inside the booking panel, presented as a popup. -->
+                    <div class="dash-book-payment-modal" data-dash-book-payment-modal hidden>
+                        <div class="dash-book-payment-backdrop" data-dash-book-payment-close></div>
+                        <section class="dash-book-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-payment-title" tabindex="-1">
+                            <button type="button" class="dash-modal-close" data-dash-book-payment-close aria-label="Close payment review">×</button>
+                            <h2 id="dash-book-payment-title">Review your cart</h2>
                             <div class="dash-book-cart" data-dash-book-cart>
                                 <div class="dash-book-cart-head"><strong>Selected bookings</strong><span data-dash-book-cart-count>0 items</span></div>
                                 <p class="dash-form-hint" data-dash-book-cart-empty>Your cart is empty. Add available times to continue.</p>
@@ -328,10 +359,23 @@
                                 <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Book and pay securely</button>
                                 <button type="button" class="dash-btn-ghost" data-dash-book-new>Add another booking</button>
                             </div>
-                        </div>
-
+                        </section>
                     </div>
                 </section>
+
+                <div class="dash-book-fee-confirmation-modal" data-dash-book-fee-confirmation hidden>
+                    <div class="dash-book-fee-confirmation-backdrop" data-dash-book-fee-close></div>
+                    <section class="dash-book-fee-confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-fee-title" aria-describedby="dash-book-fee-description" tabindex="-1">
+                        <button type="button" class="dash-modal-close" data-dash-book-fee-close aria-label="Close fee confirmation">×</button>
+                        <h2 id="dash-book-fee-title">PayMongo transaction fee</h2>
+                        <p id="dash-book-fee-description">PayMongo will add a transaction fee to your payment. You’ll see the fee and final total in PayMongo before you pay.</p>
+                        <p data-dash-book-fee-question>Would you like to continue to secure checkout?</p>
+                        <div class="dash-book-fee-confirmation-actions">
+                            <button type="button" class="dash-btn-ghost" data-dash-book-fee-close>Cancel</button>
+                            <button type="button" class="dash-btn-primary" data-dash-book-fee-continue>Continue to PayMongo</button>
+                        </div>
+                    </section>
+                </div>
 
                 <div class="dash-booking-modal" data-dash-booking-modal hidden>
                     <div class="dash-booking-modal-backdrop" data-dash-booking-modal-close></div>
@@ -369,14 +413,6 @@
                         <button type="button" class="dash-btn-primary" data-dash-book-add disabled>Add selected times to cart</button>
                     </section>
                 </div>
-
-                <aside class="dash-book-cart-bar" data-dash-book-cart-bar aria-label="Booking cart" hidden>
-                    <div class="dash-book-cart-bar-content">
-                        <strong data-dash-book-cart-bar-count>0 bookings selected</strong>
-                        <div class="dash-book-cart-bar-items" data-dash-book-cart-bar-items aria-live="polite"></div>
-                    </div>
-                    <button type="button" class="dash-btn-primary" data-dash-book-cart-proceed>Proceed to Payment</button>
-                </aside>
 
                 <!-- ============================================================
                      MY BOOKINGS PANEL
@@ -503,13 +539,6 @@
                      PROFILE PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="profile">
-                    <div class="dash-panel-head">
-                        <div>
-                            <h2>My Profile</h2>
-                            <p>Your personal details and booking history at a glance.</p>
-                        </div>
-                    </div>
-
                     <div class="dash-card">
                         <div class="dash-profile-card">
                             <div class="dash-avatar">JD</div>
@@ -522,7 +551,7 @@
                         <div class="dash-profile-meta" style="margin-top: 24px;">
                             <div class="dash-profile-meta-item">
                                 <span>Email address</span>
-                                <span>juan.delacruz@email.com</span>
+                                <span data-dash-profile-meta-email>juan.delacruz@email.com</span>
                             </div>
                             <div class="dash-profile-meta-item">
                                 <span>Mobile number</span>
@@ -564,30 +593,8 @@
                      ACCOUNT SETTINGS PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="settings">
-                    <!-- Profile Photo — R4-4, implementation_plan.md
-                         "Revision 4". FIRST card in this panel per that
-                         spec. profiles.avatar_url already existed (already
-                         selected by includes/authGuard.js) but nothing read
-                         or wrote it until now. No Supabase Storage bucket
-                         exists anywhere in this project (see the two notes
-                         in Pages/owner_dashboard.html) and provisioning one
-                         is out of this repo's tracked scope, so the picked
-                         photo is downscaled through a <canvas> to a small,
-                         fixed-size (256x256, center-cropped) JPEG and stored
-                         directly in that text column as a data URL — see the
-                         upload/remove wiring in includes/Dashboard.js. The
-                         circle below doubles as the LIVE preview: it's a
-                         plain .dash-avatar, the exact same element every
-                         .dash-avatar elsewhere on this page already is, so
-                         renderProfile() (includes/Dashboard.js) paints it —
-                         and keeps it in sync with the topbar/Profile-panel
-                         avatars — through the one shared code path instead
-                         of a second one written just for this card. Starts
-                         on the same "JD" placeholder every other .dash-avatar
-                         starts on, before the real signed-in profile loads;
-                         see renderProfile()'s own comment for why an
-                         avatar_url swaps this for an <img> and a missing one
-                         leaves it exactly as-is. -->
+                    <!-- Profile Photo is the first settings card. The shared
+                         crop editor previews the image before confirmation. -->
                     <div class="dash-card">
                         <div class="dash-card-head">
                             <h3>Profile Photo</h3>
@@ -598,80 +605,124 @@
                                 <div class="dash-avatar-upload-actions">
                                     <button type="button" class="dash-btn-save" data-dash-avatar-upload-trigger>Upload Photo</button>
                                     <button type="button" class="dash-btn-ghost" data-dash-avatar-remove hidden>Remove Photo</button>
-                                    <!-- Hidden native picker — the two buttons
-                                         above are the real visible controls;
-                                         data-dash-avatar-upload-trigger just
-                                         calls this input's own .click() (see
-                                         includes/Dashboard.js). -->
-                                    <input type="file" accept="image/*" data-dash-avatar-file hidden>
+                                    <input type="file" accept="image/jpeg,image/png,image/webp" data-dash-avatar-file hidden>
                                 </div>
-                                <p class="dash-avatar-upload-hint">Any image file, up to 5&nbsp;MB — we'll resize and crop it automatically.</p>
+                                <p class="dash-avatar-upload-hint">Choose a JPG, PNG, or WebP image up to 5&nbsp;MB. Adjust the square crop before saving.</p>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Personal Information — Revision 5 (implementation_plan.md)
-                         locks this card down: names and email are no longer
-                         editable from here at all (the user's explicit
-                         instruction — personal info changes go through
-                         staff/admin, not self-service). The three name boxes
-                         stay populated exactly as before (readonly, not
-                         removed) via includes/Dashboard.js's parseFullName()/
-                         populateSettingsNameFields() (preferring
-                         profiles.first_name/middle_name/last_name, database/
-                         schema/008_profile_name_parts.sql, falling back to
-                         parsing full_name when those are absent/undefined) —
-                         only the Save/Cancel pair and the write path behind
-                         them are gone, since there is nothing left on this
-                         card to save. Mobile is editable after the
-                         authenticated provider validates Philippine format,
-                         mobile type, and active status. This does not verify
-                         ownership. -->
                     <div class="dash-card">
                         <div class="dash-card-head">
                             <h3>Personal Information</h3>
+                            <button type="button" class="dash-btn-ghost" data-dash-personal-edit aria-haspopup="dialog" aria-controls="dashPersonalEditDialog">Edit</button>
                         </div>
-                        <p class="dash-card-hint">Personal information can't be changed here.</p>
-                        <div class="dash-name-fields">
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">First name</span>
-                                <input type="text" class="dash-input" placeholder="Juan" value="Juan" readonly data-dash-settings-firstname>
-                            </div>
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Middle name <span class="dash-form-label-hint">(optional)</span></span>
-                                <input type="text" class="dash-input" placeholder="Reyes" readonly data-dash-settings-middlename>
-                            </div>
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Surname</span>
-                                <input type="text" class="dash-input" placeholder="Dela Cruz" value="Dela Cruz" readonly data-dash-settings-lastname>
-                            </div>
+                        <div class="dash-profile-meta dash-settings-summary">
+                            <div class="dash-profile-meta-item"><span>Name</span><span data-dash-settings-display-name>—</span></div>
+                            <div class="dash-profile-meta-item"><span>Email address</span><span data-dash-settings-display-email>—</span></div>
+                            <div class="dash-profile-meta-item"><span>Mobile number</span><span data-dash-settings-display-mobile>—</span></div>
+                            <div class="dash-profile-meta-item"><span>Birthdate · age</span><span data-dash-settings-display-birthdate>—</span></div>
+                            <div class="dash-profile-meta-item"><span>Civil status</span><span data-dash-settings-display-civil-status>—</span></div>
+                            <div class="dash-profile-meta-item"><span>Emergency contact</span><span data-dash-settings-display-emergency>—</span></div>
                         </div>
-                        <div class="dash-settings-grid">
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Email address · cannot be changed</span>
-                                <input type="email" class="dash-input" value="juan.delacruz@email.com" disabled data-dash-settings-email>
+                    </div>
+
+                    <div class="dash-settings-modal" data-dash-personal-modal hidden>
+                        <div class="dash-settings-modal-backdrop" data-dash-personal-close></div>
+                        <section class="dash-settings-dialog dash-personal-dialog" id="dashPersonalEditDialog" role="dialog" aria-modal="true" aria-labelledby="dashPersonalEditTitle" tabindex="-1" data-dash-personal-dialog>
+                            <h2 id="dashPersonalEditTitle">Edit personal information</h2>
+                            <div class="dash-name-fields">
+                                <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsFirstName">First name</label><input id="dashSettingsFirstName" type="text" class="dash-input" placeholder="Juan" data-dash-settings-firstname></div>
+                                <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsMiddleName">Middle name <span class="dash-form-label-hint">(optional)</span></label><input id="dashSettingsMiddleName" type="text" class="dash-input" placeholder="Reyes" data-dash-settings-middlename></div>
+                                <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsLastName">Surname</label><input id="dashSettingsLastName" type="text" class="dash-input" placeholder="Dela Cruz" data-dash-settings-lastname></div>
                             </div>
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Mobile number · optional</span>
-                                <!-- Digits only, capped at 11 (increment 13) — same
-                                     [data-digits-only] pattern includes/auth.js uses for
-                                     signup's mobile field (see its wiring comment), reused
-                                     rather than reimplemented; wired in includes/Dashboard.js.
-                                     inputmode/maxlength are the declarative half only — the
-                                     JS filter is the actual enforcement. The saved value
-                                     is loaded from the signed-in profile; new values are
-                                     validated by the authenticated Edge Function before
-                                     the profile is updated. Validation does not verify
-                                     ownership or guarantee reachability. -->
-                                <div class="dash-mobile-verify-row">
-                                    <input type="tel" class="dash-input" placeholder="09XX XXX XXXX"
-                                           inputmode="numeric" maxlength="11" data-digits-only data-dash-settings-mobile>
-                                    <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-validate>Validate &amp; save</button>
-                                    <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-mobile-remove hidden>Remove</button>
+                            <div class="dash-settings-grid">
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsBirthdate">Birthdate</label>
+                                    <input id="dashSettingsBirthdate" type="date" class="dash-input" data-dash-settings-birthdate>
+                                    <span class="dash-mobile-status" role="status" data-dash-birthdate-age>Age will be calculated from your birthdate.</span>
                                 </div>
-                                <span class="dash-mobile-status" data-dash-mobile-status role="status">A contact number is optional. We check Philippine format, mobile type, and active status, not ownership or guaranteed reachability.</span>
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsCivilStatus">Civil status</label>
+                                    <select id="dashSettingsCivilStatus" class="dash-input" data-dash-settings-civil-status>
+                                        <option value="">Select if you wish</option><option>Single</option><option>Married</option><option>Separated</option><option>Widowed</option><option>Prefer not to say</option>
+                                    </select>
+                                </div>
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsEmergencyName">Emergency contact name</label>
+                                    <input id="dashSettingsEmergencyName" type="text" class="dash-input" autocomplete="off" data-dash-settings-emergency-name>
+                                </div>
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsEmergencyNumber">Emergency contact number</label>
+                                    <div class="dash-mobile-verify-row">
+                                        <input id="dashSettingsEmergencyNumber" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" data-digits-only data-dash-settings-emergency-number>
+                                        <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-emergency-save hidden disabled>Save validated number</button>
+                                        <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-emergency-remove hidden>Remove</button>
+                                    </div>
+                                    <span class="dash-mobile-status" role="status" data-dash-emergency-status>We'll check mobile format, type, and active status while you enter the number. This doesn't verify ownership.</span>
+                                </div>
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsEmail">Email address</label>
+                                    <div class="dash-mobile-verify-row"><input id="dashSettingsEmail" type="email" class="dash-input" value="" readonly data-dash-settings-email><button type="button" class="dash-btn-ghost" data-dash-email-edit aria-haspopup="dialog" aria-controls="dashEmailProposalDialog">Change Email</button></div>
+                                    <span class="dash-mobile-status" role="status" data-dash-email-staged-status></span>
+                                </div>
+                                <div class="dash-form-group">
+                                    <label class="dash-form-label" for="dashSettingsMobile">Mobile number · optional</label>
+                                    <div class="dash-mobile-verify-row">
+                                        <input id="dashSettingsMobile" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" data-digits-only data-dash-settings-mobile>
+                                        <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-validate hidden disabled>Save validated number</button>
+                                        <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-mobile-remove hidden>Remove</button>
+                                    </div>
+                                    <span class="dash-mobile-status" data-dash-mobile-status role="status">A contact number is optional. We check Philippine format, mobile type, and active status, not ownership or guaranteed reachability.</span>
+                                </div>
                             </div>
-                        </div>
+                            <div class="dash-form-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-personal-close>Cancel</button>
+                                <button type="button" class="dash-btn-save" data-dash-personal-save>Save Changes</button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="dash-settings-modal" data-dash-email-proposal-modal hidden>
+                        <div class="dash-settings-modal-backdrop" data-dash-email-proposal-close></div>
+                        <section class="dash-settings-dialog" id="dashEmailProposalDialog" role="dialog" aria-modal="true" aria-labelledby="dashEmailProposalTitle" aria-describedby="dashEmailProposalHint" tabindex="-1" data-dash-email-proposal-dialog>
+                            <h2 id="dashEmailProposalTitle">Change email address</h2>
+                            <p id="dashEmailProposalHint">Check the new address and stage it. A code is sent only after you confirm Save Changes.</p>
+                            <label class="dash-form-label" for="dashEmailProposalInput">New email address</label>
+                            <input type="email" class="dash-input" autocomplete="email" data-dash-email-proposal-input>
+                            <span class="dash-mobile-status" role="status" data-dash-email-proposal-status></span>
+                            <div class="dash-settings-dialog-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-email-proposal-close>Cancel</button>
+                                <button type="button" class="dash-btn-save" data-dash-email-proposal-save disabled>Use Email</button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="dash-settings-modal" data-dash-email-otp-modal hidden>
+                        <div class="dash-settings-modal-backdrop" data-dash-email-otp-close></div>
+                        <section class="dash-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="dashEmailOtpTitle" aria-describedby="dashEmailOtpHint" tabindex="-1" data-dash-email-otp-dialog>
+                            <h2 id="dashEmailOtpTitle">Verify your new email</h2>
+                            <p id="dashEmailOtpHint" data-dash-email-otp-hint>A verification code will be sent to the new email address.</p>
+                            <label class="dash-form-label" for="dashEmailOtpInput">Verification code</label>
+                            <input type="text" class="dash-input" id="dashEmailOtpInput" inputmode="numeric" autocomplete="one-time-code" maxlength="10" data-dash-email-otp-input>
+                            <span class="dash-mobile-status" role="status" data-dash-email-otp-status></span>
+                            <div class="dash-settings-dialog-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-email-otp-close>Cancel</button>
+                                <button type="button" class="dash-btn-save" data-dash-email-otp-verify>Verify code</button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="dash-settings-modal" data-dash-confirm-modal hidden>
+                        <div class="dash-settings-modal-backdrop"></div>
+                        <section class="dash-settings-dialog dash-settings-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dashSettingsConfirmTitle" aria-describedby="dashSettingsConfirmText" tabindex="-1" data-dash-confirm-dialog>
+                            <h2 id="dashSettingsConfirmTitle">Confirm account change</h2>
+                            <p id="dashSettingsConfirmText">Are you sure you want to change?</p>
+                            <div class="dash-settings-dialog-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-confirm-cancel>Cancel</button>
+                                <button type="button" class="dash-btn-save" data-dash-confirm-accept>Confirm</button>
+                            </div>
+                        </section>
                     </div>
 
                     <!-- Change Password — §9, D4: a 2-step guided wizard
@@ -769,18 +820,26 @@
     </button>
     <div class="customer-faq-overlay" data-customer-faq-overlay hidden>
         <section class="customer-faq-dialog" role="dialog" aria-modal="true" aria-labelledby="customerFaqTitle" aria-describedby="customerFaqIntro" tabindex="-1" data-customer-faq-dialog>
-            <button type="button" class="customer-faq-close" data-customer-faq-close aria-label="Close frequently asked questions">×</button>
-            <h2 id="customerFaqTitle">Frequently asked questions</h2>
-            <p id="customerFaqIntro" class="customer-faq-intro">Choose a question to see the answer.</p>
-            <div class="customer-faq-questions" role="group" aria-label="Common booking questions">
-                <button type="button" data-customer-faq-question="booking" aria-controls="customerFaqAnswer" aria-expanded="false">How do I book a court?</button>
-                <button type="button" data-customer-faq-question="cart" aria-controls="customerFaqAnswer" aria-expanded="false">Can I book more than one court?</button>
-                <button type="button" data-customer-faq-question="payment" aria-controls="customerFaqAnswer" aria-expanded="false">How does payment work?</button>
-                <button type="button" data-customer-faq-question="records" aria-controls="customerFaqAnswer" aria-expanded="false">Where can I find my bookings and receipts?</button>
-                <button type="button" data-customer-faq-question="policy" aria-controls="customerFaqAnswer" aria-expanded="false">Can I cancel, and what if I miss check-in?</button>
-                <button type="button" data-customer-faq-question="contact" aria-controls="customerFaqAnswer" aria-expanded="false">Where is the sports center, and how can I contact it?</button>
+            <header class="customer-faq-header">
+                <div>
+                    <p class="customer-faq-kicker">IñigoSync help</p>
+                    <h2 id="customerFaqTitle">Ask about the sports center</h2>
+                    <p id="customerFaqIntro">Quick answers about bookings, payments, and visits.</p>
+                </div>
+                <button type="button" class="customer-faq-close" data-customer-faq-close aria-label="Close frequently asked questions">×</button>
+            </header>
+            <div class="customer-faq-log" data-customer-faq-log role="log" aria-live="polite" aria-relevant="additions text" aria-label="FAQ conversation">
+                <p class="customer-faq-message is-assistant">Hi! I can help with booking, sports and rates, payments, receipts, directions, or contact details.</p>
             </div>
-            <p id="customerFaqAnswer" class="customer-faq-answer" data-customer-faq-answer aria-live="polite" hidden></p>
+            <div class="customer-faq-questions" role="group" aria-label="Suggested questions">
+                <button type="button" data-customer-faq-question="booking">How do I book?</button>
+                <button type="button" data-customer-faq-question="sports">Sports and rates</button>
+                <button type="button" data-customer-faq-question="cart">Multiple courts</button>
+                <button type="button" data-customer-faq-question="payment">Payment</button>
+                <button type="button" data-customer-faq-question="records">Bookings &amp; receipts</button>
+                <button type="button" data-customer-faq-question="policy">Cancellation &amp; check-in</button>
+                <button type="button" data-customer-faq-question="contact">Location &amp; contact</button>
+            </div>
         </section>
     </div>
 
@@ -816,10 +875,8 @@
          checks for window.html2canvas before using it and shows a toast
          instead of throwing. -->
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <!-- Shared image downscale/crop helpers (Revision A1, implementation_plan.md
-         decision A9) — Dashboard.js's avatar upload (downscaleImageToAvatarDataUrl)
-         is now a thin wrapper around window.InigoImageTools. Must load before
-         Dashboard.js. -->
+    <!-- Shared crop editor and image helpers; customer profile photos use
+         openCropEditor before saving. Must load before Dashboard.js. -->
     <script src="../includes/imageTools.js"></script>
     <!-- Customer feedback is private to the IñigoSync team; booking reviews
          remain available only for completed, fully paid bookings below. -->

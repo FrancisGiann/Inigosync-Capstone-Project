@@ -64,6 +64,10 @@ function clientFixture(options) {
             return { data: query.one ? { id: 'qa-updated-row', ...(query.payload || {}) } : [], error: null };
         }
         if (table === 'profiles' && query.one) return { data: window.inigosyncProfile, error: null };
+        if (table === 'booking' && query.filters?.customer_id) {
+            return { data: data.filter(row => row.source === 'online'
+                && String(row.customer_id) === String(query.filters.customer_id)), error: null };
+        }
         if (ownerData && table === 'court_unit_inventory' && query.selectOptions?.count === 'exact') {
             const matching = ownerData.units.filter(row => !query.filters?.court_id || String(row.court_id) === String(query.filters.court_id));
             return { data: query.selectOptions.head ? null : matching, count: matching.length, error: null };
@@ -163,6 +167,9 @@ function courtDataFixture(options = {}) {
         { id: 4, name: 'Bowling — Duckpin', sportName: 'Bowling', sportSlug: 'bowling',
             quantity: 8, unit: 'lanes', rate: null, rateUnit: '/game', status: 'available', imageUrl: null,
             bookableUnits: duckpinUnits },
+        { id: 7, name: 'Bowling — Ten-Pin', sportName: 'Bowling', sportSlug: 'bowling',
+            quantity: 12, unit: 'lanes', rate: null, rateUnit: '/game', status: 'available', imageUrl: null,
+            bookableUnits: [{ id: 'tenpin-unit-1', label: 'Lane 1' }] },
         { id: 5, name: 'Volleyball', sportName: 'Volleyball', sportSlug: 'volleyball',
             quantity: 1, unit: 'court', rate: 500, rateUnit: '/hr', status: 'available', imageUrl: null,
             bookableUnits: [{ id: 'volleyball-unit-1', label: 'Court 1', resourceIds: ['volleyball1-pickleball-1', 'volleyball1-pickleball-2', 'volleyball1-pickleball-3'] }] },
@@ -250,6 +257,8 @@ function courtDataFixture(options = {}) {
         async function customerSubmit(page) {
             await customerProceedToPayment(page);
             await page.locator('[data-dash-book-submit]').click();
+            await page.locator('[data-dash-book-fee-confirmation]').waitFor({ state: 'visible' });
+            await page.locator('[data-dash-book-fee-continue]').click();
         }
         async function staffReadyToSubmit(page) {
             await page.locator('[data-staff-nav="walkin"]').first().click();
@@ -326,7 +335,14 @@ function courtDataFixture(options = {}) {
             const { page, context, errors, checkoutCalls } = await setup('customer', []);
             page.on('dialog', dialog => dialog.accept());
             await customerReadyToSubmit(page);
-            await customerSubmit(page);
+            await customerProceedToPayment(page);
+            await page.locator('[data-dash-book-submit]').click();
+            await page.locator('[data-dash-book-fee-confirmation]').waitFor({ state: 'visible' });
+            assert.equal(checkoutCalls.length, 0, 'checkout waits for fee confirmation');
+            await page.locator('[data-dash-book-fee-confirmation] [data-dash-book-fee-close]').last().click();
+            assert.equal(checkoutCalls.length, 0, 'cancelling fee confirmation creates no checkout');
+            await page.locator('[data-dash-book-submit]').click();
+            await page.locator('[data-dash-book-fee-continue]').click();
             await page.waitForTimeout(300);
             assert.equal(checkoutCalls.length, 1, 'one checkout starts for a single reservation');
             assert.equal(checkoutCalls[0].name, 'paymongo-checkout');
@@ -335,6 +351,60 @@ function courtDataFixture(options = {}) {
             assert.equal(checkoutCalls[0].options.body.items[0].unit_id, 'basketball-unit-2');
             assert.equal(await page.evaluate(() => window.__reservationQa?.calls.filter(c => c.kind === 'insert' && c.table === 'booking').length ?? 0), 0);
             assert.deepEqual(errors, [], 'customer checkout browser errors');
+            await context.close();
+        }
+        // Booking details remove controls keep totals and focus current; the final removal returns focus to Book a Court.
+        {
+            const { page, context, errors } = await setup('customer', [], null, false, true);
+            await page.locator('[data-dash-nav="booking"]').first().click();
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 1');
+            await page.locator('[data-dash-book-date]').fill(tomorrow);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            await customerChooseHours(page, [10]);
+            await customerChooseCourt(page, 'Basketball', 'Basketball', 'Court 2');
+            await page.locator('[data-dash-book-date]').fill(tomorrow);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            await customerChooseHours(page, [10]);
+            await page.locator('[data-dash-book-cart-details]').click();
+            const details = page.locator('[data-dash-book-cart-details-modal]');
+            await details.waitFor({ state: 'visible' });
+            assert.equal(await details.locator('[data-dash-book-cart-details-count]').innerText(), '2 selected bookings');
+            assert.equal(await details.locator('[data-dash-book-cart-details-total]').innerText(), '₱400.00');
+            assert.equal(await details.locator('[data-dash-book-cart-details-proceed]').isEnabled(), true);
+            await details.locator('[data-dash-book-cart-remove]').first().click();
+            assert.equal(await details.locator('[data-dash-book-cart-details-count]').innerText(), '1 selected booking');
+            assert.equal(await details.locator('[data-dash-book-cart-details-total]').innerText(), '₱300.00');
+            assert.equal(await details.locator('[data-dash-book-cart-remove]').count(), 1);
+            await details.locator('[data-dash-book-cart-remove]').click();
+            await details.waitFor({ state: 'hidden' });
+            assert.equal(await page.locator('[data-dash-book-cart-bar]').isVisible(), false);
+            assert.equal(await page.evaluate(() => document.activeElement.matches('[data-dash-nav="booking"]')), true,
+                'emptying details returns focus to the visible Book a Court navigation control');
+            assert.deepEqual(errors, [], 'booking details removal browser errors');
+            await context.close();
+        }
+        // Legacy My Bookings retry also waits for the fee confirmation and identifies the retry action.
+        {
+            const retryBooking = { source: 'online', booking_id: 77, customer_id: 'qa-user', courts: 'Basketball',
+                court_unit: 'Court 1', time_date: `${tomorrow}T10:00:00+08:00`, end_at: `${tomorrow}T11:00:00+08:00`,
+                duration_minutes: 60, status: 'pending', amount_total: 300, amount_paid: 0, payment_id: null };
+            const { page, context, errors, checkoutCalls } = await setup('customer', [retryBooking]);
+            await page.locator('[data-dash-nav="bookings"]').first().click();
+            const retryButton = page.locator('[data-dash-retry-checkout="77"]');
+            await retryButton.waitFor({ state: 'visible' });
+            await retryButton.click();
+            await page.locator('[data-dash-book-fee-confirmation]').waitFor({ state: 'visible' });
+            assert.match(await page.locator('[data-dash-book-fee-question]').innerText(), /retry payment for booking #77/i);
+            assert.equal(checkoutCalls.length, 0, 'retry waits for explicit fee confirmation');
+            await page.locator('[data-dash-book-fee-confirmation] [data-dash-book-fee-close]').last().click();
+            assert.equal(checkoutCalls.length, 0, 'cancelling retry fee confirmation makes no checkout request');
+            assert.equal(await retryButton.isEnabled(), true, 'cancel leaves the retry control available');
+            await retryButton.click();
+            await page.locator('[data-dash-book-fee-continue]').click();
+            await page.waitForTimeout(100);
+            assert.equal(checkoutCalls.length, 1, 'confirmed retry makes one checkout request');
+            assert.equal(checkoutCalls[0].options.body.booking_id, 77);
+            assert.deepEqual(errors, [], 'retry fee confirmation browser errors');
             await context.close();
         }
         // Admin hours changed after a slot was selected: forced refresh clears it before it can enter cart.
@@ -428,7 +498,7 @@ function courtDataFixture(options = {}) {
             const { page, context, errors, checkoutCalls } = await setup('customer', [], null, false, false, true);
             page.on('dialog', dialog => dialog.accept());
             await page.locator('[data-dash-nav="booking"]').first().click();
-            await customerChooseCourt(page, 'Bowling', 'Bowling — Duckpin', 'Lane 1');
+            await customerChooseCourt(page, 'Bowling — Duckpin', 'Bowling — Duckpin', 'Lane 1');
             await page.locator('[data-dash-book-date]').fill(tomorrow);
             await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
             await customerChooseHours(page, [10, 11]);
@@ -439,6 +509,29 @@ function courtDataFixture(options = {}) {
             const interval = checkoutCalls[0].options.body.items[0];
             assert.equal((Date.parse(interval.ends_at) - Date.parse(interval.starts_at)) / 60000, 120);
             assert.deepEqual(errors, [], 'bowling set browser errors');
+            await context.close();
+        }
+        // Duckpin and Ten-Pin render as separate customer choices, each selecting only its own court and availability.
+        {
+            const heldDuckpinLane = occupied('online', 'Bowling — Duckpin', 'Lane 1', tomorrow, 10);
+            const { page, context, errors } = await setup('customer', [heldDuckpinLane]);
+            await page.locator('[data-dash-nav="booking"]').first().click();
+            const duckpin = page.locator('[data-dash-book-sport="bowling-duckpin"]');
+            const tenpin = page.locator('[data-dash-book-sport="bowling-ten-pin"]');
+            assert.equal(await duckpin.locator('.dash-book-sport-name').innerText(), 'Bowling — Duckpin');
+            assert.equal(await tenpin.locator('.dash-book-sport-name').innerText(), 'Bowling — Ten-Pin');
+            await duckpin.click();
+            assert.deepEqual(await values(page.locator('[data-dash-book-select]')), ['Bowling — Duckpin']);
+            await page.locator('[data-dash-book-date]').fill(tomorrow);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            assert.equal(await page.locator('[data-dash-book-slot="10"]').isDisabled(), true, 'Duckpin lane hold blocks Duckpin availability');
+            await page.locator('[data-dash-booking-modal-close]').last().click();
+            await tenpin.click();
+            assert.deepEqual(await values(page.locator('[data-dash-book-select]')), ['Bowling — Ten-Pin']);
+            await page.locator('[data-dash-book-date]').fill(tomorrow);
+            await page.locator('[data-dash-book-slot="10"]').waitFor({ state: 'visible' });
+            assert.equal(await page.locator('[data-dash-book-slot="10"]').isDisabled(), false, 'Duckpin hold does not block Ten-Pin availability');
+            assert.deepEqual(errors, [], 'separate bowling choices browser errors');
             await context.close();
         }
         console.log('PASS reservation QA UI: physical availability, one PayMongo cart checkout, no unpaid customer booking, bowling set duration');

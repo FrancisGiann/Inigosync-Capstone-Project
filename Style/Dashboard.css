@@ -416,15 +416,22 @@ body.dash-body::before {
     color: var(--color-ink);
 }
 .dash-notif-menu-head [data-dash-notif-unread] { color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); }
-.dash-notif-selection { display: flex; align-items: center; gap: 7px; padding: 0 10px 8px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.dash-notif-selection select { max-width: 100px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
-.dash-notif-selection [data-dash-notif-selected] { flex: 1; }
-.dash-notif-selection button { min-height: 30px; padding: 4px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
+.dash-notif-selection { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 2px 10px 12px; border-bottom: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.dash-notif-selection label { display: grid; min-width: 0; gap: 5px; }
+.dash-notif-selection select { width: min(100%, 140px); min-height: 34px; padding: 5px 8px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
+.dash-notif-selection-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; min-width: 0; }
+.dash-notif-selection [data-dash-notif-selected] { white-space: nowrap; }
+.dash-notif-selection button { min-height: 34px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
 .dash-notif-selection button:disabled { opacity: .5; cursor: default; }
-.dash-notif-row { display: flex; align-items: flex-start; gap: 7px; padding: 5px 3px; border-radius: 8px; }
+@media (max-width: 360px) {
+    .dash-notif-selection { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+    .dash-notif-selection select { width: 100%; }
+    .dash-notif-selection-actions { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+.dash-notif-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 3px; border-radius: 8px; }
 .dash-notif-row + .dash-notif-row { border-top: 1px solid var(--color-line); }
 .dash-notif-row.is-selected { background: rgba(244, 239, 230, 0.06); }
-.dash-notif-select-row { flex: 0 0 auto; width: 16px; height: 16px; margin: 15px 0 0 5px; accent-color: var(--color-primary); cursor: pointer; }
+.dash-notif-select-row { flex: 0 0 auto; width: 16px; height: 16px; margin: 12px 0 0 5px; accent-color: var(--color-primary); cursor: pointer; }
 .dash-notif-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .dash-notif-pagination[hidden] { display: none; }
 .dash-notif-pagination .dash-mini-btn { min-height: 32px; padding: 5px 9px; }
@@ -469,6 +476,7 @@ body.dash-body::before {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .dash-notif-item-body strong {
@@ -1273,23 +1281,13 @@ body.dash-body::before {
     cursor: not-allowed;
 }
 
-/* Revision 5 (implementation_plan.md) — Account Settings' name fields are
-   read-only now (not disabled): a readonly field still submits its value
-   and reads as normal body text (unlike :disabled's greyed-out look, which
-   would wrongly suggest the FIELD itself is broken/unavailable rather than
-   "this data just isn't editable here"). A subtler visual cue than
-   :disabled — same border/background as an editable field, just a
-   not-allowed cursor and a slightly dimmer background — since the value
-   itself is still perfectly readable, current, real data. */
+/* Read-only account fields have a subdued cursor; Edit makes them writable. */
 .dash-input[readonly] {
     background: var(--color-bg);
     cursor: not-allowed;
 }
 
-/* Small subtext under a .dash-card-head, e.g. Personal Information's
-   "Personal information can't be changed here." (Revision 5) — same visual
-   weight as .dash-panel-head's own subtitle <p>, just scoped to a card
-   instead of a whole panel. */
+/* Small supporting copy under a settings card heading. */
 .dash-card-hint {
     color: var(--color-ink-dim);
     font-size: var(--fs-base);
@@ -1727,7 +1725,7 @@ body.dash-body::before {
 .dash-book-sport-photo .dash-court-monogram { width: 100%; height: 100%; border-radius: 0; }
 .dash-book-sport-name { padding: 12px 14px; font-weight: 700; }
 .dash-book-court-choice { margin-top: 12px; }
-.dash-booking-modal[hidden], .dash-book-cart-bar[hidden] { display: none; }
+.dash-booking-modal[hidden], .dash-book-cart-bar[hidden], .dash-book-cart-details-modal[hidden], .dash-book-payment-modal[hidden], .dash-book-fee-confirmation-modal[hidden] { display: none; }
 .dash-booking-modal {
     position: fixed;
     inset: 0;
@@ -1762,31 +1760,59 @@ body.dash-body::before {
     margin: 12px 0 0 auto;
 }
 body.dash-booking-modal-open { overflow: hidden; }
+body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden; }
 .dash-book-cart-bar {
     position: fixed;
     z-index: 1000;
-    right: max(20px, env(safe-area-inset-right));
-    bottom: max(20px, env(safe-area-inset-bottom));
-    left: max(20px, env(safe-area-inset-left));
-    display: flex;
-    align-items: center;
+    right: auto;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
     justify-content: space-between;
-    gap: 20px;
-    width: min(1040px, calc(100% - 40px));
-    margin: 0 auto;
-    padding: 14px 18px;
+    gap: 18px;
+    min-height: 118px;
+    height: 118px;
+    margin: 0;
+    padding: 14px 16px;
     border: 1px solid var(--color-line, #d8ded9);
     border-radius: 16px;
     color: var(--color-ink, #1f2a25);
     background: var(--color-bg-card, #fff);
     box-shadow: 0 12px 40px rgba(15, 25, 19, .24);
+    box-sizing: border-box;
 }
 .dash-book-cart-bar-content { min-width: 0; }
-.dash-book-cart-bar-items { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; color: var(--color-ink-dim); font-size: var(--fs-xs, .78rem); }
-.dash-book-cart-bar-items span { overflow-wrap: anywhere; }
-.dash-book-cart-bar > button { flex: 0 0 auto; }
+.dash-book-cart-bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.dash-book-cart-bar-head > span { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.dash-book-cart-bar-head small { color: var(--color-ink-dim); font-size: var(--fs-xs, .78rem); font-weight: 500; }
+.dash-book-cart-bar-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin-top: 7px; color: var(--color-ink-dim); font-size: var(--fs-xs, .78rem); }
+.dash-book-cart-bar-items span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-book-cart-bar-more { display: block; margin-top: 3px; color: var(--color-ink-dim); font-size: var(--fs-xs, .78rem); }
+.dash-book-cart-bar-actions { display: flex; align-items: center; gap: 10px; }
+.dash-book-cart-bar-actions > button { flex: 0 0 auto; }
 .dash-book-cart-bar:focus-within { outline: 2px solid var(--color-primary); outline-offset: 3px; }
-.dash-panel[data-dash-panel="booking"].is-active { padding-bottom: 120px; }
+.dash-panel[data-dash-panel="booking"].is-active:has(.dash-book-cart-bar:not([hidden])) { padding-bottom: 140px; }
+.dash-book-cart-details-modal, .dash-book-payment-modal, .dash-book-fee-confirmation-modal { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; padding: 18px; }
+.dash-book-fee-confirmation-modal { z-index: 1310; }
+.dash-book-cart-details-backdrop, .dash-book-payment-backdrop, .dash-book-fee-confirmation-backdrop { position: absolute; inset: 0; background: rgba(12, 20, 16, .68); }
+.dash-book-cart-details-dialog, .dash-book-payment-dialog, .dash-book-fee-confirmation-dialog { position: relative; z-index: 1; width: min(100%, 680px); max-height: min(90dvh, 820px); overflow: auto; padding: 26px; border: 1px solid var(--color-line); border-radius: 18px; background: var(--color-bg-card); color: var(--color-ink); box-shadow: 0 24px 80px rgba(0, 0, 0, .32); }
+.dash-book-cart-details-dialog h2, .dash-book-payment-dialog h2, .dash-book-fee-confirmation-dialog h2 { margin: 0 48px 18px 0; font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit); }
+.dash-book-cart-details-list { display: grid; gap: 0; max-height: 42dvh; overflow: auto; margin: 14px 0; padding: 0; list-style: none; }
+.dash-book-cart-details-list li { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--color-line); }
+.dash-book-cart-details-item { min-width: 0; overflow-wrap: anywhere; }
+.dash-book-cart-details-item strong { display: block; }
+.dash-book-cart-details-price { flex: 0 0 auto; text-align: right; white-space: nowrap; }
+.dash-book-cart-details-total { display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid var(--color-line); font-weight: 700; }
+.dash-book-cart-details-dialog > [data-dash-book-cart-details-proceed] { width: 100%; }
+.dash-book-cart-details-row-remove { flex: 0 0 auto; align-self: center; }
+.dash-book-fee-confirmation-dialog { width: min(100%, 480px); }
+.dash-book-fee-confirmation-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.dash-book-fee-confirmation-actions button { min-height: 44px; }
+.dash-book-payment-dialog { width: min(100%, 760px); }
+.dash-book-payment-dialog .dash-book-cart-details-list { max-height: none; }
+.dash-book-payment-dialog .dash-wizard-summary { margin-bottom: 0; }
 .dash-book-slot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
 .dash-book-slot {
     min-height: 46px;
@@ -1809,9 +1835,17 @@ body.dash-booking-modal-open { overflow: hidden; }
     .dash-booking-dialog > [data-dash-book-add] { width: min(100%, 320px); min-height: 48px; }
     .dash-booking-dialog .dash-book-step1-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "fields" "preview"; }
     .dash-booking-dialog .dash-court-media-lg { height: 190px; }
-    .dash-book-cart-bar { right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; width: calc(100% - 16px); align-items: stretch; flex-direction: column; gap: 10px; padding: 12px; }
-    .dash-book-cart-bar-items { max-height: 54px; overflow: auto; }
-    .dash-book-cart-bar > button { width: 100%; }
+    .dash-book-cart-bar { grid-template-columns: minmax(0, 1fr); gap: 8px; height: 162px; min-height: 162px; padding: 12px; }
+    .dash-panel[data-dash-panel="booking"].is-active:has(.dash-book-cart-bar:not([hidden])) { padding-bottom: 180px; }
+    .dash-book-cart-bar-items { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+    .dash-book-cart-bar-actions { display: grid; grid-template-columns: 1fr 1fr; }
+    .dash-book-cart-bar-actions > button { width: 100%; min-height: 42px; padding-right: 10px; padding-left: 10px; }
+    .dash-book-cart-details-modal, .dash-book-payment-modal, .dash-book-fee-confirmation-modal { padding: 10px; }
+    .dash-book-cart-details-dialog, .dash-book-payment-dialog, .dash-book-fee-confirmation-dialog { max-height: calc(100dvh - 20px); padding: 22px 16px; border-radius: 14px; }
+    .dash-book-fee-confirmation-actions { display: grid; grid-template-columns: 1fr; }
+    .dash-book-fee-confirmation-actions button { width: 100%; }
+    .dash-book-cart-details-list { max-height: 38dvh; }
+    .dash-book-cart-details-list li { gap: 8px; font-size: var(--fs-sm); }
 }
 .dash-book-slot-status { min-height: 1.5em; }
 .dash-book-cart-empty { margin: 12px 0; }
@@ -2244,6 +2278,58 @@ body.dash-booking-modal-open { overflow: hidden; }
     margin: 0;
 }
 
+.dash-settings-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+}
+.dash-settings-modal[hidden] { display: none; }
+.dash-settings-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, .68);
+}
+.dash-settings-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 460px);
+    max-height: min(90dvh, 720px);
+    overflow: auto;
+    padding: 26px;
+    border: 1px solid var(--color-line);
+    border-radius: 18px;
+    background: var(--color-bg-card);
+    color: var(--color-ink);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .32);
+}
+.dash-personal-dialog { width: min(100%, 760px); }
+.dash-settings-confirm-dialog { z-index: 1410; width: min(100%, 430px); }
+.dash-settings-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+.dash-settings-dialog h2 {
+    margin: 0 0 20px;
+    font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit);
+}
+.dash-settings-dialog > .dash-avatar-upload-preview {
+    margin: 0 auto 18px;
+}
+.dash-settings-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+.dash-settings-dialog button:focus-visible,
+.dash-settings-dialog [tabindex="-1"]:focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 3px;
+}
+.dash-email-code-group { grid-column: 1 / -1; }
+.dash-email-code-group [data-dash-email-verify] { margin-top: 10px; }
+
 /* First/Middle/Surname (§9, D3) — a 3-column row above the existing
    .dash-settings-grid (Email/Mobile). Same 20px gap as that grid for visual
    consistency; collapses to 1 column at the same 1080px breakpoint
@@ -2269,6 +2355,13 @@ body.dash-booking-modal-open { overflow: hidden; }
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+}
+
+@media (max-width: 560px) {
+    .dash-settings-modal { padding: 10px; }
+    .dash-settings-dialog { max-height: calc(100dvh - 20px); padding: 22px 16px; border-radius: 14px; }
+    .dash-settings-dialog-actions > button { flex: 1 1 auto; }
+    .dash-settings-summary { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Mobile number verify row (Revision 5, D6 — implementation_plan.md) —
@@ -2604,8 +2697,12 @@ body.dash-booking-modal-open { overflow: hidden; }
     -webkit-backdrop-filter: blur(12px);
     font: 600 var(--fs-sm, .9rem)/1.2 var(--font-body, inherit);
     cursor: pointer;
+    touch-action: none;
+    user-select: none;
     animation: customer-faq-pulse 3.2s ease-in-out infinite;
 }
+.customer-faq-launcher.is-dragging { cursor: grabbing; animation: none; }
+.customer-faq-launcher[hidden] { display: none; }
 .customer-faq-launcher-icon {
     display: grid;
     place-items: center;
@@ -2623,7 +2720,7 @@ body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: max
 .customer-faq-launcher:focus-visible,
 .customer-faq-close:focus-visible,
 .customer-faq-questions button:focus-visible,
-.customer-faq-answer a:focus-visible {
+.customer-faq-message a:focus-visible {
     outline: 3px solid var(--color-primary);
     outline-offset: 3px;
 }
@@ -2635,33 +2732,44 @@ body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: max
     position: fixed;
     z-index: 1100;
     inset: 0;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    background: rgba(10, 8, 6, .64);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(10, 8, 6, .52);
 }
 .customer-faq-overlay[hidden] { display: none; }
 body.customer-faq-open { overflow: hidden; }
 .customer-faq-dialog {
     position: relative;
-    width: min(100%, 540px);
-    max-height: min(86vh, 760px);
-    overflow: auto;
-    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    width: min(480px, 100%);
+    height: min(640px, calc(100dvh - 32px));
+    max-height: calc(100dvh - 32px);
+    overflow: hidden;
     border: 1px solid var(--color-line);
-    border-radius: 18px;
+    border-radius: 20px;
     color: var(--color-ink);
     background: var(--color-bg-card);
     box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
 }
-.customer-faq-dialog h2 { margin: 0 44px 6px 0; font: 600 var(--fs-lg, 1.25rem)/1.25 var(--font-display, inherit); }
-.customer-faq-intro { margin: 0 0 18px; color: var(--color-ink-dim); }
+.customer-faq-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px;
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-bg-elevated);
+}
+.customer-faq-header h2 { margin: 3px 0 5px; font: 600 var(--fs-lg, 1.25rem)/1.2 var(--font-display, inherit); }
+.customer-faq-header p { margin: 0; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.45; }
+.customer-faq-header .customer-faq-kicker { color: var(--color-primary); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .customer-faq-close {
-    position: absolute;
-    top: 16px;
-    right: 16px;
     display: grid;
     place-items: center;
+    flex: 0 0 38px;
     width: 38px;
     height: 38px;
     border: 1px solid var(--color-line);
@@ -2671,36 +2779,57 @@ body.customer-faq-open { overflow: hidden; }
     font-size: 1.5rem;
     cursor: pointer;
 }
-.customer-faq-questions { display: grid; gap: 8px; }
-.customer-faq-questions button {
-    min-height: 46px;
-    padding: 10px 13px;
+.customer-faq-log {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    min-height: 0;
+    padding: 18px;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+.customer-faq-message {
+    max-width: 92%;
+    margin: 0;
+    padding: 12px 14px;
     border: 1px solid var(--color-line);
-    border-radius: 10px;
+    border-radius: 15px 15px 15px 4px;
+    background: var(--color-bg-elevated);
+    color: var(--color-ink);
+    font-size: var(--fs-sm);
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+.customer-faq-message.is-user {
+    align-self: flex-end;
+    border-color: transparent;
+    border-radius: 15px 15px 4px 15px;
+    background: var(--color-primary);
+    color: #14110d;
+}
+.customer-faq-message a { color: var(--color-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.customer-faq-questions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; padding: 0 18px 16px; }
+.customer-faq-questions button {
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-line);
+    border-radius: 999px;
     color: var(--color-ink);
     background: var(--color-bg-elevated);
-    font: 500 var(--fs-sm, .9rem)/1.4 var(--font-body, inherit);
-    text-align: left;
+    font: 600 var(--fs-xs, .8rem)/1.3 var(--font-body, inherit);
     cursor: pointer;
 }
-.customer-faq-questions button:hover,
-.customer-faq-questions button[aria-expanded="true"] { border-color: var(--color-primary); }
-.customer-faq-answer {
-    margin: 16px 0 0;
-    padding: 14px;
-    border-left: 3px solid var(--color-primary);
-    border-radius: 4px 10px 10px 4px;
-    color: var(--color-ink);
-    background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-elevated));
-    line-height: 1.55;
-}
-.customer-faq-answer[hidden] { display: none; }
-.customer-faq-answer a { color: var(--color-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.customer-faq-questions button:hover { border-color: var(--color-primary); }
 @media (max-width: 640px) {
     .customer-faq-launcher { right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
-    body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: calc(158px + env(safe-area-inset-bottom)); }
+    body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: calc(182px + env(safe-area-inset-bottom)); }
     .customer-faq-overlay { padding: 12px; }
-    .customer-faq-dialog { max-height: 90vh; padding: 24px 18px; }
+    .customer-faq-dialog { width: 100%; height: min(78dvh, 640px); max-height: calc(100dvh - 24px); border-radius: 20px; }
+    .customer-faq-header { padding: 18px; }
+    .customer-faq-log { padding: 15px 14px 12px; }
+    .customer-faq-questions { padding: 0 14px max(12px, env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) {
     .customer-faq-launcher { animation: none; }

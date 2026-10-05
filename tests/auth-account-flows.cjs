@@ -16,12 +16,17 @@ function mockClient(options) {
                 record('accountSessionEvent', data);
                 return Promise.resolve({ data: true, error: null });
             }
-            return { abortSignal: async () => {
-            record('emailCheck', data);
-            if (data.email_address === 'slow@example.test') await new Promise(resolve => setTimeout(resolve, 900));
-            if (options.emailMode === 'error') return { error: { message: 'Network error' } };
-            return { data: options.emailMode === 'rate_limited' ? 'rate_limited' : ['taken@example.test', 'slow@example.test'].includes(data.email_address) ? 'taken' : 'available' };
-            } };
+            if (name === 'save_customer_personal_details') {
+                record('personalSave', data);
+                return Promise.resolve({ data: null, error: null });
+            }
+            const checkEmail = async () => {
+                record('emailCheck', data);
+                if (data.email_address === 'slow@example.test') await new Promise(resolve => setTimeout(resolve, 900));
+                if (options.emailMode === 'error') return { error: { message: 'Network error' } };
+                return { data: options.emailMode === 'rate_limited' ? 'rate_limited' : ['taken@example.test', 'slow@example.test'].includes(data.email_address) ? 'taken' : 'available' };
+            };
+            return { abortSignal: checkEmail, then(resolve, reject) { return checkEmail().then(resolve, reject); } };
         },
         auth: {
             getSession: async () => {
@@ -70,7 +75,7 @@ function mockClient(options) {
             const query = {
                 select() { return query; }, eq() { return query; }, order() { return query; }, limit() { return query; },
                 in() { return query; }, gte() { return query; }, lte() { return query; }, is() { return query; }, not() { return query; }, or() { return query; },
-                update(data) { record('profileWrite', data); write = true; return query; },
+                update(data) { record(table === 'customer_private_details' ? 'privateWrite' : 'profileWrite', data); write = true; return query; },
                 upsert: async data => { record('sessionWrite', data); return {}; },
                 single: async () => write ? { data: { id: user.id } } : profile(),
                 maybeSingle: async () => write ? { data: { id: user.id } } : profile(),
@@ -80,7 +85,7 @@ function mockClient(options) {
         }
     };
     function profile() {
-        return { data: { id: user.id, role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null } };
+        return { data: { id: user.id, role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active', email: 'customer@example.test', full_name: 'Fixture Customer', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null, birthdate: null, civil_status: null, emergency_contact_name: null, emergency_contact_number: null } };
     }
 }
 (async () => {
@@ -341,25 +346,78 @@ function mockClient(options) {
 
         const dashboard = await setupDashboard();
         await dashboard.locator('[data-dash-nav="settings"]').first().click();
+        await dashboard.locator('[data-dash-personal-edit]').click();
+        await dashboard.locator('[data-dash-settings-firstname]').fill('Updated');
+        await dashboard.locator('[data-dash-personal-save]').click();
+        await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'personalSave').length, 0, 'personal information is not saved before confirmation');
+        await dashboard.locator('[data-dash-confirm-accept]').click();
+        await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'personalSave'));
+        const nameWrite = (await calls(dashboard)).find(c => c.kind === 'personalSave');
+        assert.deepEqual(nameWrite.data, {
+            p_full_name: 'Updated Customer', p_first_name: 'Updated', p_middle_name: '', p_last_name: 'Customer',
+            p_birthdate: null, p_civil_status: null, p_emergency_contact_name: null,
+        });
+
+        await dashboard.locator('[data-dash-personal-edit]').click();
+        assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'current email remains read-only');
+        await dashboard.locator('[data-dash-email-edit]').click();
+        await dashboard.locator('[data-dash-email-proposal-input]').fill('new-customer@example.test');
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-proposal-status]').textContent === 'Available');
+        await dashboard.locator('[data-dash-email-proposal-save]').click();
+        assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'staged email does not replace the current address');
+        await dashboard.locator('[data-dash-personal-save]').click();
+        await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'updateUser').length, 0, 'email change request waits for Save confirmation');
+        await dashboard.locator('[data-dash-confirm-accept]').click();
+        await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'updateUser'));
+        const emailRequest = (await calls(dashboard)).find(c => c.kind === 'updateUser');
+        assert.deepEqual(emailRequest.data, { email: 'new-customer@example.test' });
+        assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'requested but unverified address is not shown as saved');
+        await dashboard.locator('[data-dash-email-otp-input]').fill('123456');
+        await dashboard.locator('[data-dash-email-otp-verify]').click();
+        await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+        await dashboard.locator('[data-dash-confirm-accept]').click();
+        await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'verifyOtp'));
+        const emailVerify = (await calls(dashboard)).find(c => c.kind === 'verifyOtp');
+        assert.deepEqual(emailVerify.data, { email: 'new-customer@example.test', token: '123456', type: 'email_change' });
+        assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'new-customer@example.test');
+
         const mobileInput = dashboard.locator('[data-dash-settings-mobile]');
         await mobileInput.fill('09171234567');
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('Validated as an active'));
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'one valid changed number triggers one automatic provider validation');
         await dashboard.locator('[data-dash-mobile-validate]').click();
-        await dashboard.waitForFunction(() => (JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').filter(c => c.kind === 'function').length) === 1);
+        await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'profileWrite' && Object.hasOwn(c.data, 'contact_num')).length, 0, 'validated phone waits for save confirmation');
+        await dashboard.locator('[data-dash-confirm-accept]').click();
         await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'profileWrite'));
         const dashboardCalls = await calls(dashboard);
-        assert.deepEqual(dashboardCalls.find(c => c.kind === 'function').data, { name: 'validate-contact-phone', body: { phone: '09171234567' } });
-        assert.deepEqual(dashboardCalls.find(c => c.kind === 'profileWrite').data, { contact_num: '+639171234567' });
+        assert.deepEqual(dashboardCalls.find(c => c.kind === 'function').data, { name: 'validate-contact-phone', body: { phone: '09171234567', purpose: 'contact' } });
+        assert.deepEqual(dashboardCalls.find(c => c.kind === 'profileWrite' && Object.hasOwn(c.data, 'contact_num')).data, { contact_num: '09171234567' });
         assert.equal(dashboardCalls.filter(c => c.kind === 'function').length, 1, 'one click must cause exactly one provider lookup');
         assert.match(await dashboard.locator('[data-dash-mobile-status]').innerText(), /does not confirm ownership/);
-        await dashboard.locator('[data-dash-mobile-validate]').click();
-        await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('already validated'));
+        await mobileInput.fill('09171234567');
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('unchanged'));
         assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'unchanged number must not use provider quota');
+
+        await dashboard.locator('[data-dash-settings-emergency-number]').fill('09171234567');
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-emergency-status]').textContent.includes('Validated as an active'));
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 2, 'emergency number is independently validated even when it matches the own number');
+        await dashboard.locator('[data-dash-emergency-save]').click();
+        await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'privateWrite' && Object.hasOwn(c.data, 'emergency_contact_number')).length, 0, 'emergency number waits for save confirmation');
+        await dashboard.locator('[data-dash-confirm-accept]').click();
+        await dashboard.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'privateWrite' && Object.hasOwn(c.data, 'emergency_contact_number')));
+        const emergencyCalls = await calls(dashboard);
+        assert.deepEqual(emergencyCalls.filter(c => c.kind === 'function')[1].data, { name: 'validate-contact-phone', body: { phone: '09171234567', purpose: 'emergency' } });
+        assert.deepEqual(emergencyCalls.find(c => c.kind === 'privateWrite' && Object.hasOwn(c.data, 'emergency_contact_number')).data, { emergency_contact_number: '09171234567' });
         await dashboard.close();
 
         const rejectedDashboard = await setupDashboard({ validationReason: 'inactive' });
         await rejectedDashboard.locator('[data-dash-nav="settings"]').first().click();
+        await rejectedDashboard.locator('[data-dash-personal-edit]').click();
         await rejectedDashboard.locator('[data-dash-settings-mobile]').fill('09171234567');
-        await rejectedDashboard.locator('[data-dash-mobile-validate]').click();
         await rejectedDashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('not active'));
         assert(!(await calls(rejectedDashboard)).some(c => c.kind === 'profileWrite'));
         await rejectedDashboard.close();

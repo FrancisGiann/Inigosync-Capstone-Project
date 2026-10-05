@@ -100,7 +100,8 @@
     position: fixed;
     top: 28px;
     left: 50%;
-    z-index: 210;
+    /* Body-level toast must clear every dashboard dialog and backdrop. */
+    z-index: 2147483647;
     max-width: min(420px, calc(100vw - 32px));
     margin: 0;
     padding: 12px 22px;
