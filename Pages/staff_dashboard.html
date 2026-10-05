@@ -76,19 +76,6 @@
                 </button>
             </li>
 
-            <li>
-                <button type="button" class="staff-nav-link" data-staff-nav="activity">
-                    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2M5.6 5.6l1.6 1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                    Customer Activity Log
-                </button>
-            </li>
-            <li>
-                <button type="button" class="staff-nav-link" data-staff-nav="notifications">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M18 8.5c0-3.5-2.7-6-6-6s-6 2.5-6 6c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.7 19a2.3 2.3 0 0 0 4.6 0" stroke="currentColor" stroke-width="1.7"/></svg>
-                    Notifications
-                </button>
-            </li>
-
             <div class="staff-nav-divider"></div>
 
             <li>
@@ -146,35 +133,6 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
                     </svg>
                 </button>
-
-                <!-- Notifications (Revision S1, decision S8) — ported from the
-                     owner dashboard's [data-admin-notif*] dropdown
-                     (Pages/owner_dashboard.html, includes/owner_dashboard.js)
-                     under data-staff-notif* names. Replaces the old dead bell
-                     (no dropdown, badge dot permanently visible). Populated by
-                     includes/staff_dashboard.js's refreshStaffNotifications()
-                     from real bookings starting soon, bookings created today,
-                     and today's walk-ins — the dot starts `hidden` and is only
-                     revealed once there's a real unread item. -->
-                <div class="staff-notif" data-staff-notif>
-                        <button type="button" class="staff-icon-btn" data-staff-notif-trigger aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M18 8.5c0-3.5-2.7-6-6-6s-6 2.5-6 6c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.7 19a2.3 2.3 0 0 0 4.6 0" stroke="currentColor" stroke-width="1.7"/></svg>
-                        <span class="staff-badge-dot" data-staff-notif-dot hidden></span>
-                    </button>
-
-                    <div class="staff-notif-menu" data-staff-notif-menu role="region" aria-label="Notifications">
-                        <div class="staff-notif-menu-head"><span>Notifications</span><button type="button" data-staff-notif-mark-all>Mark all as seen</button></div>
-                        <div class="staff-notif-selection" data-staff-notif-selection>
-                            <label><span class="sr-only">Select notifications</span><select data-staff-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
-                            <span data-staff-notif-selected aria-live="polite">0 selected</span>
-                            <button type="button" data-staff-notif-mark-selected disabled>Mark as read</button>
-                        </div>
-                        <div class="staff-notif-list" data-staff-notif-list>
-                            <p class="staff-notif-empty">Loading…</p>
-                        </div>
-                        <button type="button" class="staff-notif-view-all" data-staff-nav="notifications">View notification history</button>
-                    </div>
-                </div>
 
                 <div class="staff-profile" data-staff-profile>
                     <button type="button" class="staff-profile-trigger" data-staff-profile-trigger aria-haspopup="true" aria-expanded="false">
@@ -596,31 +554,6 @@
                             </tbody>
                         </table>
                     </div>
-                </div>
-            </section>
-
-            <section class="staff-panel" data-staff-panel="activity">
-                <div class="staff-panel-head"><div><p>Customer sign-ins, bookings, payments, and attendance recorded by the system.</p></div></div>
-                <div class="staff-card">
-                    <div class="staff-card-head staff-activity-toolbar">
-                        <label class="staff-search-wrap"><span class="sr-only">Search customer activity</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input type="search" class="staff-search" placeholder="Search customers or activity…" data-staff-activity-search></label>
-                        <label class="staff-form-group"><span class="staff-form-label">From</span><input type="date" class="staff-input" data-staff-activity-from></label>
-                        <label class="staff-form-group"><span class="staff-form-label">To</span><input type="date" class="staff-input" data-staff-activity-to></label>
-                        <label class="staff-form-group"><span class="staff-form-label">Sort</span><select class="staff-select" data-staff-activity-sort><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="name-asc">Customer A–Z</option><option value="name-desc">Customer Z–A</option></select></label>
-                    </div>
-                    <div class="staff-table-wrap"><table class="staff-table" data-staff-activity-table><thead><tr><th>Date and time</th><th>Customer</th><th>Activity</th><th>Details</th></tr></thead><tbody><tr><td colspan="4" class="staff-table-message">Loading customer activity…</td></tr></tbody></table></div>
-                    <div class="staff-pagination"><button type="button" class="staff-btn-ghost" data-staff-activity-prev disabled>Previous</button><span data-staff-activity-page>Page 1</span><button type="button" class="staff-btn-ghost" data-staff-activity-next>Next</button></div>
-                </div>
-            </section>
-
-            <section class="staff-panel" data-staff-panel="notifications">
-                <div class="staff-panel-head"><div><p>Booking, balance, payment, attendance, maintenance, and staff announcements.</p></div></div>
-                <div class="staff-card">
-                    <div class="staff-card-head staff-activity-toolbar">
-                        <label class="staff-search-wrap"><span class="sr-only">Search notifications</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input type="search" class="staff-search" placeholder="Search notifications…" data-staff-notifications-search></label>
-                    </div>
-                    <div class="staff-notification-history" data-staff-notification-history><p class="staff-notif-empty">Loading notifications…</p></div>
-                    <div class="staff-pagination"><button type="button" class="staff-btn-ghost" data-staff-notifications-prev disabled>Previous</button><span data-staff-notifications-page>Page 1</span><button type="button" class="staff-btn-ghost" data-staff-notifications-next>Next</button></div>
                 </div>
             </section>
 

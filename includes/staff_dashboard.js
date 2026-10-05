@@ -12,8 +12,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkin: { title: 'Walk-In Management', subtitle: 'Record a walk-in customer and print or download their receipt.' },
         schedule: { title: 'Court Schedule', subtitle: 'Hour-by-hour availability per court/unit.' },
         transactions: { title: 'Transaction Records', subtitle: 'Every booking and walk-in for the selected date range, with time-in/out.' },
-        activity: { title: 'Customer Activity Log', subtitle: 'Customer sign-ins, bookings, payments, and attendance.' },
-        notifications: { title: 'Notifications', subtitle: 'Updates and announcements for your staff account.' },
         // Revision S1 (implementation_plan.md, decision S7) — not in
         // .staff-nav, only reachable from the topbar dropdown's "View
         // Profile"; setActivePanel() below still works unmodified since it
@@ -41,12 +39,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         closeMobileSidebar();
         closeProfileMenu();
-        // closeStaffNotifMenu is a hoisted function declaration defined
-        // further down this file (Notifications section, Revision S1,
-        // decision S8) — safe to call from here regardless of source order,
-        // same reasoning includes/owner_dashboard.js documents for its own
-        // closeAdminNotifMenu.
-        closeStaffNotifMenu();
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -87,7 +79,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (profileTrigger && profile) {
         profileTrigger.addEventListener('click', (e) => {
             e.stopPropagation();
-            closeStaffNotifMenu();
             if (profile.hasAttribute('data-open')) {
                 profile.removeAttribute('data-open');
                 profileTrigger.setAttribute('aria-expanded', 'false');
@@ -153,7 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Shared helpers — date ranges, schema-mismatch detection, stat tiles,
     // profile-name lookups, occupancy windows, and the S1 derived-status
     // rule. Used across Booking Overview, Walk-In, Court Schedule,
-    // Transaction Records, and Notifications below.
+    // Transaction Records below.
     // ------------------------------------------------------------------
 
     // Business days are anchored to Asia/Manila regardless of the device
@@ -222,7 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Shared by Overview/Schedule/Transactions/Notifications (customer_id ->
+    // Shared by Overview/Schedule/Transactions (customer_id ->
     // name) — no PostgREST embed, since a real FK from booking.customer_id
     // to profiles.id isn't confirmed in this repo-invisible table (see
     // database/schema/004_staff_module.sql's header note). Ported from
@@ -739,7 +730,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // below — hoisted `function` declarations, safe to call from here
     // regardless of source order). The popup performs the update
     // (applyTimeInPatch()) once the staff member confirms, writes the audit
-    // log entry, and refreshes Overview/Schedule/Transactions/Notifications
+    // log entry, and refreshes Overview/Schedule/Transactions
     // itself — the same work the old inline handler here used to do,
     // now made once instead of being duplicated for Transaction Records'
     // identical button (wired the same way further below).
@@ -1990,7 +1981,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             refreshBookingOverview();
             refreshCourtSchedule();
             refreshTransactions();
-            refreshStaffNotifications();
             return;
         }
         if (expired) {
@@ -2220,7 +2210,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             refreshBookingOverview();
             refreshCourtSchedule();
             refreshTransactions();
-            refreshStaffNotifications();
             return;
         }
 
@@ -2230,7 +2219,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         refreshBookingOverview();
         refreshCourtSchedule();
         refreshTransactions();
-        refreshStaffNotifications();
         button.disabled = false;
         button.textContent = originalText;
     }, true);
@@ -2524,7 +2512,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 refreshBookingOverview();
                 refreshCourtSchedule();
                 refreshTransactions();
-                refreshStaffNotifications();
             }
         });
     }
@@ -2649,7 +2636,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             refreshBookingOverview();
             refreshCourtSchedule();
             refreshTransactions();
-            refreshStaffNotifications();
         });
     }
 
@@ -3130,310 +3116,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('inigosync:profile-ready', refreshTransactions);
 
     // ------------------------------------------------------------------
-    // Notifications — Revision S1, decision S8. Ported from the owner
-    // dashboard's bell (includes/owner_dashboard.js's [data-admin-notif*])
-    // under staff-* names: items = bookings starting in the next 60
-    // minutes, bookings created today, and today's walk-ins; unread dot vs
-    // localStorage; click -> Overview; refresh on load, on
-    // 'inigosync:profile-ready', and every 60 s; closes on outside
-    // click/Esc (and when the profile dropdown opens, and vice versa —
-    // see closeProfileMenu()/setActivePanel() above).
-    // ------------------------------------------------------------------
-    const staffNotif = document.querySelector('[data-staff-notif]');
-    const staffNotifTrigger = document.querySelector('[data-staff-notif-trigger]');
-    const staffNotifList = document.querySelector('[data-staff-notif-list]');
-    const staffNotifDot = document.querySelector('[data-staff-notif-dot]');
-    const STAFF_NOTIF_SEEN_KEY = 'inigosync-staff-notif-seen';
-    const STAFF_NOTIF_REFRESH_MS = 60000;
-    const STAFF_NOTIF_SOON_MINUTES = 60;
-
-    function closeStaffNotifMenu() {
-        if (staffNotif) staffNotif.removeAttribute('data-open');
-        if (staffNotifTrigger) staffNotifTrigger.setAttribute('aria-expanded', 'false');
-    }
-
-    if (staffNotifTrigger && staffNotif) {
-        staffNotifTrigger.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isOpen = staffNotif.hasAttribute('data-open');
-            closeProfileMenu();
-            if (isOpen) {
-                closeStaffNotifMenu();
-            } else {
-                staffNotif.setAttribute('data-open', '');
-                staffNotifTrigger.setAttribute('aria-expanded', 'true');
-            }
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!staffNotif.contains(e.target)) closeStaffNotifMenu();
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeStaffNotifMenu();
-        });
-    }
-
-    const staffNotifMarkAll = document.querySelector('[data-staff-notif-mark-all]');
-    const staffNotificationHistory = document.querySelector('[data-staff-notification-history]');
-    const staffNotificationSearch = document.querySelector('[data-staff-notifications-search]');
-    const staffNotificationPrev = document.querySelector('[data-staff-notifications-prev]');
-    const staffNotificationNext = document.querySelector('[data-staff-notifications-next]');
-    const staffNotificationPageLabel = document.querySelector('[data-staff-notifications-page]');
-    const staffActivityBody = document.querySelector('[data-staff-activity-table] tbody');
-    const staffActivitySearch = document.querySelector('[data-staff-activity-search]');
-    const staffActivityFrom = document.querySelector('[data-staff-activity-from]');
-    const staffActivityTo = document.querySelector('[data-staff-activity-to]');
-    const staffActivitySort = document.querySelector('[data-staff-activity-sort]');
-    const staffActivityPrev = document.querySelector('[data-staff-activity-prev]');
-    const staffActivityNext = document.querySelector('[data-staff-activity-next]');
-    const staffActivityPageLabel = document.querySelector('[data-staff-activity-page]');
-    const STAFF_LIST_PAGE_SIZE = 20;
-    let staffNotificationRows = [];
-    let staffNotificationOffset = 0;
-    let staffNotificationTotal = 0;
-    let staffActivityOffset = 0;
-    let staffActivityTotal = 0;
-    let staffActivitySearchTimer = null;
-    let staffNotificationSearchTimer = null;
-    const selectedStaffNotificationKeys = new Set();
-    const staffNotifSelect = document.querySelector('[data-staff-notif-select]');
-    const staffNotifSelectedLabel = document.querySelector('[data-staff-notif-selected]');
-    const staffNotifMarkSelected = document.querySelector('[data-staff-notif-mark-selected]');
-
-    function syncStaffNotificationSelection() {
-        staffNotifList?.querySelectorAll('[data-staff-notif-select-row]').forEach(checkbox => {
-            checkbox.checked = selectedStaffNotificationKeys.has(checkbox.dataset.staffNotifSelectRow);
-            checkbox.closest('.staff-notif-row')?.classList.toggle('is-selected', checkbox.checked);
-        });
-        if (staffNotifSelectedLabel) staffNotifSelectedLabel.textContent = `${selectedStaffNotificationKeys.size} selected`;
-        if (staffNotifMarkSelected) staffNotifMarkSelected.disabled = selectedStaffNotificationKeys.size === 0;
-    }
-
-    function allowedStaffNotificationTarget(href) {
-        if (!href) return '';
-        try {
-            const hash = new URL(String(href), window.location.href).hash.slice(1).toLowerCase();
-            return ['overview', 'walkin', 'schedule', 'transactions', 'activity', 'notifications'].includes(hash) ? hash : '';
-        } catch (_) { return ''; }
-    }
-
-    function renderStaffNotificationItem(item) {
-        const category = String(item.category || 'booking').toLowerCase().replace(/[^a-z0-9_-]/g, '');
-        const key = String(item.key || '');
-        return `<div class="staff-notif-row${item.read_at ? ' is-read' : ' is-unread'}" data-staff-notif-item data-staff-notification-key="${window.escapeHtml(key)}"><input type="checkbox" class="staff-notif-select-row" data-staff-notif-select-row="${window.escapeHtml(key)}" aria-label="Select ${window.escapeHtml(item.title || 'Update')}">
-            <button type="button" class="staff-notif-item" data-staff-panel-target="${window.escapeHtml(allowedStaffNotificationTarget(item.href))}"><span class="staff-notif-dot ${window.escapeHtml(category)}" aria-hidden="true"></span><span class="staff-notif-item-body"><strong>${window.escapeHtml(item.title || 'Update')}</strong><span>${window.escapeHtml(item.body || '')}</span><small>${item.read_at ? 'Read' : 'Unread'}</small></span></button>
-        </div>`;
-    }
-
-    async function fetchStaffNotifications(search = '', offset = 0, limit = STAFF_LIST_PAGE_SIZE) {
-        if (!window.sb) return { rows: [], total: 0, unread: 0, error: 'Notifications are unavailable.' };
-        let result;
-        try { result = await window.sb.rpc('staff_list_notifications', { p_search: search, p_offset: offset, p_limit: limit }); }
-        catch (error) { result = { error }; }
-        if (result?.error) return { rows: [], total: 0, unread: 0, error: result.error.message || 'Could not load notifications.' };
-        const payload = Array.isArray(result.data) ? { rows: result.data } : (normalizeRpcRow(result.data) || {});
-        return { rows: payload.rows || payload.items || [], total: Number(payload.total_count || 0), unread: Number(payload.unread_count || 0) };
-    }
-
-    async function refreshStaffNotifications() {
-        if (!staffNotifList || !window.sb) return;
-        const result = await fetchStaffNotifications('', 0, 15);
-        staffNotificationRows = result.rows;
-        selectedStaffNotificationKeys.clear();
-        if (staffNotifSelect) staffNotifSelect.value = 'none';
-        staffNotifList.innerHTML = result.error ? `<p class="staff-notif-empty">${window.escapeHtml(result.error)}</p>`
-            : (result.rows.length ? result.rows.map(renderStaffNotificationItem).join('') : '<p class="staff-notif-empty">No notifications yet.</p>');
-        syncStaffNotificationSelection();
-        if (staffNotifDot) staffNotifDot.hidden = result.error ? true : result.unread === 0;
-    }
-
-    async function markStaffNotificationRead(key) {
-        if (!window.sb || !key) return false;
-        let result;
-        try { result = await window.sb.rpc('mark_notification_read', { p_key: key }); }
-        catch (error) { result = { error }; }
-        if (result?.error || result?.data === false) {
-            const error = result?.error || new Error('The notification could not be marked as seen.');
-            console.error('[staff] could not mark notification read', error);
-            window.InigoToast?.show(error.message || 'Could not mark notification as seen.', true);
-            return false;
-        }
-        await Promise.all([refreshStaffNotifications(), loadStaffNotificationHistory()]);
-        return true;
-    }
-
-    async function markStaffNotifSeen() {
-        if (!window.sb || !staffNotifMarkAll) return;
-        staffNotifMarkAll.disabled = true;
-        let result;
-        try { result = await window.sb.rpc('staff_mark_all_notifications_read'); }
-        catch (error) { result = { error }; }
-        if (result?.error) {
-            const message = result.error.message || 'Could not mark all notifications as seen.';
-            console.error('[staff] could not mark all notifications as seen', result.error);
-            window.InigoToast?.show(message, true);
-            staffNotifMarkAll.disabled = false;
-            return;
-        }
-        try { await Promise.all([refreshStaffNotifications(), loadStaffNotificationHistory()]); }
-        finally { staffNotifMarkAll.disabled = false; }
-    }
-
-    async function loadStaffNotificationHistory() {
-        if (!staffNotificationHistory) return;
-        const result = await fetchStaffNotifications(staffNotificationSearch?.value.trim() || '', staffNotificationOffset, STAFF_LIST_PAGE_SIZE);
-        if (result.error) {
-            staffNotificationHistory.innerHTML = `<p class="staff-notif-empty">${window.escapeHtml(result.error)}</p>`;
-            return;
-        }
-        staffNotificationTotal = result.total;
-        staffNotificationHistory.innerHTML = result.rows.length ? result.rows.map((item) => `<article class="staff-history-item${item.read_at ? ' is-read' : ' is-unread'}">
-            <span class="staff-history-mark" aria-hidden="true"></span><div><h3>${window.escapeHtml(item.title || 'Update')}</h3><p>${window.escapeHtml(item.body || '')}</p><time datetime="${window.escapeHtml(item.created_at || '')}">${window.escapeHtml(new Date(item.created_at).toLocaleString('en-US', { timeZone: STAFF_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short' }))}</time></div>
-            <button type="button" class="staff-btn-ghost" data-staff-history-read="${window.escapeHtml(item.key || '')}" ${item.read_at ? 'disabled' : ''}>${item.read_at ? 'Seen' : 'Mark as seen'}</button></article>`).join('') : '<p class="staff-notif-empty">No notifications match your search.</p>';
-        if (staffNotificationPageLabel) staffNotificationPageLabel.textContent = `Page ${Math.floor(staffNotificationOffset / STAFF_LIST_PAGE_SIZE) + 1}`;
-        if (staffNotificationPrev) staffNotificationPrev.disabled = staffNotificationOffset <= 0;
-        if (staffNotificationNext) staffNotificationNext.disabled = staffNotificationOffset + STAFF_LIST_PAGE_SIZE >= staffNotificationTotal;
-    }
-
-    if (staffNotifMarkAll) staffNotifMarkAll.addEventListener('click', markStaffNotifSeen);
-    if (staffNotifList) staffNotifList.addEventListener('change', event => {
-        const checkbox = event.target.closest('[data-staff-notif-select-row]');
-        if (!checkbox) return;
-        if (checkbox.checked) selectedStaffNotificationKeys.add(checkbox.dataset.staffNotifSelectRow);
-        else selectedStaffNotificationKeys.delete(checkbox.dataset.staffNotifSelectRow);
-        syncStaffNotificationSelection();
-    });
-    if (staffNotifList) staffNotifList.addEventListener('click', async (event) => {
-        const item = event.target.closest('.staff-notif-item')?.closest('[data-staff-notif-item]');
-        if (!item) return;
-        const key = item.dataset.staffNotificationKey;
-        const target = item.dataset.staffPanelTarget;
-        if (key && !(await markStaffNotificationRead(key))) return;
-        closeStaffNotifMenu();
-        setActivePanel(target || 'overview');
-    });
-    staffNotifSelect?.addEventListener('change', () => {
-        selectedStaffNotificationKeys.clear();
-        const mode = staffNotifSelect.value;
-        staffNotificationRows.filter(item => mode === 'all' || (mode === 'read' && item.read_at) || (mode === 'unread' && !item.read_at))
-            .forEach(item => { if (item.key) selectedStaffNotificationKeys.add(String(item.key)); });
-        syncStaffNotificationSelection();
-    });
-    staffNotifMarkSelected?.addEventListener('click', async () => {
-        const keys = [...selectedStaffNotificationKeys];
-        if (!keys.length || !window.sb) return;
-        staffNotifMarkSelected.disabled = true;
-        try {
-            const results = await Promise.all(keys.map(key => window.sb.rpc('mark_notification_read', { p_key: key })));
-            const failed = results.find(result => result?.error || result?.data === false);
-            if (failed) throw failed.error || new Error('A notification could not be marked as read.');
-            await Promise.all([refreshStaffNotifications(), loadStaffNotificationHistory()]);
-        } catch (error) {
-            console.error('[staff] selected notifications could not be marked read', error);
-            window.InigoToast?.show(error.message || 'Could not mark selected notifications as read.', true);
-            await Promise.all([refreshStaffNotifications(), loadStaffNotificationHistory()]);
-        } finally {
-            staffNotifMarkSelected.disabled = selectedStaffNotificationKeys.size === 0;
-        }
-    });
-    if (staffNotificationHistory) staffNotificationHistory.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-staff-history-read]');
-        if (button && !button.disabled) markStaffNotificationRead(button.dataset.staffHistoryRead);
-    });
-    if (staffNotificationSearch) staffNotificationSearch.addEventListener('input', () => {
-        window.clearTimeout(staffNotificationSearchTimer);
-        staffNotificationOffset = 0;
-        staffNotificationSearchTimer = window.setTimeout(loadStaffNotificationHistory, 250);
-    });
-    if (staffNotificationPrev) staffNotificationPrev.addEventListener('click', () => { staffNotificationOffset = Math.max(0, staffNotificationOffset - STAFF_LIST_PAGE_SIZE); loadStaffNotificationHistory(); });
-    if (staffNotificationNext) staffNotificationNext.addEventListener('click', () => { staffNotificationOffset += STAFF_LIST_PAGE_SIZE; loadStaffNotificationHistory(); });
-
-    async function loadStaffCustomerActivity() {
-        if (!staffActivityBody || !window.sb) return;
-        const sortMap = { 'date-desc': 'newest', 'date-asc': 'oldest', 'name-asc': 'name_asc', 'name-desc': 'name_desc' };
-        const from = staffActivityFrom?.value || null;
-        const to = staffActivityTo?.value || null;
-        if (from && to && from > to) {
-            staffActivityBody.innerHTML = '<tr><td colspan="4" class="staff-table-message">The start date must be on or before the end date.</td></tr>';
-            return;
-        }
-        let result;
-        try {
-            result = await window.sb.rpc('staff_customer_activity', {
-                p_search: staffActivitySearch?.value.trim() || '',
-                p_from: from,
-                p_to: to,
-                p_sort: sortMap[staffActivitySort?.value || 'date-desc'] || 'newest',
-                p_offset: staffActivityOffset,
-                p_limit: STAFF_LIST_PAGE_SIZE,
-            });
-        } catch (error) { result = { error }; }
-        if (result?.error) {
-            staffActivityBody.innerHTML = `<tr><td colspan="4" class="staff-table-message">${window.escapeHtml(result.error.message || 'Could not load customer activity.')}</td></tr>`;
-            return;
-        }
-        const payload = Array.isArray(result.data)
-            ? (result.data.length === 1 && result.data[0]?.rows ? result.data[0] : { rows: result.data })
-            : (normalizeRpcRow(result.data) || {});
-        const rows = payload.rows || [];
-        staffActivityTotal = Number(payload.total_count || 0);
-        staffActivityBody.innerHTML = rows.length ? rows.map((row) => {
-            const details = row.details && typeof row.details === 'object' ? row.details : {};
-            const action = String(row.action || '').toLowerCase();
-            const detailParts = [];
-            const summary = typeof row.details === 'string' ? row.details : (details.summary || details.description || details.message || '');
-            if (summary) detailParts.push(summary);
-            const bookingItem = [details.sport, details.court, details.unit].filter(Boolean).join(' · ');
-            if (bookingItem) detailParts.push(bookingItem);
-            if (details.starts_at) {
-                const startLabel = `${formatWalkinDateLabel(details.starts_at)} · ${formatIsoTime12h(details.starts_at)}`;
-                detailParts.push(details.ends_at ? `${startLabel}–${formatIsoTime12h(details.ends_at)}` : startLabel);
-            } else if (details.ends_at) detailParts.push(`Ends ${formatIsoTime12h(details.ends_at)}`);
-            const amountValue = details.amount ?? details.amount_paid ?? details.total;
-            if (amountValue !== undefined && amountValue !== null && Number.isFinite(Number(amountValue))) detailParts.push(formatStaffPeso(Number(amountValue)));
-            if (details.payment_method) detailParts.push(String(details.payment_method));
-            if (details.payment_status || details.status) detailParts.push(String(details.payment_status || details.status));
-            if (details.checked_in_at) detailParts.push(`Time-In ${formatIsoTime12h(details.checked_in_at)}`);
-            if (details.checked_out_at) detailParts.push(`Time-Out ${formatIsoTime12h(details.checked_out_at)}`);
-            if (action === 'sign_in' && details.sign_out_observed === false) detailParts.push('Sign-out unobserved');
-            const detailText = [...new Set(detailParts)].join(' · ');
-            const actionLabel = action === 'sign_in' ? 'Customer sign-in' : action === 'sign_out' ? 'Customer sign-out' : String(row.action || 'Activity').replaceAll('_', ' ');
-            return `<tr><td>${window.escapeHtml(new Date(row.created_at).toLocaleString('en-US', { timeZone: STAFF_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short' }))}</td>
-                <td class="staff-cell-main">${window.escapeHtml(row.customer_name || 'Customer')}</td><td>${window.escapeHtml(actionLabel)}</td><td>${window.escapeHtml(detailText)}</td></tr>`;
-        }).join('') : '<tr><td colspan="4" class="staff-table-message">No customer activity matches these filters.</td></tr>';
-        if (staffActivityPageLabel) staffActivityPageLabel.textContent = `Page ${Math.floor(staffActivityOffset / STAFF_LIST_PAGE_SIZE) + 1}`;
-        if (staffActivityPrev) staffActivityPrev.disabled = staffActivityOffset <= 0;
-        if (staffActivityNext) staffActivityNext.disabled = staffActivityOffset + STAFF_LIST_PAGE_SIZE >= staffActivityTotal;
-    }
-
-    if (staffActivityFrom) staffActivityFrom.addEventListener('change', () => { staffActivityOffset = 0; loadStaffCustomerActivity(); });
-    if (staffActivityTo) staffActivityTo.addEventListener('change', () => { staffActivityOffset = 0; loadStaffCustomerActivity(); });
-    if (staffActivitySort) staffActivitySort.addEventListener('change', () => { staffActivityOffset = 0; loadStaffCustomerActivity(); });
-    if (staffActivitySearch) staffActivitySearch.addEventListener('input', () => {
-        window.clearTimeout(staffActivitySearchTimer);
-        staffActivityOffset = 0;
-        staffActivitySearchTimer = window.setTimeout(loadStaffCustomerActivity, 250);
-    });
-    if (staffActivityPrev) staffActivityPrev.addEventListener('click', () => { staffActivityOffset = Math.max(0, staffActivityOffset - STAFF_LIST_PAGE_SIZE); loadStaffCustomerActivity(); });
-    if (staffActivityNext) staffActivityNext.addEventListener('click', () => { staffActivityOffset += STAFF_LIST_PAGE_SIZE; loadStaffCustomerActivity(); });
-    loadStaffCustomerActivity();
-
-    if (staffNotifList) {
-        staffNotifList.addEventListener('click', (e) => {
-            if (e.target.closest('[data-staff-notif-item]')) e.stopImmediatePropagation();
-        });
-    }
-
-    refreshStaffNotifications();
-    document.addEventListener('inigosync:profile-ready', refreshStaffNotifications);
-    window.setInterval(refreshStaffNotifications, STAFF_NOTIF_REFRESH_MS);
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') refreshStaffNotifications();
-    });
-    loadStaffNotificationHistory();
-
-    // ------------------------------------------------------------------
     // Account Settings — Profile Photo upload/remove. Same pipeline as the
     // owner dashboard's Profile Photo card (Pages/owner_dashboard.html,
     // includes/owner_dashboard.js), via the shared includes/imageTools.js:
@@ -3705,8 +3387,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Revision S3 — Birthdate can never be set in the future; today's date
     // is computed once here (todayDateInputValue() is a hoisted function
     // declaration further up this file, in the Walk-In section, safe to
-    // call from here regardless of source order — same reasoning this
-    // file already gives for closeStaffNotifMenu()) rather than baked into
+    // call from here regardless of source order — a hoisted function
+    // declaration can be called before its definition, rather than baked into
     // the HTML's static max="…", which would silently go stale.
     const staffSettingsBirthdateInput = document.querySelector('[data-staff-settings-birthdate]');
     if (staffSettingsBirthdateInput) staffSettingsBirthdateInput.max = todayDateInputValue();
@@ -4128,7 +3810,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         refreshBookingOverview();
         refreshCourtSchedule();
         refreshTransactions();
-        refreshStaffNotifications();
     }
 
     // PayMongo return parameters only identify which pending walk-in to
@@ -4157,6 +3838,5 @@ document.addEventListener('DOMContentLoaded', async () => {
         refreshBookingOverview();
         refreshCourtSchedule();
         refreshTransactions();
-        refreshStaffNotifications();
     }
 });

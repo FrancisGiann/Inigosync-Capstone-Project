@@ -304,126 +304,6 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 .staff-icon-btn svg { width: 17px; height: 17px; }
 
-.staff-badge-dot {
-    position: absolute; top: 6px; right: 7px;
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--color-primary);
-    border: 1.5px solid var(--color-bg-elevated);
-}
-
-/* ==========================================================================
-   Notifications dropdown (Revision S1, decision S8) — ported from the owner
-   dashboard's .admin-notif and .admin-notif-item rules (Style/owner_dashboard.css)
-   under staff-* names. Same open/close idiom + visual shape as
-   .staff-profile-menu above (toggled via the same [data-open] attribute
-   pattern from includes/staff_dashboard.js).
-   ========================================================================== */
-.staff-notif { position: relative; }
-
-.staff-notif-menu {
-    position: absolute;
-    top: calc(100% + 10px);
-    right: 0;
-    width: 340px;
-    max-width: calc(100vw - 32px);
-    max-height: 420px;
-    overflow-y: auto;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-line);
-    border-radius: 12px;
-    padding: 8px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transform: translateY(-6px);
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    z-index: 6;
-}
-
-.staff-notif[data-open] .staff-notif-menu {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-
-.staff-notif-menu-head {
-    font-family: var(--font-display);
-    font-weight: 600;
-    font-size: var(--fs-md);
-    padding: 8px 10px 10px;
-    color: var(--color-ink);
-}
-.staff-notif-selection { display: flex; align-items: center; gap: 7px; padding: 0 10px 8px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.staff-notif-selection select { max-width: 100px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
-.staff-notif-selection [data-staff-notif-selected] { flex: 1; }
-.staff-notif-selection button { min-height: 30px; padding: 4px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
-.staff-notif-selection button:disabled { opacity: .5; cursor: default; }
-.staff-notif-row { display: flex; align-items: flex-start; gap: 7px; padding: 5px 3px; border-radius: 8px; }
-.staff-notif-row + .staff-notif-row { border-top: 1px solid var(--color-line); }
-.staff-notif-row.is-selected { background: rgba(244, 239, 230, 0.06); }
-.staff-notif-select-row { flex: 0 0 auto; width: 16px; height: 16px; margin: 15px 0 0 5px; accent-color: var(--color-primary); cursor: pointer; }
-
-/* .staff-notif-item is always a <button> here (every notification kind —
-   starting-soon, new booking, walk-in — jumps to Overview on click). */
-.staff-notif-item {
-    display: flex;
-    align-items: flex-start;
-    width: 100%;
-    gap: 10px;
-    padding: 10px;
-    border-radius: 8px;
-    background: none;
-    border: 0;
-    text-align: left;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
-
-.staff-notif-item:hover,
-.staff-notif-item:focus-visible {
-    background: rgba(244, 239, 230, 0.06);
-}
-
-.staff-notif-item:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: -2px;
-}
-
-.staff-notif-row .staff-notif-item { flex: 1; min-width: 0; }
-
-.staff-notif-item-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-
-.staff-notif-item-body strong {
-    font-size: var(--fs-md);
-    color: var(--color-ink);
-}
-
-.staff-notif-item-body span {
-    font-size: var(--fs-xs);
-    color: var(--color-ink-faint);
-}
-.staff-notif-item-body small { color: var(--color-ink-faint); font-size: 10px; }
-
-.staff-notif-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-top: 5px;
-    flex-shrink: 0;
-    background: var(--color-ink-faint);
-}
-
-.staff-notif-dot.soon { background: var(--color-alert); }
-.staff-notif-dot.booking { background: var(--color-court-green); }
-.staff-notif-dot.walkin { background: var(--color-primary); }
-
 .staff-notif-empty {
     color: var(--color-ink-faint);
     font-size: var(--fs-md);
@@ -1015,7 +895,6 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 @media (prefers-reduced-motion: reduce) {
     .staff-wizard-step-num,
-    .staff-notif-menu,
     .staff-profile-menu,
     .staff-modal-overlay,
     .staff-modal {
@@ -1466,8 +1345,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 }
 
 :root[data-theme="light"] .staff-nav-link:hover,
-:root[data-theme="light"] .staff-profile-menu button:hover,
-:root[data-theme="light"] .staff-notif-item:hover {
+:root[data-theme="light"] .staff-profile-menu button:hover {
     background: rgba(31, 27, 22, 0.05);
 }
 
@@ -1597,14 +1475,6 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-schedule-cell.is-maintenance { background: rgba(214, 72, 47, 0.23); color: var(--color-alert); }
 .staff-schedule-cell.is-past { background: transparent; color: var(--color-ink-faint); opacity: .65; }
 
-.staff-notif-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.staff-notif-menu-head button { border: 0; background: none; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
-.staff-notif-menu-head button:hover { text-decoration: underline; }
-.staff-notif-view-all { width: 100%; padding: 10px; border: 0; border-top: 1px solid var(--color-line); background: transparent; color: var(--color-primary); font: 600 var(--fs-sm) var(--font-body); cursor: pointer; text-align: center; }
-.staff-notif-row.is-read .staff-notif-dot { opacity: .22; }
-.staff-notif-dot.maintenance, .staff-notif-dot.no_show, .staff-notif-dot.balance { background: var(--color-alert); }
-.staff-notif-dot.announcement, .staff-notif-dot.payment { background: var(--color-primary); }
-
 .staff-customer-mode { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
 .staff-customer-mode label { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border: 1px solid var(--color-line); border-radius: 999px; color: var(--color-ink-dim); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
 .staff-customer-mode input { accent-color: var(--color-primary); }
@@ -1633,16 +1503,6 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-line > strong, .staff-walkin-review-line > strong { white-space: nowrap; font-family: var(--font-numeric); }
 .staff-walkin-line-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .staff-walkin-review-line { align-items: flex-start; }
-.staff-activity-toolbar { align-items: flex-end; }
-.staff-activity-toolbar .staff-form-group { min-width: 140px; margin: 0; }
-.staff-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding-top: 16px; color: var(--color-ink-faint); font-size: var(--fs-sm); }
-.staff-notification-history { display: flex; flex-direction: column; }
-.staff-history-item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 16px 4px; border-bottom: 1px solid var(--color-line); }
-.staff-history-mark { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--color-primary); }
-.staff-history-item.is-read .staff-history-mark { opacity: .25; }
-.staff-history-item h3 { font-family: var(--font-display); font-size: var(--fs-md); }
-.staff-history-item p { margin: 4px 0; color: var(--color-ink-dim); font-size: var(--fs-sm); }
-.staff-history-item time { color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .staff-receipt-card { width: 80mm; max-width: 100%; border-radius: 3px; padding: 5mm; background: #fff; color: #171411; border-color: #d8d1c6; }
 .staff-receipt-card .staff-summary-row, .staff-receipt-card .staff-receipt-no, .staff-receipt-card .staff-receipt-brand-tag, .staff-receipt-card .staff-receipt-thanks, .staff-receipt-card .staff-receipt-disclaimer { color: #4f4942; }
 .staff-receipt-card .staff-receipt-brand-name, .staff-receipt-card h4, .staff-receipt-card .staff-summary-row strong, .staff-receipt-card .staff-receipt-total { color: #171411; }
@@ -1705,9 +1565,6 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-topbar-title p { max-width: 38ch; }
     .staff-schedule-tools { flex-basis: 100%; }
     .staff-schedule-search { min-width: min(220px, 100%); }
-    .staff-activity-toolbar { align-items: stretch; }
-    .staff-history-item { grid-template-columns: 10px minmax(0, 1fr); }
-    .staff-history-item > button { grid-column: 2; justify-self: start; }
 }
 
 @media (max-width: 480px) {
@@ -1724,9 +1581,6 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-walkin-line { align-items: flex-start; flex-wrap: wrap; }
     .staff-walkin-line-actions { align-items: stretch; flex-direction: column; }
     .staff-walkin-line-actions .staff-btn-ghost { width: 100%; }
-    .staff-activity-toolbar .staff-form-group { min-width: 100%; }
-    .staff-pagination { justify-content: space-between; }
-    .staff-notif-menu { right: -92px; }
     .staff-profile-menu { right: -4px; }
     .staff-walkin-qr-card { grid-template-columns: minmax(0, 1fr); padding: 16px; }
     .staff-walkin-qr-code { width: min(240px, 100%); justify-self: center; }
