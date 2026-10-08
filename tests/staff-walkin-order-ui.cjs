@@ -9,7 +9,7 @@ const courts = [
 ];
 
 function fixture(config) {
-    window.__walkinQa = { calls: [], reads: [], config, createdItems: [], checkoutAttempts: 0, acknowledgmentAttempts: 0, markAllReadCount: 0 };
+    window.__walkinQa = { calls: [], reads: [], config, createdItems: [], checkoutAttempts: 0, acknowledgmentAttempts: 0 };
     const qa = window.__walkinQa;
     const profiles = [
         { id: 'qa-staff', role: 'staff', status: 'active', full_name: 'QA Staff', email: 'staff@example.test', contact_num: '', contact_num_validated: false, contact_num_validated_at: null },
@@ -101,14 +101,6 @@ function fixture(config) {
                     unread_count: rows.filter(row => !row.read_at).length,
                     rows: matches.slice(args.p_offset || 0, (args.p_offset || 0) + (args.p_limit || 20)),
                 }, error: null };
-            }
-            if (name === 'staff_mark_all_notifications_read') {
-                if (config.markAllNotificationsError) return { data: null, error: { message: 'Notification access denied in fixture' } };
-                const rows = config.notifications || [];
-                qa.markAllReadCount = rows.filter(row => !row.read_at).length;
-                const readAt = new Date().toISOString();
-                config.notifications = rows.map(row => row.read_at ? row : { ...row, read_at: readAt });
-                return { data: qa.markAllReadCount, error: null };
             }
             if (name === 'mark_notification_read') {
                 if (config.markNotificationReadError) return { data: null, error: { message: 'Notification read denied in fixture' } };
@@ -509,46 +501,57 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', config: { notifications: unreadNotifications },
         });
         const notificationsPage = notificationsContext.page;
-        await notificationsPage.waitForFunction(() => document.querySelector('[data-staff-notif-dot]')?.hidden === false);
-        assert.equal(await notificationsPage.locator('[data-staff-notif-list] [data-staff-notif-item]').count(), 15, 'bell initially displays one page of notifications');
         await notificationsPage.locator('[data-staff-notif-trigger]').click();
-        await notificationsPage.locator('[data-staff-notif-mark-all]').click();
-        await notificationsPage.waitForFunction(() => document.querySelector('[data-staff-notif-dot]')?.hidden === true);
-        const markAllResult = await notificationsPage.evaluate(() => ({
-            calls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_mark_all_notifications_read').length,
-            count: window.__walkinQa.markAllReadCount,
-            everyNoticeRead: window.__walkinQa.config.notifications.every(row => Boolean(row.read_at)),
-        }));
-        assert.equal(markAllResult.calls, 1, 'mark all uses the server-side whole-feed RPC');
-        assert.equal(markAllResult.count, 18, 'server action marks notices beyond the first 15');
-        assert.equal(markAllResult.everyNoticeRead, true);
-        assert.equal(await notificationsPage.locator('[data-staff-notif-mark-all]').isDisabled(), false, 'mark all action is re-enabled after completion');
+        await notificationsPage.waitForFunction(() => document.querySelectorAll('[data-staff-notif-list] [data-staff-notif-select-row]').length === 10);
+        assert.equal(await notificationsPage.locator('[data-staff-notif-list] [data-staff-notif-open]').count(), 10, 'first page displays ten openable notifications');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-menu]').getByText('Notifications', { exact: true }).count(), 1, 'header contains only the Notifications title');
+        assert.equal(await notificationsPage.getByText('Mark all read', { exact: true }).count(), 0, 'there is no top mark-all action');
+        assert.equal(await notificationsPage.getByText('Mark as read', { exact: true }).count(), 1, 'the selection row has one read action');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-next]').isDisabled(), false, 'older notifications are reachable on another page');
+        await notificationsPage.locator('[data-staff-notif-select]').selectOption('unread');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-selected]').innerText(), '10 selected');
+        assert.equal(await notificationsPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'mark_notification_read').length), 0,
+            'selecting notifications does not mark them read');
+        await notificationsPage.locator('[data-staff-notif-select]').selectOption('none');
+        await notificationsPage.locator('[data-staff-notif-select-row="notice-1"]').check();
+        await notificationsPage.locator('[data-staff-notif-select-row="notice-2"]').check();
+        assert.equal(await notificationsPage.locator('[data-staff-notif-selected]').innerText(), '2 selected');
+        await notificationsPage.locator('[data-staff-notif-mark-selected]').click();
+        await notificationsPage.waitForFunction(() => window.__walkinQa.config.notifications.slice(0, 2).every(row => Boolean(row.read_at)));
+        assert.equal(await notificationsPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'mark_notification_read').length), 2,
+            'mark as read calls the per-notification read RPC only for selected rows');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-selected]').innerText(), '0 selected', 'a successful action clears page selection');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-mark-selected]').isDisabled(), true, 'mark as read is disabled without a selection');
+        await notificationsPage.locator('[data-staff-notif-key="notice-3"] [data-staff-notif-open]').click();
+        await notificationsPage.waitForFunction(() => Boolean(window.__walkinQa.config.notifications[2].read_at));
+        assert.equal(await notificationsPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'mark_notification_read').length), 3,
+            'opening a notification marks that notification read');
+        assert.equal(await notificationsPage.evaluate(() => window.__walkinQa.config.notifications.filter(row => row.read_at).length), 3);
+        await notificationsPage.locator('[data-staff-notif-trigger]').click();
+        await notificationsPage.locator('[data-staff-notif-next]').click();
+        await notificationsPage.locator('[data-staff-notif-list]').getByText('Notice 11').waitFor();
+        assert.equal(await notificationsPage.locator('[data-staff-notif-list] [data-staff-notif-select-row]').count(), 8, 'next page contains the remaining older notifications');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-page]').innerText(), 'Page 2 of 2');
+        await notificationsPage.locator('[data-staff-notif-prev]').click();
+        await notificationsPage.locator('[data-staff-notif-select-row="notice-1"]').waitFor();
         await notificationsContext.context.close();
-
-        const notificationErrorContext = await openStaffPage(browser, {
-            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
-            config: { notifications: [{ key: 'blocked-notice', title: 'Blocked', body: '', category: 'booking', created_at: '2026-09-27T00:00:00Z', read_at: null }], markAllNotificationsError: true },
-        });
-        const notificationErrorPage = notificationErrorContext.page;
-        await notificationErrorPage.waitForFunction(() => document.querySelector('[data-staff-notif-dot]')?.hidden === false);
-        await notificationErrorPage.locator('[data-staff-notif-trigger]').click();
-        await notificationErrorPage.locator('[data-staff-notif-mark-all]').click();
-        await notificationErrorPage.waitForFunction(() => window.__toastMessages.some(message => message.isError));
-        assert.equal(await notificationErrorPage.locator('[data-staff-notif-mark-all]').isDisabled(), false);
-        assert.equal(await notificationErrorPage.locator('[data-staff-notif-dot]').evaluate(el => el.hidden), false, 'failed mark-all keeps unread state visible');
-        assert.equal(await notificationErrorPage.evaluate(() => window.__walkinQa.config.notifications[0].read_at), null, 'failed mark-all does not change local notification state');
-        await notificationErrorContext.context.close();
 
         const singleNotificationErrorContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
             config: { notifications: [{ key: 'failed-read', title: 'Needs attention', body: 'A booking update', category: 'booking', href: '#walkin', created_at: '2026-09-27T00:00:00Z', read_at: null }], markNotificationReadError: true },
         });
         const singleNotificationErrorPage = singleNotificationErrorContext.page;
-        await singleNotificationErrorPage.waitForFunction(() => document.querySelector('[data-staff-notif-dot]')?.hidden === false);
-        const notificationListCallsBefore = await singleNotificationErrorPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_list_notifications').length);
         await singleNotificationErrorPage.locator('[data-staff-notif-trigger]').click();
-        await singleNotificationErrorPage.locator('[data-staff-notif-item] .staff-notif-item').click();
-        await singleNotificationErrorPage.waitForFunction(() => window.__toastMessages.some(message => message.message === 'Notification read denied in fixture'));
+        await singleNotificationErrorPage.locator('[data-staff-notif-open]').waitFor();
+        await singleNotificationErrorPage.locator('[data-staff-notif-open]').click();
+        await singleNotificationErrorPage.waitForFunction(() => window.__toastMessages.some(message => message.message === 'Could not mark notification as read.' && message.isError));
+        assert.equal(await singleNotificationErrorPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'mark_notification_read').length), 1,
+            'opening a notification uses the per-notification read RPC');
+        assert.equal(await singleNotificationErrorPage.evaluate(() => window.__walkinQa.config.notifications[0].read_at), null, 'failed click-to-read leaves unread state unchanged');
+        const notificationListCallsBefore = await singleNotificationErrorPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_list_notifications').length);
+        const toastCountBeforeSingleRead = await singleNotificationErrorPage.evaluate(() => window.__toastMessages.length);
+        await singleNotificationErrorPage.locator('.staff-notif-row .staff-notif-item').click();
+        await singleNotificationErrorPage.waitForFunction(count => window.__toastMessages.length > count, toastCountBeforeSingleRead);
         assert.equal(await singleNotificationErrorPage.locator('[data-staff-panel="overview"]').evaluate(el => el.classList.contains('is-active')), true, 'failed read does not navigate away from the current panel');
         assert.equal(await singleNotificationErrorPage.locator('[data-staff-panel="walkin"]').evaluate(el => el.classList.contains('is-active')), false);
         assert.equal(await singleNotificationErrorPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_list_notifications').length), notificationListCallsBefore, 'failed read does not reload notification lists');

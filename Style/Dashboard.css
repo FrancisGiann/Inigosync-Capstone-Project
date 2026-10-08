@@ -1536,6 +1536,22 @@ body.dash-body::before {
     display: flex;
 }
 
+.dash-pw-rules {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 14px;
+    margin: 10px 0 0;
+    padding: 0;
+    color: var(--color-ink-faint);
+    font-size: 12px;
+    line-height: 1.35;
+    list-style: none;
+}
+
+.dash-pw-rules li::before { content: '○'; display: inline-block; width: 1.2em; }
+.dash-pw-rules li.is-met { color: var(--color-court-green); }
+.dash-pw-rules li.is-met::before { content: '✓'; }
+
 .dash-wizard-panel-title {
     font-family: var(--font-display);
     font-weight: 600;

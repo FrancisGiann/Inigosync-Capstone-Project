@@ -3379,6 +3379,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // reasoning from the single-form version this replaces.
     // ------------------------------------------------------------------
     const ADMIN_PW_MIN_LENGTH = 8;
+    const ADMIN_PW_MAX_LENGTH = 15;
     const pwStepPanels = document.querySelectorAll('[data-admin-pw-step]');
     const pwStepIndicators = document.querySelectorAll('[data-admin-pw-step-indicator]');
     const pwBackBtn = document.querySelector('[data-admin-pw-back]');
@@ -3387,6 +3388,52 @@ document.addEventListener('DOMContentLoaded', () => {
     const pwCurrentInput = document.querySelector('[data-admin-pw-current]');
     const pwNewInput = document.querySelector('[data-admin-pw-new]');
     const pwConfirmInput = document.querySelector('[data-admin-pw-confirm]');
+    const pwRules = document.querySelector('[data-admin-pw-rules]');
+    let adminPwVerificationInProgress = false;
+    let adminPwSaveInProgress = false;
+    let adminPwVerificationGeneration = 0;
+
+    function checkAdminPasswordPolicy(value) {
+        const password = typeof value === 'string' ? value : '';
+        return {
+            length: password.length >= ADMIN_PW_MIN_LENGTH && password.length <= ADMIN_PW_MAX_LENGTH,
+            upper: /[A-Z]/.test(password),
+            lower: /[a-z]/.test(password),
+            number: /[0-9]/.test(password),
+            special: /[ !"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(password),
+        };
+    }
+
+    function renderAdminPasswordRules() {
+        const checks = checkAdminPasswordPolicy(pwNewInput?.value);
+        pwRules?.querySelectorAll('[data-pw-rule]').forEach((item) => {
+            const met = Boolean(checks[item.dataset.pwRule]);
+            item.classList.toggle('is-met', met);
+            item.setAttribute('aria-label', `${item.textContent.trim()}: ${met ? 'met' : 'not met'}`);
+        });
+        return Object.values(checks).every(Boolean);
+    }
+
+    async function verifyAdminCurrentPassword() {
+        try {
+            const { data: { session }, error: sessionError } = await window.sb.auth.getSession();
+            if (sessionError || !session?.user?.id || !session.user.email) throw new Error('Your sign-in session could not be verified. Please sign in again.');
+            const expectedUserId = session.user.id;
+            const { data, error } = await window.sb.auth.signInWithPassword({ email: session.user.email, password: pwCurrentInput.value });
+            if (error) {
+                window.InigoToast?.show('Current password is incorrect.', true);
+                return false;
+            }
+            if (data?.user?.id !== expectedUserId) {
+                await window.sb.auth.signOut();
+                throw new Error('The verified account does not match this dashboard. Please sign in again.');
+            }
+            return true;
+        } catch (error) {
+            window.InigoToast?.show(error.message || 'Could not verify your current password.', true);
+            return false;
+        }
+    }
 
     let adminPwWizardStep = 1;
 
@@ -3405,8 +3452,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (adminPasswordSaveBtn) adminPasswordSaveBtn.hidden = adminPwWizardStep !== 2;
         if (pwNextBtn) {
             pwNextBtn.hidden = adminPwWizardStep !== 1;
-            pwNextBtn.disabled = !(pwCurrentInput && pwCurrentInput.value !== '');
+            pwNextBtn.disabled = adminPwVerificationInProgress || !(pwCurrentInput && pwCurrentInput.value !== '');
         }
+        const validPassword = renderAdminPasswordRules();
+        if (adminPasswordSaveBtn) adminPasswordSaveBtn.disabled = adminPwWizardStep !== 2 || !validPassword || !pwNewInput?.value || pwNewInput.value !== pwConfirmInput?.value || adminPwVerificationInProgress || adminPwSaveInProgress;
     }
 
     function goToAdminPwStep(step) {
@@ -3415,18 +3464,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetAdminPwWizard() {
+        invalidateAdminPwVerification();
         [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => { if (input) input.value = ''; });
         goToAdminPwStep(1);
     }
 
-    if (pwCurrentInput) pwCurrentInput.addEventListener('input', renderAdminPwWizard);
+    function invalidateAdminPwVerification() {
+        adminPwVerificationGeneration += 1;
+        adminPwVerificationInProgress = false;
+        adminPwSaveInProgress = false;
+        if (pwNextBtn) pwNextBtn.textContent = 'Next';
+    }
+
+    [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => input?.addEventListener('input', () => {
+        if (pwCurrentInput === input && (adminPwVerificationInProgress || adminPwSaveInProgress)) invalidateAdminPwVerification();
+        renderAdminPwWizard();
+    }));
     if (pwNextBtn) {
-        pwNextBtn.addEventListener('click', () => {
-            if (pwNextBtn.disabled) return;
-            goToAdminPwStep(2);
+        pwNextBtn.addEventListener('click', async () => {
+            if (pwNextBtn.disabled || !window.sb || !pwCurrentInput?.value) return;
+            const generation = ++adminPwVerificationGeneration;
+            adminPwVerificationInProgress = true;
+            pwNextBtn.textContent = 'Verifying…';
+            renderAdminPwWizard();
+            const verified = await verifyAdminCurrentPassword();
+            if (generation !== adminPwVerificationGeneration) return;
+            adminPwVerificationInProgress = false;
+            pwNextBtn.textContent = 'Next';
+            renderAdminPwWizard();
+            if (verified) goToAdminPwStep(2);
         });
     }
-    if (pwBackBtn) pwBackBtn.addEventListener('click', () => goToAdminPwStep(1));
+    if (pwBackBtn) pwBackBtn.addEventListener('click', () => {
+        invalidateAdminPwVerification();
+        goToAdminPwStep(1);
+    });
 
     // Establishes the correct initial hidden/disabled state for the nav
     // buttons (matching the `disabled`/`hidden` attributes already baked
@@ -3435,6 +3507,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (adminPasswordSaveBtn) {
         adminPasswordSaveBtn.addEventListener('click', async () => {
+            if (adminPasswordSaveBtn.disabled) return;
             if (!window.sb || !window.inigosyncProfile) return;
             const currentPassword = pwCurrentInput?.value;
             const newPassword = pwNewInput?.value;
@@ -3445,8 +3518,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 goToAdminPwStep(1);
                 return;
             }
-            if (!newPassword || newPassword.length < ADMIN_PW_MIN_LENGTH) {
-                window.InigoToast?.show(`New password must be at least ${ADMIN_PW_MIN_LENGTH} characters.`, true);
+            if (!renderAdminPasswordRules()) {
+                window.InigoToast?.show('New password must be 8–15 characters and include an uppercase letter, a lowercase letter, a number and a special character.', true);
                 return;
             }
             if (newPassword !== confirmPassword) {
@@ -3454,7 +3527,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            adminPasswordSaveBtn.disabled = true;
+            adminPwSaveInProgress = true;
+            const generation = ++adminPwVerificationGeneration;
+            renderAdminPwWizard();
 
             // S3 (Revision A1 fix) — re-verify against the AUTH session's
             // OWN current email first, falling back to profiles.email only
@@ -3464,34 +3539,31 @@ document.addEventListener('DOMContentLoaded', () => {
             // stale from before this session loaded; signInWithPassword()
             // against a stale address would fail with "Current password is
             // incorrect" even when the password typed is exactly right.
-            const { data: pwSessionData } = await window.sb.auth.getSession();
-            const verifyEmail = pwSessionData?.session?.user?.email || window.inigosyncProfile.email;
-
-            // "Current password" re-verified via signInWithPassword() before
-            // anything changes — Supabase has no separate "verify password"
-            // call, and this confirms the person at the keyboard actually
-            // knows it before the password is changed.
-            const { error: verifyError } = await window.sb.auth.signInWithPassword({
-                email: verifyEmail,
-                password: currentPassword,
-            });
-
-            if (verifyError) {
-                adminPasswordSaveBtn.disabled = false;
-                window.InigoToast?.show('Current password is incorrect.', true);
+            const verified = await verifyAdminCurrentPassword();
+            if (generation !== adminPwVerificationGeneration) {
+                renderAdminPwWizard();
+                return;
+            }
+            if (!verified) {
+                adminPwSaveInProgress = false;
+                renderAdminPwWizard();
                 goToAdminPwStep(1);
                 return;
             }
 
-            const { error } = await window.sb.auth.updateUser({ password: newPassword });
-            adminPasswordSaveBtn.disabled = false;
-
-            if (error) {
+            try {
+                const { error } = await window.sb.auth.updateUser({ password: newPassword });
+                if (error) throw error;
+            } catch (error) {
                 window.InigoToast?.show(error.message || 'Could not update your password.', true);
+                adminPwSaveInProgress = false;
+                renderAdminPwWizard();
                 return;
             }
 
             resetAdminPwWizard();
+            adminPwSaveInProgress = false;
+            renderAdminPwWizard();
             window.InigoToast?.show('Password updated.');
             recordOwnerActivity('Owner password updated', 'settings');
         });

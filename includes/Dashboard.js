@@ -4103,12 +4103,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // Change Password — 2-step wizard (§9, D4). Step 1 collects only the
-    // current password, with Next disabled until it's non-empty; Step 2
-    // collects the new password + confirmation, with Go Back / Save
-    // Password. This block only re-stages the PRESENTATION — the actual
-    // save handler below still re-verifies the current password via
-    // sb.auth.signInWithPassword() before calling updateUser(), unchanged.
+    // Change Password — verify the current password before entering step 2,
+    // then enforce the same policy as Sign Up before updating the password.
     // ------------------------------------------------------------------
     const pwStepPanels = document.querySelectorAll('[data-dash-pw-step]');
     const pwStepIndicators = document.querySelectorAll('[data-dash-pw-step-indicator]');
@@ -4118,6 +4114,53 @@ document.addEventListener('DOMContentLoaded', () => {
     const pwCurrentInput = document.querySelector('[data-dash-pw-current]');
     const pwNewInput = document.querySelector('[data-dash-pw-new]');
     const pwConfirmInput = document.querySelector('[data-dash-pw-confirm]');
+    const pwRules = document.querySelector('[data-dash-pw-rules]');
+    let pwVerificationInProgress = false;
+    let pwSaveInProgress = false;
+    let pwVerificationGeneration = 0;
+
+    function checkDashPasswordPolicy(value) {
+        const password = typeof value === 'string' ? value : '';
+        return {
+            length: password.length >= 8 && password.length <= 15,
+            upper: /[A-Z]/.test(password),
+            lower: /[a-z]/.test(password),
+            number: /[0-9]/.test(password),
+            // Keep in sync with includes/auth.js's explicit printable-ASCII special set.
+            special: /[ !"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(password),
+        };
+    }
+
+    function renderDashPasswordRules() {
+        const checks = checkDashPasswordPolicy(pwNewInput?.value);
+        pwRules?.querySelectorAll('[data-pw-rule]').forEach((item) => {
+            const met = Boolean(checks[item.dataset.pwRule]);
+            item.classList.toggle('is-met', met);
+            item.setAttribute('aria-label', `${item.textContent.trim()}: ${met ? 'met' : 'not met'}`);
+        });
+        return Object.values(checks).every(Boolean);
+    }
+
+    async function verifyDashCurrentPassword() {
+        try {
+            const { data: { session }, error: sessionError } = await window.sb.auth.getSession();
+            if (sessionError || !session?.user?.id || !session.user.email) throw new Error('Your sign-in session could not be verified. Please sign in again.');
+            const expectedUserId = session.user.id;
+            const { data, error } = await window.sb.auth.signInWithPassword({ email: session.user.email, password: pwCurrentInput.value });
+            if (error) {
+                window.InigoToast?.show('Current password is incorrect.', true);
+                return false;
+            }
+            if (data?.user?.id !== expectedUserId) {
+                await window.sb.auth.signOut();
+                throw new Error('The verified account does not match this dashboard. Please sign in again.');
+            }
+            return true;
+        } catch (error) {
+            window.InigoToast?.show(error.message || 'Could not verify your current password.', true);
+            return false;
+        }
+    }
 
     let pwWizardStep = 1;
 
@@ -4136,8 +4179,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (passwordSaveBtn) passwordSaveBtn.hidden = pwWizardStep !== 2;
         if (pwNextBtn) {
             pwNextBtn.hidden = pwWizardStep !== 1;
-            pwNextBtn.disabled = !(pwCurrentInput && pwCurrentInput.value !== '');
+            pwNextBtn.disabled = pwVerificationInProgress || !(pwCurrentInput && pwCurrentInput.value !== '');
         }
+        const validPassword = renderDashPasswordRules();
+        if (passwordSaveBtn) passwordSaveBtn.disabled = pwWizardStep !== 2 || !validPassword || !pwNewInput?.value || pwNewInput.value !== pwConfirmInput?.value || pwVerificationInProgress || pwSaveInProgress;
     }
 
     function goToPwStep(step) {
@@ -4145,17 +4190,37 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPwWizard();
     }
 
-    if (pwCurrentInput) {
-        pwCurrentInput.addEventListener('input', renderPwWizard);
+    function invalidateDashPwVerification() {
+        pwVerificationGeneration += 1;
+        pwVerificationInProgress = false;
+        pwSaveInProgress = false;
+        if (pwNextBtn) pwNextBtn.textContent = 'Next';
     }
+
+    [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => input?.addEventListener('input', () => {
+        if (pwCurrentInput === input && (pwVerificationInProgress || pwSaveInProgress)) invalidateDashPwVerification();
+        renderPwWizard();
+    }));
     if (pwNextBtn) {
-        pwNextBtn.addEventListener('click', () => {
-            if (pwNextBtn.disabled) return;
-            goToPwStep(2);
+        pwNextBtn.addEventListener('click', async () => {
+            if (pwNextBtn.disabled || !window.sb || !pwCurrentInput?.value) return;
+            const generation = ++pwVerificationGeneration;
+            pwVerificationInProgress = true;
+            pwNextBtn.textContent = 'Verifying…';
+            renderPwWizard();
+            const verified = await verifyDashCurrentPassword();
+            if (generation !== pwVerificationGeneration) return;
+            pwVerificationInProgress = false;
+            pwNextBtn.textContent = 'Next';
+            renderPwWizard();
+            if (verified) goToPwStep(2);
         });
     }
     if (pwBackBtn) {
-        pwBackBtn.addEventListener('click', () => goToPwStep(1));
+        pwBackBtn.addEventListener('click', () => {
+            invalidateDashPwVerification();
+            goToPwStep(1);
+        });
     }
 
     // Establishes the correct initial hidden/disabled state for the nav
@@ -4165,6 +4230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (passwordSaveBtn) {
         passwordSaveBtn.addEventListener('click', async () => {
+            if (passwordSaveBtn.disabled) return;
             if (!window.sb || !window.inigosyncProfile) return;
             const currentPassword = pwCurrentInput?.value;
             const newPassword = pwNewInput?.value;
@@ -4175,17 +4241,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 goToPwStep(1);
                 return;
             }
-            if (!newPassword) {
-                window.InigoToast?.show('Enter a new password.', true);
+            if (!renderDashPasswordRules()) {
+                window.InigoToast?.show('New password must be 8–15 characters and include an uppercase letter, a lowercase letter, a number and a special character.', true);
                 return;
             }
             if (newPassword !== confirmPassword) {
                 window.InigoToast?.show('Passwords do not match.', true);
                 return;
             }
-            if (!await confirmSettingsChange('Are you sure you want to update your password?')) return;
-
-            passwordSaveBtn.disabled = true;
+            pwSaveInProgress = true;
+            const generation = ++pwVerificationGeneration;
+            renderPwWizard();
+            const confirmed = await confirmSettingsChange('Are you sure you want to update your password?');
+            if (generation !== pwVerificationGeneration) {
+                renderPwWizard();
+                return;
+            }
+            if (!confirmed) {
+                pwSaveInProgress = false;
+                renderPwWizard();
+                return;
+            }
 
             // "Current password" used to be collected and never checked —
             // any hijacked or left-open session could silently take over
@@ -4193,28 +4269,32 @@ document.addEventListener('DOMContentLoaded', () => {
             // (Supabase has no separate "verify password" call) confirms
             // the person at the keyboard actually knows it before the
             // password is changed.
-            const { error: verifyError } = await window.sb.auth.signInWithPassword({
-                email: window.inigosyncProfile.email,
-                password: currentPassword,
-            });
-
-            if (verifyError) {
-                passwordSaveBtn.disabled = false;
-                window.InigoToast?.show('Current password is incorrect.', true);
+            const verified = await verifyDashCurrentPassword();
+            if (generation !== pwVerificationGeneration) {
+                renderPwWizard();
+                return;
+            }
+            if (!verified) {
+                pwSaveInProgress = false;
+                renderPwWizard();
                 goToPwStep(1);
                 return;
             }
 
-            const { error } = await window.sb.auth.updateUser({ password: newPassword });
-            passwordSaveBtn.disabled = false;
-
-            if (error) {
+            try {
+                const { error } = await window.sb.auth.updateUser({ password: newPassword });
+                if (error) throw error;
+            } catch (error) {
                 window.InigoToast?.show(error.message || 'Could not update your password.', true);
+                pwSaveInProgress = false;
+                renderPwWizard();
                 return;
             }
 
             [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => { if (input) input.value = ''; });
+            pwSaveInProgress = false;
             goToPwStep(1);
+            renderPwWizard();
             window.InigoToast?.show('Password updated.');
         });
     }

@@ -51,6 +51,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ------------------------------------------------------------------
     const mobileToggle = document.querySelector('[data-staff-mobile-toggle]');
     const scrim = document.querySelector('[data-staff-scrim]');
+    const desktopSidebarShell = document.querySelector('.staff-shell');
+    const staffSidebar = document.querySelector('[data-staff-sidebar]');
+    const sidebarCollapse = document.querySelector('[data-staff-sidebar-collapse]');
+    const sidebarReveal = document.querySelector('[data-staff-sidebar-reveal]');
+    const mobileBreakpoint = window.matchMedia('(max-width: 860px)');
+
+    function setDesktopSidebarCollapsed(collapsed) {
+        if (!desktopSidebarShell || !staffSidebar) return;
+        desktopSidebarShell.classList.toggle('staff-sidebar-collapsed', collapsed);
+        staffSidebar.inert = collapsed;
+        staffSidebar.setAttribute('aria-hidden', String(collapsed));
+        [sidebarCollapse, sidebarReveal].forEach((button) => {
+            if (button) button.setAttribute('aria-expanded', String(!collapsed));
+        });
+    }
+
+    if (sidebarCollapse) sidebarCollapse.addEventListener('click', () => {
+        setDesktopSidebarCollapsed(true);
+        sidebarReveal?.focus();
+    });
+    if (sidebarReveal) sidebarReveal.addEventListener('click', () => {
+        setDesktopSidebarCollapsed(false);
+        sidebarCollapse?.focus();
+    });
+
+    function syncSidebarBreakpoint() {
+        if (!mobileBreakpoint.matches) return;
+        setDesktopSidebarCollapsed(false);
+    }
+    mobileBreakpoint.addEventListener('change', syncSidebarBreakpoint);
+    syncSidebarBreakpoint();
 
     function closeMobileSidebar() {
         document.body.classList.remove('staff-sidebar-open');
@@ -83,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 profile.removeAttribute('data-open');
                 profileTrigger.setAttribute('aria-expanded', 'false');
             } else {
+                closeStaffNotifMenu();
                 profile.setAttribute('data-open', '');
                 profileTrigger.setAttribute('aria-expanded', 'true');
             }
@@ -96,6 +128,215 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (e.key === 'Escape') closeProfileMenu();
         });
     }
+
+    // Staff notifications use the account-scoped feed provided by the
+    // staff_list_notifications RPC. Keep the same bell/dropdown behavior as
+    // the customer dashboard, with staff-specific feed and panel targets.
+    const staffNotif = document.querySelector('[data-staff-notif]');
+    const staffNotifTrigger = document.querySelector('[data-staff-notif-trigger]');
+    const staffNotifList = document.querySelector('[data-staff-notif-list]');
+    const staffNotifDot = document.querySelector('[data-staff-notif-dot]');
+    const staffNotifSelect = document.querySelector('[data-staff-notif-select]');
+    const staffNotifSelectedLabel = document.querySelector('[data-staff-notif-selected]');
+    const staffNotifMarkSelected = document.querySelector('[data-staff-notif-mark-selected]');
+    const staffNotifPagination = document.querySelector('[data-staff-notif-pagination]');
+    const staffNotifPageLabel = document.querySelector('[data-staff-notif-page]');
+    const staffNotifPrev = document.querySelector('[data-staff-notif-prev]');
+    const staffNotifNext = document.querySelector('[data-staff-notif-next]');
+    const STAFF_NOTIF_LIMIT = 10;
+    let staffNotifGeneration = 0;
+    let staffNotifUnreadCount = 0;
+    let staffNotifPage = 0;
+    let staffNotifTotalCount = 0;
+    let staffNotifMarkSelectedInProgress = false;
+    const selectedStaffNotifKeys = new Set();
+    let staffNotifItems = [];
+
+    function closeStaffNotifMenu() {
+        staffNotif?.removeAttribute('data-open');
+        staffNotifTrigger?.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncStaffNotificationSelection() {
+        const checkboxes = staffNotifList?.querySelectorAll('[data-staff-notif-select-row]') || [];
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectedStaffNotifKeys.has(checkbox.dataset.staffNotifSelectRow);
+            checkbox.closest('.staff-notif-row')?.classList.toggle('is-selected', checkbox.checked);
+        });
+        if (staffNotifSelectedLabel) staffNotifSelectedLabel.textContent = `${selectedStaffNotifKeys.size} selected`;
+        if (staffNotifMarkSelected) staffNotifMarkSelected.disabled = staffNotifMarkSelectedInProgress || selectedStaffNotifKeys.size === 0;
+    }
+
+    function applyStaffNotificationSelection(mode) {
+        selectedStaffNotifKeys.clear();
+        staffNotifItems.filter(item => mode === 'all' || (mode === 'read' && item.read_at) || (mode === 'unread' && !item.read_at))
+            .forEach(item => selectedStaffNotifKeys.add(item.key));
+        syncStaffNotificationSelection();
+    }
+
+    function staffNotificationCategoryLabel(value) {
+        const category = String(value || '').trim().toLowerCase();
+        const labels = {
+            announcement: 'Announcement',
+            arrival: 'Arrival',
+            maintenance: 'Maintenance',
+            booking_created: 'New booking',
+            walkin_created: 'Walk-in',
+            payment_recorded: 'Payment',
+            time_in: 'Check-in',
+            time_out: 'Check-out',
+            unattended: 'Attendance',
+        };
+        if (labels[category]) return labels[category];
+        return category.replace(/[_-]+/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase()) || 'Update';
+    }
+
+    function staffNotificationTime(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.valueOf())
+            ? 'Date unavailable'
+            : date.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    function renderStaffNotification(item, escape) {
+        const title = String(item.title || 'Notification');
+        const body = String(item.body || '');
+        const category = String(item.category || 'Update');
+        const categoryClass = category.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const readLabel = item.read_at ? 'Read' : 'Unread';
+        const key = String(item.key || '');
+        return `<div class="staff-notif-row staff-notif-persistent ${item.read_at ? 'is-read' : 'is-unread'}" data-staff-notif-key="${escape(key)}"><input type="checkbox" class="staff-notif-select-row" data-staff-notif-select-row="${escape(key)}" aria-label="Select ${escape(title)}"><button type="button" class="staff-notif-item" data-staff-notif-open data-staff-notif-href="${escape(item.href || '')}"><span class="staff-notif-item-dot ${escape(categoryClass)}" aria-hidden="true"></span><span class="staff-notif-row-body"><strong>${escape(title)}</strong><span>${escape(body)}</span><small>${escape(staffNotificationCategoryLabel(category))} · ${escape(staffNotificationTime(item.created_at))} · ${readLabel}</small></span></button></div>`;
+    }
+
+    async function loadStaffNotifications() {
+        if (!staffNotifList || !window.sb) return;
+        const generation = ++staffNotifGeneration;
+        selectedStaffNotifKeys.clear();
+        if (staffNotifSelect) staffNotifSelect.value = 'none';
+        syncStaffNotificationSelection();
+        staffNotifList.innerHTML = '<p class="staff-notif-empty">Loading notifications…</p>';
+        try {
+            const { data, error } = await window.sb.rpc('staff_list_notifications', {
+                p_search: '', p_offset: staffNotifPage * STAFF_NOTIF_LIMIT, p_limit: STAFF_NOTIF_LIMIT,
+            });
+            if (generation !== staffNotifGeneration) return;
+            if (error) throw error;
+            const result = Array.isArray(data) ? data[0] : data;
+            if (!result || !Array.isArray(result.rows)) throw new Error('The notifications response is incomplete.');
+            staffNotifTotalCount = Number(result.total_count) || 0;
+            staffNotifItems = result.rows.map(item => ({
+                key: String(item.key || ''), title: String(item.title || 'Notification'), body: String(item.body || ''),
+                category: String(item.category || 'Update'), created_at: item.created_at || null,
+                read_at: item.read_at || null, href: item.href || '',
+            }));
+            const escape = window.escapeHtml || (value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])));
+            staffNotifList.innerHTML = staffNotifItems.length
+                ? staffNotifItems.map(item => renderStaffNotification(item, escape)).join('')
+                : '<p class="staff-notif-empty">No notifications yet.</p>';
+            staffNotifUnreadCount = Number(result.unread_count) || 0;
+            if (staffNotifDot) staffNotifDot.hidden = staffNotifUnreadCount === 0;
+            syncStaffNotificationSelection();
+            if (staffNotifPagination) staffNotifPagination.hidden = staffNotifTotalCount <= STAFF_NOTIF_LIMIT;
+            if (staffNotifPageLabel) staffNotifPageLabel.textContent = `Page ${staffNotifPage + 1} of ${Math.max(1, Math.ceil(staffNotifTotalCount / STAFF_NOTIF_LIMIT))}`;
+            if (staffNotifPrev) staffNotifPrev.disabled = staffNotifPage === 0;
+            if (staffNotifNext) staffNotifNext.disabled = (staffNotifPage + 1) * STAFF_NOTIF_LIMIT >= staffNotifTotalCount;
+        } catch (error) {
+            if (generation !== staffNotifGeneration) return;
+            console.error('[staff dashboard] notifications could not be loaded', error);
+            staffNotifItems = [];
+            staffNotifList.innerHTML = '<p class="staff-notif-empty">Notifications could not be loaded. Try again.</p>';
+            if (staffNotifDot) staffNotifDot.hidden = true;
+            if (staffNotifPagination) staffNotifPagination.hidden = true;
+        }
+    }
+
+    staffNotifList?.addEventListener('change', event => {
+        const checkbox = event.target.closest('[data-staff-notif-select-row]');
+        if (!checkbox) return;
+        if (checkbox.checked) selectedStaffNotifKeys.add(checkbox.dataset.staffNotifSelectRow);
+        else selectedStaffNotifKeys.delete(checkbox.dataset.staffNotifSelectRow);
+        syncStaffNotificationSelection();
+    });
+
+    staffNotifSelect?.addEventListener('change', () => applyStaffNotificationSelection(staffNotifSelect.value));
+
+    if (staffNotifTrigger && staffNotif) {
+        staffNotifTrigger.addEventListener('click', event => {
+            event.stopPropagation();
+            if (staffNotif.hasAttribute('data-open')) closeStaffNotifMenu();
+            else {
+                closeProfileMenu();
+                staffNotif.setAttribute('data-open', '');
+                staffNotifTrigger.setAttribute('aria-expanded', 'true');
+                loadStaffNotifications();
+            }
+        });
+        document.addEventListener('click', event => {
+            if (!staffNotif.contains(event.target)) closeStaffNotifMenu();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeStaffNotifMenu();
+        });
+    }
+
+    staffNotifPrev?.addEventListener('click', () => {
+        if (staffNotifPage > 0) {
+            staffNotifPage -= 1;
+            loadStaffNotifications();
+        }
+    });
+    staffNotifNext?.addEventListener('click', () => {
+        if ((staffNotifPage + 1) * STAFF_NOTIF_LIMIT < staffNotifTotalCount) {
+            staffNotifPage += 1;
+            loadStaffNotifications();
+        }
+    });
+
+    staffNotifMarkSelected?.addEventListener('click', async () => {
+        if (staffNotifMarkSelectedInProgress || !window.sb || !selectedStaffNotifKeys.size) return;
+        staffNotifMarkSelectedInProgress = true;
+        syncStaffNotificationSelection();
+        try {
+            const results = await Promise.all(Array.from(selectedStaffNotifKeys, key =>
+                window.sb.rpc('mark_notification_read', { p_key: key })
+            ));
+            const failed = results.find(result => result.error || result.data === false);
+            if (failed) throw failed.error || new Error('A notification could not be marked read.');
+            await loadStaffNotifications();
+        } catch (error) {
+            console.error('[staff dashboard] selected notifications could not be marked read', error);
+            window.InigoToast?.show(error.message || 'Could not mark selected notifications as read.', true);
+        } finally {
+            staffNotifMarkSelectedInProgress = false;
+            syncStaffNotificationSelection();
+        }
+    });
+
+    staffNotifList?.addEventListener('click', async event => {
+        const openButton = event.target.closest('[data-staff-notif-open]');
+        const item = openButton?.closest('[data-staff-notif-key]');
+        if (!openButton || !item || !window.sb) return;
+        openButton.disabled = true;
+        try {
+            const { data, error } = await window.sb.rpc('mark_notification_read', { p_key: item.dataset.staffNotifKey });
+            if (error || data === false) throw error || new Error('Notification could not be marked read.');
+            const href = openButton.dataset.staffNotifHref || '';
+            await loadStaffNotifications();
+            closeStaffNotifMenu();
+            if (!href) return;
+            const target = new URL(href, window.location.href);
+            if (target.origin !== window.location.origin) return;
+            const targetPanel = ({ '#booking-overview': 'overview', '#court-schedule': 'schedule', '#transactions': 'transactions' })[target.hash];
+            if (targetPanel && document.querySelector(`[data-staff-panel="${targetPanel}"]`)) setActivePanel(targetPanel);
+        } catch (error) {
+            openButton.disabled = false;
+            console.error('[staff dashboard] notification read state could not be saved', error);
+            window.InigoToast?.show('Could not mark notification as read.', true);
+        }
+    });
+    document.addEventListener('inigosync:profile-ready', loadStaffNotifications);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadStaffNotifications(); });
+    window.setInterval(() => { if (!document.hidden) loadStaffNotifications(); }, 60000);
 
     // Logout is wired in includes/authGuard.js (real Supabase sign-out) via
     // document.querySelectorAll('[data-staff-logout]') — Revision S1,
@@ -544,14 +785,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ------------------------------------------------------------------
-    // Booking Overview — Revision S1, decision S1. Today's + upcoming
-    // bookings (pending/confirmed/completed) merged with today's walk-ins
-    // into one list, newest-start-first. Confirm/Decline/Time-Out are gone
-    // entirely; the only action is Time-In, and status is always derived
-    // (staffDerivedStatus() above), never read straight off `status`.
+    // Booking Overview — keep the full merged set for stats and action
+    // lookup, while showing only rows with an actionable Time-In/Time-Out.
+    // Status remains derived (staffDerivedStatus() above), never read
+    // straight off `status`.
     // ------------------------------------------------------------------
     const overviewTableBody = document.querySelector('[data-staff-table="overview"] tbody');
+    const overviewSearchInput = document.querySelector('[data-staff-overview-search]');
+    const overviewSportSelect = document.querySelector('[data-staff-overview-sport]');
+    const overviewDateSelect = document.querySelector('[data-staff-overview-date]');
+    const overviewTimeSelect = document.querySelector('[data-staff-overview-time]');
     let overviewRows = [];
+
+    function overviewActionEntries() {
+        return overviewRows
+            .map((row, index) => ({ row, index }))
+            .filter(({ row }) => staffHasOverviewAction(row));
+    }
+
+    function renderOverviewSportOptions(actionEntries) {
+        if (!overviewSportSelect) return;
+        const selected = overviewSportSelect.value;
+        const sports = Array.from(new Set(actionEntries
+            .map(({ row }) => String(row.sports || '').trim())
+            .filter(Boolean)))
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        overviewSportSelect.innerHTML = '<option value="">All sports</option>' + sports.map((sport) =>
+            `<option value="${window.escapeHtml(sport)}">${window.escapeHtml(sport)}</option>`
+        ).join('');
+        overviewSportSelect.value = sports.includes(selected) ? selected : '';
+    }
+
+    function overviewMatchesDate(row, filter) {
+        if (!filter || filter === 'all') return true;
+        const instant = new Date(row.time_date);
+        if (Number.isNaN(instant.getTime())) return false;
+        const rowDate = manilaDate(instant);
+        const today = todayDateInputValue();
+        if (filter === 'today') return rowDate === today;
+        if (filter === 'tomorrow') {
+            const tomorrow = new Date(manilaDateTime(today, 0).getTime() + 86400000);
+            return rowDate === manilaDate(tomorrow);
+        }
+        if (filter === 'next7') {
+            const start = manilaDateTime(today, 0).getTime();
+            const rowStart = manilaDateTime(rowDate, 0).getTime();
+            return rowStart >= start && rowStart < start + 7 * 86400000;
+        }
+        return true;
+    }
+
+    function overviewHour(row) {
+        const date = new Date(row.time_date);
+        if (Number.isNaN(date.getTime())) return null;
+        return Number(new Intl.DateTimeFormat('en-US', {
+            timeZone: STAFF_TIME_ZONE, hour: '2-digit', hourCycle: 'h23',
+        }).format(date));
+    }
+
+    function overviewMatchesTime(row, filter) {
+        if (!filter || filter === 'all') return true;
+        const hour = overviewHour(row);
+        if (hour === null) return false;
+        if (filter === 'morning') return hour >= 5 && hour < 12;
+        if (filter === 'afternoon') return hour >= 12 && hour < 17;
+        if (filter === 'evening') return hour >= 17 || hour < 5;
+        return true;
+    }
+
+    function renderFilteredOverview(actionEntries = overviewActionEntries()) {
+        if (!overviewTableBody) return;
+        const query = (overviewSearchInput?.value || '').trim().toLocaleLowerCase();
+        const sport = overviewSportSelect?.value || '';
+        const dateFilter = overviewDateSelect?.value || 'all';
+        const timeFilter = overviewTimeSelect?.value || 'all';
+        const visible = actionEntries.filter(({ row }) => {
+            const matchesSearch = !query
+                || String(row.customerName || '').toLocaleLowerCase().includes(query)
+                || staffOverviewIdLabel(row).toLocaleLowerCase().includes(query);
+            const matchesSport = !sport || String(row.sports || '').trim() === sport;
+            return matchesSearch && matchesSport
+                && overviewMatchesDate(row, dateFilter) && overviewMatchesTime(row, timeFilter);
+        });
+
+        overviewTableBody.innerHTML = '';
+        if (!visible.length) {
+            const message = actionEntries.length
+                ? 'No actionable bookings match these filters.'
+                : 'No bookings need an action right now.';
+            overviewTableBody.innerHTML = `<tr><td colspan="7" class="staff-table-message">${message}</td></tr>`;
+            return;
+        }
+        visible.forEach(({ row, index }) => {
+            const tr = renderOverviewRow(row);
+            tr.dataset.rowIndex = String(index);
+            overviewTableBody.appendChild(tr);
+        });
+    }
 
     // Fetches with select('*') rather than an explicit column list — this
     // table's exact shape (whether database/schema/004_staff_module.sql's
@@ -615,18 +945,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         const bookingsToday = todayRows.filter((r) => r.sourceType === 'booking').length;
         const walkinsToday = todayRows.filter((r) => r.sourceType === 'walkin').length;
         const inPlayNow = todayRows.filter((r) => staffDerivedStatus(r) === 'inplay').length;
-        const stillToCome = todayRows.filter((r) => staffDerivedStatus(r) === 'booked').length;
+        const unattendedToday = todayRows.filter((r) => r.sourceType === 'booking' && staffDerivedStatus(r) === 'unattended').length;
 
         setStat('bookings-today', bookingsToday);
         setStat('walkins-today', walkinsToday);
         setStat('inplay-now', inPlayNow);
-        setStat('still-to-come', stillToCome);
+        setStat('unattended-today', unattendedToday);
     }
 
     function staffActionCellHtml(row, status) {
         if (staffCanTimeIn(row, status)) return '<button type="button" class="staff-mini-btn is-primary" data-staff-action="timein">Time-In</button>';
         if (status === 'inplay') return '<button type="button" class="staff-mini-btn" data-staff-action="timeout">Time-Out</button>';
-        return '';
+        return `<span class="staff-status ${window.escapeHtml(status)}">${window.escapeHtml(staffStatusLabel(status))}</span>`;
+    }
+
+    function staffHasOverviewAction(row) {
+        const status = staffDerivedStatus(row);
+        return staffCanTimeIn(row, status) || status === 'inplay';
+    }
+
+    function staffOverviewIdLabel(row) {
+        const idField = row.sourceType === 'booking' ? 'booking_id' : walkinIdField(row.raw);
+        const rawId = idField ? row.raw[idField] : null;
+        if (rawId === null || rawId === undefined || rawId === '') return '—';
+        return `${row.sourceType === 'booking' ? 'B' : 'W'}-${rawId}`;
     }
 
     // Every value below can be customer-controlled (customer name, a
@@ -637,26 +979,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const fallbackName = row.sourceType === 'walkin' ? 'Walk-in customer' : 'Customer';
         const customerName = window.escapeHtml(row.customerName || fallbackName);
         const courtLabel = window.escapeHtml(row.courts || '—');
-        const unitLabel = row.unit ? window.escapeHtml(row.unit) : '';
-        const sourceLabel = row.sourceType === 'walkin' ? 'Walk-in' : 'Online';
-        const sourceClass = row.sourceType === 'walkin' ? 'walkin' : 'online';
+        const unitLabel = row.unit ? `<span class="staff-cell-sub">${window.escapeHtml(row.unit)}</span>` : '';
         // Revision S2 (implementation_plan.md, S14) — Paid · <method> / Due
         // ₱X / Rate TBA, derived from real amounts instead of just the
         // source label (staffPaymentLabel(), Shared helpers section above).
-        const paymentLabel = window.escapeHtml(staffPaymentLabel(row));
-        const statusLabel = window.escapeHtml(staffStatusLabel(status));
+        const balance = timeInPaymentInfo(row).balance;
+        const balanceLabel = balance === null ? 'Amount pending' : formatStaffPeso(balance);
 
         const tr = document.createElement('tr');
         tr.dataset.status = status;
         tr.innerHTML = `
+            <td class="staff-cell-ref">${window.escapeHtml(staffOverviewIdLabel(row))}</td>
             <td class="staff-cell-main">${customerName}</td>
             <td>${window.escapeHtml(row.sports || '—')}</td>
-            <td>${courtLabel}</td>
-            <td>${unitLabel || '—'}</td>
+            <td>${courtLabel}${unitLabel}</td>
             <td>${window.escapeHtml(formatOverviewTimeCell(row))}</td>
-            <td><span class="staff-status ${sourceClass}">${sourceLabel}</span></td>
-            <td>${paymentLabel}</td>
-            <td><span class="staff-status ${window.escapeHtml(status)}">${statusLabel}</span></td>
+            <td>${window.escapeHtml(balanceLabel)}</td>
             <td>${staffActionCellHtml(row, status)}</td>
         `;
         return tr;
@@ -667,7 +1005,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const [bookingsRes, walkinsRes] = await Promise.all([fetchOverviewBookings(), fetchTodayWalkins()]);
         if (!bookingsRes.ok) {
-            overviewTableBody.innerHTML = '<tr><td colspan="9" class="staff-table-message">Could not load bookings right now.</td></tr>';
+            overviewTableBody.innerHTML = '<tr><td colspan="7" class="staff-table-message">Could not load bookings right now.</td></tr>';
             return;
         }
 
@@ -681,47 +1019,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         overviewRows = merged;
         renderOverviewStats(merged);
-        renderArrivalActions(merged);
-
-        overviewTableBody.innerHTML = '';
-        if (merged.length === 0) {
-            overviewTableBody.innerHTML = '<tr><td colspan="9" class="staff-table-message">No bookings yet.</td></tr>';
-            wireFilterableTable('overview');
-            return;
-        }
-
-        merged.forEach((row, i) => {
-            const tr = renderOverviewRow(row);
-            tr.dataset.rowIndex = String(i);
-            overviewTableBody.appendChild(tr);
-        });
-
-        wireFilterableTable('overview');
+        const actionEntries = overviewActionEntries();
+        renderOverviewSportOptions(actionEntries);
+        renderFilteredOverview(actionEntries);
     }
 
-    const arrivalsTableBody = document.querySelector('[data-staff-table="arrivals"] tbody');
-    function renderArrivalActions(rows) {
-        if (!arrivalsTableBody) return;
-        const arrivals = rows.filter((row) => {
-            const status = staffDerivedStatus(row);
-            const payment = timeInPaymentInfo(row);
-            return status === 'booked' && (staffCanTimeIn(row, status) || (payment.balance !== null && payment.balance > 0));
-        }).sort((a, b) => new Date(a.time_date) - new Date(b.time_date));
-        arrivalsTableBody.innerHTML = arrivals.length ? '' : '<tr><td colspan="6" class="staff-table-message">No arrivals need action right now.</td></tr>';
-        arrivals.forEach((row) => {
-            const status = staffDerivedStatus(row);
-            const info = timeInPaymentInfo(row);
-            const tr = document.createElement('tr');
-            tr.dataset.rowIndex = String(overviewRows.indexOf(row));
-            tr.innerHTML = `<td class="staff-cell-main">${window.escapeHtml(row.customerName || 'Customer')}</td>
-                <td>${window.escapeHtml(row.sports || '—')}</td>
-                <td>${window.escapeHtml(row.courts || '—')}${row.unit ? `<span class="staff-cell-sub">${window.escapeHtml(row.unit)}</span>` : ''}</td>
-                <td>${window.escapeHtml(formatOverviewTimeCell(row))}</td>
-                <td>${info.balance === null ? 'Amount pending' : window.escapeHtml(formatStaffPeso(info.balance))}</td>
-                <td>${staffCanTimeIn(row, status) ? '<button type="button" class="staff-mini-btn is-primary" data-staff-action="timein">Collect &amp; Time-In</button>' : '<span class="staff-status booked">Upcoming</span>'}</td>`;
-            arrivalsTableBody.appendChild(tr);
-        });
-    }
+    [overviewSearchInput, overviewSportSelect, overviewDateSelect, overviewTimeSelect].forEach((control) => {
+        if (!control) return;
+        control.addEventListener(control === overviewSearchInput ? 'input' : 'change', () => renderFilteredOverview());
+    });
 
     // Revision S2 (implementation_plan.md, decisions S11/S14) — Time-In no
     // longer writes checked_in_at directly from this row action; it opens
@@ -735,7 +1041,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // now made once instead of being duplicated for Transaction Records'
     // identical button (wired the same way further below).
     wireTimeInButtons(overviewTableBody, () => overviewRows);
-    wireTimeInButtons(arrivalsTableBody, () => overviewRows);
 
     refreshBookingOverview();
     document.addEventListener('inigosync:profile-ready', refreshBookingOverview);
@@ -3637,6 +3942,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Change Password — 2-step wizard (decision S9) ----
     const STAFF_PW_MIN_LENGTH = 8;
+    const STAFF_PW_MAX_LENGTH = 15;
     const pwStepPanels = document.querySelectorAll('[data-staff-pw-step]');
     const pwStepIndicators = document.querySelectorAll('[data-staff-pw-step-indicator]');
     const pwBackBtn = document.querySelector('[data-staff-pw-back]');
@@ -3645,6 +3951,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pwCurrentInput = document.querySelector('[data-staff-pw-current]');
     const pwNewInput = document.querySelector('[data-staff-pw-new]');
     const pwConfirmInput = document.querySelector('[data-staff-pw-confirm]');
+    const pwRules = document.querySelector('[data-staff-pw-rules]');
+    let staffPwVerificationInProgress = false;
+    let staffPwSaveInProgress = false;
+    let staffPwVerificationGeneration = 0;
+
+    function checkStaffPasswordPolicy(value) {
+        const password = typeof value === 'string' ? value : '';
+        return {
+            length: password.length >= STAFF_PW_MIN_LENGTH && password.length <= STAFF_PW_MAX_LENGTH,
+            upper: /[A-Z]/.test(password),
+            lower: /[a-z]/.test(password),
+            number: /[0-9]/.test(password),
+            special: /[ !"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(password),
+        };
+    }
+
+    function renderStaffPasswordRules() {
+        const checks = checkStaffPasswordPolicy(pwNewInput?.value);
+        pwRules?.querySelectorAll('[data-pw-rule]').forEach((item) => {
+            const met = Boolean(checks[item.dataset.pwRule]);
+            item.classList.toggle('is-met', met);
+            item.setAttribute('aria-label', `${item.textContent.trim()}: ${met ? 'met' : 'not met'}`);
+        });
+        return Object.values(checks).every(Boolean);
+    }
+
+    async function verifyStaffCurrentPassword() {
+        try {
+            const { data: { session }, error: sessionError } = await window.sb.auth.getSession();
+            if (sessionError || !session?.user?.id || !session.user.email) throw new Error('Your sign-in session could not be verified. Please sign in again.');
+            const expectedUserId = session.user.id;
+            const { data, error } = await window.sb.auth.signInWithPassword({ email: session.user.email, password: pwCurrentInput.value });
+            if (error) {
+                window.InigoToast?.show('Current password is incorrect.', true);
+                return false;
+            }
+            if (data?.user?.id !== expectedUserId) {
+                await window.sb.auth.signOut();
+                throw new Error('The verified account does not match this dashboard. Please sign in again.');
+            }
+            return true;
+        } catch (error) {
+            window.InigoToast?.show(error.message || 'Could not verify your current password.', true);
+            return false;
+        }
+    }
 
     let staffPwWizardStep = 1;
 
@@ -3662,11 +4014,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (staffPasswordSaveBtn) staffPasswordSaveBtn.hidden = staffPwWizardStep !== 2;
         if (pwNextBtn) {
             pwNextBtn.hidden = staffPwWizardStep !== 1;
-            pwNextBtn.disabled = !(pwCurrentInput && pwCurrentInput.value !== '');
+            pwNextBtn.disabled = staffPwVerificationInProgress || !(pwCurrentInput && pwCurrentInput.value !== '');
         }
         if (staffPasswordSaveBtn) {
-            const matches = Boolean(pwNewInput?.value && pwNewInput.value.length >= STAFF_PW_MIN_LENGTH && pwNewInput.value === pwConfirmInput?.value);
-            staffPasswordSaveBtn.disabled = staffPwWizardStep !== 2 || !matches;
+            const matches = Boolean(pwNewInput?.value && renderStaffPasswordRules() && pwNewInput.value === pwConfirmInput?.value);
+            staffPasswordSaveBtn.disabled = staffPwWizardStep !== 2 || !matches || staffPwVerificationInProgress || staffPwSaveInProgress;
         }
     }
 
@@ -3676,30 +4028,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function resetStaffPwWizard() {
+        invalidateStaffPwVerification();
         [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => { if (input) input.value = ''; });
         goToStaffPwStep(1);
     }
 
-    [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => input?.addEventListener('input', renderStaffPwWizard));
+    function invalidateStaffPwVerification() {
+        staffPwVerificationGeneration += 1;
+        staffPwVerificationInProgress = false;
+        staffPwSaveInProgress = false;
+        if (pwNextBtn) pwNextBtn.textContent = 'Next';
+    }
+
+    [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => input?.addEventListener('input', () => {
+        if (pwCurrentInput === input && (staffPwVerificationInProgress || staffPwSaveInProgress)) invalidateStaffPwVerification();
+        renderStaffPwWizard();
+    }));
     if (pwNextBtn) {
         pwNextBtn.addEventListener('click', async () => {
-            if (pwNextBtn.disabled) return;
-            pwNextBtn.disabled = true;
+            if (pwNextBtn.disabled || !window.sb || !pwCurrentInput?.value) return;
+            const generation = ++staffPwVerificationGeneration;
+            staffPwVerificationInProgress = true;
             pwNextBtn.textContent = 'Verifying…';
-            const { data: pwSessionData } = await window.sb.auth.getSession();
-            const verifyEmail = pwSessionData?.session?.user?.email || window.inigosyncProfile?.email;
-            const { error } = await window.sb.auth.signInWithPassword({ email: verifyEmail, password: pwCurrentInput.value });
+            renderStaffPwWizard();
+            const verified = await verifyStaffCurrentPassword();
+            if (generation !== staffPwVerificationGeneration) return;
+            staffPwVerificationInProgress = false;
             pwNextBtn.textContent = 'Next';
-            if (error) {
-                window.InigoToast?.show('Current password is incorrect.', true);
-                pwNextBtn.disabled = false;
-                pwCurrentInput?.focus();
-                return;
-            }
-            goToStaffPwStep(2);
+            renderStaffPwWizard();
+            if (verified) goToStaffPwStep(2);
         });
     }
-    if (pwBackBtn) pwBackBtn.addEventListener('click', () => goToStaffPwStep(1));
+    if (pwBackBtn) pwBackBtn.addEventListener('click', () => {
+        invalidateStaffPwVerification();
+        goToStaffPwStep(1);
+    });
 
     // Establishes the correct initial hidden/disabled state for the nav
     // buttons and paints the step-1 indicator.
@@ -3707,6 +4070,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (staffPasswordSaveBtn) {
         staffPasswordSaveBtn.addEventListener('click', async () => {
+            if (staffPasswordSaveBtn.disabled) return;
             if (!window.sb || !window.inigosyncProfile) return;
             const currentPassword = pwCurrentInput?.value;
             const newPassword = pwNewInput?.value;
@@ -3717,8 +4081,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 goToStaffPwStep(1);
                 return;
             }
-            if (!newPassword || newPassword.length < STAFF_PW_MIN_LENGTH) {
-                window.InigoToast?.show(`New password must be at least ${STAFF_PW_MIN_LENGTH} characters.`, true);
+            if (!renderStaffPasswordRules()) {
+                window.InigoToast?.show('New password must be 8–15 characters and include an uppercase letter, a lowercase letter, a number and a special character.', true);
                 return;
             }
             if (newPassword !== confirmPassword) {
@@ -3727,32 +4091,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (!window.confirm('Are you sure you want to save this new password?')) return;
 
-            staffPasswordSaveBtn.disabled = true;
+            staffPwSaveInProgress = true;
+            const generation = ++staffPwVerificationGeneration;
+            renderStaffPwWizard();
 
             // Re-verify against the AUTH session's OWN current email first,
             // falling back to profiles.email only if no session email is
             // available (same S3-fix reasoning as
             // includes/owner_dashboard.js's password wizard).
-            const { data: pwSessionData } = await window.sb.auth.getSession();
-            const verifyEmail = pwSessionData?.session?.user?.email || window.inigosyncProfile.email;
-
-            const { error: verifyError } = await window.sb.auth.signInWithPassword({ email: verifyEmail, password: currentPassword });
-            if (verifyError) {
-                staffPasswordSaveBtn.disabled = false;
-                window.InigoToast?.show('Current password is incorrect.', true);
+            const verified = await verifyStaffCurrentPassword();
+            if (generation !== staffPwVerificationGeneration) {
+                renderStaffPwWizard();
+                return;
+            }
+            if (!verified) {
+                staffPwSaveInProgress = false;
+                renderStaffPwWizard();
                 goToStaffPwStep(1);
                 return;
             }
 
-            const { error } = await window.sb.auth.updateUser({ password: newPassword });
-            staffPasswordSaveBtn.disabled = false;
-
-            if (error) {
+            try {
+                const { error } = await window.sb.auth.updateUser({ password: newPassword });
+                if (error) throw error;
+            } catch (error) {
                 window.InigoToast?.show(error.message || 'Could not update your password.', true);
+                staffPwSaveInProgress = false;
+                renderStaffPwWizard();
                 return;
             }
 
             resetStaffPwWizard();
+            staffPwSaveInProgress = false;
+            renderStaffPwWizard();
             window.InigoToast?.show('Password updated.');
         });
     }
