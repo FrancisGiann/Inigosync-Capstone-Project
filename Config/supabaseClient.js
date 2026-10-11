@@ -45,7 +45,10 @@
             else sessionStorage.setItem(sessionOnlyKey, '1');
             if (current !== null) storage.setItem(storageKey, current);
             else storage.removeItem(storageKey);
-        }
+        },
+        isRememberSession() {
+            return !sessionOnly();
+        },
     };
 
     window.sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

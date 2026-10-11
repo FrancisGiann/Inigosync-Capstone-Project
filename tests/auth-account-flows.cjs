@@ -1,8 +1,10 @@
 // No real users, credentials, emails or SMS: provider responses are deterministic fixtures.
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 function mockClient(options) {
-    const user = { id: 'fixture-user', identities: [{ provider: 'email' }] };
+    const user = { id: options.userId || 'fixture-user', identities: [{ provider: 'email' }], app_metadata: { provider: options.provider || 'email' } };
     let authUserEmail = 'customer@example.test';
     let currentEmailChangeOtp = '111111';
     let newEmailChangeOtp = '222222';
@@ -12,7 +14,38 @@ function mockClient(options) {
         calls.push({ kind, data }); sessionStorage.setItem('fixture-calls', JSON.stringify(calls));
     };
     if (options.oauth || options.oauthReturn) sessionStorage.setItem('inigosync-oauth-pending', '1');
-    window.InigoAuthStorage = { setRememberSession() {} };
+    const trustedKey = (role, userId = user.id) => `inigosync-trusted-device:${role}:${userId}`;
+    window.InigoAuthStorage = {
+        setRememberSession(remember) {
+            record('rememberSessionChoice', { remember });
+            if (remember) sessionStorage.removeItem('inigosync-session-only');
+            else sessionStorage.setItem('inigosync-session-only', '1');
+        },
+        isRememberSession: () => sessionStorage.getItem('inigosync-session-only') !== '1',
+        isDeviceTrusted(userId, role, now = Date.now()) {
+            try {
+                const key = trustedKey(role, userId);
+                const record = JSON.parse(localStorage.getItem(key) || 'null');
+                if (!record || record.version !== 1 || !Number.isFinite(record.lastActivityAt)
+                    || now >= record.lastActivityAt + 7 * 24 * 60 * 60 * 1000) {
+                    localStorage.removeItem(key);
+                    return false;
+                }
+                return true;
+            } catch (_) { return false; }
+        },
+        rememberDevice(userId, role, now = Date.now()) {
+            localStorage.setItem(trustedKey(role, userId), JSON.stringify({ version: 1, lastActivityAt: now }));
+            return true;
+        },
+        clearDeviceTrust(userId) {
+            for (const role of ['customer', 'staff', 'admin']) localStorage.removeItem(trustedKey(role, userId));
+            localStorage.removeItem(`inigosync-trusted-device:${userId}`);
+        },
+        touchDeviceTrust(userId, role, now = Date.now()) {
+            return this.isDeviceTrusted(userId, role, now) && this.rememberDevice(userId, role, now);
+        }
+    };
     window.sb = {
         rpc: (name, data) => {
             if (name === 'record_account_session_event') {
@@ -41,7 +74,11 @@ function mockClient(options) {
             },
             onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
             signOut: async () => { record('signOut'); session = null; return {}; },
-            signInWithPassword: async () => { session = { user }; return { data: { user, session } }; },
+            signInWithPassword: async () => {
+                record('passwordSessionCreated');
+                if (options.passwordError) return { data: {}, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } };
+                session = { user }; return { data: { user, session } };
+            },
             signInWithOtp: async data => { record('emailOtp', data); return {}; },
             signUp: async data => {
                 record('signUp', data);
@@ -69,7 +106,9 @@ function mockClient(options) {
                     }
                     return { error: { message: 'Email change token expired' } };
                 }
-                return data.token === '123456' ? {} : { error: { message: 'Token expired' } };
+                if (data.token !== '123456') return { error: { message: 'Token expired' } };
+                session = { user };
+                return { data: { user, session } };
             },
             resend: async data => {
                 record('resend', data);
@@ -85,6 +124,23 @@ function mockClient(options) {
         functions: {
             invoke: async (name, args) => {
                 record('function', { name, body: args?.body });
+                if (name === 'email-mfa') {
+                    const action = args?.body?.action;
+                    if (action === 'begin') {
+                        const trusted = options.trustedDeviceUserId === user.id && args.body.remember === true;
+                        return { data: trusted ? { verified: true, remembered: true }
+                            : { verified: false, challenge_id: 'challenge-fixture', resent: true }, error: null };
+                    }
+                    if (action === 'verify') {
+                        record('emailMfaVerify', args.body);
+                        return args.body.code === '123456'
+                            ? { data: { verified: true, remembered: args.body.remember === true }, error: null }
+                            : { data: null, error: { message: 'That code did not match or has expired.' } };
+                    }
+                    if (action === 'check') return { data: { verified: true }, error: null };
+                    if (action === 'revoke') return { data: { verified: true }, error: null };
+                    return { data: null, error: { message: 'Invalid email verification request.' } };
+                }
                 if (name !== 'validate-contact-phone') return { data: {}, error: null };
                 if (options.validationError) {
                     const message = options.validationError === true ? 'Phone validation is unavailable.' : options.validationError;
@@ -140,6 +196,245 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        if (process.env.REMEMBER_DEVICE_ONLY === '1') {
+            const makeStorage = () => {
+                const values = new Map();
+                return {
+                    getItem: key => values.has(key) ? values.get(key) : null,
+                    setItem: (key, value) => values.set(key, String(value)),
+                    removeItem: key => values.delete(key),
+                    has: key => values.has(key)
+                };
+            };
+            const adapterLocal = makeStorage();
+            const adapterSession = makeStorage();
+            let productionClientOptions;
+            const adapterWindow = { supabase: { createClient: (_url, _key, options) => { productionClientOptions = options; return {}; } } };
+            vm.runInNewContext(fs.readFileSync('Config/supabaseClient.js', 'utf8'), {
+                window: adapterWindow, localStorage: adapterLocal, sessionStorage: adapterSession, URL, Date, console
+            });
+            const adapter = adapterWindow.InigoAuthStorage;
+            const authStorageKey = 'sb-xrlwtnwamboucihsamrr-auth-token';
+            const supabaseStorage = productionClientOptions.auth.storage;
+            adapterLocal.setItem(authStorageKey, 'existing-persistent-session');
+            adapter.setRememberSession(false);
+            assert.equal(adapterLocal.getItem(authStorageKey), null);
+            assert.equal(adapterSession.getItem(authStorageKey), 'existing-persistent-session');
+            assert.equal(adapter.isRememberSession(), false);
+            assert.equal(supabaseStorage.getItem(authStorageKey), 'existing-persistent-session');
+            supabaseStorage.setItem(authStorageKey, 'session-only-refresh');
+            assert.equal(adapterSession.getItem(authStorageKey), 'session-only-refresh');
+            assert.equal(adapterLocal.getItem(authStorageKey), null);
+            adapter.setRememberSession(true);
+            assert.equal(adapterSession.getItem(authStorageKey), null);
+            assert.equal(adapterLocal.getItem(authStorageKey), 'session-only-refresh');
+            assert.equal(adapter.isRememberSession(), true);
+            supabaseStorage.removeItem(authStorageKey);
+            assert.equal(adapterLocal.getItem(authStorageKey), null);
+            assert.equal(adapterSession.getItem(authStorageKey), null);
+
+            assert.equal(adapter.isDeviceTrusted, undefined, 'browser-side trust markers cannot authorize a session');
+            assert.equal(adapter.rememberDevice, undefined, 'device trust is stored and checked by the server');
+            assert.equal(adapter.touchDeviceTrust, undefined, 'browser activity cannot extend server-side trust');
+
+            const page = await setup({ role: 'customer' });
+            await page.locator('.cta-buttons [data-auth-open]').click();
+            const login = page.locator('[data-auth-panel="login"]');
+            await login.locator('[name="email"]').fill('account@example.test');
+            await login.locator('[name="password"]').fill('Fixture2026!');
+            await login.locator('[name="remember"]').check();
+            await login.locator('button[type="submit"]').click();
+            await page.locator('[data-auth-panel="verify"].is-active').waitFor();
+            const pendingCalls = await calls(page);
+            assert(pendingCalls.some(c => c.kind === 'function' && c.data?.name === 'email-mfa' && c.data?.body?.action === 'begin'));
+            assert.equal(pendingCalls.some(c => c.kind === 'signOut'), false, 'password session stays bound to its server-side email challenge');
+            assert.equal(Boolean(await page.evaluate(async () => (await sb.auth.getSession()).data.session)), true);
+            for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await page.waitForURL('**/user_dashboard.html');
+            assert.match(await page.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), /^[a-f0-9]{64}$/);
+            await page.close();
+
+            const trustedPage = await setup({ role: 'customer', trustedDeviceUserId: 'fixture-user' });
+            await trustedPage.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', 'a'.repeat(64)));
+            await trustedPage.locator('.cta-buttons [data-auth-open]').click();
+            const trustedForm = trustedPage.locator('[data-auth-panel="login"]');
+            await trustedForm.locator('[name="email"]').fill('account@example.test');
+            await trustedForm.locator('[name="password"]').fill('Fixture2026!');
+            await trustedForm.locator('[name="remember"]').check();
+            await trustedForm.locator('button[type="submit"]').click();
+            await trustedPage.waitForURL('**/user_dashboard.html');
+            assert(!(await calls(trustedPage)).some(c => c.kind === 'emailMfaVerify'), 'server-validated trust can skip the code');
+            await trustedPage.close();
+
+            for (const remember of [true, false]) {
+                const oauthPage = await browser.newPage();
+                oauthPage.setDefaultTimeout(10000);
+                await oauthPage.route(/^https:\/\//, r => r.abort());
+                await oauthPage.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ oauth: true, role: 'customer' })})` }));
+                await oauthPage.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
+                await oauthPage.addInitScript(value => sessionStorage.setItem('inigosync-oauth-remember', value ? '1' : '0'), remember);
+                await oauthPage.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'domcontentloaded' });
+                await oauthPage.locator('[data-auth-panel="verify"].is-active').waitFor();
+                for (let i = 0; i < 6; i++) await oauthPage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+                await oauthPage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+                await oauthPage.waitForURL('**/user_dashboard.html');
+                assert.equal(Boolean(await oauthPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user'))), remember);
+                assert.equal(await oauthPage.evaluate(() => sessionStorage.getItem('inigosync-session-only')), remember ? null : '1');
+                assert((await calls(oauthPage)).some(c => c.kind === 'rememberSessionChoice' && c.data.remember === remember));
+                await oauthPage.close();
+            }
+
+            const uncheckedPage = await setup({ role: 'customer' });
+            await uncheckedPage.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', 'b'.repeat(64)));
+            await uncheckedPage.locator('.cta-buttons [data-auth-open]').click();
+            const uncheckedForm = uncheckedPage.locator('[data-auth-panel="login"]');
+            await uncheckedForm.locator('[name="email"]').fill('account@example.test');
+            await uncheckedForm.locator('[name="password"]').fill('Fixture2026!');
+            await uncheckedForm.locator('button[type="submit"]').click();
+            await uncheckedPage.locator('[data-auth-panel="verify"].is-active').waitFor();
+            assert((await calls(uncheckedPage)).some(c => c.kind === 'function' && c.data?.name === 'email-mfa' && c.data?.body?.action === 'begin' && c.data?.body?.remember === false));
+            assert.equal(await uncheckedPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), null);
+            await uncheckedPage.locator('[data-auth-close]').click();
+            await uncheckedPage.waitForFunction(() => document.querySelector('[data-auth-overlay]').hidden);
+            assert.equal(await uncheckedPage.evaluate(async () => (await sb.auth.getSession()).data.session), null);
+            await uncheckedPage.close();
+
+            const failedPassword = await setup({ role: 'customer', passwordError: true });
+            await failedPassword.evaluate(() => localStorage.setItem('sb-xrlwtnwamboucihsamrr-auth-token', 'existing-persistent-session'));
+            await failedPassword.locator('.cta-buttons [data-auth-open]').click();
+            const failedPasswordForm = failedPassword.locator('[data-auth-panel="login"]');
+            await failedPasswordForm.locator('[name="email"]').fill('account@example.test');
+            await failedPasswordForm.locator('[name="password"]').fill('wrong-password');
+            await failedPasswordForm.locator('button[type="submit"]').click();
+            await failedPassword.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'passwordSessionCreated'));
+            await failedPassword.waitForTimeout(50);
+            assert(!(await calls(failedPassword)).some(c => c.kind === 'rememberSessionChoice'));
+            assert.equal(await failedPassword.evaluate(() => localStorage.getItem('sb-xrlwtnwamboucihsamrr-auth-token')), 'existing-persistent-session');
+            assert.equal(await failedPassword.evaluate(() => sessionStorage.getItem('inigosync-session-only')), null);
+            await failedPassword.close();
+
+            const failedSignup = await setup({ registrationRace: 'error' });
+            await signup(failedSignup, '', true);
+            await failedSignup.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'signUp'));
+            await failedSignup.waitForTimeout(50);
+            assert(!(await calls(failedSignup)).some(c => c.kind === 'rememberSessionChoice'));
+            assert.equal(await failedSignup.evaluate(() => sessionStorage.getItem('inigosync-session-only')), null);
+            await failedSignup.close();
+
+            const crossAccountPage = await setup({ role: 'customer', userId: 'different-user' });
+            await crossAccountPage.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:different-user', 'c'.repeat(64)));
+            await crossAccountPage.locator('.cta-buttons [data-auth-open]').click();
+            const crossAccountForm = crossAccountPage.locator('[data-auth-panel="login"]');
+            await crossAccountForm.locator('[name="email"]').fill('account@example.test');
+            await crossAccountForm.locator('[name="password"]').fill('Fixture2026!');
+            await crossAccountForm.locator('[name="remember"]').check();
+            await crossAccountForm.locator('button[type="submit"]').click();
+            await crossAccountPage.locator('[data-auth-panel="verify"].is-active').waitFor();
+            assert((await calls(crossAccountPage)).some(c => c.kind === 'function' && c.data?.name === 'email-mfa' && c.data?.body?.action === 'begin'));
+            await crossAccountPage.close();
+
+            for (const role of ['staff', 'admin']) {
+                const rolePage = await setup({ role });
+                await rolePage.locator('.cta-buttons [data-auth-open]').click();
+                await rolePage.locator('[data-auth-tab="admin"]').click();
+                const roleForm = rolePage.locator('[data-auth-panel="admin"]');
+                await roleForm.locator('[name="admin-email"]').fill('account@example.test');
+                await roleForm.locator('[name="admin-password"]').fill('Fixture2026!');
+                await roleForm.locator('[name="remember"]').check();
+                await roleForm.locator('button[type="submit"]').click();
+                await rolePage.locator('[data-auth-panel="verify"].is-active').waitFor();
+                for (let i = 0; i < 6; i++) await rolePage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+                await rolePage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+                await rolePage.waitForURL(role === 'staff' ? '**/staff_dashboard.html' : '**/owner_dashboard.html');
+                assert.match(await rolePage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), /^[a-f0-9]{64}$/);
+                await rolePage.close();
+            }
+
+            const expiry = await setup();
+            const boundary = await expiry.evaluate(() => {
+                const key = 'inigosync-trusted-device:customer:fixture-user';
+                const now = 2_000_000_000_000;
+                localStorage.setItem(key, JSON.stringify({ version: 1, lastActivityAt: now - 7 * 86400000 + 1 }));
+                const before = InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer', now);
+                localStorage.setItem(key, JSON.stringify({ version: 1, lastActivityAt: now - 7 * 86400000 }));
+                const at = InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer', now);
+                localStorage.setItem('inigosync-trusted-device:fixture-user', '1');
+                const old = InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer', now);
+                return { before, at, old };
+            });
+            assert.deepEqual(boundary, { before: true, at: false, old: false });
+            await expiry.close();
+
+            const signupPage = await setup({ emailConfirmation: true });
+            await signupPage.locator('.cta-buttons [data-auth-open]').click();
+            await signupPage.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const signupForm = signupPage.locator('[data-auth-panel="signup"]');
+            await signupForm.locator('[name="email"]').fill('customer@example.test');
+            await signupForm.locator('[name="password"]').fill('Fixture2026!');
+            await signupForm.locator('[name="remember"]').check();
+            await signupForm.locator('[data-signup-next]').click();
+            await signupForm.locator('[name="surname"]').fill('Tester');
+            await signupForm.locator('[name="firstname"]').fill('Customer');
+            await signupForm.locator('[name="terms"]').check();
+            await signupForm.locator('button[type="submit"]').click();
+            assert.equal(await signupPage.locator('[data-auth-panel="verify"] [data-verify-heading]').innerText(), 'Verify your email');
+            for (let i = 0; i < 6; i++) await signupPage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await signupPage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await signupPage.locator('[data-auth-panel="verify"].is-active').waitFor();
+            for (let i = 0; i < 6; i++) await signupPage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await signupPage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await signupPage.waitForURL('**/user_dashboard.html');
+            assert.match(await signupPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), /^[a-f0-9]{64}$/);
+            await signupPage.close();
+
+            const signupChoicePage = await setup({ emailConfirmation: true });
+            await signupChoicePage.locator('.cta-buttons [data-auth-open]').click();
+            await signupChoicePage.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const signupChoiceForm = signupChoicePage.locator('[data-auth-panel="signup"]');
+            assert.equal(await signupChoiceForm.locator('[name="remember"]').count(), 1, 'signup has a single remembered-device choice across its steps and Google flow');
+            await signupChoiceForm.locator('[name="email"]').fill('customer@example.test');
+            await signupChoiceForm.locator('[name="password"]').fill('Fixture2026!');
+            await signupChoiceForm.locator('[name="remember"]').check();
+            await signupChoiceForm.locator('[name="remember"]').uncheck();
+            await signupChoiceForm.locator('[data-signup-next]').click();
+            await signupChoiceForm.locator('[name="surname"]').fill('Tester');
+            await signupChoiceForm.locator('[name="firstname"]').fill('Customer');
+            await signupChoiceForm.locator('[name="terms"]').check();
+            await signupChoiceForm.locator('button[type="submit"]').click();
+            for (let i = 0; i < 6; i++) await signupChoicePage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await signupChoicePage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await signupChoicePage.locator('[data-auth-panel="verify"].is-active').waitFor();
+            for (let i = 0; i < 6; i++) await signupChoicePage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await signupChoicePage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await signupChoicePage.waitForURL('**/user_dashboard.html');
+            assert.equal(await signupChoicePage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), null, 'the final unchecked signup choice does not persist trust');
+            await signupChoicePage.close();
+
+            const expiredDashboard = await browser.newPage();
+            expiredDashboard.setDefaultTimeout(10000);
+            await expiredDashboard.route(/^https:\/\//, r => r.abort());
+            await expiredDashboard.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ dashboard: true })})` }));
+            await expiredDashboard.addInitScript(() => localStorage.setItem('inigosync-trusted-device:fixture-user', JSON.stringify({ version: 1, lastActivityAt: Date.now() - 7 * 86400000 })));
+            await expiredDashboard.goto('http://127.0.0.1:4178/Pages/user_dashboard.html', { waitUntil: 'domcontentloaded' });
+            await expiredDashboard.waitForFunction(() => window.inigosyncProfile?.id === 'fixture-user');
+            assert.equal((await calls(expiredDashboard)).some(c => c.kind === 'signOut'), false,
+                'the server proof, not a stale client marker, controls dashboard access');
+            await expiredDashboard.close();
+
+            const activeDashboard = await browser.newPage();
+            activeDashboard.setDefaultTimeout(10000);
+            await activeDashboard.route(/^https:\/\//, r => r.abort());
+            await activeDashboard.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ dashboard: true })})` }));
+            await activeDashboard.addInitScript(() => localStorage.setItem('inigosync-trusted-device:customer:fixture-user', JSON.stringify({ version: 1, lastActivityAt: Date.now() - 1000 })));
+            await activeDashboard.goto('http://127.0.0.1:4178/Pages/user_dashboard.html', { waitUntil: 'domcontentloaded' });
+            await activeDashboard.waitForFunction(() => window.inigosyncProfile?.id === 'fixture-user');
+            assert((await calls(activeDashboard)).some(c => c.kind === 'function' && c.data?.name === 'email-mfa' && c.data?.body?.action === 'check'),
+                'dashboard entry checks server-side email proof before exposing the profile');
+            await activeDashboard.close();
+            console.log('PASS server-bound email session gate, trusted-device expiry contract, dashboard proof check, and signup confirmation plus second-step flow');
+            return;
+        }
         if (process.env.EMAIL_CHANGE_ONLY === '1') {
             const dashboard = await setupDashboard({ delayEmailChangeToken: '111111' });
             await dashboard.locator('[data-dash-nav="settings"]').first().click();
@@ -306,12 +601,13 @@ function mockClient(options) {
         await stale.waitForTimeout(1000);
         assert(!/Not available/.test(await stale.locator('[data-signup-email-status]').innerText()));
         await stale.close();
-        async function signup(page, phone = '') {
+        async function signup(page, phone = '', remember = false) {
             await page.locator('.cta-buttons [data-auth-open]').click();
             await page.locator('[role="tab"][data-auth-tab="signup"]').click();
             const form = page.locator('[data-auth-panel="signup"]');
             await form.locator('[name="email"]').fill('customer@example.test');
             await form.locator('[name="password"]').fill('Fixture2026!');
+            if (remember) await form.locator('[name="remember"]').check();
             await form.locator('[data-signup-next]').click();
             await form.locator('[name="surname"]').fill('Tester');
             await form.locator('[name="firstname"]').fill('Customer');
@@ -377,6 +673,101 @@ function mockClient(options) {
             assert((await calls(page)).some(c => c.kind === 'signOut'));
             await page.close();
         }
+
+        async function passwordLogin(page, panel = 'login', remember = false) {
+            await page.locator('.cta-buttons [data-auth-open]').click();
+            if (panel === 'admin') await page.locator('[data-auth-tab="admin"]').click();
+            const form = page.locator(`[data-auth-panel="${panel}"]`);
+            await form.locator('input[type="email"]').fill('account@example.test');
+            await form.locator('input[type="password"]').fill('Fixture2026!');
+            if (remember) await form.locator('[name="remember"]').check();
+            await form.locator('button[type="submit"]').click();
+            return form;
+        }
+        const rememberedLogin = await setup({ role: 'customer' });
+        await passwordLogin(rememberedLogin, 'login', true);
+        await rememberedLogin.locator('[data-auth-panel="verify"].is-active').waitFor();
+        let rememberedCalls = await calls(rememberedLogin);
+        assert(rememberedCalls.findIndex(c => c.kind === 'signOut') < rememberedCalls.findIndex(c => c.kind === 'emailOtp'), 'the password session is removed before the OTP is sent');
+        assert.equal(await rememberedLogin.evaluate(async () => (await sb.auth.getSession()).data.session), null, 'an unfinished OTP gate has no authenticated Supabase session');
+        for (let i = 0; i < 6; i++) await rememberedLogin.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await rememberedLogin.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await rememberedLogin.waitForURL('**/user_dashboard.html');
+        assert(await rememberedLogin.evaluate(() => InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer')));
+        await rememberedLogin.close();
+
+        const trustedLogin = await setup({ role: 'customer' });
+        await trustedLogin.evaluate(() => InigoAuthStorage.rememberDevice('fixture-user', 'customer'));
+        await passwordLogin(trustedLogin, 'login', true);
+        await trustedLogin.waitForURL('**/user_dashboard.html');
+        assert(!(await calls(trustedLogin)).some(c => c.kind === 'emailOtp'), 'a checked, fresh same-account trust marker skips the repeat OTP');
+        await trustedLogin.close();
+
+        const uncheckedLogin = await setup({ role: 'customer' });
+        await uncheckedLogin.evaluate(() => InigoAuthStorage.rememberDevice('fixture-user', 'customer'));
+        await passwordLogin(uncheckedLogin);
+        await uncheckedLogin.locator('[data-auth-panel="verify"].is-active').waitFor();
+        assert((await calls(uncheckedLogin)).some(c => c.kind === 'emailOtp'), 'an unchecked fresh choice overrides earlier device trust');
+        assert.equal(await uncheckedLogin.evaluate(() => localStorage.getItem('inigosync-trusted-device:customer:fixture-user')), null);
+        await uncheckedLogin.locator('[data-auth-close]').click();
+        await uncheckedLogin.waitForFunction(() => document.querySelector('[data-auth-overlay]').hidden);
+        assert.equal(await uncheckedLogin.evaluate(async () => (await sb.auth.getSession()).data.session), null, 'cancelling the OTP gate leaves no active password session');
+        await uncheckedLogin.close();
+
+        const otherAccount = await setup({ role: 'customer', userId: 'other-user' });
+        await otherAccount.evaluate(() => InigoAuthStorage.rememberDevice('fixture-user', 'customer'));
+        await passwordLogin(otherAccount, 'login', true);
+        await otherAccount.locator('[data-auth-panel="verify"].is-active').waitFor();
+        assert((await calls(otherAccount)).some(c => c.kind === 'emailOtp'), 'trust for another account cannot skip OTP');
+        await otherAccount.close();
+
+        for (const role of ['staff', 'admin']) {
+            const page = await setup({ role });
+            await passwordLogin(page, 'admin', true);
+            await page.locator('[data-auth-panel="verify"].is-active').waitFor();
+            for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+            await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await page.waitForURL(role === 'staff' ? '**/staff_dashboard.html' : '**/owner_dashboard.html');
+            assert(await page.evaluate(roleName => InigoAuthStorage.isDeviceTrusted('fixture-user', roleName), role), `${role} password login records role-specific trust`);
+            await page.close();
+        }
+
+        const signupOtp = await setup({ emailConfirmation: true });
+        await signup(signupOtp, '', true);
+        assert.equal(await signupOtp.locator('[data-auth-panel="signup"] [name="remember"]').isChecked(), true);
+        assert.equal(await signupOtp.locator('[data-auth-panel="verify"] [data-verify-heading]').innerText(), 'Verify your email', 'signup always keeps its first email confirmation step');
+        assert((await calls(signupOtp)).some(c => c.kind === 'signUp'));
+        for (let i = 0; i < 6; i++) await signupOtp.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await signupOtp.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await signupOtp.waitForURL('**/user_dashboard.html');
+        assert(await signupOtp.evaluate(() => InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer')), 'confirmed signup honors its Remember me choice');
+        await signupOtp.close();
+
+        const trustBoundary = await setup();
+        const boundaryResult = await trustBoundary.evaluate(() => {
+            const key = 'inigosync-trusted-device:customer:fixture-user';
+            const now = 2_000_000_000_000;
+            localStorage.setItem(key, JSON.stringify({ version: 1, lastActivityAt: now - 7 * 24 * 60 * 60 * 1000 + 1 }));
+            const justBeforeExpiry = InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer', now);
+            localStorage.setItem(key, JSON.stringify({ version: 1, lastActivityAt: now - 7 * 24 * 60 * 60 * 1000 }));
+            const atExpiry = InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer', now);
+            localStorage.setItem('inigosync-trusted-device:fixture-user', '1');
+            const legacyMarker = InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer', now);
+            return { justBeforeExpiry, atExpiry, legacyMarker };
+        });
+        assert.deepEqual(boundaryResult, { justBeforeExpiry: true, atExpiry: false, legacyMarker: false }, 'trust expires at exactly seven inactive days and legacy markers fail closed');
+        await trustBoundary.close();
+
+        const staleDashboard = await browser.newPage();
+        staleDashboard.setDefaultTimeout(10000);
+        await staleDashboard.route(/^https:\/\//, r => r.abort());
+        await staleDashboard.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ dashboard: true })})` }));
+        await staleDashboard.addInitScript(() => localStorage.setItem('inigosync-trusted-device:fixture-user', '1'));
+        await staleDashboard.goto('http://127.0.0.1:4178/Pages/user_dashboard.html', { waitUntil: 'domcontentloaded' });
+        await staleDashboard.waitForURL('**/index.html');
+        assert((await calls(staleDashboard)).some(c => c.kind === 'signOut'), 'a legacy remembered session cannot enter a dashboard without fresh trust');
+        await staleDashboard.close();
+
         const blank = await setup(); await signup(blank);
         await blank.waitForURL('**/user_dashboard.html');
         const blankSignup = (await calls(blank)).find(c => c.kind === 'signUp');

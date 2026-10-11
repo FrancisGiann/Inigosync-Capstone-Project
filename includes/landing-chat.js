@@ -1,6 +1,5 @@
-// Local, deterministic FAQ for the public landing page. Answers only use
-// verified page details and the current Courts & Pricing cards; no message is
-// sent to a server and all user/database text is rendered as text nodes.
+// Fixed, local FAQ for the public landing page. Answers use verified project
+// behavior and current Courts & Pricing cards; no message is sent to a server.
 (function () {
     'use strict';
 
@@ -12,51 +11,11 @@
             label: 'Get directions'
         },
         phone: { href: 'tel:+639281546876', label: '+63 928 154 6876' },
-        email: { href: 'mailto:itsrosem8@gmail.com', label: 'itsrosem8@gmail.com' }
+        email: { href: 'mailto:itsrosem8@gmail.com', label: 'itsrosem8@gmail.com' },
+        terms: { href: 'Pages/terms.html', label: 'Read Terms & Conditions' }
     });
 
-    function normalize(value) {
-        return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    }
-
-    function answerQuestion(question, context = {}) {
-        const query = normalize(question);
-        const bookingIntent = /\b(book|booking|reserve|reservation)\b/.test(query);
-        const contactIntent = /\b(phone|call|contact|email|reach|telephone)\b/.test(query);
-        if (!bookingIntent && !contactIntent && /\b(where|located|location|address|directions|map|find us)\b/.test(query)) {
-            return {
-                text: 'Iñigos Sports Center is at Brgy. Bocohan, Diversion Road, Lucena City, Quezon, Philippines.',
-                links: [LINKS.location, LINKS.directions]
-            };
-        }
-        if (contactIntent) {
-            return { text: 'You can reach the sports center by phone or email:', links: [LINKS.phone, LINKS.email] };
-        }
-        if (/\b(hours?|open|close|operating|schedule)\b/.test(query)) {
-            return {
-                text: 'I can’t confirm current operating hours from this page. Please contact the sports center directly:',
-                links: [LINKS.phone, LINKS.email]
-            };
-        }
-        if (/\b(book|booking|reserve|reservation|how do i)\b/.test(query)) {
-            return {
-                text: 'Choose “Book a court” on the page to log in or create an account, then continue through the booking flow to select a court and available time. Current court listings are here:',
-                links: [LINKS.courts]
-            };
-        }
-        if (/\b(price|pricing|rate|rates|cost|costs|how much|fee|fees)\b/.test(query)) {
-            return courtsAnswer(context, true);
-        }
-        if (/\b(sport|sports|court|courts|offer|available|play)\b/.test(query)) {
-            return courtsAnswer(context, false);
-        }
-        return {
-            text: 'I can help with booking, current sports and rates, directions, contact details, or operating hours. For anything else, please contact the sports center:',
-            links: [LINKS.phone, LINKS.email]
-        };
-    }
-
-    function courtsAnswer(context, includeRates) {
+    function courtsAnswer(context) {
         if (context.loading || context.failed) {
             return {
                 text: 'The live Courts & Pricing list is unavailable right now, so I can’t give a reliable sports or rate list. Please try that section again or contact the sports center:',
@@ -73,13 +32,46 @@
         const items = courts.map(court => {
             const name = String(court.name || '').trim();
             const rate = String(court.rate || '').trim();
-            return name ? (includeRates ? `${name} — ${rate || 'Rate not shown'}` : name) : '';
+            return name ? `${name} — ${rate || 'Rate not shown'}` : '';
         }).filter(Boolean);
         return {
-            text: includeRates
-                ? `Current sports and rates shown in Courts & Pricing (${items.length}): ${items.join('; ')}.`
-                : `The Courts & Pricing section currently lists ${items.length} sports: ${items.join(', ')}.`,
+            text: `Current sports and rates shown in Courts & Pricing (${items.length}): ${items.join('; ')}. Rates and availability are confirmed after sign-in.`,
             links: [LINKS.courts]
+        };
+    }
+
+    const ANSWERS = Object.freeze({
+        booking: () => ({
+            text: 'Choose a court, date, and time from Book a Court. Before signing in, your selections are only a browser-tab draft; they do not reserve a court, and live availability is checked after you sign in or create an account. Then continue to review and payment.',
+            links: [LINKS.courts]
+        }),
+        sports: courtsAnswer,
+        cart: () => ({
+            text: 'You can add up to eight court bookings to the draft cart on this page. Before sign-in the cart is saved only in this browser tab and is not a reservation. Sign in or create an account to recheck availability and continue with the combined checkout.',
+            links: [LINKS.courts]
+        }),
+        payment: () => ({
+            text: 'After you sign in, review the booking cart and choose the available downpayment or full-payment option. The current amount is shown before checkout; payment is completed through the secure PayMongo checkout. The remaining balance for a downpayment is due at check-in.',
+            links: []
+        }),
+        records: () => ({
+            text: 'Your booking history, statuses, payment acknowledgments, and linked walk-in visits are available in My Bookings and Receipts after you sign in to your customer account.',
+            links: []
+        }),
+        policy: () => ({
+            text: 'Bookings cannot be cancelled through self-service, and completed payments are non-refundable. The published Terms & Conditions state a 30-minute grace period and no-show cancellation; sign in and check the notice at the top of My Bookings for the current venue grace period. No-show bookings are not refunded or rescheduled.',
+            links: [LINKS.terms]
+        }),
+        location: () => ({
+            text: 'Iñigos Sports Center is on Lucena Diversion Road (AH26), Brgy. Bocohan, Lucena City, Quezon, Philippines. Call +63 928 154 6876 or email itsrosem8@gmail.com.',
+            links: [LINKS.location, LINKS.directions, LINKS.phone, LINKS.email]
+        })
+    });
+
+    function answerQuestion(key, context = {}) {
+        return ANSWERS[key]?.(context) || {
+            text: 'Choose a question below for help with booking, sports and rates, payments, records, policies, or location.',
+            links: []
         };
     }
 
@@ -92,12 +84,11 @@
     const dialog = document.querySelector('[data-landing-chat]');
     const closeButton = document.querySelector('[data-landing-chat-close]');
     const backdrop = document.querySelector('[data-landing-chat-backdrop]');
-    const form = document.querySelector('[data-landing-chat-form]');
-    const input = document.querySelector('#landingChatInput');
     const log = document.querySelector('[data-landing-chat-log]');
     const prompts = document.querySelector('.landing-chat-prompts');
     const courtGrid = document.querySelector('[data-court-grid]');
-    if (!launcher || !dialog || !backdrop || !closeButton || !form || !input || !log || !courtGrid) return;
+    if (!launcher || !dialog || !backdrop || !closeButton || !log || !prompts || !courtGrid) return;
+    const questions = [...prompts.querySelectorAll('[data-chat-question]')];
 
     let returnFocus = launcher;
     let fallbackOpen = false;
@@ -107,11 +98,7 @@
         if (isolated) {
             backgroundState = [...document.body.children]
                 .filter(node => node !== dialog && node !== backdrop)
-                .map(node => ({
-                    node,
-                    ariaHidden: node.getAttribute('aria-hidden'),
-                    inert: node.hasAttribute('inert')
-                }));
+                .map(node => ({ node, ariaHidden: node.getAttribute('aria-hidden'), inert: node.hasAttribute('inert') }));
             backgroundState.forEach(({ node }) => {
                 node.setAttribute('aria-hidden', 'true');
                 node.setAttribute('inert', '');
@@ -124,6 +111,11 @@
             if (!inert) node.removeAttribute('inert');
         });
         backgroundState = [];
+    }
+
+    function restoreFocus() {
+        launcher.classList.remove('is-obscured');
+        (returnFocus?.isConnected ? returnFocus : launcher).focus({ preventScroll: true });
     }
 
     function openChat() {
@@ -145,7 +137,7 @@
             document.body.classList.add('landing-chat-scroll-lock');
             setBackgroundIsolation(true);
         }
-        input.focus();
+        (questions[0] || closeButton).focus();
     }
 
     function closeChat() {
@@ -160,11 +152,6 @@
             setBackgroundIsolation(false);
             restoreFocus();
         }
-    }
-
-    function restoreFocus() {
-        launcher.classList.remove('is-obscured');
-        (returnFocus?.isConnected ? returnFocus : launcher).focus({ preventScroll: true });
     }
 
     function appendMessage(text, role, links = []) {
@@ -188,10 +175,9 @@
 
     function currentCourtContext() {
         const cards = [...courtGrid.querySelectorAll('.court-card')];
-        const failed = Boolean(courtGrid.querySelector('[data-content-retry]'));
         return {
             loading: courtGrid.getAttribute('aria-busy') === 'true',
-            failed,
+            failed: Boolean(courtGrid.querySelector('[data-content-retry]')),
             courts: cards.map(card => ({
                 name: card.querySelector('h3')?.textContent || '',
                 rate: card.querySelector('.court-rate')?.textContent || ''
@@ -204,8 +190,17 @@
     dialog.addEventListener('close', restoreFocus);
     dialog.addEventListener('click', event => {
         if (event.target === dialog) closeChat();
+        const anchor = event.target.closest('a[href^="#"]');
+        if (anchor || event.target.closest('.landing-chat-attribution a')) closeChat();
     });
     backdrop.addEventListener('click', closeChat);
+    prompts.addEventListener('click', event => {
+        const question = event.target.closest('[data-chat-question]');
+        if (!question) return;
+        appendMessage(question.textContent.trim(), 'user');
+        const answer = answerQuestion(question.dataset.chatQuestion, currentCourtContext());
+        appendMessage(answer.text, 'assistant', answer.links);
+    });
     document.addEventListener('keydown', event => {
         if (!fallbackOpen) return;
         if (event.key === 'Escape') {
@@ -214,7 +209,7 @@
             return;
         }
         if (event.key !== 'Tab') return;
-        const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+        const focusable = [...dialog.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
             .filter(node => node.getClientRects().length > 0);
         if (!focusable.length) {
             event.preventDefault();
@@ -230,25 +225,4 @@
             (event.shiftKey ? last : first).focus();
         }
     }, true);
-    form.addEventListener('submit', event => {
-        event.preventDefault();
-        const question = input.value.trim();
-        if (!question) return;
-        appendMessage(question, 'user');
-        input.value = '';
-        if (prompts) prompts.remove();
-        const answer = answerQuestion(question, currentCourtContext());
-        appendMessage(answer.text, 'assistant', answer.links);
-        input.focus();
-    });
-    prompts?.addEventListener('click', event => {
-        const prompt = event.target.closest('[data-chat-prompt]');
-        if (!prompt) return;
-        input.value = prompt.dataset.chatPrompt || '';
-        form.requestSubmit();
-    });
-    dialog.addEventListener('click', event => {
-        const anchor = event.target.closest('a[href^="#"]');
-        if (anchor || event.target.closest('.landing-chat-attribution a')) closeChat();
-    });
 })();

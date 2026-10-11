@@ -55,6 +55,7 @@
     <link rel="stylesheet" href="./Style/Auth.css">
     <link rel="stylesheet" href="./Style/Loading.css">
     <link rel="stylesheet" href="./Style/LandingNight.css">
+    <link rel="stylesheet" href="./Style/LandingBooking.css">
 </head>
 <body class="landing-night">
     <a class="landing-skip" href="#courts">Skip to courts</a>
@@ -236,11 +237,11 @@
 
             <div class="about-reviews reveal" id="testimonials">
                 <div class="section-inner">
-                    <p class="eyebrow">Google reviews</p>
+                    <p class="eyebrow">Verified booking reviews</p>
                     <h2 class="section-title">What visitors say about Iñigos.</h2>
-                    <div class="google-reviews-layout">
-                        <div class="google-reviews" data-google-reviews hidden aria-label="Google reviews for Iñigos Sports Center"></div>
-                        <p class="google-reviews-fallback" data-google-reviews-fallback role="status" hidden>Google reviews are temporarily unavailable.</p>
+                    <div class="onsite-reviews-layout">
+                        <p class="onsite-reviews-status" data-onsite-reviews-status role="status" aria-live="polite">Loading customer reviews…</p>
+                        <div class="testimonial-grid" data-onsite-review-grid aria-label="Verified booking reviews" aria-busy="true"></div>
                     </div>
                 </div>
             </div>
@@ -316,12 +317,13 @@
     </footer>
 
     <button class="floating-basketball" type="button" data-landing-chat-open
-            aria-label="Ask about Iñigos Sports Center" aria-haspopup="dialog" aria-controls="landingChatDialog">
+            aria-label="Open help and frequently asked questions" aria-haspopup="dialog" aria-controls="landingChatDialog">
         <svg class="basketball-fallback" data-basketball-fallback viewBox="0 0 100 100" aria-hidden="true">
             <defs><radialGradient id="landingBallShade" cx="32%" cy="25%"><stop offset="0" stop-color="#ffb252"/><stop offset=".55" stop-color="#f47a17"/><stop offset="1" stop-color="#b6430c"/></radialGradient></defs>
             <circle cx="50" cy="50" r="45" fill="url(#landingBallShade)" stroke="#57220e" stroke-width="3"/>
             <path d="M8 36c19 2 34 14 42 34M42 7c-3 20 2 42 14 64m36-25c-20-1-38 8-51 27M73 13C61 30 52 54 52 93M7 58c18-11 36-13 52-7" fill="none" stroke="#57220e" stroke-width="4" stroke-linecap="round"/>
         </svg>
+        <span class="floating-basketball-label" aria-hidden="true">Help &amp; FAQ</span>
     </button>
 
     <div class="landing-chat-backdrop" data-landing-chat-backdrop aria-hidden="true" hidden></div>
@@ -330,24 +332,23 @@
             <header class="landing-chat-header">
                 <div>
                     <p class="landing-chat-kicker">IñigoSync help</p>
-                    <h2 id="landingChatTitle">Ask about the sports center</h2>
-                    <p id="landingChatIntro">Quick answers from the information on this page.</p>
+                    <h2 id="landingChatTitle">Frequently asked questions</h2>
+                    <p id="landingChatIntro">Choose a question for quick answers about booking, payments, and your visit.</p>
                 </div>
-                <button class="landing-chat-close" type="button" data-landing-chat-close aria-label="Close chat">×</button>
+                <button class="landing-chat-close" type="button" data-landing-chat-close aria-label="Close frequently asked questions">×</button>
             </header>
-            <div class="landing-chat-log" data-landing-chat-log role="log" aria-live="polite" aria-relevant="additions text" aria-label="Chat messages">
-                <p class="landing-chat-message is-assistant">Hi! I can help with booking, sports and rates, directions, or contact details.</p>
+            <div class="landing-chat-log" data-landing-chat-log role="log" aria-live="polite" aria-relevant="additions text" aria-label="FAQ conversation">
+                <p class="landing-chat-message is-assistant">Hi! Choose a question below. Guest selections are provisional until you sign in.</p>
             </div>
-            <div class="landing-chat-prompts" aria-label="Suggested questions">
-                <button type="button" data-chat-prompt="Where are you located?">Where are you located?</button>
-                <button type="button" data-chat-prompt="How do I book a court?">How do I book?</button>
-                <button type="button" data-chat-prompt="What sports and rates are listed?">Sports and rates</button>
+            <div class="landing-chat-prompts" role="group" aria-label="Frequently asked questions">
+                <button type="button" data-chat-question="booking">How do I book?</button>
+                <button type="button" data-chat-question="sports">Sports and rates</button>
+                <button type="button" data-chat-question="cart">Can I add multiple bookings?</button>
+                <button type="button" data-chat-question="payment">How does payment work?</button>
+                <button type="button" data-chat-question="records">Where are my bookings and receipts?</button>
+                <button type="button" data-chat-question="policy">Cancellation and check-in policy</button>
+                <button type="button" data-chat-question="location">Location and contact</button>
             </div>
-            <form class="landing-chat-form" data-landing-chat-form>
-                <label class="sr-only" for="landingChatInput">Ask a question</label>
-                <input id="landingChatInput" name="question" type="text" autocomplete="off" maxlength="300" placeholder="Type a question…" required>
-                <button type="submit">Send</button>
-            </form>
             <p class="landing-chat-attribution">3D ball model · <a href="Pages/asset-credits.html">Model attribution</a></p>
         </section>
     </dialog>
@@ -427,8 +428,57 @@
                 </div>
 
                 <p class="court-viewer-photo-status" data-court-viewer-photo-status></p>
+                <button class="landing-booking-next" type="button" data-landing-book-next>Next</button>
             </div>
         </div>
+    </div>
+
+    <div class="landing-booking-modal" data-landing-booking-modal hidden>
+        <button class="landing-booking-backdrop" type="button" data-landing-booking-close aria-label="Close date and time selection"></button>
+        <section class="landing-booking-dialog" role="dialog" aria-modal="true" aria-labelledby="landingBookingTitle" tabindex="-1" data-landing-booking-dialog>
+            <button type="button" class="landing-booking-close" data-landing-booking-close aria-label="Close date and time selection">×</button>
+            <h2 id="landingBookingTitle">Choose a date and time</h2>
+            <p class="landing-booking-selected-court" data-landing-booking-selected-court></p>
+            <section class="landing-booking" data-landing-booking aria-label="Choose a booking time">
+                <label class="landing-booking-label" for="landingBookDate">Date</label>
+                <input class="landing-booking-date" id="landingBookDate" data-landing-book-date type="date">
+                <p class="landing-booking-status" data-landing-book-status role="status" aria-live="polite">Provisional hours only. Live availability is checked after sign in.</p>
+                <div class="landing-booking-slots" data-landing-book-slots role="group" aria-label="Available hourly times"></div>
+                <div class="landing-booking-dialog-actions">
+                    <button class="landing-booking-back" type="button" data-landing-book-back>Back</button>
+                    <button class="landing-booking-add" type="button" data-landing-book-add disabled>Add to Cart</button>
+                </div>
+            </section>
+        </section>
+    </div>
+
+    <section class="landing-draft-cart" data-landing-draft-cart aria-label="Draft booking cart" hidden>
+        <button class="landing-draft-cart-toggle" type="button" data-landing-draft-toggle aria-controls="landingDraftCartContent" aria-expanded="true" aria-label="Hide booking cart"><span aria-hidden="true">↓</span></button>
+        <div class="landing-draft-cart-content" id="landingDraftCartContent" data-landing-draft-content>
+            <div class="landing-draft-cart-head">
+                <strong data-landing-draft-count>0 bookings selected</strong>
+                <span><small>Estimated total</small><strong data-landing-draft-total>—</strong></span>
+            </div>
+            <div class="landing-draft-cart-preview" data-landing-draft-preview aria-live="polite"></div>
+            <p class="landing-draft-cart-note">Provisional draft only. Rates and live availability are confirmed after sign in.</p>
+            <div class="landing-draft-actions">
+                <button class="landing-draft-details" type="button" data-landing-draft-details>View details</button>
+                <button class="landing-draft-continue" type="button" data-landing-draft-continue>Login / Sign up to proceed payment</button>
+            </div>
+        </div>
+    </section>
+    <div class="landing-draft-details-modal" data-landing-draft-details-modal hidden>
+        <button class="landing-draft-details-backdrop" type="button" data-landing-draft-details-close aria-label="Close booking details"></button>
+        <section class="landing-draft-details-dialog" role="dialog" aria-modal="true" aria-labelledby="landingDraftDetailsTitle" tabindex="-1">
+            <button type="button" class="landing-draft-details-close" data-landing-draft-details-close aria-label="Close booking details">×</button>
+            <h2 id="landingDraftDetailsTitle">Booking details</h2>
+            <p class="landing-draft-details-count" data-landing-draft-details-count></p>
+            <ul data-landing-draft-items></ul>
+            <div class="landing-draft-details-total"><span>Estimated booking total</span><strong data-landing-draft-details-total>—</strong></div>
+            <p class="landing-draft-status" data-landing-draft-status role="status" aria-live="polite"></p>
+            <button class="landing-draft-continue" type="button" data-landing-draft-details-continue>Login / Sign up to proceed payment</button>
+            <button class="landing-draft-clear" type="button" data-landing-draft-clear>Clear draft cart</button>
+        </section>
     </div>
 
     <!-- ==========================================================================
@@ -642,6 +692,11 @@
                         <div class="auth-divider"><span>or</span></div>
 
                         <div class="auth-google-btn" id="google-signin-signup" data-google-btn></div>
+
+                        <label class="auth-checkbox">
+                            <input type="checkbox" name="remember">
+                            <span>Remember this device; verify again after 7 days of inactivity</span>
+                        </label>
                     </div>
 
                     <!-- STEP 2 — profile details and the Terms checkbox. The
@@ -953,10 +1008,15 @@
          that the hero carousel below reads from. -->
     <script src="./includes/landingPage.js"></script>
     <script src="./includes/home-showcase.js"></script>
-    <script src="./Config/googleReviews.js"></script>
-    <script src="./includes/google-reviews.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script src="./Config/supabaseClient.js"></script>
+    <script src="./includes/emailMfa.js"></script>
+    <script src="./includes/courts-data.js"></script>
+    <script src="./includes/courtsData.js"></script>
+    <script src="./includes/businessHours.js"></script>
+    <script src="./includes/bookingSlots.js"></script>
+    <script src="./includes/landing-booking.js"></script>
+    <script src="./includes/landing-reviews.js"></script>
     <script src="./includes/loadingOverlay.js"></script>
     <!-- PH mobile-number validation, shared with Account Settings — must
          load before auth.js, which calls window.validatePhMobile on signup. -->

@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.95.0';
 import { validateStaffInvite } from './_shared/validate-staff.ts';
 import { canInviteStaff } from './_shared/authorize-owner.ts';
+import { hasVerifiedEmailSession } from '../_shared/email-mfa.ts';
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -12,6 +13,7 @@ Deno.serve(async (req: Request) => {
   const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
   if (authError || !user) return json({ error: 'Not authenticated' }, 401);
+  if (!await hasVerifiedEmailSession(admin, token, user.id)) return json({ error: 'Verify your email before managing staff accounts.' }, 403);
   const { data: caller, error: callerError } = await admin.from('profiles').select('role,status').eq('id', user.id).single();
   if (callerError || !canInviteStaff(caller)) return json({ error: 'Only an active owner can invite staff accounts.' }, 403);
   let details;

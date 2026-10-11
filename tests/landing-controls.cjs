@@ -8,19 +8,23 @@ let failCourtFetch = false;
 (async () => {
     const browser = await chromium.launch({channel:'msedge',headless:true});
     try {
-        async function setup({count=4, id='', provider='blocked', motion='reduce'}={}) {
+        async function setup({count=4, reviews='loaded', motion='reduce'}={}) {
             const page = await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:motion});
             page.setDefaultTimeout(15000);
-            await page.route('**/Config/googleReviews.js', route => route.fulfill({contentType:'application/javascript',body:`window.InigoGoogleReviews={widgetId:${JSON.stringify(id)}};`}));
-            await page.route('https://elfsightcdn.com/**', route => provider === 'blocked' ? route.abort() : route.fulfill({contentType:'application/javascript',body: provider === 'empty' ? '' : `document.querySelector('.elfsight-app-${uuid}').textContent='Provider fixture: 4.3 stars';`}));
             await page.route('**/rest/v1/**', route => {
                 const table = new URL(route.request().url()).pathname.split('/').pop();
                 if (table === 'court' && failCourtFetch) return route.fulfill({status:500,json:{message:'Fixture court fetch failure'}});
+                if (table === 'public_booking_reviews' && reviews === 'error') return route.fulfill({status:500,json:{message:'Fixture review fetch failure'}});
                 const data = table === 'event'
                     ? Array.from({length:count},(_,i)=>({title:'Feature '+(i+1),meta:'Venue event',tag:'Featured',image_url:'../assets/landing/featured-tournament-placeholder.png'}))
                     : table === 'court'
                         ? Array.from({length:publishedSportsCount},(_,i)=>({id:'court-'+i,name:'Sport '+(i+1),quantity:1,unit:'courts',is_active:true,display_order:i,rate:null,rate_unit:'/hr',sport:{slug:'sport-'+i,name:'Sport '+(i+1)}}))
-                        : [];
+                        : table === 'public_booking_reviews' && reviews === 'loaded'
+                            ? [
+                                {display_name:'sam@example.com 09281234567',rating:5,comment:'Great courts and friendly staff.',created_at:'2026-09-20T10:00:00Z'},
+                                {display_name:'Taylor',rating:4,comment:'Easy booking.',created_at:'2026-09-18T10:00:00Z'}
+                            ]
+                            : [];
                 return route.fulfill({json:data});
             });
             await page.goto(base,{waitUntil:'domcontentloaded'});
@@ -48,9 +52,12 @@ let failCourtFetch = false;
         });
         assert.equal(await active(),'Feature 4');
         assert(await page.locator('[data-home-pause]').isDisabled());
-        assert.equal(await page.locator('[data-testimonial-grid], [data-onsite-review-grid]').count(),0);
-        assert(await page.locator('[data-google-reviews]').isHidden());
-        assert(await page.locator('[data-google-reviews-fallback]').isVisible());
+        await page.waitForFunction(()=>document.querySelectorAll('[data-onsite-review-grid] .testimonial-card').length===2);
+        assert.equal(await page.locator('[data-onsite-review-grid] .testimonial-card').count(),2);
+        const landingReviews=await page.locator('[data-onsite-review-grid]').innerText();
+        assert.match(landingReviews,/Verified customer[\s\S]*Great courts and friendly staff\./);
+        assert.doesNotMatch(landingReviews,/sam@example\.com|09281234567/i,'contact-bearing display names must not appear on the landing page');
+        assert(await page.locator('[data-onsite-reviews-status]').isHidden(),'the review count should not appear above loaded cards');
         assert.equal(await page.locator('script[src*="elfsightcdn"]').count(),0);
         await page.waitForFunction(()=>[...document.querySelectorAll('[data-sports-count]')].every(node=>node.textContent==='2'));
         assert.deepEqual(await page.locator('[data-sports-count]').allTextContents(),['2','2']);
@@ -238,21 +245,18 @@ let failCourtFetch = false;
         await animated.setViewportSize({width:390,height:900});
         await animated.evaluate(()=>scrollTo(0,0));
         await animated.screenshot({path:'output/landing-controls-mobile.png',fullPage:true});
-        for (const provider of ['blocked','loaded','empty']) {
-            const widget=await setup({id:uuid,provider});
-            await widget.locator('#testimonials').scrollIntoViewIfNeeded();
-            assert.equal(await widget.locator('.google-reviews-link,.map-external-link').count(),0);
-            assert.equal(await widget.locator('[data-testimonial-grid], [data-onsite-review-grid]').count(),0);
-            if(provider==='loaded') {
-                assert.match(await widget.locator('[data-google-reviews]').innerText(),/4.3 stars/);
-                assert.equal(await widget.locator('[data-google-reviews-note]').count(),0);
+        for (const [reviews,expected] of [['empty','No reviews yet'],['error','Customer reviews are temporarily unavailable.']]) {
+            const reviewPage=await setup({reviews});
+            if (reviews === 'empty') {
+                await reviewPage.locator('.onsite-review-placeholder').waitFor({state:'visible'});
+                assert.match(await reviewPage.locator('.onsite-review-placeholder').innerText(),/No reviews yet[\s\S]*Reviews from completed bookings will appear here/);
+                assert(await reviewPage.locator('[data-onsite-reviews-status]').isHidden());
+            } else {
+                await reviewPage.waitForFunction(text=>document.querySelector('[data-onsite-reviews-status]').textContent===text,expected);
+                assert.equal(await reviewPage.locator('[data-onsite-review-grid] .testimonial-card').count(),0);
             }
-            if(provider!=='loaded') await widget.locator('[data-google-reviews-fallback]').waitFor({state:'visible',timeout:12000});
-            await widget.close();
+            await reviewPage.close();
         }
-        const invalid=await setup({id:'invalid-id'});
-        assert.equal(await invalid.locator('script[src*="elfsightcdn"]').count(),0);
-        assert(await invalid.locator('[data-google-reviews-fallback]').isVisible());
-        console.log('PASS arrows, wraparound, dots, keyboard, swipe, autoplay/pause, reduced motion, six widths, zero/one event, configured/missing/invalid widget and provider failure/empty response');
+        console.log('PASS arrows, wraparound, dots, keyboard, swipe, autoplay/pause, reduced motion, six widths, zero/one event, public review display, empty/error states and no Google widget dependency');
     } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

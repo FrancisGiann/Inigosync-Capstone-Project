@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
+import { hasVerifiedEmailSession } from "../_shared/email-mfa.ts";
 
 const appBaseUrl = Deno.env.get("APP_BASE_URL") || "";
 const allowedOrigin = (() => { try { return new URL(appBaseUrl).origin; } catch { return ""; } })();
@@ -49,6 +50,7 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) return json({ message: "Your session has expired. Sign in again." }, 401, origin);
+  if (!await hasVerifiedEmailSession(admin, token, authData.user.id)) return json({ message: "Verify your email before continuing." }, 403, origin);
 
   const { data: prepared, error: prepareError } = await admin.rpc("prepare_staff_walkin_checkout", {
     p_order_id: body.order_id, p_staff_id: authData.user.id,

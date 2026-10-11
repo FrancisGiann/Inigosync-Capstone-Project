@@ -82,6 +82,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // This server check must precede even the role/profile query. A valid
+    // password/OAuth token without its email proof can read only the narrow
+    // AAL1 bootstrap paths configured in the database pre-request guard.
+    try {
+        const mfa = await window.InigoEmailMfa?.check?.({ activity: true });
+        if (mfa?.verified !== true) {
+            goToLogin('email_verification_required');
+            return;
+        }
+    } catch (error) {
+        console.error('[authGuard] email session proof could not be checked', error);
+        goToLogin('email_verification_unavailable');
+        return;
+    }
+
     const { data: profile, error } = await window.sb
         .from('profiles')
         .select('id, role, full_name, email, status, contact_num, position, avatar_url')
@@ -94,11 +109,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    if (profile.role !== 'customer') {
+        try { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); } catch (_) { /* storage may be disabled */ }
+    }
+
     if (requiredRole && profile.role !== requiredRole) {
         const redirectUrl = dashboardByRole[profile.role];
         window.location.assign(new URL(redirectUrl || '../index.html', window.location.href).toString());
         return;
     }
+
+    // Keep the server-side seven-day inactivity window aligned with real
+    // user activity. This throttled check also refreshes the trusted-device
+    // expiry when the browser has a remembered-device secret.
+    let lastEmailProofActivityAt = Date.now();
+    let emailProofTouchInFlight = false;
+    const touchEmailProof = async () => {
+        const now = Date.now();
+        if (emailProofTouchInFlight || now - lastEmailProofActivityAt < 4 * 60 * 1000) return;
+        lastEmailProofActivityAt = now;
+        emailProofTouchInFlight = true;
+        try {
+            const result = await window.InigoEmailMfa.check({ activity: true });
+            if (result?.verified !== true) goToLogin('email_verification_required');
+        } catch (error) {
+            console.error('[authGuard] email session activity could not be refreshed', error);
+            goToLogin('email_verification_unavailable');
+        } finally { emailProofTouchInFlight = false; }
+    };
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => {
+        document.addEventListener(type, touchEmailProof, { passive: true });
+    });
 
     window.inigosyncProfile = profile;
     if (window.InigoLoading) window.InigoLoading.hide();

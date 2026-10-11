@@ -140,6 +140,7 @@ function normalizeCourtFromDb(row) {
         : sportSlug;
     return {
         id: row.id,
+        slug: courtSlug,
         // The embedded sport(slug) identifies its configured sport. The two
         // Bowling product slugs above deliberately become separate card keys.
         sportSlug: cardSportSlug,
@@ -482,6 +483,7 @@ function createCourtViewer() {
     const photoEl = root.querySelector('[data-court-viewer-photo-status]');
     const closeBtn = root.querySelector('[data-court-viewer-close]');
     const backdrop = root.querySelector('[data-court-viewer-backdrop]');
+    const nextButton = root.querySelector('[data-landing-book-next]');
 
     if (!dialog || !mediaEl || !titleEl || !unitEl || !pickerEl
         || !pickerLabelEl || !selectEl || !noteEl || !bookEl || !rateEl || !photoEl) {
@@ -501,6 +503,7 @@ function createCourtViewer() {
     let lastFocused = null;
     let isOpen = false;
     let hideTimer = null;
+    let suppressReturnFocus = false;
 
     // Which sport is on screen, its resolved unit list, and a counter that
     // makes a late <img> error from a previously-selected unit a no-op
@@ -509,6 +512,7 @@ function createCourtViewer() {
     let activeVariant = null;
     let units = [];
     let mediaToken = 0;
+    let bookingInvoker = null;
 
     // Paints the media panel for one unit. An <img> that fails to load — a
     // typo'd or dead unit_images URL, which the owner types by hand — is
@@ -564,7 +568,7 @@ function createCourtViewer() {
             : formatUnitRate(activeVariant.rate, activeVariant.rateUnit));
     }
 
-    function chooseType(index) {
+    function chooseType(index, unitIndex = 0) {
         const variants = activeCourt.variants?.length ? activeCourt.variants : [activeCourt];
         activeVariant = variants[Math.min(Math.max(Number(index) || 0, 0), variants.length - 1)];
         const resolved = resolveCourtUnits(activeVariant);
@@ -579,10 +583,10 @@ function createCourtViewer() {
         noteEl.hidden = !activeVariant.note;
         rateEl.className = 'court-viewer-rate is-tba';
         rateEl.textContent = 'Rate TBA — please check with the front desk.';
-        selectUnit(0);
+        selectUnit(unitIndex);
     }
 
-    function open(court, invoker) {
+    function open(court, invoker, variantIndex = 0, unitIndex = 0) {
         if (!court) return;
         lastFocused = invoker || document.activeElement;
         activeCourt = court;
@@ -594,7 +598,8 @@ function createCourtViewer() {
             typeSelect.innerHTML = hasTypes ? court.variants.map((variant, i) => '<option value="' + i + '">' + escapeHtml(variantLabel(variant.name)) + ' (' + variant.quantity + ' lanes)</option>').join('') : '';
             typeSelect.selectedIndex = hasTypes ? 0 : -1;
         }
-        chooseType(0);
+        if (typeSelect && typePicker && !typePicker.hidden) typeSelect.value = String(variantIndex);
+        chooseType(variantIndex, unitIndex);
 
         if (hideTimer) {
             window.clearTimeout(hideTimer);
@@ -612,6 +617,7 @@ function createCourtViewer() {
         void root.offsetWidth;
         root.setAttribute('data-open', '');
         isOpen = true;
+        document.dispatchEvent(new CustomEvent('inigo:landing-court-open', { detail: { court } }));
         // The dialog carries tabindex="-1" and aria-labelledby, so focusing it
         // announces the sport name before anything else.
         dialog.focus();
@@ -649,9 +655,10 @@ function createCourtViewer() {
 
         // Return focus to the card that opened this, if it's still in the DOM
         // (the grid re-renders only once per load, so it normally is).
-        if (lastFocused && typeof lastFocused.focus === 'function' && document.contains(lastFocused)) {
+        if (!suppressReturnFocus && lastFocused && typeof lastFocused.focus === 'function' && document.contains(lastFocused)) {
             lastFocused.focus();
         }
+        suppressReturnFocus = false;
         lastFocused = null;
     }
 
@@ -671,8 +678,27 @@ function createCourtViewer() {
         selectUnit(Number(selectEl.value));
     });
 
+    nextButton?.addEventListener('click', () => {
+        if (!activeCourt || !activeVariant || !units.length) return;
+        const variantIndex = Math.max(0, (activeCourt.variants || [activeCourt]).indexOf(activeVariant));
+        bookingInvoker = lastFocused;
+        document.dispatchEvent(new CustomEvent('inigo:landing-court-next', { detail: {
+            court: activeCourt, listing: activeVariant, unit: units[Number(selectEl.value)] || units[0], variantIndex,
+            unitIndex: Number(selectEl.value) || 0,
+        } }));
+        suppressReturnFocus = true;
+        close();
+    });
+
     document.addEventListener('keydown', (e) => {
         if (!isOpen) return;
+
+        // Nested overlays own keyboard input while they are visible. The
+        // landing draft details and auth dialogs each manage their own focus
+        // trap and Escape behavior, so the court viewer must stay open behind
+        // them until the top dialog closes.
+        if (document.querySelector('[data-landing-draft-details-modal]:not([hidden])')
+            || document.querySelector('[data-auth-overlay][data-open]')) return;
 
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -706,6 +732,17 @@ function createCourtViewer() {
             e.preventDefault();
             first.focus();
         }
+    });
+
+    document.addEventListener('inigo:landing-booking-auth', close);
+    document.addEventListener('inigo:landing-booking-close', () => {
+        if (bookingInvoker && document.contains(bookingInvoker)) bookingInvoker.focus();
+        bookingInvoker = null;
+    });
+
+    document.addEventListener('inigo:landing-booking-back-to-court', (event) => {
+        const { court, variantIndex, unitIndex } = event.detail || {};
+        if (court) open(court, bookingInvoker || nextButton, variantIndex || 0, unitIndex || 0);
     });
 
     return { open, close };

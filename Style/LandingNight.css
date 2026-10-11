@@ -74,11 +74,17 @@
 .landing-night .hero-arrow:hover { background: #ff782e; color: #1b1009; border-color: #ff782e; }
 .landing-night :is(.hero-arrow,.hero-dot,.hero-pause):focus-visible { outline: 3px solid #ff9a65; outline-offset: 4px; }
 .landing-night .hero-progress [hidden] { display: none; }
-.landing-night [data-google-reviews][hidden],.landing-night [data-google-reviews-fallback][hidden] { display: none; }
-.landing-night .google-reviews { width: 100%; min-width: 0; }
-.landing-night .google-reviews-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; margin-top: 20px; }
-.landing-night .google-reviews-fallback { color: var(--color-ink-dim); font-size: 14px; line-height: 1.6; margin: 0; }
-.landing-night .google-reviews-fallback { grid-column: 1/-1; }
+.landing-night .onsite-reviews-layout { margin-top: 20px; }
+.landing-night .onsite-reviews-status { color: var(--color-ink-dim); font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
+.landing-night .testimonial-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.landing-night .testimonial-card { min-width: 0; }
+.landing-night .onsite-review-placeholder { display: flex; flex-direction: column; gap: 12px; border: 1px dashed var(--border-soft); }
+.landing-night .onsite-review-placeholder strong { color: var(--color-ink); font-size: 18px; }
+.landing-night .onsite-review-placeholder .testimonial-quote { color: var(--color-ink-dim); }
+.landing-night .onsite-review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.landing-night .onsite-review-stars { color: var(--color-accent-text); letter-spacing: .08em; white-space: nowrap; }
+.landing-night .testimonial-quote { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.landing-night .onsite-review-date { color: var(--color-ink-faint); font-size: 12px; margin-top: auto; }
 .landing-night .hero-dots { gap: 0; }
 .landing-night .hero-dot { width: 36px; height: 44px; background: transparent; position: relative; }
 .landing-night .hero-dot::after { content: ''; position: absolute; width: 9px; height: 9px; border-radius: 50%; background: #a2aca4; top: 50%; left: 50%; transform: translate(-50%,-50%); }
@@ -185,6 +191,9 @@
     .landing-night .court-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
     .landing-night .footer-inner { grid-template-columns: 1fr; }
 }
+@media(min-width:769px) and (max-width:900px) {
+    .landing-night .testimonial-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media(max-width:768px) {
     .landing-night .hero { min-height: 100vh; min-height: 100dvh; }
     .landing-night .site-nav { padding: 14px 16px; }
@@ -255,7 +264,6 @@
     .landing-night .stat-number { font-size: 28px; }
     .landing-night .stat-label { font-size: 10px; line-height: 1.6; }
     .landing-night .about-reviews { margin-top: 32px; padding: 32px 0; }
-    .landing-night .google-reviews-layout { gap: 8px; }
     .landing-night .testimonial-grid { grid-template-columns: 1fr; gap: 14px; }
     .landing-night .testimonial-card { padding: 24px; }
     .landing-night .testimonial-quote { font-size: 13px; }
@@ -288,6 +296,7 @@
    cannot load. It stays fixed so it never changes the page's layout. */
 .floating-basketball { position: fixed; z-index: 20; right: max(16px,env(safe-area-inset-right)); bottom: max(16px,env(safe-area-inset-bottom)); width: 140px; height: 140px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; opacity: 1; transition: opacity .16s ease; contain: layout style; }
 .floating-basketball canvas,.floating-basketball .basketball-fallback { display: block; width: 100%; height: 100%; pointer-events: none; }
+.floating-basketball-label { position: absolute; right: 50%; bottom: 3px; transform: translateX(50%); padding: 5px 10px; border: 1px solid rgba(255,255,255,.75); border-radius: 999px; background: #171513; box-shadow: 0 2px 8px rgba(0,0,0,.4); color: #fff; font: 700 11px/1 var(--font-body); letter-spacing: .02em; white-space: nowrap; pointer-events: none; }
 .floating-basketball .basketball-fallback[hidden] { display: none !important; }
 .floating-basketball.has-webgl .basketball-fallback { display: none; }
 .floating-basketball.is-obscured { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -311,14 +320,10 @@ body.landing-chat-scroll-lock { overflow: hidden; }
 .landing-chat-message.is-user a { color: inherit; }
 .landing-chat-prompts { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; padding: 0 18px 14px; }
 .landing-chat-prompts button { min-height: 38px; padding: 8px 12px; border: 1px solid var(--border-card); border-radius: 999px; background: var(--surface-band); color: var(--color-ink); font: 600 12px/1.25 var(--font-body); cursor: pointer; }
-.landing-chat-form { display: flex; gap: 9px; padding: 12px 14px max(14px,env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--surface-page); }
-.landing-chat-form input { flex: 1 1 auto; min-width: 0; min-height: 46px; padding: 10px 13px; border: 1px solid var(--border-card); border-radius: 12px; background: var(--surface-card); color: var(--color-ink); font: 14px/1.35 var(--font-body); }
-.landing-chat-form input::placeholder { color: var(--color-ink-faint); }
-.landing-chat-form button { flex: 0 0 auto; min-width: 68px; min-height: 46px; padding: 10px 15px; border: 1px solid var(--border-card); border-radius: 12px; background: var(--surface-card); color: var(--color-accent-text); font: 700 13px/1 var(--font-body); cursor: pointer; }
 .landing-chat-attribution { margin: 0; padding: 0 18px 12px; color: var(--color-ink-faint); font-size: 10px; line-height: 1.4; text-align: right; }
 .landing-chat-attribution a { color: var(--color-ink-dim); text-underline-offset: 2px; }
 .landing-chat :focus-visible { outline: 2px solid var(--color-accent-text); outline-offset: 3px; }
-.landing-chat a:focus-visible,.landing-chat button:focus-visible,.landing-chat input:focus-visible { position: relative; z-index: 1; }
+.landing-chat a:focus-visible,.landing-chat button:focus-visible { position: relative; z-index: 1; }
 .landing-night .footer-grid { align-items: start; }
 .landing-night .footer-card a:focus-visible { outline: 2px solid var(--color-accent-text); outline-offset: 2px; border-radius: 3px; }
 @media (hover: hover) and (pointer: fine) {
@@ -332,7 +337,6 @@ body.landing-chat-scroll-lock { overflow: hidden; }
     .landing-chat-header { padding: 18px 18px 15px; }
     .landing-chat-log { padding: 15px 14px 12px; }
     .landing-chat-prompts { padding: 0 14px 12px; }
-    .landing-chat-form { padding-right: max(14px,env(safe-area-inset-right)); padding-bottom: max(12px,env(safe-area-inset-bottom)); padding-left: max(14px,env(safe-area-inset-left)); }
     .landing-chat-attribution { padding-right: 14px; padding-bottom: max(10px,env(safe-area-inset-bottom)); padding-left: 14px; }
 }
 @media (max-width: 360px) {

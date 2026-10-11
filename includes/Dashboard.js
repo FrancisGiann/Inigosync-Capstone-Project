@@ -978,6 +978,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingCart = [];
     let bookingCartSeq = 0;
     let bookingCartSaving = false;
+    let landingDraftProfileReady = window.inigosyncProfile?.role === 'customer';
+    let landingDraftCourtDataReady = false;
+    let landingDraftSettingsReady = !window.InigoAppSettings;
+    let landingDraftImportInFlight = false;
     let bookingFeeReturnFocus = null;
     let bookingFeeContinueAction = null;
 
@@ -1904,6 +1908,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (paymentModeHint) paymentModeHint.textContent = 'Payment is collected securely through PayMongo after cart review.';
             updateSummary();
             refreshMyBookings();
+            landingDraftSettingsReady = true;
+            importLandingDraftCart();
+        }).catch((error) => {
+            console.warn('[dashboard] booking settings could not be loaded before landing draft import', error);
+            landingDraftSettingsReady = true;
+            importLandingDraftCart();
         });
     }
 
@@ -2024,9 +2034,109 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshMyBookings();
     }
 
+    // Landing-page selections are tab-scoped drafts. Resolve every selection
+    // again from current court data and live availability before it enters
+    // the customer cart; the handoff itself never creates a reservation.
+    async function importLandingDraftCart() {
+        if (!landingDraftProfileReady || !landingDraftCourtDataReady || !landingDraftSettingsReady || landingDraftImportInFlight) return;
+        let raw;
+        try { raw = sessionStorage.getItem('inigosync:landing-booking-draft:v1'); } catch (_) { return; }
+        if (!raw) return;
+        let payload;
+        try { payload = JSON.parse(raw); } catch (_) { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); return; }
+        const ageMs = Date.now() - Number(payload?.createdAt);
+        if (payload?.version !== 1 || !Array.isArray(payload.items) || !payload.items.length
+            || payload.items.length > 8 || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) {
+            sessionStorage.removeItem('inigosync:landing-booking-draft:v1');
+            window.InigoToast?.show('The landing-page booking draft expired or could not be read. Please select the court times again.', true);
+            return;
+        }
+
+        landingDraftImportInFlight = true;
+        const staged = [];
+        try {
+            for (const draft of payload.items) {
+                if (!draft || typeof draft.listingSlug !== 'string' || typeof draft.unitId !== 'string'
+                    || !/^\d{4}-\d{2}-\d{2}$/.test(String(draft.date || ''))
+                    || !Array.isArray(draft.hours) || !draft.hours.length
+                    || draft.hours.some((hour) => !Number.isInteger(hour) || hour < 0 || hour > 23)) {
+                    throw new Error('One of the draft selections is incomplete. Please select the court times again.');
+                }
+                const parsedDraftDate = new Date(`${draft.date}T00:00:00Z`);
+                if (!Number.isFinite(parsedDraftDate.getTime()) || parsedDraftDate.toISOString().slice(0, 10) !== draft.date) {
+                    throw new Error('A selected date is invalid. Please select the court times again.');
+                }
+                const court = bookCourtsCache.find((item) => item.slug === draft.listingSlug);
+                if (!court || court.inventoryLoadFailed) throw new Error('A selected court is no longer available for online booking.');
+                const resolved = window.InigoCourtsData.resolveCourtUnits(court);
+                const unitIndex = resolved.units.findIndex((unit) => String(unit.id || '') === draft.unitId);
+                if (unitIndex < 0) throw new Error('A selected court unit has changed. Please select it again.');
+                if (draft.date < todayDateInputValue()) throw new Error('A selected date has passed. Please choose a new date.');
+
+                bookingState.sportSlug = bookSportChoiceKey(court);
+                renderSportChoices();
+                const courtsForSport = bookCourtsCache.filter((item) => bookSportChoiceKey(item) === bookingState.sportSlug);
+                bookSelect.innerHTML = '<option value="">Choose a court</option>' + courtsForSport.map((item) => {
+                    const rateHint = window.InigoCourtsData.rateHint?.(item);
+                    const label = rateHint ? `${item.name} — ${rateHint}` : `${item.name} — Rate TBA`;
+                    const sportName = isBowlingVariant(item) ? item.name : (item.sportName || item.name);
+                    return `<option value="${window.escapeHtml(item.name)}" data-rate="${item.rate !== null ? window.escapeHtml(String(item.rate)) : ''}" data-rate-unit="${window.escapeHtml(item.rateUnit || '/hr')}" data-sport="${window.escapeHtml(sportName)}">${window.escapeHtml(label)}</option>`;
+                }).join('');
+                bookSelect.disabled = false;
+                if (bookCourtChoice) bookCourtChoice.hidden = !courtsForSport.length;
+                bookSelect.value = court.name;
+                if (!bookSelect.value) throw new Error('A selected court is no longer listed.');
+                bookSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                if (bookDate) {
+                    bookDate.value = draft.date;
+                    bookDate.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                paintBookPreview(court, unitIndex);
+                if (bookUnitSelect) bookUnitSelect.value = String(unitIndex);
+                bookingState.selectedHours = [...new Set(draft.hours)].sort((a, b) => a - b);
+                await refreshTimePickers(true);
+                if (!bookingRules?.authoritative || !slotGridBookings.ok || !slotGridWalkins.ok
+                    || bookingState.selectedHours.length !== new Set(draft.hours).size) {
+                    throw new Error('Availability changed for a selected time. Review the available times and add your choices again.');
+                }
+                const runs = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours);
+                runs.forEach((run) => staged.push(selectedBookingCartItem(run.startHour, run.endHourExclusive)));
+            }
+            if (!staged.length || bookingCart.length + staged.length > 8) throw new Error('The customer cart can include up to eight booking ranges.');
+            const combined = [...bookingCart, ...staged];
+            for (let i = 0; i < combined.length; i += 1) {
+                if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
+                    throw new Error('A landing-page selection overlaps another booking in the cart. Review the times and try again.');
+                }
+            }
+            bookingCart.push(...staged);
+            bookingState.selectedHours = [];
+            bookingState.startHour = null;
+            bookingState.endHour = null;
+            renderTimePickers();
+            sessionStorage.removeItem('inigosync:landing-booking-draft:v1');
+            updateSummary();
+            renderBookingCart();
+            setActivePanel('booking');
+            window.InigoToast?.show(`${staged.length} landing-page booking${staged.length === 1 ? '' : 's'} added to your customer cart. Review the rates and times before checkout.`);
+        } catch (error) {
+            try { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); } catch (_) { /* storage may be disabled */ }
+            window.InigoToast?.show(error.message || 'The landing-page draft could not be imported. Please review the court times.', true);
+        } finally {
+            landingDraftImportInFlight = false;
+        }
+    }
+
+    document.addEventListener('inigosync:profile-ready', (event) => {
+        landingDraftProfileReady = event.detail?.role === 'customer';
+        importLandingDraftCart();
+    });
+
     if (window.InigoCourtsData) {
         window.InigoCourtsData.getCourts().then((courts) => {
             populateBookSelect(courts);
+            landingDraftCourtDataReady = true;
+            importLandingDraftCart();
         }).catch((err) => {
             console.error('[dashboard] could not load courts', err);
         });

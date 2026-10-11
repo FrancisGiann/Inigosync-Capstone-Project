@@ -117,26 +117,16 @@ document.addEventListener('DOMContentLoaded', () => {
         admin: 'Pages/owner_dashboard.html'
     };
 
-    // Per-user (not per-browser) localStorage markers — see this repo's
-    // Phase 6 report for the full reasoning behind each:
-    //   trusted-device : has this account completed a full login on this
-    //                    browser before? Skips the new-device OTP gate.
-    //                    Deliberately NEVER cleared on sign-out — that is
-    //                    the point of "first login per device", not
-    //                    "first login per session". Scoped per user id so
-    //                    a device trusted for one account never lets a
-    //                    different account on the same browser skip its
-    //                    own first OTP.
-    //   session-token   : this browser's current session id, for Single
-    //                    Session enforcement. MUST match the identically
-    //                    named literal in includes/authGuard.js, which
-    //                    only ever reads it (this file is the only writer).
-    const TRUSTED_DEVICE_STORAGE_PREFIX = 'inigosync-trusted-device:';
+    // Per-user localStorage marker: this browser's current session id for
+    // Single Session enforcement. MUST match the identically named literal
+    // in includes/authGuard.js, which only ever reads it (this file is the
+    // only writer). Remembered-device authorization is server-side.
     const SESSION_TOKEN_STORAGE_PREFIX = 'inigosync-session-token:';
     // One-shot reason left behind by includes/authGuard.js right before it
     // forces a sign-out (idle timeout / superseded by another device) and
     // redirects here. MUST match the identically named literal there.
     const AUTH_NOTICE_STORAGE_KEY = 'inigosync-auth-notice';
+    const OAUTH_REMEMBER_STORAGE_KEY = 'inigosync-oauth-remember';
 
     // Password-login brute-force throttle. Supabase also rate-limits the
     // token endpoint by IP; this tighter browser-side layer implements the
@@ -347,8 +337,45 @@ document.addEventListener('DOMContentLoaded', () => {
         return { session, profile };
     }
 
-    async function completeLogin(allowedRoles, verifySignupPhone = false) {
+    async function completeLogin(allowedRoles, verifySignupPhone = false, rememberDevice = null, emailAlreadyVerified = false) {
         const { session, profile } = await validateLoginAccount(allowedRoles);
+
+        // The server binds the email proof to this exact Auth session. A
+        // trusted browser secret can skip delivery, but only after the server
+        // validates its hash and inactivity expiry.
+        if (!emailAlreadyVerified) {
+            if (!window.InigoEmailMfa) throw new Error('Email verification is temporarily unavailable. Please reload and try again.');
+            const mfa = await window.InigoEmailMfa.begin({
+                userId: session.user.id,
+                remember: rememberDevice === true,
+            });
+            if (mfa.verified !== true) {
+            // OAuth returns land with a closed modal. Open it before setting
+            // pendingLoginOtp because switching panels intentionally cancels
+            // a pending gate and signs out its bound session.
+            openModal('login');
+            pendingLoginOtp = {
+                userId: session.user.id,
+                email: profile.email || session.user.email,
+                allowedRoles,
+                rememberDevice: rememberDevice === true,
+                challengeId: mfa.challenge_id,
+                verifySignupPhone,
+                codeSent: mfa.resent !== false,
+            };
+            setOtpPurpose('login');
+            if (window.InigoLoading) window.InigoLoading.hide();
+            const emailLabel = overlay.querySelector('[data-verify-email]');
+            if (emailLabel) emailLabel.textContent = pendingLoginOtp.email || 'your email';
+            setActivePanel('verify');
+            startOtpFlow();
+            setAuthNotice(pendingLoginOtp.codeSent
+                ? 'Enter the 6-digit code we emailed you to finish signing in.'
+                : 'A code was sent recently. Check your inbox or wait before requesting another.', false);
+            return;
+            }
+        }
+
         if (verifySignupPhone && pendingSignupPhone) {
             window.InigoLoading?.hide();
             setActivePanel('phone');
@@ -357,13 +384,16 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingSignupPhone = '';
         }
 
-        // Single Session + device trust — both best-effort, and never
-        // allowed to block a login that has already passed every check
-        // above. See registerActiveSession()'s own comment for the
+        // Single Session registration is best-effort and never allowed to
+        // block a login that has passed every check above. Email proof and
+        // remembered-device authorization were enforced by the server gate.
+        // See registerActiveSession()'s own comment for the
         // graceful-degradation contract this relies on when
         // database/schema/005_session_security.sql hasn't been run yet.
         await registerActiveSession(session.user.id);
-        markDeviceTrusted(session.user.id);
+        // Clear any remembered-device credential when the user chose
+        // session-only access; the server will require a fresh code next time.
+        if (rememberDevice !== true) window.InigoEmailMfa.clearDeviceSecret(session.user.id);
 
         // This is an observed app sign-in, not a claim about when every Auth
         // session started. The database RPC derives the actor and session
@@ -431,31 +461,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ------------------------------------------------------------------
-    // First-login-per-device OTP gate (spec: Email Authentication, scoped
-    // to first-login-per-device per the owner's decision — see
-    // implementation_plan.md's D6 / "Owner decisions"). These two
-    // functions are the only place trusted-device state is read/written.
-    // ------------------------------------------------------------------
-    function isDeviceTrusted(userId) {
-        try {
-            return localStorage.getItem(TRUSTED_DEVICE_STORAGE_PREFIX + userId) === '1';
-        } catch (_) {
-            // Can't remember anything — the safe default is to ask for an
-            // OTP rather than silently skip it forever.
-            return false;
-        }
-    }
-
-    function markDeviceTrusted(userId) {
-        try {
-            localStorage.setItem(TRUSTED_DEVICE_STORAGE_PREFIX + userId, '1');
-        } catch (_) {
-            // Best-effort only — if storage is unavailable, this account
-            // is simply asked for an OTP again next time too.
-        }
-    }
-
     // Relabels the reused Verify panel for whichever purpose it's
     // currently serving, so "Verify your email" / "← Back to sign up"
     // (correct right after Sign Up) don't show while this same panel is
@@ -474,42 +479,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Called right after a password sign-in succeeds (Log In or Admin
-    // panel alike). A Supabase session already exists at this point —
-    // signInWithPassword already fully established it — so this only
-    // gates *completing the app-level login* (closing the modal and
-    // redirecting into a dashboard), the same trust model the role gate
-    // in completeLogin() above already relies on (sign back out and
-    // refuse to proceed on failure). See this repo's Phase 6 report for
-    // the accepted limitation that this does not stop someone with
-    // devtools open from navigating straight to a dashboard URL using the
-    // session that already exists before finishing this step.
-    async function gateOtpThenCompleteLogin(user, allowedRoles, email) {
-        await validateLoginAccount(allowedRoles);
-        if (!user || isDeviceTrusted(user.id)) {
-            await completeLogin(allowedRoles);
-            return;
-        }
-
-        pendingLoginOtp = { userId: user.id, email, allowedRoles };
-        setOtpPurpose('login');
-
-        if (window.InigoLoading) window.InigoLoading.hide();
-
-        const { error } = await window.sb.auth.signInWithOtp({
-            email,
-            options: { shouldCreateUser: false }
-        });
-        if (error) {
-            pendingLoginOtp = null;
-            throw error;
-        }
-
-        const emailLabel = overlay.querySelector('[data-verify-email]');
-        if (emailLabel) emailLabel.textContent = email || 'your email';
-        setActivePanel('verify');
-        startOtpFlow();
-        setAuthNotice('New device — enter the 6-digit code we emailed you to finish signing in.', false);
+    // Password login retains its original session while the server sends and
+    // verifies an email code. The code is attached to that session server-side.
+    async function gateOtpThenCompleteLogin(user, allowedRoles, email, rememberDevice) {
+        if (!user) throw new Error('Sign in again to continue.');
+        await completeLogin(allowedRoles, false, rememberDevice);
     }
 
     // ------------------------------------------------------------------
@@ -693,6 +667,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function enterInviteMode() {
         if (inviteHandled) return;
         inviteHandled = true;
+        // Invite links have no Remember me choice. Keep their one-time setup
+        // session in this tab and avoid creating a remembered-device secret.
+        window.InigoAuthStorage?.setRememberSession?.(false);
         if (window.InigoLoading) window.InigoLoading.hide();
         setResetPurpose('invite');
         openModal('reset');
@@ -731,7 +708,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // invite flow, either of which takes priority above.
     const AUTH_NOTICE_MESSAGES = {
         idle: 'You were signed out after a period of inactivity. Please log in again.',
-        superseded: 'You were signed out because your account was signed in on another device.'
+        superseded: 'You were signed out because your account was signed in on another device.',
+        device_trust_expired: 'This remembered device has been inactive for 7 days. Sign in and verify your email again.',
+        email_verification_required: 'Your session needs a fresh email code. Sign in to verify your email and continue.',
+        email_verification_unavailable: 'We could not check your email verification. Please sign in again.'
     };
 
     function consumePendingAuthNotice() {
@@ -764,10 +744,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // tab) — otherwise every plain page load with a lingering session would
     // flash a full-page blur for no reason the visitor asked for.
     const isOauthReturn = sessionStorage.getItem('inigosync-oauth-pending') === '1';
+    const oauthRememberDevice = sessionStorage.getItem(OAUTH_REMEMBER_STORAGE_KEY) === '1';
     sessionStorage.removeItem('inigosync-oauth-pending');
+    sessionStorage.removeItem(OAUTH_REMEMBER_STORAGE_KEY);
 
     if (window.sb) {
-        window.sb.auth.getSession().then(({ data: { session } }) => {
+        window.sb.auth.getSession().then(async ({ data: { session } }) => {
             if (isOauthReturn && !session) {
                 openModal('login');
                 setAuthNotice('Google sign-in did not finish. Please try again.', true);
@@ -780,11 +762,29 @@ document.addEventListener('DOMContentLoaded', () => {
             // here would skip straight past "set a new password" and, for
             // an invite, also complete the login as the wrong role.
             if (!session || isRecoveryRedirect || recoveryHandled || isInviteRedirect || inviteHandled) return;
-            // A password login awaiting its first-device code must not be
-            // completed just because the visitor reloads the landing page.
-            if (!isOauthReturn && !isDeviceTrusted(session.user.id)) return;
+            // The server decides whether this exact Auth session already has
+            // email proof; a browser marker never bypasses the gate.
+            if (!isOauthReturn) {
+                const rememberSession = window.InigoAuthStorage?.isRememberSession?.() === true;
+                completeLogin(['customer', 'staff', 'admin'], false, rememberSession).catch(error => {
+                    openModal('login');
+                    setAuthNotice(friendlyAuthError(error), true);
+                    if (window.InigoLoading) window.InigoLoading.hide();
+                });
+                return;
+            }
+            if (isOauthReturn) {
+                // Reapply the choice captured before the provider redirect.
+                // This keeps session storage aligned with the explicit
+                // checkbox even if the SDK restored its session elsewhere.
+                window.InigoAuthStorage?.setRememberSession?.(oauthRememberDevice);
+            }
             if (isOauthReturn && window.InigoLoading) window.InigoLoading.show('Signing you in…');
-            completeLogin(isOauthReturn ? ['customer'] : ['customer', 'staff', 'admin']).catch(error => {
+            completeLogin(
+                isOauthReturn ? ['customer'] : ['customer', 'staff', 'admin'],
+                false,
+                isOauthReturn ? oauthRememberDevice : true
+            ).catch(error => {
                 if (isOauthReturn) {
                     openModal('login');
                     setAuthNotice(friendlyAuthError(error), true);
@@ -906,12 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
         hideAuthNotice();
         window.InigoSignupPhone?.cancel();
         if (pendingLoginOtp) {
-            // Backing out of the new-device OTP gate without finishing it.
-            // A real Supabase session already exists at this point (see
-            // gateOtpThenCompleteLogin) — sign it back out so it isn't
-            // left authenticated-but-not-actually-"logged in" from the
-            // app's point of view. Fire-and-forget: the modal closes
-            // regardless of whether this network call succeeds.
+            // Backing out of the email verification gate signs out the still
+            // unverified Auth session. Server policy already blocks protected
+            // access, but clearing it avoids leaving an unfinished login open.
             window.sb.auth.signOut().catch(() => {});
             pendingLoginOtp = null;
         }
@@ -1775,19 +1772,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 if (mode === 'login') {
-                    window.InigoAuthStorage.setRememberSession(data.remember === 'on');
+                    const rememberDevice = data.remember === 'on';
                     if (window.InigoLoading) window.InigoLoading.show('Signing you in…');
                     const { data: signInData, error } = await window.sb.auth.signInWithPassword({
                         email: data.email,
                         password: data.password
                     });
                     if (error) throw error;
+                    window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);
-                    await gateOtpThenCompleteLogin(signInData.user, ['customer'], data.email);
+                    await gateOtpThenCompleteLogin(signInData.user, ['customer'], data.email, rememberDevice);
                     return;
                 }
 
                 if (mode === 'signup') {
+                    const rememberDevice = data.remember === 'on';
                     // Check the local input shape before signup. The actual
                     // provider format/type validation and profile write happen
                     // after email confirmation and an active profile exists.
@@ -1825,9 +1824,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
+                    // Do not move an existing session or change its storage
+                    // policy until Supabase confirms this signup succeeded.
+                    window.InigoAuthStorage.setRememberSession(rememberDevice);
+
                     pendingSignupPhone = mobileCheck.normalized || '';
                     if (signUpData.session) {
-                        await completeLogin(['customer'], true);
+                        await completeLogin(['customer'], true, rememberDevice);
                         return;
                     }
 
@@ -1843,13 +1846,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (mode === 'verify') {
                     const code = otpBoxes.map((box) => box.value).join('');
 
-                    // First-login-per-device gate on a password login —
-                    // reuses this same panel/boxes/resend flow, but verifies
-                    // against Supabase's generic email-OTP type (sent via
-                    // signInWithOtp in gateOtpThenCompleteLogin) rather than
-                    // the signup-confirmation OTP below, and finishes by
-                    // completing the login instead of redirecting straight
-                    // to the customer dashboard.
+                    // Email-MFA step on a password/OAuth session. The server
+                    // checks the code and binds proof to that existing session;
+                    // signup confirmation below remains a separate first step.
                     if (otpPurpose === 'login') {
                         if (code.length !== 6 || !pendingLoginOtp) {
                             setAuthNotice('Enter the 6-digit code we emailed you.', true);
@@ -1857,19 +1856,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
 
                         if (window.InigoLoading) window.InigoLoading.show('Verifying…');
-                        const { error } = await window.sb.auth.verifyOtp({
-                            email: pendingLoginOtp.email,
-                            token: code,
-                            type: 'email'
+                        const pending = pendingLoginOtp;
+                        const verified = await window.InigoEmailMfa.verify({
+                            challengeId: pending.challengeId,
+                            code,
+                            userId: pending.userId,
+                            remember: pending.rememberDevice,
                         });
+                        if (verified.verified !== true) throw new Error('Email verification could not be completed. Please try again.');
 
-                        if (error) {
-                            throw error;
-                        }
-
-                        const allowedRoles = pendingLoginOtp.allowedRoles;
+                        const allowedRoles = pending.allowedRoles;
+                        const rememberDevice = pending.rememberDevice;
                         pendingLoginOtp = null;
-                        await completeLogin(allowedRoles);
+                        await completeLogin(allowedRoles, pending.verifySignupPhone === true, rememberDevice, true);
                         return;
                     }
 
@@ -1944,21 +1943,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw error;
                     }
 
-                    await completeLogin(['customer'], true);
+                    await completeLogin(['customer'], true, signupForm?.elements.remember?.checked === true);
 
                     return;
                 }
 
                 if (mode === 'admin') {
-                    window.InigoAuthStorage.setRememberSession(data.remember === 'on');
+                    const rememberDevice = data.remember === 'on';
                     if (window.InigoLoading) window.InigoLoading.show('Signing you in…');
                     const { data: signInData, error } = await window.sb.auth.signInWithPassword({
                         email: data['admin-email'],
                         password: data['admin-password']
                     });
                     if (error) throw error;
+                    window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);
-                    await gateOtpThenCompleteLogin(signInData.user, ['staff', 'admin'], data['admin-email']);
+                    await gateOtpThenCompleteLogin(signInData.user, ['staff', 'admin'], data['admin-email'], rememberDevice);
                     return;
                 }
 
@@ -2034,7 +2034,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // branch below.
                         setAuthNotice('Password set — welcome aboard!', false);
                         if (window.InigoLoading) window.InigoLoading.show('Setting up your dashboard…');
-                        await completeLogin(['staff']);
+                        await completeLogin(['staff'], false, false);
                         return;
                     }
 
@@ -2148,8 +2148,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // WHICH call re-sends a code depends on what this panel is
             // currently being used for, and they are not interchangeable:
-            //   • login    → signInWithOtp, the same call the new-device gate
-            //                made, served by the Magic Link template.
+            //   • login    → the server email-MFA challenge, which uses the
+            //                configured Supabase Auth email delivery.
             //   • recovery → resetPasswordForEmail, NOT resend({ type:
             //                'signup' }). That would mint a signup-
             //                confirmation token, which verifyOtp({ type:
@@ -2162,10 +2162,21 @@ document.addEventListener('DOMContentLoaded', () => {
             let resendCode;
             if (otpPurpose === 'login') {
                 if (!pendingLoginOtp) return;
-                resendCode = () => window.sb.auth.signInWithOtp({
-                    email: pendingLoginOtp.email,
-                    options: { shouldCreateUser: false }
-                });
+                resendCode = async () => {
+                    const pending = pendingLoginOtp;
+                    const result = await window.InigoEmailMfa.begin({
+                        userId: pending.userId,
+                        remember: pending.rememberDevice,
+                    });
+                    if (result.verified === true) {
+                        pendingLoginOtp = null;
+                        await completeLogin(pending.allowedRoles, pending.verifySignupPhone === true, pending.rememberDevice, true);
+                    } else {
+                        pendingLoginOtp.challengeId = result.challenge_id;
+                        pendingLoginOtp.codeSent = result.resent === true;
+                    }
+                    return { error: null, resent: result.resent };
+                };
             } else if (otpPurpose === 'recovery') {
                 if (!pendingRecoveryEmail) return;
                 resendCode = () => window.sb.auth.resetPasswordForEmail(pendingRecoveryEmail, {
@@ -2183,9 +2194,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.InigoLoading) window.InigoLoading.show('Sending a new code…');
 
             try {
-                const { error } = await resendCode();
+                const { error, resent } = await resendCode();
                 if (error) throw error;
-                startResendCountdown(30);
+                if (otpPurpose === 'login' && resent === false) {
+                    setAuthNotice('A code was sent recently. Check your inbox or wait before requesting another.', false);
+                    startResendCountdown(60);
+                } else startResendCountdown(30);
             } catch (err) {
                 // Re-enabled rather than left dead, so a rate-limited or
                 // failed resend can be retried once the wait is over.
@@ -2342,6 +2356,11 @@ document.addEventListener('DOMContentLoaded', () => {
             button.disabled = true;
             button.classList.add('is-loading');
             if (window.InigoLoading) window.InigoLoading.show('Redirecting to Google…');
+            const authForm = container.closest('form');
+            const rememberDevice = authForm?.elements.remember?.checked === true;
+            const previousRememberChoice = window.InigoAuthStorage?.isRememberSession?.() !== false;
+            window.InigoAuthStorage?.setRememberSession?.(rememberDevice);
+            sessionStorage.setItem(OAUTH_REMEMBER_STORAGE_KEY, rememberDevice ? '1' : '0');
             sessionStorage.setItem('inigosync-oauth-pending', '1');
 
             const { error } = await window.sb.auth.signInWithOAuth({
@@ -2354,6 +2373,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) {
                 sessionStorage.removeItem('inigosync-oauth-pending');
+                sessionStorage.removeItem(OAUTH_REMEMBER_STORAGE_KEY);
+                window.InigoAuthStorage?.setRememberSession?.(previousRememberChoice);
                 if (window.InigoLoading) window.InigoLoading.hide();
                 setAuthNotice(friendlyAuthError(error), true);
                 button.disabled = false;
