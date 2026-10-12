@@ -183,6 +183,9 @@ function mockClient(options) {
             await page.route('**/includes/landingPage.js', r => r.fulfill({ contentType: 'application/javascript', body: '' }));
             await page.route('https://elfsightcdn.com/**', r => r.abort());
             await page.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
+            if (options.termsFailure) {
+                await page.route('**/Pages/terms.html', r => r.fulfill({ status: 503, contentType: 'text/plain', body: 'Terms unavailable' }));
+            }
             await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
             return page;
         }
@@ -196,6 +199,174 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        if (process.env.TERMS_DIALOG_ONLY === '1') {
+            const page = await setup({ emailConfirmation: true });
+            await page.addStyleTag({ content: '.auth-modal, .auth-modal *, [data-terms-overlay], [data-terms-overlay] * { animation: none !important; transition: none !important; }' });
+            await page.locator('.cta-buttons [data-auth-open]').click();
+            await page.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const form = page.locator('[data-auth-panel="signup"]');
+            await form.locator('[name="email"]').fill('customer@example.test');
+            await form.locator('[name="password"]').fill('Fixture2026!');
+            await form.locator('[data-signup-next]').click();
+            await form.locator('[data-signup-step="2"].is-active').waitFor();
+            const termsCheckbox = form.locator('[name="terms"]');
+            const termsLink = form.locator('[data-terms-open]');
+            const dialog = page.locator('[data-terms-overlay]');
+            const createAccount = form.locator('button[type="submit"]');
+            await form.locator('[name="surname"]').fill('Tester');
+            await form.locator('[name="firstname"]').fill('Customer');
+
+            await termsLink.click();
+            await dialog.waitFor({ state: 'visible' });
+            assert.equal(await dialog.locator('[data-terms-agree]').innerText(), 'Agree');
+            assert.equal(await termsCheckbox.isChecked(), false);
+            await dialog.locator('[data-terms-agree]').click();
+            assert.equal(await termsCheckbox.isChecked(), true, 'Agree checks the signup Terms checkbox');
+            assert.equal(await termsCheckbox.evaluate(el => document.activeElement === el), true, 'Agree returns focus to the checked checkbox');
+            await dialog.waitFor({ state: 'hidden' });
+            assert(!(await calls(page)).some(c => c.kind === 'signUp'), 'Agree does not submit signup');
+            await termsCheckbox.uncheck();
+
+            for (const dismiss of ['close button', 'backdrop', 'Escape']) {
+                await createAccount.click();
+                await dialog.waitFor({ state: 'visible' });
+                if (dismiss === 'close button') await dialog.locator('.auth-terms-close').click();
+                else if (dismiss === 'backdrop') await dialog.locator('.auth-terms-backdrop').click({ position: { x: 2, y: 2 } });
+                else await page.keyboard.press('Escape');
+                await dialog.waitFor({ state: 'hidden' });
+                assert.equal(await termsCheckbox.isChecked(), false, `${dismiss} dismiss does not check an unchecked box`);
+                assert.equal(await createAccount.evaluate(el => document.activeElement === el), true, `${dismiss} returns focus to Create Account`);
+                assert(!(await calls(page)).some(c => c.kind === 'signUp'), `${dismiss} does not submit signup`);
+            }
+            assert.equal(await termsCheckbox.isChecked(), false, 'dismiss-only paths leave an unchecked box unchecked');
+            await createAccount.click();
+            await dialog.waitFor({ state: 'visible' });
+            await dialog.locator('[data-terms-agree]').click();
+            await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').filter(c => c.kind === 'signUp').length === 1);
+            assert.equal(await termsCheckbox.isChecked(), true, 'Agree during Create Account checks Terms');
+            assert.equal((await calls(page)).filter(c => c.kind === 'signUp').length, 1, 'Agree resumes the intended signup exactly once');
+            await page.close();
+
+            const noticePage = await setup();
+            await noticePage.evaluate(() => {
+                const notice = document.createElement('div');
+                notice.className = 'auth-status';
+                notice.dataset.authNotice = '';
+                notice.hidden = true;
+                const message = document.createElement('span');
+                message.dataset.authNoticeMessage = '';
+                notice.appendChild(message);
+                const close = document.createElement('button');
+                close.type = 'button';
+                close.dataset.authNoticeClose = '';
+                close.hidden = true;
+                notice.appendChild(close);
+                document.body.appendChild(notice);
+            });
+            await noticePage.locator('.cta-buttons [data-auth-open]').click();
+            await noticePage.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const noticeForm = noticePage.locator('[data-auth-panel="signup"]');
+            await noticeForm.locator('[name="email"]').fill('customer@example.test');
+            await noticeForm.locator('[name="password"]').fill('Fixture2026!');
+            await noticeForm.locator('[data-signup-next]').click();
+            await noticeForm.locator('[data-signup-step="2"].is-active').waitFor();
+            await noticeForm.locator('[name="terms"]').check();
+            await noticeForm.locator('button[type="submit"]').click();
+            const errorNotice = noticePage.locator('[data-auth-notice].is-error.is-visible');
+            await errorNotice.waitFor({ state: 'visible' });
+            assert.match(await errorNotice.locator('[data-auth-notice-message]').innerText(), /Enter your surname/);
+            await noticeForm.locator('[name="terms"]').uncheck();
+            await noticeForm.locator('button[type="submit"]').click();
+            const noticeDialog = noticePage.locator('[data-terms-overlay]');
+            await noticeDialog.waitFor({ state: 'visible' });
+            assert(await errorNotice.isVisible(), 'signup error notice remains visible behind Terms');
+            await noticePage.keyboard.press('Tab');
+            assert(await noticeDialog.locator('[data-terms-dialog]').evaluate(el => el.contains(document.activeElement)), 'Terms owns Tab while the auth error notice is visible');
+            await noticePage.keyboard.press('Escape');
+            await noticeDialog.waitFor({ state: 'hidden' });
+            assert(await noticeForm.locator('[name="terms"]').isChecked() === false, 'Escape cancels pending signup with Terms unchecked');
+            assert(await errorNotice.isVisible(), 'Escape dismisses Terms without dismissing the underlying error notice');
+            assert(!(await calls(noticePage)).some(c => c.kind === 'signUp'), 'Terms keyboard dismissal does not submit signup');
+            await noticePage.close();
+
+            const failedTerms = await setup({ termsFailure: true });
+            failedTerms.on('popup', popup => popup.close());
+            await failedTerms.locator('.cta-buttons [data-auth-open]').click();
+            await failedTerms.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const failedForm = failedTerms.locator('[data-auth-panel="signup"]');
+            await failedForm.locator('[name="email"]').fill('customer@example.test');
+            await failedForm.locator('[name="password"]').fill('Fixture2026!');
+            await failedForm.locator('[data-signup-next]').click();
+            await failedForm.locator('[data-signup-step="2"].is-active').waitFor();
+            await failedForm.locator('[name="surname"]').fill('Tester');
+            await failedForm.locator('[name="firstname"]').fill('Customer');
+            const termsResponse = failedTerms.waitForResponse(response => response.url().includes('/Pages/terms.html'));
+            await failedForm.locator('button[type="submit"]').click();
+            assert.equal((await termsResponse).status(), 503, 'the inline Terms fetch failure enters the fallback path');
+            await failedTerms.waitForTimeout(100);
+            assert.equal(await failedForm.locator('[name="terms"]').isChecked(), false, 'failed Terms fetch leaves the checkbox unchecked');
+            assert(!(await calls(failedTerms)).some(c => c.kind === 'signUp'), 'failed Terms fetch does not resume or submit signup');
+            await failedTerms.close();
+            console.log('PASS manual Agree only checks; Create Account resumes once after Agree; dismissals and Terms fetch failure cancel submission');
+            return;
+        }
+        if (process.env.SIGNUP_EMAIL_ONLY === '1') {
+            const page = await setup();
+            await page.setViewportSize({ width: 320, height: 844 });
+            await page.addStyleTag({ content: '.auth-modal, .auth-modal * { animation: none !important; transition: none !important; }' });
+            await page.locator('.cta-buttons [data-auth-open]').click();
+            await page.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const form = page.locator('[data-auth-panel="signup"]');
+            const height = await form.evaluate(el => el.getBoundingClientRect().height);
+            await form.locator('[name="email"]').fill('kikooborza@gmail.comk');
+            await form.locator('[name="password"]').fill('Fixture2026!');
+            await page.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'check_spelling');
+            assert.equal(await page.locator('[data-signup-email-status]').innerText(), 'Check email spelling');
+            assert.equal(await form.locator('[name="email"]').getAttribute('aria-invalid'), 'true');
+            assert(Math.abs(await form.evaluate(el => el.getBoundingClientRect().height) - height) < 1, '320px typo status does not resize the signup form');
+            assert(await form.evaluate(el => el.scrollWidth <= el.clientWidth), '320px typo status does not overflow the signup form');
+            await form.locator('[data-signup-next]').click();
+            assert(await form.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')));
+            assert(!(await calls(page)).some(c => ['emailCheck', 'signUp'].includes(c.kind)));
+
+            await form.locator('[name="email"]').fill('member@gmail.com');
+            await page.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'available');
+            await form.locator('[data-signup-next]').click();
+            await form.locator('[data-signup-step="2"].is-active').waitFor();
+            const remember = form.locator('[name="remember"]');
+            assert.equal(await remember.evaluate(el => el.nextElementSibling.textContent), 'Remember me');
+            assert.equal(await remember.evaluate(el => el.closest('[data-signup-step]').dataset.signupStep), '2');
+            await form.locator('[name="surname"]').fill('Tester');
+            await form.locator('[name="firstname"]').fill('Customer');
+            await form.locator('[name="terms"]').check();
+            await page.evaluate(() => {
+                const email = document.querySelector('[data-auth-panel="signup"] [name="email"]');
+                email.value = 'member@gmail.comk';
+                email.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            await form.locator('button[type="submit"]').click();
+            await form.locator('[data-signup-step="1"].is-active').waitFor();
+            assert(!(await calls(page)).some(c => c.kind === 'signUp'), 'final signup submit blocks a likely provider typo');
+            await page.close();
+
+            const googleSignup = await setup();
+            await googleSignup.locator('.cta-buttons [data-auth-open]').click();
+            await googleSignup.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const googleForm = googleSignup.locator('[data-auth-panel="signup"]');
+            const rememberChoice = googleForm.locator('[name="remember"]');
+            assert.equal(await googleForm.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')), true);
+            assert.equal(await rememberChoice.isVisible(), false, 'Remember me stays on step 2 during signup OAuth');
+            assert.equal(await rememberChoice.isChecked(), false, 'signup OAuth uses the unchecked default remember choice');
+            await googleForm.locator('[data-google-btn] button').click();
+            await googleSignup.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'oauth'));
+            const googleCalls = await calls(googleSignup);
+            assert.equal(googleCalls.find(c => c.kind === 'oauth').data.provider, 'google');
+            assert(googleCalls.some(c => c.kind === 'rememberSessionChoice' && c.data.remember === false), 'Google signup starts with the unchecked remember-device choice');
+            assert(!googleCalls.some(c => c.kind === 'signUp'), 'Google signup continues through OAuth rather than password signup');
+            await googleSignup.close();
+            console.log('PASS signup common-provider typo detection, 320px layout, Continue and final-submit gates, Remember me placement, and Google OAuth default');
+            return;
+        }
         if (process.env.REMEMBER_DEVICE_ONLY === '1') {
             const makeStorage = () => {
                 const values = new Map();
@@ -375,8 +546,10 @@ function mockClient(options) {
             const signupForm = signupPage.locator('[data-auth-panel="signup"]');
             await signupForm.locator('[name="email"]').fill('customer@example.test');
             await signupForm.locator('[name="password"]').fill('Fixture2026!');
-            await signupForm.locator('[name="remember"]').check();
             await signupForm.locator('[data-signup-next]').click();
+            assert.equal(await signupForm.locator('[name="remember"]').evaluate(el => el.closest('[data-signup-step]').dataset.signupStep), '2');
+            assert.equal(await signupForm.locator('[name="remember"]').evaluate(el => el.nextElementSibling.textContent), 'Remember me');
+            await signupForm.locator('[name="remember"]').check();
             await signupForm.locator('[name="surname"]').fill('Tester');
             await signupForm.locator('[name="firstname"]').fill('Customer');
             await signupForm.locator('[name="terms"]').check();
@@ -398,9 +571,10 @@ function mockClient(options) {
             assert.equal(await signupChoiceForm.locator('[name="remember"]').count(), 1, 'signup has a single remembered-device choice across its steps and Google flow');
             await signupChoiceForm.locator('[name="email"]').fill('customer@example.test');
             await signupChoiceForm.locator('[name="password"]').fill('Fixture2026!');
+            await signupChoiceForm.locator('[data-signup-next]').click();
+            assert.equal(await signupChoiceForm.locator('[name="remember"]').evaluate(el => el.closest('[data-signup-step]').dataset.signupStep), '2');
             await signupChoiceForm.locator('[name="remember"]').check();
             await signupChoiceForm.locator('[name="remember"]').uncheck();
-            await signupChoiceForm.locator('[data-signup-next]').click();
             await signupChoiceForm.locator('[name="surname"]').fill('Tester');
             await signupChoiceForm.locator('[name="firstname"]').fill('Customer');
             await signupChoiceForm.locator('[name="terms"]').check();
@@ -537,7 +711,7 @@ function mockClient(options) {
                 const form = await firstStep(page, '');
                 const height = await form.evaluate(el => el.getBoundingClientRect().height);
                 const borders = [];
-                for (const [email, label] of [['taken@example.test', 'Not available'], ['new@example.test', 'Available']]) {
+                for (const [email, label] of [['taken@example.test', 'Not available'], ['new@example.test', 'Available'], ['person@gmail.comk', 'Check email spelling']]) {
                     await form.locator('[name="email"]').fill(email);
                     await page.waitForFunction(label => document.querySelector('[data-signup-email-status]').textContent === label, label);
                     assert.equal(await form.evaluate(el => el.getBoundingClientRect().height), height, `${width}px ${theme}: email status must not resize form`);
@@ -585,6 +759,31 @@ function mockClient(options) {
         await takenForm.locator('[data-signup-next]').click();
         await takenForm.locator('[data-signup-step="2"].is-active').waitFor();
         await taken.close();
+        const typo = await setup();
+        const typoForm = await firstStep(typo, 'kikooborza@gmail.comk');
+        await typo.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'check_spelling');
+        assert.equal(await typo.locator('[data-signup-email-status]').innerText(), 'Check email spelling');
+        assert.equal(await typo.locator('[name="email"]').getAttribute('aria-invalid'), 'true');
+        await typoForm.locator('[data-signup-next]').click();
+        assert(await typoForm.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')));
+        assert.match(await typo.locator('[data-auth-notice]').innerText(), /possible provider-domain typo/i);
+        assert(!(await calls(typo)).some(c => ['emailCheck', 'signUp'].includes(c.kind)), 'a likely provider typo never reaches availability lookup or account creation');
+        await typo.close();
+        const submitTypo = await setup();
+        const submitTypoForm = await firstStep(submitTypo, 'customer@example.test');
+        await submitTypoForm.locator('[data-signup-next]').click();
+        await submitTypoForm.locator('[name="surname"]').fill('Tester');
+        await submitTypoForm.locator('[name="firstname"]').fill('Customer');
+        await submitTypoForm.locator('[name="terms"]').check();
+        await submitTypo.evaluate(() => {
+            const email = document.querySelector('[data-auth-panel="signup"] [name="email"]');
+            email.value = 'customer@gmail.comk';
+            email.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await submitTypoForm.locator('button[type="submit"]').click();
+        await submitTypoForm.locator('[data-signup-step="1"].is-active').waitFor();
+        assert(!(await calls(submitTypo)).some(c => c.kind === 'signUp'), 'final form submission rechecks the email and blocks likely provider typos');
+        await submitTypo.close();
         for (const emailMode of ['error', 'rate_limited']) {
             const page = await setup({ emailMode });
             const form = await firstStep(page, 'new@example.test');
@@ -610,8 +809,8 @@ function mockClient(options) {
             const form = page.locator('[data-auth-panel="signup"]');
             await form.locator('[name="email"]').fill('customer@example.test');
             await form.locator('[name="password"]').fill('Fixture2026!');
-            if (remember) await form.locator('[name="remember"]').check();
             await form.locator('[data-signup-next]').click();
+            if (remember) await form.locator('[name="remember"]').check();
             await form.locator('[name="surname"]').fill('Tester');
             await form.locator('[name="firstname"]').fill('Customer');
             await form.locator('[name="mobile"]').fill(phone);

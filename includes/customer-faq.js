@@ -7,7 +7,7 @@
         booking: 'Open Book a Court, choose a sport and court, then select an available date and time. Review your booking and payment choice before continuing to checkout.',
         sports: 'Open Book a Court to see the current sports, courts, and rates. The booking review shows the amount for your selected court and time before checkout.',
         cart: 'Yes. Add another booking from the booking flow. The dashboard currently allows up to eight court bookings in one checkout; your selected items appear in the booking cart.',
-        payment: 'Choose a downpayment or full payment option on the booking screen. It shows the current percentage and estimated amount before checkout. A remaining balance, if any, is paid at check-in.',
+        payment: 'When online checkout is available, choose a deposit payment at the sports center’s current percentage or pay in full on the booking screen. PayMongo shows any method-dependent processing fee and the final total before you authorize payment. A remaining balance, if any, is paid at check-in using a method available at the sports center.',
         records: 'Open My Bookings to see your bookings and statuses. Open Receipts to view payment acknowledgments and linked walk-in visits.',
         policy: 'Customers cannot cancel bookings themselves, and completed payments are non-refundable. For the current check-in grace period and no-show policy, read the notice at the top of My Bookings.',
         contact: 'Iñigos Sports Center is at Brgy. Bocohan, Diversion Road, Lucena City, Quezon, Philippines. Call +63 928 154 6876, email itsrosem8@gmail.com, or open the map:'

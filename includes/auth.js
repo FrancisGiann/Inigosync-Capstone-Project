@@ -901,6 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeModal() {
         authNoticeReturnFocus = null;
         hideAuthNotice();
+        termsPendingSubmit = null;
         window.InigoSignupPhone?.cancel();
         if (pendingLoginOtp) {
             // Backing out of the email verification gate signs out the still
@@ -1044,6 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let termsFetchFailed = false;
     let termsLastFocused = null;
     let termsHideTimer = null;
+    let termsPendingSubmit = null;
     // Tracked as a flag rather than derived from [hidden], which is only set
     // once the fade-out finishes: an Escape pressed during those 250ms belongs
     // to the auth modal underneath, not to a dialog already on its way out.
@@ -1127,9 +1129,12 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.setAttribute('aria-hidden', 'true');
     }
 
-    function closeTermsDialog() {
+    function closeTermsDialog(returnFocusTo) {
         if (!termsIsOpen) return;
         termsIsOpen = false;
+        // Dismissal cancels a submit that opened the dialog. Agree clears and
+        // captures it before closing, then deliberately resumes it below.
+        termsPendingSubmit = null;
 
         overlay.removeAttribute('aria-hidden');
         termsOverlay.removeAttribute('data-open');
@@ -1140,18 +1145,88 @@ document.addEventListener('DOMContentLoaded', () => {
             termsHideTimer = null;
         }, TERMS_CLOSE_DELAY_MS);
 
-        // Back to the link that opened this, with the sign-up form and every
-        // value in it exactly as it was left — nothing is reset or re-rendered.
-        if (termsLastFocused && typeof termsLastFocused.focus === 'function' && document.contains(termsLastFocused)) {
-            termsLastFocused.focus();
+        // Dismissal returns focus to the element that opened the dialog;
+        // Agree passes the checked Terms box as its focus target.
+        const focusTarget = returnFocusTo || termsLastFocused;
+        if (focusTarget && typeof focusTarget.focus === 'function' && document.contains(focusTarget)) {
+            focusTarget.focus();
         }
         termsLastFocused = null;
     }
 
+    function openTermsFallback(link) {
+        // Keep the original link's new-tab behavior available if the inline
+        // copy cannot be loaded. The opener reference is severed explicitly.
+        const opened = window.open(link.href, '_blank');
+        if (opened) {
+            try {
+                opened.opener = null;
+            } catch (_) {
+                // Some engines refuse the assignment; this is our own page.
+            }
+        }
+        return Boolean(opened);
+    }
+
+    async function presentTermsDialog(link, returnFocusTo, submissionAttempt = false, pendingSubmit = null) {
+        if (termsFetchFailed) {
+            if (submissionAttempt && termsPendingSubmit !== pendingSubmit) return false;
+            const opened = openTermsFallback(link);
+            if (submissionAttempt) {
+                setAuthNotice(opened
+                    ? 'Review the Terms & Conditions in the new tab, then check the box to continue.'
+                    : 'Could not open the Terms & Conditions here — tap the link to open them in a new tab.', true);
+            }
+            return false;
+        }
+
+        try {
+            const fragment = await loadTermsFragment(link.href);
+            if (submissionAttempt && (termsPendingSubmit !== pendingSubmit || !authIsOpen || !signupForm.classList.contains('is-active'))) {
+                return false;
+            }
+            // Keep the cached source fragment intact for later opens.
+            termsBody.replaceChildren(fragment.cloneNode(true));
+            termsBody.scrollTop = 0;
+            openTermsDialog(returnFocusTo || link);
+            return true;
+        } catch (err) {
+            if (submissionAttempt && (termsPendingSubmit !== pendingSubmit || !authIsOpen || !signupForm.classList.contains('is-active'))) {
+                return false;
+            }
+            console.warn('Terms dialog unavailable, opening terms.html in a new tab instead:', err);
+            termsFetchFailed = true;
+            const opened = openTermsFallback(link);
+            if (submissionAttempt) {
+                setAuthNotice(opened
+                    ? 'Review the Terms & Conditions in the new tab, then check the box to continue.'
+                    : 'Could not open the Terms & Conditions here — tap the link to open them in a new tab.', true);
+            } else if (!opened) {
+                setAuthNotice('Could not open the Terms & Conditions here — tap the link again to open them in a new tab.', true);
+            }
+            return false;
+        }
+    }
+
     if (termsOverlay && termsDialog && termsBody) {
         termsOverlay.querySelectorAll('[data-terms-close]').forEach((el) => {
-            el.addEventListener('click', closeTermsDialog);
+            el.addEventListener('click', () => closeTermsDialog());
         });
+
+        const termsAgreeButton = termsOverlay.querySelector('[data-terms-agree]');
+        const termsCheckbox = signupForm?.querySelector('[name="terms"]');
+        if (termsAgreeButton && termsCheckbox) {
+            termsAgreeButton.addEventListener('click', () => {
+                const pendingSubmit = termsPendingSubmit;
+                termsPendingSubmit = null;
+                termsCheckbox.checked = true;
+                termsCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                closeTermsDialog(termsCheckbox);
+                if (pendingSubmit?.form?.requestSubmit) {
+                    pendingSubmit.form.requestSubmit();
+                }
+            });
+        }
 
         termsLinks.forEach((link) => {
             link.addEventListener('click', async (e) => {
@@ -1160,60 +1235,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (termsFetchFailed) return;
 
                 e.preventDefault();
-
-                try {
-                    // link.href is the browser-resolved absolute URL, so this
-                    // does not depend on where this script happens to live.
-                    const fragment = await loadTermsFragment(link.href);
-                    // Re-inserting the cached fragment moves its nodes, which
-                    // empties it — so hand over a clone and keep the original.
-                    termsBody.replaceChildren(fragment.cloneNode(true));
-                    termsBody.scrollTop = 0;
-                    openTermsDialog(link);
-                } catch (err) {
-                    // Never show an empty dialog. Fall back to the original
-                    // new-tab behaviour and latch, so every later click skips
-                    // straight to it.
-                    console.warn('Terms dialog unavailable, opening terms.html in a new tab instead:', err);
-                    termsFetchFailed = true;
-
-                    // Deliberately NOT the 'noopener' feature string: with it,
-                    // window.open returns null whether the popup opened or was
-                    // blocked, so the blocked-popup branch below could not tell
-                    // the two apart and fired on success. The opener reference
-                    // is severed on the returned window instead — the anchor's
-                    // own rel="noopener" does not cover a programmatic open.
-                    const opened = window.open(link.href, '_blank');
-                    if (opened) {
-                        try {
-                            opened.opener = null;
-                        } catch (_) {
-                            // Some engines refuse the assignment; the popup is
-                            // our own same-origin page either way.
-                        }
-                    } else {
-                        // Popup blocked — the click's user activation can lapse
-                        // while the failing request is in flight. The next click
-                        // is a fresh gesture and goes through the plain link
-                        // above, which the blocker will not stop.
-                        setAuthNotice('Could not open the Terms & Conditions here — tap the link again to open them in a new tab.', true);
-                    }
-                }
+                await presentTermsDialog(link, link);
             });
         });
     }
 
     document.addEventListener('keydown', (e) => {
-        const errorNotice = document.querySelector('[data-auth-notice].is-error:not([hidden])');
-        if (errorNotice && (e.key === 'Escape' || e.key === 'Tab')) {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                hideAuthNotice();
-            } else {
-                trapTab(e, errorNotice, errorNotice);
-            }
-            return;
-        }
         // The Terms dialog stacks on top of this modal, so while it is open it
         // owns Escape and the Tab rotation and this modal ignores both.
         if (isTermsOpen()) {
@@ -1230,6 +1257,25 @@ document.addEventListener('DOMContentLoaded', () => {
             // over the same Tab. Handing it back is just this branch stopping
             // to apply once termsIsOpen flips.
             trapTab(e, termsDialog, termsDialog);
+            return;
+        }
+
+        if (e.key === 'Escape' && termsPendingSubmit) {
+            e.preventDefault();
+            const pendingSubmit = termsPendingSubmit;
+            termsPendingSubmit = null;
+            pendingSubmit.submitter?.focus();
+            return;
+        }
+
+        const errorNotice = document.querySelector('[data-auth-notice].is-error:not([hidden])');
+        if (errorNotice && (e.key === 'Escape' || e.key === 'Tab')) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hideAuthNotice();
+            } else {
+                trapTab(e, errorNotice, errorNotice);
+            }
             return;
         }
 
@@ -1544,6 +1590,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             ? 'Too many email checks. Please wait 1 minute and try again.'
                             : state === 'invalid'
                                 ? 'Enter a valid email address.'
+                                : state === 'check_spelling'
+                                    ? 'Check the email address for a possible provider-domain typo, then try again.'
                                 : 'We could not check that email right now. Please try again shortly.';
                     setAuthNotice(message, true);
                 }
@@ -1684,6 +1732,21 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (form.dataset.authPanel === 'phone') return;
 
+            const signupTerms = form.dataset.authPanel === 'signup'
+                ? form.querySelector('[name="terms"]')
+                : null;
+            if (signupTerms && signupStep >= signupStepEls.length && !signupTerms.checked) {
+                if (termsPendingSubmit) return;
+                const termsLink = termsLinks[0];
+                if (termsOverlay && termsDialog && termsBody && termsLink) {
+                    const pendingSubmit = { form, submitter: e.submitter };
+                    termsPendingSubmit = pendingSubmit;
+                    const opened = await presentTermsDialog(termsLink, e.submitter || signupTerms, true, pendingSubmit);
+                    if (!opened && termsPendingSubmit === pendingSubmit) termsPendingSubmit = null;
+                    return;
+                }
+            }
+
             // Sign Up's stepped flow owns its own validation, and has to run
             // before checkValidity() below rather than inside the mode ===
             // 'signup' branch further down. Two reasons:
@@ -1784,6 +1847,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (mode === 'signup') {
                     const rememberDevice = data.remember === 'on';
+                    // The step-one gate prevents ordinary typos from advancing.
+                    // Recheck here as well so a direct form submission cannot
+                    // bypass the same client-side provider typo safeguard.
+                    if (!window.InigoSignupEmail || !await window.InigoSignupEmail.check()) {
+                        const state = signupForm.querySelector('[data-signup-email-status]')?.dataset.state;
+                        setSignupStep(1, { focus: true });
+                        const message = state === 'taken'
+                            ? 'This email is already registered. Log in or use a different email address.'
+                            : state === 'rate_limited'
+                                ? 'Too many email checks. Please wait 1 minute and try again.'
+                                : state === 'invalid'
+                                    ? 'Enter a valid email address.'
+                                    : state === 'check_spelling'
+                                        ? 'Check the email address for a possible provider-domain typo, then try again.'
+                                        : 'We could not check that email right now. Please try again shortly.';
+                        setAuthNotice(message, true);
+                        return;
+                    }
                     // Check the local input shape before signup. The actual
                     // provider format/type validation and profile write happen
                     // after email confirmation and an active profile exists.

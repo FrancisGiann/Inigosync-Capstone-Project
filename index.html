@@ -692,11 +692,6 @@
                         <div class="auth-divider"><span>or</span></div>
 
                         <div class="auth-google-btn" id="google-signin-signup" data-google-btn></div>
-
-                        <label class="auth-checkbox">
-                            <input type="checkbox" name="remember">
-                            <span>Remember this device; verify again after 7 days of inactivity</span>
-                        </label>
                     </div>
 
                     <!-- STEP 2 — profile details and the Terms checkbox. The
@@ -786,6 +781,11 @@
                             <input type="tel" name="mobile" placeholder="09XX XXX XXXX" autocomplete="tel"
                                    inputmode="numeric" maxlength="11" data-digits-only aria-describedby="signup-phone-help">
                             <span class="auth-tagline" id="signup-phone-help">You can validate the number after confirming your email.</span>
+                        </label>
+
+                        <label class="auth-checkbox">
+                            <input type="checkbox" name="remember">
+                            <span>Remember me</span>
                         </label>
 
                         <!-- The Terms link opens the in-page dialog below; includes/auth.js
@@ -993,7 +993,7 @@
             </div>
             <div class="auth-terms-body" data-terms-body></div>
             <div class="auth-terms-foot">
-                <button type="button" class="auth-terms-done" data-terms-close>Back to sign up</button>
+                <button type="button" class="auth-terms-done" data-terms-agree>Agree</button>
             </div>
         </div>
     </div>

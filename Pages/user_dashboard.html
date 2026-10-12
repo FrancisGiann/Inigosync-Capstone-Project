@@ -336,11 +336,9 @@
                                             <input type="radio" name="payment-option" checked data-dash-payment="downpayment">
                                             Downpayment
                                         </span>
-                                        <!-- "50%" here is a pre-fetch placeholder —
-                                             includes/Dashboard.js rewrites it to the
-                                             real app_settings.downpayment_pct (or
-                                             this same 50% fallback) once loaded. -->
-                                        <p data-dash-payment-desc="downpayment">Pay 50% now and the balance at check-in.</p>
+                                        <!-- Includes/Dashboard.js fills in the current
+                                             configured deposit percentage after settings load. -->
+                                        <p data-dash-payment-desc="downpayment">Pay the current deposit percentage now and the balance at check-in.</p>
                                     </label>
                                     <label class="dash-payment-option" data-dash-payment-option>
                                         <span class="dash-payment-option-head">
@@ -353,9 +351,9 @@
                             </div>
 
                             <div class="dash-wizard-summary">
-                                <div class="dash-summary-row"><span>Payment preference</span><strong data-dash-summary-payment>Downpayment (50%)</strong></div>
+                                <div class="dash-summary-row"><span>Payment preference</span><strong data-dash-summary-payment>Downpayment</strong></div>
                                 <div class="dash-summary-total"><span>Estimated payment</span><span data-dash-summary-total>—</span></div>
-                                <p class="dash-form-hint" data-dash-pay-mode-hint>Payment happens securely through PayMongo after review.</p>
+                                <p class="dash-form-hint" data-dash-pay-mode-hint>When online checkout is available, payment is processed through PayMongo after review.</p>
                                 <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Book and pay securely</button>
                                 <button type="button" class="dash-btn-ghost" data-dash-book-new>Add another booking</button>
                             </div>
@@ -368,7 +366,7 @@
                     <section class="dash-book-fee-confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-fee-title" aria-describedby="dash-book-fee-description" tabindex="-1">
                         <button type="button" class="dash-modal-close" data-dash-book-fee-close aria-label="Close fee confirmation">×</button>
                         <h2 id="dash-book-fee-title">PayMongo transaction fee</h2>
-                        <p id="dash-book-fee-description">PayMongo will add a transaction fee to your payment. You’ll see the fee and final total in PayMongo before you pay.</p>
+                        <p id="dash-book-fee-description">If online checkout is available, the processing fee depends on your payment method. PayMongo shows the fee and final total before you authorize payment.</p>
                         <p data-dash-book-fee-question>Would you like to continue to secure checkout?</p>
                         <div class="dash-book-fee-confirmation-actions">
                             <button type="button" class="dash-btn-ghost" data-dash-book-fee-close>Cancel</button>

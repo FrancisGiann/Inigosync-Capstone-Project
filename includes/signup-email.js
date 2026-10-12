@@ -4,8 +4,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!form) return;
     const field = form.querySelector('[name="email"]');
     const status = form.querySelector('[data-signup-email-status]');
+    // Common providers are useful only as typo references. Other domains are
+    // left alone: an unfamiliar domain may be valid, and availability does
+    // not tell us whether an inbox exists or can receive mail.
+    const commonDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
     let revision = 0, timer, pending = null, cached = null;
     const value = () => field.value.trim().toLowerCase();
+    function likelyProviderTypo(email) {
+        const domain = email.slice(email.lastIndexOf('@') + 1);
+        for (const common of commonDomains) {
+            if (domain === common) continue;
+            let i = 0, j = 0, edits = 0;
+            while (i < domain.length && j < common.length) {
+                if (domain[i] === common[j]) { i++; j++; continue; }
+                if (++edits > 1) break;
+                if (domain.length > common.length) i++;
+                else if (common.length > domain.length) j++;
+                else { i++; j++; }
+            }
+            edits += (domain.length - i) + (common.length - j);
+            if (edits <= 1) return true;
+        }
+        return false;
+    }
     function paint(text, state = '') {
         status.textContent = text;
         status.dataset.state = state;
@@ -14,6 +35,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function check({ force = false } = {}) {
         const email = value(), version = revision;
         if (!email || field.validity.typeMismatch) return false;
+        if (likelyProviderTypo(email)) {
+            if (version === revision && value() === email) {
+                paint('Check email spelling', 'check_spelling');
+                field.setAttribute('aria-invalid', 'true');
+            }
+            return false;
+        }
         if (!force && cached?.email === email && Date.now() - cached.time < 30000) return cached.available;
         if (pending?.email === email && pending.version === version) return pending.promise;
         paint('Checking…', 'checking');

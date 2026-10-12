@@ -1624,7 +1624,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bookSubmit.textContent = bookingCartSaving ? 'Opening secure checkout…' : 'Book and pay securely';
             if (paymentModeHint) paymentModeHint.textContent = bookingCart.length && !ready
                 ? 'Every court needs verified inventory and a confirmed rate before online checkout.'
-                : 'Payment is collected securely through PayMongo after cart review.';
+                : 'When online checkout is available, payment is processed through PayMongo after cart review.';
         }
         if (bookAddButton) bookAddButton.disabled = !bookingState.selectedHours.length || bookingCart.length >= 8 || bookingCartSaving || slotGridLoading;
         renderBookWizard();
@@ -1905,7 +1905,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InigoAppSettings.getSettings().then((settings) => {
             bookingState.downpaymentPct = settings.downpaymentPct;
             bookingState.nightRateStartsAt = settings.nightRateStartsAt || null;
-            if (paymentModeHint) paymentModeHint.textContent = 'Payment is collected securely through PayMongo after cart review.';
+            if (paymentModeHint) paymentModeHint.textContent = 'When online checkout is available, payment is processed through PayMongo after cart review.';
             updateSummary();
             refreshMyBookings();
             landingDraftSettingsReady = true;
