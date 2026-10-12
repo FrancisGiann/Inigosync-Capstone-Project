@@ -391,9 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // graceful-degradation contract this relies on when
         // database/schema/005_session_security.sql hasn't been run yet.
         await registerActiveSession(session.user.id);
-        // Clear any remembered-device credential when the user chose
-        // session-only access; the server will require a fresh code next time.
-        if (rememberDevice !== true) window.InigoEmailMfa.clearDeviceSecret(session.user.id);
 
         // This is an observed app sign-in, not a claim about when every Auth
         // session started. The database RPC derives the actor and session

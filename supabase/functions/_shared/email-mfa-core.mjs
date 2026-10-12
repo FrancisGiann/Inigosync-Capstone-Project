@@ -16,19 +16,25 @@ export async function verifyEmailChallenge({ admin, emailAuth, userId, sessionId
   const { data: verified, error: verifyError } = await emailAuth.auth.verifyOtp({
     email: challenge.email, token: code, type: 'email',
   });
-  if (verifyError || !verified.user || verified.user.id !== userId || !verified.session?.access_token) {
-    if (verified.session?.access_token) {
-      const { error: revokeError } = await emailAuth.auth.signOut({ scope: 'local' });
+  // Revoke the session created by verifyOtp with its own JWT. The service
+  // role client can revoke this token without ever touching the caller's
+  // password/OAuth session.
+  const temporaryAccessToken = verified?.session?.access_token;
+  if (temporaryAccessToken) {
+    try {
+      const { error: revokeError } = await admin.auth.admin.signOut(temporaryAccessToken, 'local');
       if (revokeError) return { status: 503, message: 'The temporary verification session could not be safely closed. Please sign in again.' };
+    } catch (_) {
+      return { status: 503, message: 'The temporary verification session could not be safely closed. Please sign in again.' };
     }
+  }
+
+  if (verifyError || !verified?.user || verified.user.id !== userId || !temporaryAccessToken) {
     return { status: 400, message: 'That code did not match or has expired. Check the code and try again.' };
   }
 
-  // The OTP API creates a separate AAL1 session. Revoke it before proof is
-  // attached to the original password/OAuth session; otherwise fail closed.
-  const { error: revokeError } = await emailAuth.auth.signOut({ scope: 'local' });
-  if (revokeError) return { status: 503, message: 'Email was verified, but this session could not be safely completed. Please sign in again.' };
-
+  // The OTP API creates a separate AAL1 session. It has been revoked before
+  // proof is attached to the original password/OAuth session.
   const { data: completed, error: completeError } = await admin.rpc('email_mfa_finish', {
     p_user_id: userId, p_session_id: sessionId, p_challenge_id: challengeId,
     p_remember: remember, p_device_hash: deviceHash,

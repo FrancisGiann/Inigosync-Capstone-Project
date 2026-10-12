@@ -52,7 +52,10 @@ revoke all on internal.email_mfa_challenges, internal.email_mfa_verified_session
 grant select, insert, update, delete on internal.email_mfa_challenges,
   internal.email_mfa_verified_sessions, internal.email_mfa_trusted_devices,
   internal.email_mfa_attempt_windows to service_role;
-grant usage on schema internal to authenticated, authenticator;
+-- PostgREST invokes db_pre_request after switching to the request role.
+-- Schema USAGE and hook EXECUTE are therefore needed by every API role;
+-- the private tables themselves remain inaccessible to those roles.
+grant usage on schema internal to anon, authenticated, service_role, authenticator;
 
 create or replace function internal.email_mfa_live_session(p_user_id uuid, p_session_id uuid)
 returns boolean language sql stable security definer
@@ -324,7 +327,7 @@ create or replace function internal.enforce_email_mfa_pre_request()
 returns void language plpgsql security definer
 set search_path = pg_catalog, auth, internal
 as $$
-declare v_role text := coalesce(auth.jwt()->>'role', ''); v_path text := coalesce(current_setting('request.path', true), '');
+declare v_role text := coalesce(auth.jwt()->>'role', ''); v_path text := ltrim(coalesce(current_setting('request.path', true), ''), '/');
   v_method text := upper(coalesce(current_setting('request.method', true), 'GET'));
 begin
   if v_role is distinct from 'authenticated' then return; end if;
@@ -346,7 +349,8 @@ begin
 end;
 $$;
 revoke all on function internal.enforce_email_mfa_pre_request() from public, anon, authenticated;
-grant execute on function internal.enforce_email_mfa_pre_request() to authenticator;
+grant execute on function internal.enforce_email_mfa_pre_request()
+  to anon, authenticated, service_role, authenticator;
 alter role authenticator set pgrst.db_pre_request = 'internal.enforce_email_mfa_pre_request';
 notify pgrst, 'reload config';
 

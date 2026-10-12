@@ -13,8 +13,17 @@ function sessionIdFromValidatedJwt(token: string): string | null {
 // Call only after Supabase Auth has validated this bearer JWT with getUser().
 // Never accept a user/session ID from request JSON for authorization.
 export async function hasVerifiedEmailSession(admin: any, token: string, userId: string): Promise<boolean> {
+  // Edge handlers call this only after Auth validates the bearer token. Keep
+  // deployed user-JWT traffic working while the guarded functions are staged;
+  // the service-only switch makes proof mandatory atomically with activation.
+  const { data: enforcementEnabled, error: enforcementError } = await admin.rpc('email_mfa_enforcement_enabled');
+  if (enforcementError || typeof enforcementEnabled !== 'boolean') return false;
+  if (!enforcementEnabled) return true;
+
   const sessionId = sessionIdFromValidatedJwt(token);
   if (!sessionId) return false;
+  // This database check also requires a live, accepted primary AMR for this
+  // exact session, so passwordless OTP/recovery sessions cannot pass guards.
   const { data, error } = await admin.rpc('email_mfa_check_session', {
     p_user_id: userId,
     p_session_id: sessionId,

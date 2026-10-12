@@ -76,6 +76,24 @@ Deno.serve(async (req: Request) => {
     return json({ message: 'Invalid email verification request.' }, 400);
   }
 
+  // signInWithOtp/verifyOtp can create a valid Auth session without a password
+  // or OAuth login. Only an accepted primary session may start, check, or
+  // complete the custom email second step. Revocation remains available so a
+  // caller can clear stale proof even after their primary session expires.
+  if (action !== 'revoke') {
+    const { data: hasPrimaryAuth, error: primaryAuthError } = await admin.rpc('email_mfa_has_primary_auth', {
+      p_user_id: userId,
+      p_session_id: sessionId,
+    });
+    if (primaryAuthError) {
+      console.error('[email-mfa] primary authentication check failed', primaryAuthError.message);
+      return json({ message: 'Email verification is temporarily unavailable.' }, 503);
+    }
+    if (hasPrimaryAuth !== true) {
+      return json({ message: 'Sign in with your password or Google account before verifying your email.' }, 403);
+    }
+  }
+
   if (action === 'check' || action === 'revoke') {
     const rpc = action === 'check' ? 'email_mfa_check_session' : 'email_mfa_revoke_session';
     const { data, error } = await admin.rpc(rpc, { p_user_id: userId, p_session_id: sessionId });
@@ -112,8 +130,9 @@ Deno.serve(async (req: Request) => {
   }
 
   const remember = payload.remember === true;
-  // On unchecked login the existing secret is sent only so the server can
-  // revoke that device's remembered status; it can never skip the OTP.
+  // An existing trusted-device secret can skip the email code regardless of
+  // this login's checkbox. The checkbox only controls creating trust after
+  // a successful code verification.
   const deviceSecret = cleanDeviceSecret(payload.device_secret);
   const deviceHash = deviceSecret ? `\\x${await sha256Hex(deviceSecret)}` : null;
 

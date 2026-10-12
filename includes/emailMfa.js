@@ -55,8 +55,7 @@
     window.InigoEmailMfa = Object.freeze({
         begin({ userId, remember }) {
             const deviceSecret = getDeviceSecret(userId, remember === true);
-            return invoke('begin', { remember: remember === true, device_secret: deviceSecret })
-                .finally(() => { if (!remember) clearDeviceSecret(userId); });
+            return invoke('begin', { remember: remember === true, device_secret: deviceSecret });
         },
         verify({ challengeId, code, userId, remember }) {
             return invoke('verify', {

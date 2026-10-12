@@ -127,7 +127,7 @@ function mockClient(options) {
                 if (name === 'email-mfa') {
                     const action = args?.body?.action;
                     if (action === 'begin') {
-                        const trusted = options.trustedDeviceUserId === user.id && args.body.remember === true;
+                        const trusted = options.trustedDeviceUserId === user.id && typeof args.body.device_secret === 'string';
                         return { data: trusted ? { verified: true, remembered: true }
                             : { verified: false, challenge_id: 'challenge-fixture', resent: true }, error: null };
                     }
@@ -285,19 +285,22 @@ function mockClient(options) {
                 await oauthPage.close();
             }
 
-            const uncheckedPage = await setup({ role: 'customer' });
-            await uncheckedPage.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', 'b'.repeat(64)));
+            const uncheckedPage = await setup({ role: 'customer', trustedDeviceUserId: 'fixture-user' });
+            const uncheckedSecret = 'b'.repeat(64);
+            await uncheckedPage.evaluate(secret => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', secret), uncheckedSecret);
             await uncheckedPage.locator('.cta-buttons [data-auth-open]').click();
             const uncheckedForm = uncheckedPage.locator('[data-auth-panel="login"]');
             await uncheckedForm.locator('[name="email"]').fill('account@example.test');
             await uncheckedForm.locator('[name="password"]').fill('Fixture2026!');
             await uncheckedForm.locator('button[type="submit"]').click();
-            await uncheckedPage.locator('[data-auth-panel="verify"].is-active').waitFor();
-            assert((await calls(uncheckedPage)).some(c => c.kind === 'function' && c.data?.name === 'email-mfa' && c.data?.body?.action === 'begin' && c.data?.body?.remember === false));
-            assert.equal(await uncheckedPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), null);
-            await uncheckedPage.locator('[data-auth-close]').click();
-            await uncheckedPage.waitForFunction(() => document.querySelector('[data-auth-overlay]').hidden);
-            assert.equal(await uncheckedPage.evaluate(async () => (await sb.auth.getSession()).data.session), null);
+            await uncheckedPage.waitForURL('**/user_dashboard.html');
+            const uncheckedCalls = await calls(uncheckedPage);
+            const uncheckedBegin = uncheckedCalls.find(c => c.kind === 'function' && c.data?.name === 'email-mfa' && c.data?.body?.action === 'begin');
+            assert.equal(uncheckedBegin?.data?.body?.remember, false, 'the user can leave Remember me unchecked');
+            assert.equal(uncheckedBegin?.data?.body?.device_secret, uncheckedSecret, 'the existing device secret is sent for server validation');
+            assert(!(uncheckedCalls).some(c => c.kind === 'emailMfaVerify'), 'a valid remembered device skips email verification when unchecked');
+            assert.equal(await uncheckedPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user')), uncheckedSecret,
+                'successful unchecked login preserves the existing device secret for later sign-ins');
             await uncheckedPage.close();
 
             const failedPassword = await setup({ role: 'customer', passwordError: true });

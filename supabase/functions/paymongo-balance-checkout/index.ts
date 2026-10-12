@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { hasVerifiedEmailSession } from "../_shared/email-mfa.ts";
+import { hasPaymongoPaidWebhook } from "../_shared/paymongo-readiness.mjs";
+import { enabledPaymongoMethods } from "../_shared/paymongo-methods.mjs";
 
 const appBaseUrl = Deno.env.get("APP_BASE_URL") || "";
 const allowedOrigin = (() => { try { return new URL(appBaseUrl).origin; } catch { return ""; } })();
@@ -37,6 +39,13 @@ Deno.serve(async (req: Request) => {
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) return json({ message: "Your session has expired. Sign in again." }, 401, origin);
   if (!await hasVerifiedEmailSession(admin, token, authData.user.id)) return json({ message: "Verify your email before continuing." }, 403, origin);
+  if (!await hasPaymongoPaidWebhook({ secretKey,
+      webhookSecret: Deno.env.get("PAYMONGO_WEBHOOK_SECRET"), supabaseUrl: url }))
+    return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);
+  const { data: settings, error: settingsError } = await admin.from("app_settings")
+    .select("card_enabled,gcash_enabled").eq("id", true).maybeSingle();
+  const methods = settingsError ? [] : enabledPaymongoMethods(settings);
+  if (!methods.length) return json({ message: "Online payment settings are unavailable." }, 503, origin);
   const { data: prepared, error: prepareError } = await admin.rpc("prepare_paymongo_balance_checkout", {
     p_source: source, p_id: id, p_staff_id: authData.user.id,
   });
@@ -45,9 +54,6 @@ Deno.serve(async (req: Request) => {
   if (prepared.status === "ready" && prepared.checkout_url)
     return json({ attempt_id: prepared.attempt_id, checkout_url: prepared.checkout_url }, 200, origin);
   if (prepared.status !== "creating") return json({ message: "This payment needs staff review." }, 409, origin);
-  const { data: settings } = await admin.from("app_settings").select("card_enabled,gcash_enabled").eq("id", true).maybeSingle();
-  const methods = [settings?.card_enabled !== false ? "card" : "", settings?.gcash_enabled !== false ? "gcash" : ""].filter(Boolean);
-  if (!methods.length) return json({ message: "Online payment is unavailable." }, 503, origin);
   const success = new URL("/Pages/staff_dashboard.html", base);
   success.searchParams.set("balance_checkout", "return"); success.searchParams.set("source", source); success.searchParams.set("id", String(id));
   const cancel = new URL("/Pages/staff_dashboard.html", base);
