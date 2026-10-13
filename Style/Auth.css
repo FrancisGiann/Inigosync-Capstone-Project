@@ -1576,8 +1576,14 @@ body.auth-lock {
 [data-signup-email-status] { flex-shrink: 0; min-height: 1.5em; font-size: var(--fs-xs); line-height: 1.5; text-transform: none; letter-spacing: normal; font-weight: 600; }
 [data-signup-email-status][data-state="available"] { color: var(--auth-verified-color); }
 [data-signup-email-status]:is([data-state="taken"], [data-state="invalid"], [data-state="error"], [data-state="rate_limited"], [data-state="check_spelling"]) { color: var(--color-alert-text); }
+.signup-phone-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+[data-signup-phone-availability-status] { flex-shrink: 0; min-height: 1.5em; font-size: var(--fs-xs); line-height: 1.5; text-transform: none; letter-spacing: normal; font-weight: 600; }
+[data-signup-phone-availability-status][data-state="in_use"] { color: var(--auth-verified-color); }
+[data-signup-phone-availability-status]:is([data-state="available"], [data-state="invalid"], [data-state="error"], [data-state="rate_limited"]) { color: var(--color-alert-text); }
 .auth-field input[data-availability="available"] { border-color: var(--auth-verified-color); box-shadow: 0 0 0 1px var(--auth-verified-color); }
 .auth-field input:is([data-availability="taken"], [data-availability="invalid"], [data-availability="check_spelling"]) { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
+.auth-field input[data-phone-availability="in_use"] { border-color: var(--auth-verified-color); box-shadow: 0 0 0 1px var(--auth-verified-color); }
+.auth-field input[data-phone-availability="available"] { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
 .auth-phone-row { display: flex; align-items: stretch; gap: 8px; }
 .auth-phone-row input { flex: 1; min-width: 0; padding-inline: 10px; }
 .auth-phone-button { flex: 0 0 96px; min-height: 44px; padding: 8px; border: 1px solid var(--color-line); border-radius: 10px; color: var(--color-ink); background: var(--color-bg-elevated); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }

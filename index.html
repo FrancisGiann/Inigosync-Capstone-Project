@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IñigoSync | Iñigos Sports Center</title>
+    <title>IñigoSync | Iñigos Sports Center, Lucena City</title>
 
     <!-- SEO meta -->
     <meta name="description" content="Book courts online at Iñigos Sports Center, Lucena City. Basketball, badminton, bowling, billiards, table tennis, swimming and more — serving Lucena since 2011.">
@@ -777,10 +777,9 @@
                              letter being typed, so the JS filter is the actual
                              enforcement. -->
                         <label class="auth-field">
-                            <span class="auth-label">Mobile number (optional)</span>
+                            <span class="auth-label signup-phone-label">Mobile number (optional) <span id="signup-phone-status" data-signup-phone-availability-status role="status" aria-live="polite"></span></span>
                             <input type="tel" name="mobile" placeholder="09XX XXX XXXX" autocomplete="tel"
-                                   inputmode="numeric" maxlength="11" data-digits-only aria-describedby="signup-phone-help">
-                            <span class="auth-tagline" id="signup-phone-help">You can validate the number after confirming your email.</span>
+                                   inputmode="numeric" maxlength="11" data-digits-only aria-describedby="signup-phone-status">
                         </label>
 
                         <label class="auth-checkbox">
@@ -1022,6 +1021,7 @@
          load before auth.js, which calls window.validatePhMobile on signup. -->
     <script src="./includes/phoneValidation.js"></script>
     <script src="./includes/signup-email.js"></script>
+    <script src="./includes/signup-phone-availability.js"></script>
     <script src="./includes/signup-phone.js"></script>
     <script src="./includes/auth.js"></script>
     <script src="./includes/vendor/gsap-3.13.0.min.js"></script>

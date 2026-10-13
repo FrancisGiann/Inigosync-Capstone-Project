@@ -658,8 +658,6 @@
                  (data-staff-pw-*), replacing the old single 3-field form.
                  ============================================================ -->
             <section class="staff-panel" data-staff-panel="settings">
-                <div class="staff-panel-head"><div><p>Update your personal details and manage your staff account password.</p></div></div>
-
                 <!-- Profile Photo — mirrors the owner dashboard's Profile
                      Photo card (Pages/owner_dashboard.html) exactly: same
                      upload/downscale/store pipeline via the shared
@@ -669,77 +667,79 @@
                      (includes/staff_dashboard.js) paints this SAME
                      .staff-avatar element as the topbar and the profile
                      panel hero. -->
-                <div class="staff-card">
-                    <div class="staff-card-head"><h3>Profile Photo</h3></div>
-                    <div class="staff-avatar-upload-row">
-                        <div class="staff-avatar staff-avatar-upload-preview">RD</div>
-                        <div class="staff-avatar-upload-controls">
-                            <div class="staff-avatar-upload-actions">
-                                <button type="button" class="staff-btn-primary" data-staff-avatar-upload-trigger>Upload Photo</button>
-                                <button type="button" class="staff-btn-ghost" data-staff-avatar-remove hidden>Remove Photo</button>
-                                <input type="file" accept="image/*" class="staff-visually-hidden" data-staff-avatar-file>
+                <div class="staff-card staff-account-card">
+                    <section class="staff-account-photo" aria-label="Profile photo">
+                        <div class="staff-card-head"><h3>Profile Photo</h3></div>
+                        <div class="staff-avatar-upload-row">
+                            <div class="staff-avatar staff-avatar-upload-preview">RD</div>
+                            <div class="staff-avatar-upload-controls">
+                                <div class="staff-avatar-upload-actions">
+                                    <button type="button" class="staff-btn-primary" data-staff-avatar-upload-trigger>Upload Photo</button>
+                                    <button type="button" class="staff-btn-ghost" data-staff-avatar-remove hidden>Remove Photo</button>
+                                    <input type="file" accept="image/*" class="staff-visually-hidden" data-staff-avatar-file>
+                                </div>
+                                <p class="staff-form-hint">Choose any image; it will be resized and cropped automatically.</p>
                             </div>
-                            <p class="staff-form-hint">Choose any image; it will be resized and cropped automatically.</p>
                         </div>
-                    </div>
-                </div>
+                    </section>
 
-                <div class="staff-card">
-                    <div class="staff-card-head"><h3>Personal Information</h3></div>
-                    <div class="staff-form-row">
-                        <div class="staff-form-group">
-                            <label class="staff-form-label" for="staff-settings-name">Full name</label>
-                            <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name>
+                    <section class="staff-account-personal" aria-label="Personal information">
+                        <div class="staff-card-head"><h3>Personal Information</h3></div>
+                        <div class="staff-form-row">
+                            <div class="staff-form-group">
+                                <label class="staff-form-label" for="staff-settings-name">Full name</label>
+                                <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name>
+                            </div>
+                            <div class="staff-form-group">
+                                <label class="staff-form-label" for="staff-settings-mobile">Contact number</label>
+                                <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-describedby="staff-phone-status">
+                                <p id="staff-phone-status" class="staff-form-hint" data-staff-phone-status aria-live="polite">Optional. Saving a changed number checks its Philippine mobile format and type; it does not verify ownership or reachability.</p>
+                            </div>
                         </div>
+                        <!-- Revision S3 — address/birthdate/gender/emergency
+                             contact (database/schema/018_staff_details.sql).
+                             Loaded by loadStaffProfileDetails() on
+                             inigosync:profile-ready (a request of its own — see
+                             that function's comment in
+                             includes/staff_dashboard.js); saved together with
+                             full_name/contact_num above by the same Save
+                             Changes button, with a schema-mismatch retry that
+                             drops just these five if 018 hasn't been applied
+                             yet. -->
                         <div class="staff-form-group">
-                            <label class="staff-form-label" for="staff-settings-mobile">Contact number</label>
-                            <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-describedby="staff-phone-status">
-                            <p id="staff-phone-status" class="staff-form-hint" data-staff-phone-status aria-live="polite">Optional. Saving a changed number checks its Philippine mobile format and type; it does not verify ownership or reachability.</p>
+                            <span class="staff-form-label">Address</span>
+                            <textarea class="staff-input staff-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-staff-settings-address></textarea>
                         </div>
-                    </div>
-                    <!-- Revision S3 — address/birthdate/gender/emergency
-                         contact (database/schema/018_staff_details.sql).
-                         Loaded by loadStaffProfileDetails() on
-                         inigosync:profile-ready (a request of its own — see
-                         that function's comment in
-                         includes/staff_dashboard.js); saved together with
-                         full_name/contact_num above by the same Save
-                         Changes button, with a schema-mismatch retry that
-                         drops just these five if 018 hasn't been applied
-                         yet. -->
-                    <div class="staff-form-group">
-                        <span class="staff-form-label">Address</span>
-                        <textarea class="staff-input staff-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-staff-settings-address></textarea>
-                    </div>
-                    <div class="staff-form-row">
-                        <div class="staff-form-group">
-                            <span class="staff-form-label">Birthdate</span>
-                            <input type="date" class="staff-input" data-staff-settings-birthdate>
+                        <div class="staff-form-row">
+                            <div class="staff-form-group">
+                                <span class="staff-form-label">Birthdate</span>
+                                <input type="date" class="staff-input" data-staff-settings-birthdate>
+                            </div>
+                            <div class="staff-form-group">
+                                <span class="staff-form-label">Gender</span>
+                                <select class="staff-select" data-staff-settings-gender>
+                                    <option value="">Select…</option>
+                                    <option>Male</option>
+                                    <option>Female</option>
+                                    <option>Prefer not to say</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="staff-form-group">
-                            <span class="staff-form-label">Gender</span>
-                            <select class="staff-select" data-staff-settings-gender>
-                                <option value="">Select…</option>
-                                <option>Male</option>
-                                <option>Female</option>
-                                <option>Prefer not to say</option>
-                            </select>
+                        <div class="staff-form-row">
+                            <div class="staff-form-group">
+                                <span class="staff-form-label">Emergency contact name</span>
+                                <input type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name>
+                            </div>
+                            <div class="staff-form-group">
+                                <span class="staff-form-label">Emergency contact number</span>
+                                <input type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number>
+                            </div>
                         </div>
-                    </div>
-                    <div class="staff-form-row">
-                        <div class="staff-form-group">
-                            <span class="staff-form-label">Emergency contact name</span>
-                            <input type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name>
+                        <p class="staff-form-hint" data-staff-settings-details-hint hidden>Address, birthdate, gender, and emergency contact aren't available yet — ask the owner to run database update 018.</p>
+                        <div class="staff-form-actions">
+                            <button type="button" class="staff-btn-primary" data-staff-settings-save="profile">Save Changes</button>
                         </div>
-                        <div class="staff-form-group">
-                            <span class="staff-form-label">Emergency contact number</span>
-                            <input type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number>
-                        </div>
-                    </div>
-                    <p class="staff-form-hint" data-staff-settings-details-hint hidden>Address, birthdate, gender, and emergency contact aren't available yet — ask the owner to run database update 018.</p>
-                    <div class="staff-form-actions">
-                        <button type="button" class="staff-btn-primary" data-staff-settings-save="profile">Save Changes</button>
-                    </div>
+                    </section>
                 </div>
 
                 <!-- Change Password — 2-step guided wizard, ported from

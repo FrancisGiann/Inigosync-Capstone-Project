@@ -56,6 +56,16 @@ function mockClient(options) {
                 record('personalSave', data);
                 return Promise.resolve({ data: null, error: null });
             }
+            if (name === 'signup_phone_availability') {
+                const checkPhone = async () => {
+                    record('phoneCheck', data);
+                    if (data.phone_e164 === '+639171234567' && options.phoneMode === 'slow') await new Promise(resolve => setTimeout(resolve, 900));
+                    if (options.phoneMode === 'error') return { error: { message: 'Network error' } };
+                    return { data: options.phoneMode === 'rate_limited' ? 'rate_limited'
+                        : options.phoneMode === 'in_use' || (options.phoneMode === 'slow' && data.phone_e164 === '+639171234567') ? 'in_use' : 'available' };
+                };
+                return { abortSignal: checkPhone, then(resolve, reject) { return checkPhone().then(resolve, reject); } };
+            }
             const checkEmail = async () => {
                 record('emailCheck', data);
                 if (data.email_address === 'slow@example.test') await new Promise(resolve => setTimeout(resolve, 900));
@@ -199,6 +209,38 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        if (process.env.PHONE_AVAILABILITY_ONLY === '1') {
+            for (const [phoneMode, number, text, state, token] of [
+                ['in_use', '09612654203', 'Existing', 'in_use', '--auth-verified-color'],
+                ['available', '09981234567', 'Not found', 'available', '--color-alert-text'],
+            ]) {
+                const page = await setup({ phoneMode });
+                const form = await firstStep(page, 'new@example.test');
+                await form.locator('[data-signup-next]').click();
+                await form.locator('[data-signup-step="2"].is-active').waitFor();
+                const input = form.locator('[name="mobile"]');
+                await input.fill(number);
+                const status = page.locator('[data-signup-phone-availability-status]');
+                await page.waitForFunction(expected => document.querySelector('[data-signup-phone-availability-status]').dataset.state === expected, state);
+                await page.waitForTimeout(250); // Let the input's authored border-color transition finish.
+                assert.equal(await status.innerText(), text);
+                assert.equal(await status.evaluate(el => el.parentElement.classList.contains('signup-phone-label')), true);
+                assert.equal(await status.evaluate(el => getComputedStyle(el).color), await status.evaluate((el, key) => {
+                    const probe = document.createElement('span'); probe.style.color = `var(${key})`; el.append(probe);
+                    const result = getComputedStyle(probe).color; probe.remove(); return result;
+                }, token));
+                assert.equal(await input.evaluate(el => getComputedStyle(el).borderTopColor), await input.evaluate((el, key) => {
+                    const probe = document.createElement('span'); probe.style.color = `var(${key})`; el.parentElement.append(probe);
+                    const result = getComputedStyle(probe).color; probe.remove(); return result;
+                }, token));
+                assert.equal(await form.locator('text=You can validate the number after confirming your email.').count(), 0);
+                assert.equal(await input.getAttribute('required'), null);
+                assert.equal((await calls(page)).find(call => call.kind === 'phoneCheck').data.phone_e164, `+63${number.slice(1)}`);
+                await page.close();
+            }
+            console.log('PASS inline signup phone availability label, result and input colors, optionality, and anonymous number normalization');
+            return;
+        }
         if (process.env.TERMS_DIALOG_ONLY === '1') {
             const page = await setup({ emailConfirmation: true });
             await page.addStyleTag({ content: '.auth-modal, .auth-modal *, [data-terms-overlay], [data-terms-overlay] * { animation: none !important; transition: none !important; }' });
@@ -803,6 +845,72 @@ function mockClient(options) {
         await stale.waitForTimeout(1000);
         assert(!/Not available/.test(await stale.locator('[data-signup-email-status]').innerText()));
         await stale.close();
+        async function secondStep(page) {
+            const form = await firstStep(page, 'new@example.test');
+            await form.locator('[data-signup-next]').click();
+            await form.locator('[data-signup-step="2"].is-active').waitFor();
+            return form;
+        }
+        for (const [phoneMode, number, text, state] of [
+            ['in_use', '09171234567', 'Existing', 'in_use'],
+            ['available', '09981234567', 'Not found', 'available'],
+        ]) {
+            const page = await setup({ phoneMode });
+            const form = await secondStep(page);
+            await form.locator('[name="mobile"]').fill(number);
+            await page.waitForFunction(expected => document.querySelector('[data-signup-phone-availability-status]').dataset.state === expected, state);
+            assert.equal(await page.locator('[data-signup-phone-availability-status]').innerText(), text);
+            assert.equal(await page.locator('[data-signup-phone-availability-status]').evaluate(el => el.parentElement.classList.contains('signup-phone-label')), true,
+                'phone availability appears beside the field label');
+            assert.equal(await form.locator('text=You can validate the number after confirming your email.').count(), 0,
+                'signup phone lookup is not presented as requiring email confirmation');
+            assert.equal((await calls(page)).filter(call => call.kind === 'phoneCheck')[0].data.phone_e164, `+63${number.slice(1)}`);
+            const color = await page.locator('[data-signup-phone-availability-status]').evaluate(el => getComputedStyle(el).color);
+            assert.equal(color, await page.locator('[data-signup-phone-availability-status]').evaluate((el, key) => {
+                const probe = document.createElement('span');
+                probe.style.color = `var(${key})`;
+                el.append(probe);
+                const resolved = getComputedStyle(probe).color;
+                probe.remove();
+                return resolved;
+            }, state === 'in_use' ? '--auth-verified-color' : '--color-alert-text'));
+            const inputBorder = await form.locator('[name="mobile"]').evaluate(el => getComputedStyle(el).borderTopColor);
+            assert.equal(inputBorder, await form.locator('[name="mobile"]').evaluate((el, key) => {
+                const probe = document.createElement('span');
+                probe.style.color = `var(${key})`;
+                el.parentElement.append(probe);
+                const resolved = getComputedStyle(probe).color;
+                probe.remove();
+                return resolved;
+            }, state === 'in_use' ? '--auth-verified-color' : '--color-alert-text'));
+            assert.equal(await form.locator('[name="mobile"]').getAttribute('required'), null, 'phone remains optional');
+            await page.close();
+        }
+        const partialPhone = await setup();
+        const partialForm = await secondStep(partialPhone);
+        await partialForm.locator('[name="mobile"]').fill('0917');
+        await partialPhone.waitForTimeout(700);
+        assert.equal((await calls(partialPhone)).filter(call => call.kind === 'phoneCheck').length, 0, 'incomplete numbers are never queried');
+        await partialForm.locator('[name="mobile"]').fill('');
+        assert.equal((await calls(partialPhone)).filter(call => call.kind === 'phoneCheck').length, 0, 'empty optional numbers are never queried');
+        await partialPhone.close();
+        for (const [phoneMode, message, state] of [['rate_limited', 'Wait 1 min', 'rate_limited'], ['error', 'Try again', 'error']]) {
+            const page = await setup({ phoneMode });
+            const form = await secondStep(page);
+            await form.locator('[name="mobile"]').fill('09171234567');
+            await page.waitForFunction(expected => document.querySelector('[data-signup-phone-availability-status]').dataset.state === expected, state);
+            assert.equal(await page.locator('[data-signup-phone-availability-status]').innerText(), message);
+            await page.close();
+        }
+        const stalePhone = await setup({ phoneMode: 'slow' });
+        const stalePhoneForm = await secondStep(stalePhone);
+        await stalePhoneForm.locator('[name="mobile"]').fill('09171234567');
+        await stalePhone.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'phoneCheck'));
+        await stalePhoneForm.locator('[name="mobile"]').fill('09981234567');
+        await stalePhone.waitForFunction(() => document.querySelector('[data-signup-phone-availability-status]').dataset.state === 'available');
+        await stalePhone.waitForTimeout(400);
+        assert.equal(await stalePhone.locator('[data-signup-phone-availability-status]').innerText(), 'Not found', 'a stale phone response cannot overwrite the current number result');
+        await stalePhone.close();
         async function signup(page, phone = '', remember = false) {
             await page.locator('.cta-buttons [data-auth-open]').click();
             await page.locator('[role="tab"][data-auth-tab="signup"]').click();
@@ -1012,10 +1120,11 @@ function mockClient(options) {
             await page.close();
         }
 
-        for (const validationReason of ['invalid', 'not_mobile', 'inactive', 'status_unknown']) {
+        for (const validationReason of ['invalid', 'not_mobile', 'inactive', 'status_unknown', 'in_use']) {
             const page = await setup({ validationReason }); await signup(page, '09171234567');
             await page.locator('[data-signup-phone-validate]').click();
             await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+            if (validationReason === 'in_use') assert.match(await page.locator('[data-auth-notice]').innerText(), /already linked to another account/i);
             assert(!(await calls(page)).some(c => c.kind === 'profileWrite'), validationReason);
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html'); await page.close();

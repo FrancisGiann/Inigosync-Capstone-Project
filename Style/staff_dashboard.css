@@ -544,6 +544,18 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 .staff-card-head h3 { font-family: var(--font-display); font-size: var(--fs-base); font-weight: 600; }
 
+/* Account Settings mirrors the owner's photo-left / details-right card while
+   keeping the staff profile fields editable in place. */
+.staff-account-card { display: grid; grid-template-columns: minmax(150px, .65fr) minmax(0, 2fr); gap: 28px; }
+.staff-account-photo { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 12px; border-right: 1px solid var(--color-line); }
+.staff-account-photo .staff-card-head { margin: 0; }
+.staff-account-photo .staff-avatar-upload-row { flex-direction: column; justify-content: center; gap: 18px; }
+.staff-account-photo .staff-avatar-upload-controls { align-items: center; max-width: 100%; text-align: center; }
+.staff-account-photo .staff-avatar-upload-actions { justify-content: center; max-width: 100%; }
+.staff-account-photo .staff-btn-primary,
+.staff-account-photo .staff-btn-ghost { width: auto; max-width: 100%; padding-left: 14px; padding-right: 14px; }
+.staff-account-personal { min-width: 0; }
+
 .staff-overview-filters {
     display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin: 0 0 20px;
 }
@@ -1288,9 +1300,9 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 }
 
 .staff-avatar-upload-preview {
-    width: 88px;
-    height: 88px;
-    font-size: var(--fs-2xl);
+    width: 104px;
+    height: 104px;
+    font-size: 32px;
 }
 
 .staff-avatar-upload-controls {
@@ -1710,6 +1722,11 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-receipt-card { position: absolute; left: 0; top: 0; width: 74mm; max-width: 74mm; padding: 0; border: 0; border-radius: 0; box-shadow: none; break-inside: avoid; }
     .staff-receipt-item { break-inside: avoid; }
     .staff-receipt-actions { display: none !important; }
+}
+
+@media (max-width: 680px) {
+    .staff-account-card { grid-template-columns: minmax(0, 1fr); }
+    .staff-account-photo { border-right: 0; border-bottom: 1px solid var(--color-line); padding-bottom: 24px; }
 }
 
 @media (max-width: 768px) {

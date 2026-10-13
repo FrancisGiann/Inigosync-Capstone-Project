@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Profile"; setActivePanel() below still works unmodified since it
         // just looks this key up.
         profile: { title: 'My Profile', subtitle: 'Your account, at a glance.' },
-        settings: { title: 'Account Settings', subtitle: 'Update your personal details and manage your staff account password.' },
+        settings: { title: 'Account Settings', subtitle: '' },
     };
 
     function setActivePanel(name) {
@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (meta && titleEl && subtitleEl) {
             titleEl.textContent = meta.title;
             subtitleEl.textContent = meta.subtitle;
+            subtitleEl.hidden = !meta.subtitle;
         }
 
         closeMobileSidebar();

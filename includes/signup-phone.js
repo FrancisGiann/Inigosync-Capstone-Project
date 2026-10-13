@@ -5,6 +5,7 @@
     let cancel = () => {};
 
     function reasonMessage(reason) {
+        if (reason === 'in_use') return 'This number is already linked to another account.';
         if (reason === 'not_mobile') return 'Enter a Philippine mobile number.';
         if (reason === 'inactive') return 'The provider reports that this number is not active.';
         if (reason === 'status_unknown') return 'The provider could not confirm the number status. Try again later.';

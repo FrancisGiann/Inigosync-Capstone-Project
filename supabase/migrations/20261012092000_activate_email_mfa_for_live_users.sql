@@ -94,8 +94,10 @@ begin
     'court_unit_resource_map', 'event', 'physical_court_resource',
     'public_booking_reviews', 'sport', 'testimonial'
   ) then return; end if;
-  if v_path = 'rpc/signup_email_availability' or v_path = 'rpc/court_occupancy'
-     or v_path = 'rpc/booking_rules_for_date' then return; end if;
+  if v_path in (
+    'rpc/signup_email_availability', 'rpc/signup_phone_availability',
+    'rpc/court_occupancy', 'rpc/booking_rules_for_date'
+  ) then return; end if;
   raise sqlstate '42501' using message = 'Email verification required for this session.';
 end;
 $$;
