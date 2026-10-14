@@ -6,14 +6,17 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const courts = [
     { id: 'listing-badminton', name: 'Badminton', sportName: 'Badminton', bookableUnits: [{ id: 'unit-b1', label: 'Court 1', rateDay: 100, rateUnit: '/hr' }] },
     { id: 'listing-basketball', name: 'Basketball', sportName: 'Basketball', bookableUnits: [{ id: 'unit-b2', label: 'Court 2', rateDay: 150, rateUnit: '/hr' }] },
+    { id: 'listing-set', name: 'Table Tennis', sportName: 'Table Tennis', bookableUnits: [{ id: 'unit-set', label: 'Table 1', rateDay: 50, rateUnit: '/set' }, { id: 'unit-set-2', label: 'Table 2', rateDay: 50, rateUnit: '/set' }] },
+    { id: 'listing-volleyball', name: 'Volleyball', sportName: 'Volleyball', bookableUnits: [{ id: 'unit-volleyball', label: 'Court 1', rateDay: 125, rateUnit: '/hr' }] },
 ];
 
 function fixture(config) {
     window.__walkinQa = { calls: [], reads: [], config, createdItems: [], checkoutAttempts: 0, acknowledgmentAttempts: 0 };
     const qa = window.__walkinQa;
+    let occupancyCallCount = 0;
     const profiles = [
         { id: 'qa-staff', role: 'staff', status: 'active', full_name: 'QA Staff', email: 'staff@example.test', contact_num: '', contact_num_validated: false, contact_num_validated_at: null },
-        { id: 'qa-customer', role: 'customer', status: 'active', full_name: 'QA Customer', email: 'customer@example.test', contact_num: '+639171234567' },
+        { id: 'qa-customer', role: 'customer', status: 'active', full_name: config.customerFullName || 'QA Customer', email: 'customer@example.test', contact_num: '+639171234567' },
     ];
     const resultFor = (table, query) => {
         if (query.write) {
@@ -68,10 +71,24 @@ function fixture(config) {
         async rpc(name, args) {
             qa.calls.push({ kind: 'rpc', name, args });
             if (window.__qaRecord) await window.__qaRecord({ kind: 'rpc', name, args });
+            if (name === 'staff_guest_phone_is_registered') {
+                const phoneE164 = String(args.p_phone || '').replace(/^0/, '+63');
+                const delay = Number(config.phoneAvailabilityDelayMs?.[phoneE164] || 0);
+                if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+                if (config.phoneAvailabilityError) return { data: null, error: { message: 'Phone availability unavailable in fixture' } };
+                return { data: Boolean(config.phoneRegisteredByNumber?.[phoneE164] ?? config.phoneRegistered ?? false), error: null };
+            }
             if (name === 'booking_rules_for_date') return config.hoursUnavailable
                 ? { data: null, error: { message: 'rules unavailable in fixture' } }
                 : { data: { open_hour: 8, close_hour: 20, is_closed: false, grace_minutes: config.graceMinutes ?? 30, timezone: 'Asia/Manila' }, error: null };
-            if (name === 'court_occupancy') return { data: [], error: null };
+            if (name === 'court_occupancy') {
+                const snapshots = config.occupancySnapshots;
+                const snapshot = Array.isArray(snapshots)
+                    ? snapshots[Math.min(occupancyCallCount++, snapshots.length - 1)]
+                    : (config.occupancyRows || []);
+                if (snapshot?.error) return { data: null, error: { message: snapshot.error } };
+                return { data: snapshot || [], error: null };
+            }
             if (name === 'staff_create_walkin_order_quoted') {
                 qa.createdItems = args.p_items;
                 return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', status: args.p_payment_method === 'cash' ? 'paid' : 'pending', base_minor: config.orderBaseMinor ?? 35000, amount_total: 350 }, error: null };
@@ -92,6 +109,7 @@ function fixture(config) {
                 }, error: null };
             }
             if (name === 'staff_get_transaction_payment_history') return { data: { source: args.p_source, id: args.p_id, payment_history: config.paymentHistory || [] }, error: null };
+            if (name === 'staff_get_involved_transactions') return { data: { transactions: config.transactions || [] }, error: null };
             if (name === 'staff_list_notifications') {
                 const rows = config.notifications || [];
                 const search = String(args.p_search || '').toLowerCase();
@@ -142,7 +160,8 @@ function fixture(config) {
 }
 
 function courtsFixture() {
-    return `window.InigoCourtsData={getCourts:async()=>${JSON.stringify(courts)},getSports:async()=>[],resolveCourtUnits:c=>({pickerLabel:'Choose a court',units:c.bookableUnits}),invalidateCourts(){},monogramFor:()=>'',slugify:s=>s};`;
+    const sports = [...new Map(courts.map(court => [court.sportName, { id: court.sportName.toLowerCase(), slug: court.sportName.toLowerCase(), name: court.sportName }])).values()];
+    return `window.InigoCourtsData={getCourts:async()=>${JSON.stringify(courts)},getSports:async()=>${JSON.stringify(sports)},resolveCourtUnits:c=>({pickerLabel:'Choose a court',units:c.bookableUnits}),invalidateCourts(){},monogramFor:()=>'',slugify:s=>s};`;
 }
 
 async function openStaffPage(browser, { timezoneId, now, config = {}, query = '', pauseClock = false }) {
@@ -162,22 +181,316 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
     return { context, page };
 }
 
+async function openWalkinTimeStep(page, courtId = 'listing-badminton') {
+    await page.locator('[data-staff-nav="walkin"]').click();
+    await page.locator('[data-staff-walkin-name]').fill('Availability Guest');
+    await page.locator('[data-staff-walkin-next]').click();
+    await selectWalkinCourt(page, courtId);
+    await page.locator('[data-staff-walkin-next]').click();
+    await page.locator('[data-staff-walkin-hour="9"]').waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-staff-walkin-open-windows]').textContent.startsWith('Select an available hour.'));
+}
+
+async function selectWalkinCourt(page, courtId) {
+    const court = courts.find(item => item.id === courtId);
+    assert.ok(court, `fixture contains court ${courtId}`);
+    const sportValue = court.sportName.toLowerCase();
+    await page.locator('[data-staff-walkin-sport-select]').selectOption(sportValue);
+    await page.locator(`[data-staff-walkin-sport="${courtId}"]`).click();
+}
+
+function assertCardHeightStable(actual, expected, message) {
+    assert.ok(Math.abs(actual - expected) < 1, `${message} (expected ${expected}px ±1px, received ${actual}px)`);
+}
+
+function occupancyRow(hour, source = 'online') {
+    return {
+        source, courts: 'Badminton', court_unit: 'Court 1',
+        time_date: `2026-09-27T${String(hour - 8).padStart(2, '0')}:00:00.000Z`,
+        duration_minutes: 60,
+    };
+}
+
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
         const errors = [];
+        const customerStepContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: {
+                customerFullName: 'QA Customer With A Very Long Account Name That Wraps Beyond The Reserved Status Area On Narrow Screens',
+                phoneRegisteredByNumber: {
+                    '+639171234567': false,
+                    '+639999999999': true,
+                },
+                phoneAvailabilityDelayMs: { '+639171234567': 1200, '+639191234567': 1200 },
+            },
+        });
+        const customerStepPage = customerStepContext.page;
+        await customerStepPage.locator('[data-staff-nav="walkin"]').click();
+        await customerStepPage.setViewportSize({ width: 360, height: 780 });
+        assert.equal(await customerStepPage.locator('[data-staff-account-search-wrap]').isVisible(), false, 'Guest mode has no account search or recommendations');
+        const customerCard = customerStepPage.locator('[data-staff-panel="walkin"] .staff-wizard-card');
+        const blankMobileCardHeight = await customerCard.evaluate(el => el.getBoundingClientRect().height);
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'an empty customer name blocks Next');
+        await customerStepPage.locator('[data-staff-walkin-name]').fill('Guest Customer');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), false, 'blank optional mobile permits Next with a name');
+        await customerStepPage.locator('[data-staff-walkin-mobile]').fill('0917 123 4567');
+        await customerStepPage.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'checking');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'Next stays blocked while availability is pending');
+        assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'pending status does not change customer card height');
+        await customerStepPage.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'available');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), 'Number is available.');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-mobile-status]').getAttribute('aria-label'),
+            await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), 'the complete validation result stays accessible when visually clamped');
+        assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'available status does not change customer card height');
+        const guestPhoneCheck = await customerStepPage.evaluate(() => ({
+            calls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_guest_phone_is_registered'),
+            accountSearchVisible: !document.querySelector('[data-staff-account-search-wrap]').hidden,
+            suggestionsVisible: !document.querySelector('[data-staff-customer-results]').hidden,
+        }));
+        assert.deepEqual(guestPhoneCheck.calls.map(call => call.args.p_phone), ['09171234567']);
+        assert.equal(guestPhoneCheck.accountSearchVisible, false, 'phone lookup does not reveal account recommendations in Guest mode');
+        assert.equal(guestPhoneCheck.suggestionsVisible, false);
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), false, 'an available mobile number permits the next step');
+        const mobileCases = [
+            { value: '09999999999', state: 'in_use', text: /already registered/i },
+            { value: '09191234567', state: 'checking', pending: true },
+        ];
+        for (const mobileCase of mobileCases) {
+            await customerStepPage.locator('[data-staff-walkin-mobile]').fill(mobileCase.value);
+            await customerStepPage.waitForFunction(state => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === state, mobileCase.state);
+            assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, `${mobileCase.state} availability blocks Next`);
+            assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, `${mobileCase.state} status does not change customer card height`);
+            if (mobileCase.text) assert.match(await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), mobileCase.text);
+            if (mobileCase.pending) {
+                await customerStepPage.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'available');
+                assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'resolved pending check keeps customer card height stable');
+            }
+        }
+        await customerStepPage.locator('[data-staff-walkin-mobile]').fill('12345');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-mobile-status]').getAttribute('data-state'), 'invalid', 'an invalid mobile format is reported immediately');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'an invalid mobile format blocks Next');
+        assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'invalid status does not change customer card height');
+        await customerStepPage.evaluate(() => { window.__walkinQa.config.phoneAvailabilityError = true; });
+        await customerStepPage.locator('[data-staff-walkin-mobile]').fill('09171234567');
+        await customerStepPage.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'error');
+        assert.match(await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), /Could not check this number/i);
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'availability errors block Next');
+        assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'error status does not change customer card height');
+        await customerStepPage.setViewportSize({ width: 360, height: 800 });
+        await customerStepPage.locator('[data-staff-customer-mode][value="account"]').check();
+        const accountCardHeightBeforeSearch = await customerCard.evaluate(el => el.getBoundingClientRect().height);
+        const emptyAccountSearchLayout = await customerStepPage.evaluate(() => {
+            const status = document.querySelector('[data-staff-customer-selected]');
+            const heading = document.querySelector('.staff-customer-search-heading');
+            return { statusHidden: status.hidden, headingBottom: heading.getBoundingClientRect().bottom, inputTop: document.querySelector('[data-staff-customer-search]').getBoundingClientRect().top };
+        });
+        assert.equal(emptyAccountSearchLayout.statusHidden, true, 'the empty selected-account status does not reserve space');
+        assert.ok(emptyAccountSearchLayout.inputTop - emptyAccountSearchLayout.headingBottom <= 9, 'the search field sits directly below its heading');
+        await customerStepPage.locator('[data-staff-customer-search]').fill('QA');
+        await customerStepPage.locator('[data-staff-customer-results] [data-staff-customer-id]').waitFor();
+        const accountSuggestionLayout = await customerStepPage.evaluate(() => {
+            const card = document.querySelector('[data-staff-panel="walkin"] .staff-wizard-card');
+            const input = document.querySelector('[data-staff-customer-search]').getBoundingClientRect();
+            const results = document.querySelector('[data-staff-customer-results]').getBoundingClientRect();
+            return { height: card.getBoundingClientRect().height, suggestions: document.querySelectorAll('[data-staff-customer-id]').length, visible: !document.querySelector('[data-staff-customer-results]').hidden, resultsGap: results.top - input.bottom };
+        });
+        assert.equal(accountSuggestionLayout.suggestions, 1);
+        assert.equal(accountSuggestionLayout.visible, true);
+        assert.ok(accountSuggestionLayout.resultsGap >= 0 && accountSuggestionLayout.resultsGap <= 4, 'account suggestions sit immediately below the search field');
+        assertCardHeightStable(accountSuggestionLayout.height, accountCardHeightBeforeSearch, 'account suggestions overlay the card without changing its height');
+        await customerStepPage.locator('[data-staff-customer-results] [data-staff-customer-id]').click();
+        assert.match(await customerStepPage.locator('[data-staff-customer-selected]').innerText(), /Linked to QA Customer/);
+        assert.equal(await customerStepPage.locator('[data-staff-customer-search]').inputValue(), 'customer@example.test', 'selection puts the email in the editable search field');
+        assert.equal(await customerStepPage.locator('[data-staff-customer-search]').isEditable(), true);
+        const linkedStatusLayout = await customerStepPage.locator('[data-staff-customer-selected]').evaluate(el => ({
+            text: el.textContent,
+            accessible: el.getAttribute('aria-label'),
+            title: el.title,
+            height: el.getBoundingClientRect().height,
+            maxHeight: getComputedStyle(el).maxHeight,
+            rightOfLabel: el.getBoundingClientRect().left >= document.querySelector('.staff-customer-search-heading label').getBoundingClientRect().right,
+        }));
+        assert.ok(linkedStatusLayout.text.length > 100, 'the linked status retains the complete long account name in the DOM');
+        assert.equal(linkedStatusLayout.accessible, linkedStatusLayout.text, 'the complete linked status is available to assistive technology');
+        assert.equal(linkedStatusLayout.title, linkedStatusLayout.text, 'the complete linked status is available on hover');
+        assert.notEqual(linkedStatusLayout.maxHeight, 'none', 'long linked status text is visually bounded');
+        assert.ok(linkedStatusLayout.height > 0, 'the selected-account status remains visible after selection');
+        assert.equal(linkedStatusLayout.rightOfLabel, true, 'the linked status appears to the right of the field label');
+        await customerStepPage.locator('[data-staff-customer-search]').fill('another account');
+        assert.equal(await customerStepPage.locator('[data-staff-customer-selected]').isHidden(), true, 'editing the search clears the linked status');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-name]').inputValue(), '', 'editing the search clears the previous customer details');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'an edited account query cannot submit the prior selection');
+        await customerStepPage.locator('[data-staff-customer-results] [data-staff-customer-id]').waitFor();
+        await customerStepPage.locator('[data-staff-customer-results] [data-staff-customer-id]').click();
+        assert.equal(await customerStepPage.locator('[data-staff-customer-search]').inputValue(), 'customer@example.test', 'a new search can select an account again');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), false, 'the newly selected account restores a valid customer step');
+        await customerStepPage.locator('[data-staff-customer-mode][value="guest"]').check();
+        assert.equal(await customerStepPage.locator('[data-staff-account-search-wrap]').isVisible(), false, 'switching to Guest closes account suggestions');
+        await customerStepPage.locator('[data-staff-walkin-name]').fill('Sport Selector Guest');
+        await customerStepPage.locator('[data-staff-walkin-next]').click();
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport-select]').inputValue(), '', 'sport is not preselected');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport="listing-badminton"]').count(), 0, 'court choices stay unavailable until a sport is selected');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'sport and court are required before leaving step 2');
+        await customerStepPage.locator('[data-staff-walkin-sport-select]').selectOption('table tennis');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport]').count(), 1, 'sport selection shows only courts belonging to that sport');
+        await customerStepPage.locator('[data-staff-walkin-sport="listing-set"]').click();
+        assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Table 1', 'Table 2'], 'unit labels come from the selected court inventory');
+        await customerStepPage.locator('[data-staff-walkin-sport-select]').selectOption('badminton');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isVisible(), false, 'changing sport clears the prior court unit picker');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Select a court first.', 'changing sport clears the prior court selection');
+        await customerStepPage.locator('[data-staff-walkin-sport-select]').selectOption('volleyball');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport]').count(), 1, 'Volleyball shows only its linked court');
+        await customerStepPage.locator('[data-staff-walkin-sport="listing-volleyball"]').click();
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Volleyball · Court 1', 'Volleyball uses its verified Court 1 label, not the previous sport’s tables');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isVisible(), false, 'a single verified court unit has no redundant picker');
+        await customerStepContext.context.close();
+
+        const inUsePhoneContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', config: { phoneRegistered: true },
+        });
+        await inUsePhoneContext.page.locator('[data-staff-nav="walkin"]').click();
+        await inUsePhoneContext.page.locator('[data-staff-walkin-name]').fill('Guest Customer');
+        await inUsePhoneContext.page.locator('[data-staff-walkin-mobile]').fill('09171234567');
+        await inUsePhoneContext.page.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'in_use');
+        assert.equal(await inUsePhoneContext.page.locator('[data-staff-walkin-mobile-status]').innerText(), 'This number is already registered. Enter another mobile number.');
+        assert.equal(await inUsePhoneContext.page.locator('[data-staff-walkin-next]').isDisabled(), true, 'an already linked guest number must be cleared or linked to its account');
+        assert.equal(await inUsePhoneContext.page.locator('[data-staff-customer-results]').isVisible(), false, 'an in-use number does not show customer recommendations');
+        await inUsePhoneContext.context.close();
+
+        const stalePhoneContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: {
+                phoneRegisteredByNumber: { '+639171234567': true, '+639181234567': false },
+                phoneAvailabilityDelayMs: { '+639171234567': 1200 },
+            },
+        });
+        await stalePhoneContext.page.locator('[data-staff-nav="walkin"]').click();
+        const staleMobile = stalePhoneContext.page.locator('[data-staff-walkin-mobile]');
+        await staleMobile.fill('09171234567');
+        await stalePhoneContext.page.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'checking');
+        await staleMobile.fill('09181234567');
+        await stalePhoneContext.page.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'available');
+        await stalePhoneContext.page.waitForTimeout(700);
+        assert.equal(await stalePhoneContext.page.locator('[data-staff-walkin-mobile-status]').getAttribute('data-state'), 'available', 'a stale response cannot overwrite the current number result');
+        assert.match(await stalePhoneContext.page.locator('[data-staff-walkin-mobile-status]').innerText(), /available/i);
+        await stalePhoneContext.context.close();
+
+        const failedPhoneContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', config: { phoneAvailabilityError: true },
+        });
+        await failedPhoneContext.page.locator('[data-staff-nav="walkin"]').click();
+        await failedPhoneContext.page.locator('[data-staff-walkin-name]').fill('Guest Customer');
+        await failedPhoneContext.page.locator('[data-staff-walkin-mobile]').fill('09171234567');
+        await failedPhoneContext.page.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'error');
+        assert.equal(await failedPhoneContext.page.locator('[data-staff-walkin-next]').isDisabled(), true, 'the flow blocks when mobile availability could not be checked');
+        await failedPhoneContext.context.close();
+
+        const occupiedContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: { occupancyRows: [occupancyRow(10), occupancyRow(11, 'hold'), occupancyRow(12, 'maintenance')] },
+        });
+        await openWalkinTimeStep(occupiedContext.page);
+        assert.equal(await occupiedContext.page.locator('[data-staff-walkin-hour="10"]').isDisabled(), true, 'an occupied hour cannot be selected');
+        assert.equal(await occupiedContext.page.locator('[data-staff-walkin-hour="11"]').isDisabled(), true, 'a held hour cannot be selected');
+        assert.equal(await occupiedContext.page.locator('[data-staff-walkin-hour="12"]').isDisabled(), true, 'a maintenance hour cannot be selected');
+        await occupiedContext.page.locator('[data-staff-walkin-hour="9"]').click();
+        await occupiedContext.page.locator('[data-staff-walkin-hour="13"]').click();
+        assert.match(await occupiedContext.page.locator('[data-staff-walkin-open-windows]').innerText(), /consecutive/i, 'a disabled occupied hour prevents a gap from being selected around it');
+        assert.equal(await occupiedContext.page.locator('[data-staff-walkin-lines] .staff-walkin-line').count(), 0, 'unavailable-slot probing creates no booking line');
+        await occupiedContext.context.close();
+
+        for (const attempt of ['next', 'add-line']) {
+            const changingAvailability = await openStaffPage(browser, {
+                timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+                config: { occupancySnapshots: [[], [], [occupancyRow(9)]] },
+            });
+            const recheckPage = changingAvailability.page;
+            await openWalkinTimeStep(recheckPage);
+            await recheckPage.locator('[data-staff-walkin-hour="9"]').click();
+            await recheckPage.locator(attempt === 'next' ? '[data-staff-walkin-next]' : '[data-staff-walkin-add-line]').click();
+            await recheckPage.waitForFunction(() => /Availability changed/.test(document.querySelector('[data-staff-walkin-open-windows]').textContent));
+            assert.equal(await recheckPage.locator('[data-staff-walkin-step="3"]').evaluate(el => el.classList.contains('is-active')), true, `${attempt} keeps the user on time selection after occupancy changes`);
+            assert.equal(await recheckPage.locator('[data-staff-walkin-lines] .staff-walkin-line').count(), 0, `${attempt} does not create a line for a newly occupied slot`);
+            await changingAvailability.context.close();
+        }
+
+        const failedRecheck = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: { occupancySnapshots: [[], [], { error: 'occupancy unavailable' }] },
+        });
+        await openWalkinTimeStep(failedRecheck.page);
+        await failedRecheck.page.locator('[data-staff-walkin-hour="9"]').click();
+        await failedRecheck.page.locator('[data-staff-walkin-next]').click();
+        await failedRecheck.page.waitForFunction(() => /could not be verified/i.test(document.querySelector('[data-staff-walkin-open-windows]').textContent));
+        assert.equal(await failedRecheck.page.locator('[data-staff-walkin-lines] .staff-walkin-line').count(), 0, 'a failed live recheck creates no booking line');
+        await failedRecheck.context.close();
+
+        const setContext = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });
+        const setPage = setContext.page;
+        const resetPageErrors = [];
+        setPage.on('pageerror', error => resetPageErrors.push(error.message));
+        await openWalkinTimeStep(setPage, 'listing-set');
+        await setPage.locator('[data-staff-rate-quantity]').fill('3');
+        await setPage.locator('[data-staff-walkin-hour="9"]').click();
+        await setPage.locator('[data-staff-walkin-hour="10"]').click();
+        await setPage.locator('[data-staff-walkin-hour="11"]').click();
+        await setPage.locator('[data-staff-walkin-add-line]').click();
+        await selectWalkinCourt(setPage, 'listing-set');
+        await setPage.locator('[data-staff-walkin-next]').click();
+        await setPage.locator('[data-staff-walkin-hour="13"]').waitFor();
+        assert.equal(await setPage.locator('[data-staff-rate-quantity]').inputValue(), '1', 'the next set-rate line starts with one set after clearing the prior three-set line');
+        await setPage.locator('[data-staff-walkin-hour="13"]').click();
+        await setPage.locator('[data-staff-walkin-next]').click();
+        await setPage.locator('[data-staff-walkin-next]').click();
+        await setPage.locator('[data-staff-walkin-review-lines] .staff-walkin-review-line').nth(1).waitFor();
+        await setPage.locator('[data-staff-walkin-save]').click();
+        await setPage.locator('[data-staff-walkin-receipt]').getByText('Payment acknowledgment and entry pass').waitFor();
+        assert.deepEqual(await setPage.evaluate(() => window.__walkinQa.createdItems.map(item => item.rate_quantity)), [3, 1], 'the multi-line set order preserves quantities of three sets and one set');
+        await setPage.locator('[data-staff-walkin-reset]').click();
+        console.log('RESET DEBUG', await setPage.evaluate(() => ({
+            panel: document.querySelector('[data-staff-panel="walkin"]')?.className,
+            wizardHidden: document.querySelector('[data-staff-walkin-wizard-wrap]')?.hidden,
+            receiptHidden: document.querySelector('[data-staff-walkin-receipt-wrap]')?.hidden,
+            sportHidden: document.querySelector('[data-staff-walkin-sport-select]')?.getBoundingClientRect().height,
+            selected: document.querySelector('[data-staff-walkin-sport-select]')?.value,
+        })));
+        assert.equal(await setPage.locator('[data-staff-walkin-sport-select]').inputValue(), '', 'new walk-in resets the selected sport');
+        assert.equal(await setPage.locator('[data-staff-walkin-unit-select] option').count(), 0, 'new walk-in clears the previous unit options');
+        await setPage.locator('[data-staff-walkin-sport-select]').selectOption('table tennis');
+        assert.equal(await setPage.locator('[data-staff-walkin-sport]').count(), 1, 'sport choices remain available after starting a new walk-in');
+        await setPage.locator('[data-staff-walkin-sport="listing-set"]').click();
+        assert.deepEqual(await setPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Table 1', 'Table 2'], 'reopened wizard repopulates units from the selected court');
+        assert.deepEqual(resetPageErrors, [], 'reset and reopened sport selection do not raise browser errors');
+        await setContext.context.close();
+
         const { context, page } = await openStaffPage(browser, { timezoneId: 'Pacific/Honolulu', now: '2026-09-27T01:30:00Z', pauseClock: true });
         page.on('pageerror', error => errors.push(error.message));
         await page.locator('[data-staff-nav="walkin"]').click();
+        await page.waitForFunction(() => !document.querySelector('[data-staff-walkin-sport-select]').disabled);
         await page.locator('[data-staff-walkin-name]').fill('Guest Customer');
         await page.locator('[data-staff-walkin-next]').click();
-        await page.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        assert.equal(await page.locator('[data-staff-walkin-sport].staff-walkin-sport-card').count(), 0, 'court choices stay hidden until a sport is selected');
+        assert.equal(await page.locator('[data-staff-walkin-sport].staff-chip').count(), 0, 'court choices use the booking flow’s photo-card pattern instead of chips');
+        await selectWalkinCourt(page, 'listing-badminton');
         await page.locator('[data-staff-walkin-next]').click();
+        assert.equal(await page.locator('[data-staff-walkin-current-court]').innerText(), 'Badminton · Court 1', 'time selection identifies the selected court and unit');
         await page.locator('[data-staff-walkin-hour="9"]').waitFor();
-        await page.locator('[data-staff-walkin-duration]').selectOption('2');
+        assert.equal(await page.locator('[data-staff-walkin-duration]').count(), 0, 'the walk-in time step has no duration dropdown');
+        assert.equal(await page.locator('[data-staff-walkin-hour="8"]').isDisabled(), true, 'past slots are unavailable for selection');
         await page.locator('[data-staff-walkin-hour="9"]').click();
+        await page.locator('[data-staff-walkin-hour="11"]').click();
+        assert.match(await page.locator('[data-staff-walkin-open-windows]').innerText(), /consecutive/i, 'a non-adjacent slot cannot create a booking gap');
+        assert.equal(await page.locator('[data-staff-walkin-hour="9"]').getAttribute('aria-pressed'), 'true', 'the original selection remains intact after a gap is rejected');
+        await page.locator('[data-staff-walkin-hour="10"]').click();
+        assert.match(await page.locator('[data-staff-walkin-current-range]').innerText(), /2 hrs/);
+        await page.locator('[data-staff-walkin-hour="10"]').click();
+        assert.match(await page.locator('[data-staff-walkin-current-range]').innerText(), /1 hr/);
+        await page.locator('[data-staff-walkin-hour="10"]').click();
+        assert.match(await page.locator('[data-staff-walkin-current-range]').innerText(), /2 hrs/);
         await page.locator('[data-staff-walkin-add-line]').click();
-        await page.locator('[data-staff-walkin-sport="listing-basketball"]').click();
+        await selectWalkinCourt(page, 'listing-basketball');
         await page.locator('[data-staff-walkin-next]').click();
         await page.locator('[data-staff-walkin-hour="12"]').waitFor();
         await page.locator('[data-staff-walkin-hour="12"]').click();
@@ -214,7 +527,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await online.page.locator('[data-staff-nav="walkin"]').click();
         await online.page.locator('[data-staff-walkin-name]').fill('Online Guest');
         await online.page.locator('[data-staff-walkin-next]').click();
-        await online.page.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(online.page, 'listing-badminton');
         await online.page.locator('[data-staff-walkin-next]').click();
         await online.page.locator('[data-staff-walkin-hour="10"]').click();
         await online.page.locator('[data-staff-walkin-next]').click();
@@ -235,7 +548,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await qrPage.locator('[data-staff-nav="walkin"]').click();
         await qrPage.locator('[data-staff-walkin-name]').fill('QR Guest');
         await qrPage.locator('[data-staff-walkin-next]').click();
-        await qrPage.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(qrPage, 'listing-badminton');
         await qrPage.locator('[data-staff-walkin-next]').click();
         await qrPage.locator('[data-staff-walkin-hour="11"]').click();
         await qrPage.locator('[data-staff-walkin-next]').click();
@@ -278,7 +591,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await expiredQrPage.locator('[data-staff-nav="walkin"]').click();
         await expiredQrPage.locator('[data-staff-walkin-name]').fill('Expired QR Guest');
         await expiredQrPage.locator('[data-staff-walkin-next]').click();
-        await expiredQrPage.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(expiredQrPage, 'listing-badminton');
         await expiredQrPage.locator('[data-staff-walkin-next]').click();
         await expiredQrPage.locator('[data-staff-walkin-hour="11"]').click();
         await expiredQrPage.locator('[data-staff-walkin-next]').click();
@@ -308,7 +621,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await invalidQrPage.locator('[data-staff-nav="walkin"]').click();
         await invalidQrPage.locator('[data-staff-walkin-name]').fill('Invalid URL Guest');
         await invalidQrPage.locator('[data-staff-walkin-next]').click();
-        await invalidQrPage.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(invalidQrPage, 'listing-badminton');
         await invalidQrPage.locator('[data-staff-walkin-next]').click();
         await invalidQrPage.locator('[data-staff-walkin-hour="11"]').click();
         await invalidQrPage.locator('[data-staff-walkin-next]').click();
@@ -374,124 +687,147 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         ];
         const transactionContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T01:00:00Z',
-            config: { bookings: [transactionBooking], paymentHistory },
+            config: { transactions: [
+                {
+                    payment_id: 102, created_at: '2026-09-27T00:55:00Z', method: 'Cash', base_minor: 5000, gross_minor: 5000,
+                    source: 'booking', customer_name: 'QA Customer', sports: 'Badminton', courts: 'Badminton', unit: 'Court 1',
+                    acknowledgment: {
+                        receipt_id: 'qa-balance', receipt_number: 'PA-BALANCE', issued_at: '2026-09-27T00:55:00Z', customer_name: 'QA Customer',
+                        items: [{ sport: 'Badminton', court: 'Badminton', unit: 'Court 1', starts_at: '2026-09-27T01:00:00Z', ends_at: '2026-09-27T02:00:00Z', subtotal_minor: 10000 }],
+                        court_subtotal_minor: 10000, amount_paid_minor: 5000, remaining_balance_minor: 0,
+                        fee_minor: 0, gross_minor: 5000, subtotal: 50, fee: 0, total: 50,
+                        payment_method: 'Cash', payment_status: 'paid',
+                        disclaimer: 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.',
+                    },
+                },
+                {
+                    payment_id: 101, created_at: '2026-09-26T23:55:00Z', method: 'PayMongo', base_minor: 5000, gross_minor: 5250,
+                    source: 'booking', customer_name: 'QA Customer', sports: 'Badminton', courts: 'Badminton', unit: 'Court 1',
+                    acknowledgment: { receipt_id: 'qa-deposit', receipt_number: 'PA-DEPOSIT', customer_name: 'QA Customer', items: [],
+                        court_subtotal_minor: 10000, amount_paid_minor: 5000, remaining_balance_minor: 5000,
+                        fee_minor: 250, gross_minor: 5250, payment_method: 'PayMongo', payment_status: 'paid' },
+                },
+                {
+                    payment_id: 103, created_at: '2026-09-27T00:25:00Z', method: 'Cash', base_minor: 8000, gross_minor: 8000,
+                    source: 'walkin', customer_name: 'Walk-in Guest', sports: 'Basketball', courts: 'Basketball', unit: 'Court 2',
+                    acknowledgment: { receipt_id: 'qa-walkin', receipt_number: 'PA-WALKIN', customer_name: 'Walk-in Guest', items: [],
+                        court_subtotal_minor: 8000, amount_paid_minor: 8000, remaining_balance_minor: 0,
+                        fee_minor: 0, gross_minor: 8000, payment_method: 'Cash', payment_status: 'paid' },
+                },
+            ] },
         });
         const transactionPage = transactionContext.page;
         await transactionPage.locator('[data-staff-nav="transactions"]').click();
-        const transactionRow = transactionPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index="0"]');
-        await transactionRow.waitFor();
-        await transactionRow.locator('[data-staff-action="timein"]').click();
-        await transactionPage.locator('[data-staff-timein-dialog]').waitFor();
-        assert.equal(await transactionPage.locator('.staff-shell').evaluate(el => el.inert), true, 'time-in modal makes the dashboard background inert');
-        await transactionPage.keyboard.press('Tab');
-        assert.equal(await transactionPage.locator('[data-staff-timein-close]').evaluate(el => el === document.activeElement), true, 'Tab from modal dialog enters at its first control');
-        await transactionPage.keyboard.press('Shift+Tab');
-        assert.equal(await transactionPage.locator('[data-staff-timein-cancel]').evaluate(el => el === document.activeElement), true, 'Shift+Tab wraps to the last enabled control');
-        await transactionPage.keyboard.press('Escape');
-        await transactionPage.locator('[data-staff-timein-modal]').waitFor({ state: 'hidden' });
-        assert.equal(await transactionPage.locator('.staff-shell').evaluate(el => el.inert), false, 'closing the modal restores background interaction');
-
-        await transactionRow.locator('[data-staff-payment-history-load]').click();
-        const paymentEntries = transactionRow.locator('.staff-payment-history-list > li');
-        await paymentEntries.nth(1).waitFor();
-        assert.equal(await paymentEntries.count(), 2, 'deposit and balance remain separate history entries');
-        assert.match(await transactionRow.innerText(), /Base ₱50\.00/);
-        assert.match(await transactionRow.innerText(), /Fee ₱2\.50/);
-        await paymentEntries.nth(0).locator('[data-staff-payment-ack]').click();
+        const transactionRows = transactionPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index]');
+        await transactionRows.nth(2).waitFor();
+        assert.equal(await transactionRows.count(), 3, 'one row appears per payment, including the separate balance payment and walk-in');
+        assert.deepEqual(await transactionPage.locator('[data-staff-table="transactions"] thead th').allTextContents(),
+            ['Date', 'Customer Name', 'Sports', 'Court/Unit', 'Time', 'Source', 'Amount', 'Receipt']);
+        assert.equal(await transactionPage.locator('[data-staff-tx-from], [data-staff-tx-to]').count(), 0, 'date range controls are removed');
+        assert.equal(await transactionRows.nth(0).locator('[data-staff-payment-ack]').innerText(), 'View receipt');
+        assert.match(await transactionRows.nth(0).innerText(), /₱50\.00/, 'amount shows the payment total');
+        await transactionRows.nth(0).locator('[data-staff-payment-ack]').click();
         const receiptDialog = transactionPage.locator('[data-staff-receipt-dialog]');
         await receiptDialog.waitFor();
-        assert.match(await transactionPage.locator('.staff-receipt-item').innerText(), /₱100\.00/, 'receipt line subtotal uses canonical subtotal_minor');
-        assert.match(await receiptDialog.innerText(), /Court subtotal\s+₱100\.00/);
-        assert.match(await receiptDialog.innerText(), /Payment received\s+₱50\.00/);
-        assert.match(await receiptDialog.innerText(), /Remaining balance\s+₱50\.00/);
-        assert.match(await receiptDialog.innerText(), /CUSTOMER CHARGED\s+₱52\.50/);
-        assert.equal(await transactionPage.locator('.staff-shell').evaluate(el => el.inert), true);
-        await transactionPage.keyboard.press('Shift+Tab');
-        assert.equal(await transactionPage.locator('.staff-receipt-card [data-staff-receipt-close]').evaluate(el => el === document.activeElement), true, 'receipt modal Shift+Tab wraps to its last action');
-        await transactionPage.keyboard.press('Tab');
-        assert.equal(await receiptDialog.locator(':scope > .staff-modal-close').evaluate(el => el === document.activeElement), true, 'receipt modal Tab wraps to its first action');
+        assert.match(await receiptDialog.innerText(), /PA-BALANCE/);
+        assert.equal(await transactionPage.locator('[data-staff-receipt-print]').count(), 1, 'receipt modal has a print action');
+        assert.equal(await transactionPage.locator('[data-staff-receipt-download]').count(), 1, 'receipt modal has a download action');
+        await transactionPage.evaluate(() => document.body.classList.add('staff-printing-transaction-receipt'));
+        await transactionPage.emulateMedia({ media: 'print' });
+        const printedReceipt = await transactionPage.locator('.staff-receipt-modal .staff-receipt-card').evaluate(card => {
+            const rect = card.getBoundingClientRect();
+            const overlay = getComputedStyle(card.closest('.staff-receipt-modal'));
+            const dialog = getComputedStyle(card.closest('.staff-modal'));
+            return {
+                visible: getComputedStyle(card).visibility === 'visible',
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                overlayPosition: overlay.position,
+                overlayOverflow: overlay.overflow,
+                dialogPosition: dialog.position,
+                dialogMaxHeight: dialog.maxHeight,
+                dialogOverflow: dialog.overflow,
+                text: card.innerText,
+            };
+        });
+        assert.equal(printedReceipt.visible, true, 'receipt stays visible in print media');
+        assert.ok(printedReceipt.x < 20, 'receipt begins at the page edge instead of the centered dialog position');
+        assert.ok(printedReceipt.y < 20, 'receipt starts near the top of the page without preceding dashboard content');
+        assert.ok(printedReceipt.width <= 74 * 96 / 25.4 + 1, 'receipt fits the 80 mm thermal page content width');
+        assert.ok(printedReceipt.height > 250, 'all receipt detail remains in the printed card');
+        assert.equal(printedReceipt.overlayPosition, 'static', 'print resets the fixed dialog overlay');
+        assert.equal(printedReceipt.overlayOverflow, 'visible', 'print does not clip through the overlay');
+        assert.equal(printedReceipt.dialogPosition, 'static', 'print resets the centered dialog positioning');
+        assert.equal(printedReceipt.dialogMaxHeight, 'none', 'print removes the dialog viewport-height cap');
+        assert.equal(printedReceipt.dialogOverflow, 'visible', 'print does not clip through the dialog');
+        assert.match(printedReceipt.text, /Customer charged/i);
+        assert.match(printedReceipt.text, /Payment method/);
+        assert.match(printedReceipt.text, /PA-BALANCE/);
+        await transactionPage.emulateMedia({ media: 'screen' });
+        await transactionPage.evaluate(() => document.body.classList.remove('staff-printing-transaction-receipt'));
         await transactionPage.keyboard.press('Escape');
         await transactionPage.locator('[data-staff-receipt-modal]').waitFor({ state: 'hidden' });
-        const historyCall = await transactionPage.evaluate(() => window.__walkinQa.calls.find(call => call.name === 'staff_get_transaction_payment_history'));
-        assert.deepEqual(historyCall.args, { p_source: 'booking', p_id: 42 });
+        await transactionPage.locator('[data-staff-tx-sort]').selectOption('date-asc');
+        assert.match(await transactionRows.nth(0).innerText(), /₱52\.50/, 'sort changes payment row order');
+        await transactionPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="walkin"]').click();
+        await transactionPage.waitForFunction(() => Array.from(document.querySelectorAll('[data-staff-table="transactions"] tbody tr[data-row-index]')).filter(row => row.style.display !== 'none').length === 1);
+        assert.match(await transactionRows.filter({ hasText: 'Walk-in Guest' }).innerText(), /Walk-in/);
+        const txCall = await transactionPage.evaluate(() => window.__walkinQa.calls.find(call => call.name === 'staff_get_involved_transactions'));
+        assert.deepEqual(txCall.args, undefined, 'staff identity is derived by the server from auth.uid');
         await transactionContext.context.close();
 
         const filterContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
-            config: {
-                bookings: [{ booking_id: 51, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1', time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', status: 'confirmed', duration_minutes: 60, amount_total: 100, amount_paid: 0 }],
-                walkins: [
-                    { walkin_id: 81, customer_name: 'Filter Guest', sports: 'Basketball', courts: 'Basketball', court_unit: 'Court 2', time_date: '2026-09-27T03:00:00Z', end_at: '2026-09-27T04:00:00Z', status: 'completed', duration_minutes: 60 },
-                    { walkin_id: 82, customer_name: 'Other Guest', sports: 'Basketball', courts: 'Basketball', court_unit: 'Court 2', time_date: '2026-09-27T05:00:00Z', end_at: '2026-09-27T06:00:00Z', status: 'completed', duration_minutes: 60 },
-                ],
-            },
+            config: { transactions: [
+                { payment_id: 201, created_at: '2026-09-27T01:00:00Z', source: 'walkin', customer_name: 'Filter Guest', sports: 'Basketball', courts: 'Basketball', unit: 'Court 2', base_minor: 10000, gross_minor: 10000 },
+                { payment_id: 202, created_at: '2026-09-27T16:30:00Z', source: 'booking', customer_name: 'Other Guest', sports: 'Tennis', courts: 'Tennis', unit: 'Court 1', base_minor: 12000, gross_minor: 12000 },
+            ] },
         });
         const filterPage = filterContext.page;
         await filterPage.locator('[data-staff-nav="transactions"]').click();
-        await filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index="2"]').waitFor();
+        const filterRows = filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index]');
+        await filterRows.first().waitFor();
+        assert.equal(await filterRows.count(), 2, 'transactions from all dates appear before a date is selected');
+        assert.equal(await filterPage.locator('[data-staff-tx-date]').inputValue(), '');
         await filterPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="walkin"]').click();
         const filterSearch = filterPage.locator('[data-staff-search="transactions"]');
         await filterSearch.fill('Filter Guest');
         const visibleTransactions = () => filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index]').evaluateAll(rows => rows.filter(row => row.style.display !== 'none').length);
-        await filterPage.waitForFunction(() => Array.from(document.querySelectorAll('[data-staff-table="transactions"] tbody tr[data-row-index]')).filter(row => row.style.display !== 'none').length === 1);
-        assert.equal(await visibleTransactions(), 1);
-        const bookingReadsBeforeRefresh = await filterPage.evaluate(() => window.__walkinQa.reads.filter(table => table === 'booking').length);
-        await filterPage.locator('[data-staff-tx-from]').dispatchEvent('change');
-        await filterPage.waitForFunction((before) => window.__walkinQa.reads.filter(table => table === 'booking').length > before, bookingReadsBeforeRefresh);
-        await filterPage.waitForFunction(() => Array.from(document.querySelectorAll('[data-staff-table="transactions"] tbody tr[data-row-index]')).filter(row => row.style.display !== 'none').length === 1);
-        assert.equal(await filterSearch.inputValue(), 'Filter Guest', 'search text survives transaction refresh');
-        assert.equal(await filterPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="walkin"]').getAttribute('class').then(value => value.includes('is-active')), true, 'source chip remains selected after refresh');
-        assert.equal(await visibleTransactions(), 1, 'refreshed rows still honor the current search and source filter');
+        assert.equal(await visibleTransactions(), 1, 'source and search filters apply to payment rows');
+        const unavailableReceipt = filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index="0"] [data-staff-payment-ack]');
+        assert.equal(await unavailableReceipt.innerText(), 'View receipt');
+        assert.equal(await unavailableReceipt.isDisabled(), true, 'View receipt is disabled when a legacy acknowledgment cannot be recovered');
+        await filterPage.locator('[data-staff-tx-date]').fill('2026-09-28');
+        await filterPage.locator('[data-staff-tx-date]').dispatchEvent('change');
+        assert.equal(await visibleTransactions(), 0, 'date, source, and search filters compose locally');
+        await filterPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="online"]').click();
+        await filterSearch.fill('Other Guest');
+        assert.equal(await visibleTransactions(), 1, 'changing source and search retains the selected transaction date');
+        await filterPage.locator('[data-staff-tx-date]').fill('2026-09-27');
+        await filterPage.locator('[data-staff-tx-date]').dispatchEvent('change');
+        assert.equal(await visibleTransactions(), 0, 'changing date retains current source and search filters');
+        await filterPage.locator('[data-staff-tx-date]').fill('');
+        await filterPage.locator('[data-staff-tx-date]').dispatchEvent('change');
+        assert.equal(await visibleTransactions(), 1, 'clearing the date shows all dates while retaining other filters');
         await filterContext.context.close();
 
-        const pendingOrderLine = (walkin_id, time_date) => ({
-            walkin_id, walkin_order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', customer_name: 'Pending Guest',
-            sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1', time_date, end_at: '2026-09-27T02:00:00Z',
-            duration_minutes: 60, status: 'pending', payment_method: null, payment_id: null, amount_total: 100, amount_paid: 0,
-        });
-        const paidCashOrder = {
-            walkin_id: 73, walkin_order_id: 'bd1686cf-59db-4a21-9ad4-674e901bd391', customer_name: 'Paid Cash Guest',
-            sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1', time_date: '2026-09-27T06:00:00Z', end_at: '2026-09-27T07:00:00Z',
-            duration_minutes: 60, status: 'confirmed', payment_method: 'Cash', payment_id: 801, amount_total: 100, amount_paid: 100,
-        };
-        const retryContext = await openStaffPage(browser, {
+        // RPC response for staff A's own walk-in when staff B later collects
+        // its balance contains the creator-owned original payment only.
+        const ownershipContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
-            config: { walkins: [pendingOrderLine(71, '2026-09-27T01:00:00Z'), pendingOrderLine(72, '2026-09-27T03:00:00Z'), paidCashOrder] },
+            config: { transactions: [
+                { payment_id: 301, created_at: '2026-09-27T01:00:00Z', source: 'walkin', customer_name: 'A-owned Guest', sports: 'Badminton', courts: 'Badminton', unit: 'Court 1', base_minor: 10000, gross_minor: 10000,
+                    acknowledgment: { receipt_id: 'qa-owner-payment', receipt_number: 'PA-OWNER', customer_name: 'A-owned Guest', items: [], payment_status: 'paid' } },
+            ] },
         });
-        const retryPage = retryContext.page;
-        const retryCalls = [];
-        await retryPage.exposeFunction('__qaRecord', call => retryCalls.push(call));
-        await retryPage.route('https://checkout.paymongo.com/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>PayMongo retry fixture</title>' }));
-        retryPage.on('dialog', dialog => dialog.accept());
-        await retryPage.locator('[data-staff-nav="transactions"]').click();
-        assert.equal(await retryPage.locator('[data-staff-walkin-retry]').count(), 1, 'one retry action is shown per pending order');
-        assert.equal(await retryPage.locator('[data-staff-table="transactions"] tbody tr').filter({ hasText: 'Paid Cash Guest' }).locator('[data-staff-walkin-retry]').count(), 0, 'paid cash walk-ins never expose an online retry');
-        await retryPage.evaluate(() => { window.__walkinQa.config.failCheckoutOnce = true; });
-        await retryPage.locator('[data-staff-walkin-retry]').click();
-        await retryPage.locator('[data-staff-walkin-retry]').waitFor({ state: 'visible' });
-        assert.equal(await retryPage.locator('[data-staff-walkin-retry]').isDisabled(), false, 'failed checkout leaves a retryable pending action');
-        assert.equal(retryCalls.filter(call => call.kind === 'function' && call.name === 'staff-walkin-checkout').length, 1);
-        await retryPage.locator('[data-staff-walkin-retry]').click();
-        await retryPage.waitForURL('https://checkout.paymongo.com/qa-walkin');
-        assert.equal(retryCalls.filter(call => call.kind === 'function' && call.name === 'staff-walkin-checkout').length, 2, 'staff can resume after a failed checkout attempt');
-        await retryContext.context.close();
-
-        const retryQrContext = await openStaffPage(browser, {
-            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
-            config: { walkins: [pendingOrderLine(74, '2026-09-27T07:00:00Z')], retryChannel: 'gcash', checkoutBaseMinor: 10000 },
-        });
-        const retryQrPage = retryQrContext.page;
-        retryQrPage.on('dialog', dialog => dialog.accept());
-        await retryQrPage.locator('[data-staff-nav="transactions"]').click();
-        await retryQrPage.locator('[data-staff-walkin-retry]').click();
-        await retryQrPage.locator('.staff-walkin-qr-card [data-staff-walkin-qr-image] svg').waitFor();
-        assert.equal(await retryQrPage.locator('[data-staff-panel="walkin"]').evaluate(panel => panel.classList.contains('is-active')), true,
-            'a saved GCash checkout retry returns staff to the walk-in QR screen');
-        assert.equal(new URL(retryQrPage.url()).pathname, '/Pages/staff_dashboard.html', 'a GCash QR retry does not redirect the staff browser');
-        assert.match(await retryQrPage.locator('.staff-walkin-qr-card').innerText(), /₱100\.00/, 'retry QR uses the pending order amount when available');
-        assert.equal(await retryQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0,
-            'retrying a pending QR does not show an acknowledgment before payment confirmation');
-        await retryQrContext.context.close();
+        await ownershipContext.page.locator('[data-staff-nav="transactions"]').click();
+        const ownedRows = ownershipContext.page.locator('[data-staff-table="transactions"] tbody tr[data-row-index]');
+        await ownedRows.first().waitFor();
+        assert.equal(await ownedRows.count(), 1, 'staff A sees the owned original payment but not staff B’s later balance payment');
+        assert.match(await ownedRows.first().innerText(), /PA-OWNER|₱100\.00/);
+        await ownershipContext.context.close();
 
         const unreadNotifications = Array.from({ length: 18 }, (_, index) => ({
             key: `notice-${index + 1}`, title: `Notice ${index + 1}`, body: 'Unread staff update', category: 'booking',
@@ -564,7 +900,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await closedRules.page.locator('[data-staff-nav="walkin"]').click();
         await closedRules.page.locator('[data-staff-walkin-name]').fill('No Rules Guest');
         await closedRules.page.locator('[data-staff-walkin-next]').click();
-        await closedRules.page.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(closedRules.page, 'listing-badminton');
         await closedRules.page.locator('[data-staff-walkin-next]').click();
         await closedRules.page.getByText('Operating hours could not be verified. Try again before creating this order.').waitFor();
         assert.equal(await closedRules.page.locator('[data-staff-walkin-hour]').count(), 0, 'fallback hours are never advertised as bookable');
@@ -577,7 +913,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await graceExpired.page.locator('[data-staff-nav="walkin"]').click();
         await graceExpired.page.locator('[data-staff-walkin-name]').fill('Grace Deadline Guest');
         await graceExpired.page.locator('[data-staff-walkin-next]').click();
-        await graceExpired.page.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(graceExpired.page, 'listing-badminton');
         await graceExpired.page.locator('[data-staff-walkin-next]').click();
         const expiredCurrentHour = graceExpired.page.locator('[data-staff-walkin-hour="9"]');
         await expiredCurrentHour.waitFor();
@@ -592,7 +928,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         await eveningGrace.page.locator('[data-staff-nav="walkin"]').click();
         await eveningGrace.page.locator('[data-staff-walkin-name]').fill('Evening Grace Guest');
         await eveningGrace.page.locator('[data-staff-walkin-next]').click();
-        await eveningGrace.page.locator('[data-staff-walkin-sport="listing-badminton"]').click();
+        await selectWalkinCourt(eveningGrace.page, 'listing-badminton');
         await eveningGrace.page.locator('[data-staff-walkin-next]').click();
         const lastHourSlot = eveningGrace.page.locator('[data-staff-walkin-hour="19"]');
         await lastHourSlot.waitFor();
@@ -682,7 +1018,7 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
         const counters = await boundaryDay.page.locator('[data-staff-stat]').evaluateAll(elements => Object.fromEntries(elements.map(el => [el.dataset.staffStat, el.textContent.trim()])));
         assert.equal(counters['bookings-today'], '1');
         assert.equal(counters['walkins-today'], '1');
-        assert.equal(await boundaryDay.page.locator('[data-staff-tx-from]').inputValue(), '2026-09-28', 'date controls should initialize to the Manila calendar day');
+        assert.equal(await boundaryDay.page.locator('[data-staff-tx-from], [data-staff-tx-to]').count(), 0, 'transaction records no longer expose date range controls');
         await boundaryDay.context.close();
 
         const responsive = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });

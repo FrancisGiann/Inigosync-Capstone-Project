@@ -255,7 +255,13 @@ function mockClient(options) {
             const termsLink = form.locator('[data-terms-open]');
             const dialog = page.locator('[data-terms-overlay]');
             const createAccount = form.locator('button[type="submit"]');
+            assert.equal(await createAccount.isDisabled(), true, 'Create Account stays disabled until both required names are entered');
             await form.locator('[name="surname"]').fill('Tester');
+            assert.equal(await createAccount.isDisabled(), true, 'surname alone is not enough to enable Create Account');
+            await form.locator('[name="firstname"]').fill('Customer');
+            assert.equal(await createAccount.isDisabled(), false, 'surname and first name enable Create Account without a middle name');
+            await form.locator('[name="firstname"]').fill('   ');
+            assert.equal(await createAccount.isDisabled(), true, 'whitespace-only first name does not enable Create Account');
             await form.locator('[name="firstname"]').fill('Customer');
 
             await termsLink.click();
@@ -313,10 +319,12 @@ function mockClient(options) {
             await noticeForm.locator('[data-signup-next]').click();
             await noticeForm.locator('[data-signup-step="2"].is-active').waitFor();
             await noticeForm.locator('[name="terms"]').check();
-            await noticeForm.locator('button[type="submit"]').click();
+            await noticeForm.evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
             const errorNotice = noticePage.locator('[data-auth-notice].is-error.is-visible');
             await errorNotice.waitFor({ state: 'visible' });
             assert.match(await errorNotice.locator('[data-auth-notice-message]').innerText(), /Enter your surname/);
+            await noticeForm.locator('[name="surname"]').fill('Tester');
+            await noticeForm.locator('[name="firstname"]').fill('Customer');
             await noticeForm.locator('[name="terms"]').uncheck();
             await noticeForm.locator('button[type="submit"]').click();
             const noticeDialog = noticePage.locator('[data-terms-overlay]');

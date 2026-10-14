@@ -129,6 +129,37 @@ vm.runInNewContext(fs.readFileSync('includes/emailMfa.js', 'utf8'), { window, lo
         'a missing singleton returns NULL for the helper to reject');
     const activationMigration = fs.readFileSync('supabase/migrations/20261012092000_activate_email_mfa_for_live_users.sql', 'utf8');
     assert.match(activationMigration, /update internal\.email_mfa_enforcement set enabled = true/i);
+    const readonlyHookMigration = fs.readFileSync('supabase/migrations/20261013090000_make_email_mfa_pre_request_read_only.sql', 'utf8');
+    const readonlyHook = readonlyHookMigration.match(/create or replace function internal\.enforce_email_mfa_pre_request\(\)[\s\S]*?\$\$;/i)?.[0];
+    assert(readonlyHook, 'the follow-up migration replaces the active pre-request hook');
+    assert.match(readonlyHook, /returns void language plpgsql stable security definer/i,
+        'the PostgREST hook is declared read-only for STABLE RPC transactions');
+    assert.doesNotMatch(readonlyHook, /\b(insert|update|delete|truncate)\b/i,
+        'the read-only hook never writes session or enforcement state');
+    assert.match(readonlyHook, /if internal\.has_verified_email_session\(\) then return; end if/i,
+        'a verified session still passes the hook');
+    for (const path of [
+        'profiles', 'app_settings', 'assets', 'court', 'court_unit_inventory',
+        'court_unit_resource_map', 'event', 'physical_court_resource',
+        'public_booking_reviews', 'sport', 'testimonial',
+    ]) assert(readonlyHook.includes(`'${path}'`), `the bootstrap GET allowlist retains ${path}`);
+    for (const path of [
+        'rpc/signup_email_availability', 'rpc/signup_phone_availability',
+        'rpc/court_occupancy', 'rpc/booking_rules_for_date',
+    ]) assert(readonlyHook.includes(`'${path}'`), `the narrow pre-verification RPC allowlist retains ${path}`);
+    assert.match(readonlyHook, /raise sqlstate '42501' using message = 'Email verification required for this session\.'/i,
+        'unverified sessions remain denied outside the allowlist');
+    assert.match(readonlyHookMigration, /alter role authenticator set pgrst\.db_pre_request/i,
+        'the updated hook remains installed for PostgREST');
+
+    const sessionTouchRpc = migration.match(/create or replace function public\.email_mfa_touch_session\([\s\S]*?\$\$;/i)?.[0];
+    assert(sessionTouchRpc, 'the explicit verified-session inactivity touch RPC remains defined');
+    assert.match(sessionTouchRpc, /update internal\.email_mfa_verified_sessions[\s\S]*last_activity_at = now\(\)/i);
+    assert.match(migration, /public\.email_mfa_touch_session\(uuid,uuid\)[\s\S]*to service_role/i,
+        'only the service role can execute the session touch RPC');
+    const emailMfaEdge = fs.readFileSync('supabase/functions/email-mfa/index.ts', 'utf8');
+    assert.match(emailMfaEdge, /if \(payload\.activity === true\)[\s\S]*admin\.rpc\('email_mfa_touch_session'/i,
+        'real activity still refreshes the inactivity timestamp through the Edge Function');
     const deferMigration = fs.readFileSync('supabase/migrations/20261012091000_defer_email_mfa_enforcement_for_live_users.sql', 'utf8');
     assert.match(deferMigration, /update internal\.email_mfa_enforcement set enabled = false/i);
 

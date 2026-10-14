@@ -1544,6 +1544,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
+    // Keep Create Account unavailable until both required name fields contain
+    // non-whitespace text. The submit-side validator remains authoritative for
+    // keyboard or programmatic submissions; this also makes the requirement
+    // clear before a visitor can press the button.
+    function refreshSignupCreateAccountButton() {
+        if (!signupForm) return;
+        const button = signupForm.querySelector('button[type="submit"].auth-submit');
+        if (!button || button.classList.contains('is-loading')) return;
+        button.disabled = !String(signupForm.elements.surname?.value || '').trim()
+            || !String(signupForm.elements.firstname?.value || '').trim();
+    }
+
     // Shows step issues in the dismissible auth message box and focuses the
     // first field that actually failed.
     function showSignupStepIssues(issues) {
@@ -1607,6 +1619,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (signupForm) {
+        refreshSignupCreateAccountButton();
+
         signupForm.querySelectorAll('[data-signup-next]').forEach((btn) => {
             btn.addEventListener('click', () => advanceSignupStep());
         });
@@ -1628,6 +1642,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const clearOwn = (e) => setSignupStepError(step, '', e.target && e.target.name);
             stepEl.addEventListener('input', clearOwn);
             stepEl.addEventListener('change', clearOwn);
+            if (step === '2') {
+                stepEl.addEventListener('input', refreshSignupCreateAccountButton);
+                stepEl.addEventListener('change', refreshSignupCreateAccountButton);
+            }
         });
 
         // Digits-only fields (the mobile number). Same filter the OTP boxes
@@ -1824,7 +1842,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!submitBtn) return;
                 submitBtn.disabled = isBusy;
                 submitBtn.classList.toggle('is-loading', isBusy);
-                if (!isBusy) refreshLoginLockout(form);
+                if (!isBusy) {
+                    if (mode === 'signup') refreshSignupCreateAccountButton();
+                    else refreshLoginLockout(form);
+                }
             }
 
             setAuthNotice('');

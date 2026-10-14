@@ -580,6 +580,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 /* Filter row / chips / search */
 .staff-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.staff-transaction-toolbar { width: 100%; justify-content: space-between; }
+.staff-transaction-primary, .staff-transaction-secondary { display: flex; align-items: flex-end; gap: 12px; }
+.staff-transaction-primary { flex: 0 0 auto; }
+.staff-transaction-secondary { justify-content: flex-end; margin-left: auto; }
+.staff-transaction-toolbar .staff-sort-control, .staff-transaction-date { flex: 0 0 150px; min-width: 150px; margin-bottom: 0; }
+.staff-transaction-secondary .staff-search-wrap { flex: 0 1 320px; }
+.staff-transaction-secondary .staff-filter-row { flex: 0 0 auto; flex-wrap: nowrap; }
 
 .staff-filter-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -615,6 +622,15 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-table-wrap { overflow-x: auto; }
 
 .staff-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.staff-table[data-staff-table="transactions"] { min-width: 980px; table-layout: fixed; }
+.staff-table[data-staff-table="transactions"] th:nth-child(1) { width: 12%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(2) { width: 18%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(3) { width: 12%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(4) { width: 17%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(5) { width: 11%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(6) { width: 11%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(7) { width: 11%; }
+.staff-table[data-staff-table="transactions"] th:nth-child(8) { width: 8%; }
 
 .staff-table th {
     /* Revision A2 (implementation_plan.md) — column header label, so it
@@ -632,6 +648,26 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-table tr:last-child td { border-bottom: none; }
 
 .staff-table td.staff-cell-main { color: var(--color-ink); font-weight: 600; }
+.staff-table[data-staff-table="transactions"] td { overflow: hidden; }
+.staff-tx-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.staff-tx-receipt-btn {
+    min-width: 64px; min-height: 36px; padding: 7px 14px; border: 0; border-radius: 999px;
+    background: var(--color-primary); color: #14110d; font: 700 var(--fs-sm) var(--font-body); cursor: pointer;
+}
+.staff-tx-receipt-btn:hover { background: var(--color-primary-dim); }
+.staff-tx-receipt-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.staff-table-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 14px 0 2px;
+}
+.staff-table-pagination[hidden] { display: none; }
+.staff-table-pagination .staff-mini-btn { min-width: 36px; min-height: 36px; padding: 6px 10px; }
+.staff-table-pagination .staff-page-number[aria-current="page"] { background: var(--color-primary); color: #14110d; }
+.staff-table-pagination .staff-page-gap { padding: 0 3px; color: var(--color-ink-faint); }
 
 .staff-table td .staff-cell-sub,
 .staff-table td.staff-cell-sub { font-size: var(--fs-xs); color: var(--color-ink-faint); display: block; margin-top: 2px; }
@@ -742,6 +778,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-grid-2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; align-items: start; }
 
 .staff-form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.staff-form-group[data-staff-walkin-unit-wrap][hidden] { display: none; }
 
 .staff-form-group:last-child { margin-bottom: 0; }
 
@@ -1181,7 +1218,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 /* While downloadReceiptAsPng() rasterizes the card, its own action buttons
    are hidden so they don't bake into their own screenshot — visibility
    (not display) keeps the card's height stable during the capture. */
-.staff-receipt-card.is-capturing .staff-receipt-actions {
+.staff-receipt-card.is-capturing + .staff-receipt-actions {
     visibility: hidden;
 }
 
@@ -1198,9 +1235,8 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    Court Schedule panel (Revision S1, decision S5) — per-unit hourly grid,
    replacing the old fixed 2-hour/all-courts-as-columns CSS grid.
    ========================================================================== */
-.staff-sport-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-
 .staff-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--color-ink-faint); }
+.staff-panel[data-staff-panel="schedule"] .staff-legend { margin-left: auto; gap: 12px; font-size: var(--fs-xs); }
 
 .staff-legend span { display: inline-flex; align-items: center; gap: 6px; }
 
@@ -1627,26 +1663,72 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-card-description { color: var(--color-ink-faint); font-size: var(--fs-sm); margin-top: 4px; }
 .staff-table-message { color: var(--color-ink-faint) !important; text-align: center; padding: 24px !important; }
 .staff-card-head > div:first-child { min-width: 0; }
+.staff-schedule-card-head { flex-direction: column; align-items: stretch; gap: 14px; }
+.staff-schedule-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%; }
 .staff-schedule-tools { display: flex; align-items: flex-end; gap: 12px; flex: 1; min-width: 260px; }
+.staff-schedule-card-head .staff-schedule-tools { width: 100%; }
 .staff-schedule-search { max-width: 360px; }
+.staff-schedule-sport-wrap { min-width: 150px; margin-bottom: 0; }
 .staff-schedule-sort-wrap { min-width: 150px; margin-bottom: 0; }
 .staff-sort-control { min-width: 150px; margin-bottom: 0; }
 .staff-legend .dot.held { background: var(--color-primary); }
-.staff-legend .dot.maintenance { background: var(--color-alert); }
+.staff-legend .dot.maintenance { background: #f5c542; }
 .staff-schedule-cell.is-unavailable { background: rgba(214, 72, 47, 0.16); color: var(--color-alert); }
 .staff-schedule-cell.is-held { background: rgba(255, 97, 21, 0.16); color: var(--color-primary); }
-.staff-schedule-cell.is-maintenance { background: rgba(214, 72, 47, 0.23); color: var(--color-alert); }
+.staff-schedule-cell.is-maintenance { background: rgba(245, 197, 66, 0.2); color: #f5c542; }
 .staff-schedule-cell.is-past { background: transparent; color: var(--color-ink-faint); opacity: .65; }
+.staff-schedule-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 14px 0 2px;
+    color: var(--color-ink-faint);
+    font-size: var(--fs-sm);
+}
+.staff-schedule-pagination[hidden] { display: none; }
+.staff-schedule-pagination .staff-mini-btn { min-width: 88px; min-height: 36px; }
+.staff-schedule-pagination .staff-mini-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 .staff-customer-mode { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
 .staff-customer-mode label { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border: 1px solid var(--color-line); border-radius: 999px; color: var(--color-ink-dim); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
 .staff-customer-mode input { accent-color: var(--color-primary); }
-.staff-customer-results { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; margin-top: 8px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg-elevated); }
+.staff-customer-search-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.staff-customer-search-heading .staff-form-label { flex: 0 0 auto; }
+.staff-customer-search-heading .staff-form-hint[data-staff-customer-selected] { min-width: 0; text-align: right; }
+.staff-customer-search-control { position: relative; }
+.staff-form-group[data-staff-account-search-wrap][hidden] { display: none; }
+.staff-customer-results { position: absolute; z-index: 30; top: 100%; left: 0; right: 0; display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; margin-top: 2px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg-elevated); box-shadow: 0 12px 28px rgba(0, 0, 0, .32); }
+.staff-customer-results[hidden] { display: none; }
 .staff-customer-result { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--color-line); background: transparent; color: var(--color-ink); text-align: left; cursor: pointer; }
 .staff-customer-result:hover, .staff-customer-result:focus-visible { background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated)); }
 .staff-customer-result span, .staff-customer-results-state { color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .staff-customer-results-state { padding: 12px; }
-.staff-form-hint[data-staff-customer-selected] { margin-top: 8px; color: var(--color-court-green); }
+.staff-form-hint[data-staff-customer-selected] {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    max-height: 2.9em; margin: 0; overflow: hidden; color: var(--color-court-green); line-height: 1.45; font-size: var(--fs-xs);
+}
+.staff-form-hint[data-staff-customer-selected][hidden] { display: none; }
+.staff-walkin-mobile-status {
+    /* Keep Step 1's card steady while the optional mobile check changes state.
+       Clamp long status copy to the same three-line height on narrow screens. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    height: 4.5em;
+    max-height: 4.5em;
+    overflow: hidden;
+}
+.staff-walkin-mobile-status:empty { visibility: hidden; }
+.staff-walkin-mobile-status[data-state="available"] { color: var(--color-court-green); }
+.staff-walkin-mobile-status[data-state="in_use"], .staff-walkin-mobile-status[data-state="invalid"], .staff-walkin-mobile-status[data-state="error"] { color: var(--color-alert); }
+.staff-walkin-sport-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.staff-walkin-sport-card { min-width: 0; overflow: hidden; padding: 0; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg-elevated); color: var(--color-ink); text-align: left; cursor: pointer; }
+.staff-walkin-sport-card:hover, .staff-walkin-sport-card:focus-visible, .staff-walkin-sport-card.is-selected { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.staff-walkin-sport-card-media { display: grid; place-items: center; height: 104px; overflow: hidden; background: var(--color-bg-card); }
+.staff-walkin-sport-card-media img { width: 100%; height: 100%; object-fit: cover; }
+.staff-walkin-sport-card-media > span { font: 700 28px var(--font-numeric); color: var(--color-primary); }
+.staff-walkin-sport-card strong { display: block; padding: 10px 12px; font-size: var(--fs-sm); }
 
 .staff-hour-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
 .staff-hour-slot { min-height: 58px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 4px; padding: 9px 11px; border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-bg-elevated); color: var(--color-ink); text-align: left; cursor: pointer; }
@@ -1666,7 +1748,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-line > strong, .staff-walkin-review-line > strong { white-space: nowrap; font-family: var(--font-numeric); }
 .staff-walkin-line-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .staff-walkin-review-line { align-items: flex-start; }
-.staff-receipt-card { width: 80mm; max-width: 100%; border-radius: 3px; padding: 5mm; background: #fff; color: #171411; border-color: #d8d1c6; }
+.staff-receipt-layout { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.staff-receipt-card { width: 72mm; max-width: 100%; border-radius: 3px; padding: 4mm; background: #fff; color: #171411; border-color: #d8d1c6; }
+.staff-receipt-card .staff-summary-row { align-items: flex-start; }
+.staff-receipt-card .staff-summary-row strong { min-width: 0; max-width: 64%; overflow-wrap: anywhere; }
+.staff-receipt-total { align-items: center; gap: 8px; }
+.staff-receipt-total span:first-child { flex: 1 1 auto; min-width: 0; font-size: var(--fs-sm); letter-spacing: .035em; }
+.staff-receipt-total span:last-child { flex: 0 0 auto; font-size: var(--fs-lg); white-space: nowrap; }
 .staff-receipt-card .staff-summary-row, .staff-receipt-card .staff-receipt-no, .staff-receipt-card .staff-receipt-brand-tag, .staff-receipt-card .staff-receipt-thanks, .staff-receipt-card .staff-receipt-disclaimer { color: #4f4942; }
 .staff-receipt-card .staff-receipt-brand-name, .staff-receipt-card h4, .staff-receipt-card .staff-summary-row strong, .staff-receipt-card .staff-receipt-total { color: #171411; }
 .staff-receipt-item { display: flex; flex-direction: column; gap: 3px; padding: 5px 0; font-size: var(--fs-xs); }
@@ -1705,7 +1793,8 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-qr-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .staff-walkin-qr-actions .staff-btn-ghost { flex: 1 1 180px; }
 .staff-receipt-modal .staff-modal { width: min(540px, calc(100vw - 32px)); max-height: min(90vh, 900px); overflow-y: auto; }
-.staff-receipt-modal .staff-receipt-card { margin: 0 auto; }
+.staff-receipt-modal .staff-modal h3.staff-receipt-modal-title { margin: 0 34px 18px; padding: 0; text-align: center; }
+.staff-receipt-modal .staff-receipt-layout { width: 100%; }
 .staff-payment-history-list { list-style: none; display: grid; gap: 10px; min-width: 220px; margin: 0; padding: 0; }
 .staff-payment-history-list > li { display: grid; grid-template-columns: minmax(190px, 1fr) auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface-2); }
 .staff-payment-history-details { display: grid; gap: 3px; min-width: 0; }
@@ -1722,6 +1811,56 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-receipt-card { position: absolute; left: 0; top: 0; width: 74mm; max-width: 74mm; padding: 0; border: 0; border-radius: 0; box-shadow: none; break-inside: avoid; }
     .staff-receipt-item { break-inside: avoid; }
     .staff-receipt-actions { display: none !important; }
+    /* The transaction acknowledgment lives inside a fixed, centered dialog.
+       Reset that entire shell for printing so the card starts at the page's
+       printable origin and is not clipped by the dialog's viewport height. */
+    body.staff-printing-transaction-receipt { margin: 0 !important; }
+    body.staff-printing-transaction-receipt > :not(.staff-receipt-modal) { display: none !important; }
+    body.staff-printing-transaction-receipt .staff-receipt-modal {
+        position: static !important;
+        inset: auto !important;
+        display: block !important;
+        width: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: transparent !important;
+        opacity: 1 !important;
+        transition: none !important;
+    }
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-modal {
+        position: static !important;
+        width: auto !important;
+        max-width: none !important;
+        height: auto !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        transform: none !important;
+        transition: none !important;
+    }
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-receipt-modal-title,
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-modal-close { display: none !important; }
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-receipt-layout {
+        width: 100% !important;
+        align-items: flex-start !important;
+        gap: 0 !important;
+    }
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-receipt-card {
+        position: static !important;
+        width: min(74mm, 100%) !important;
+        max-width: 74mm !important;
+        margin: 0 !important;
+    }
+    body.staff-printing-transaction-receipt .staff-receipt-card,
+    body.staff-printing-transaction-receipt .staff-receipt-card * { visibility: hidden !important; }
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-receipt-card,
+    body.staff-printing-transaction-receipt .staff-receipt-modal .staff-receipt-card * { visibility: visible !important; }
 }
 
 @media (max-width: 680px) {
@@ -1744,12 +1883,18 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-notif { position: static; }
     .staff-notif-menu { right: 0; }
     .staff-card-head { align-items: stretch; }
+    .staff-schedule-card-top { flex-wrap: wrap; }
     .staff-card-head > .staff-toolbar, .staff-toolbar { width: 100%; }
     .staff-search-wrap { min-width: 100%; max-width: none; }
     .staff-overview-filters { align-items: stretch; }
     .staff-overview-filters .staff-search-wrap, .staff-overview-filter { min-width: 100%; max-width: none; }
     .staff-schedule-tools { flex-direction: column; align-items: stretch; min-width: 100%; }
-    .staff-schedule-sort-wrap, .staff-sort-control { min-width: 100%; }
+    .staff-schedule-sport-wrap, .staff-schedule-sort-wrap, .staff-sort-control { min-width: 100%; }
+    .staff-transaction-primary, .staff-transaction-secondary { width: 100%; flex-direction: column; align-items: stretch; }
+    .staff-transaction-toolbar .staff-sort-control, .staff-transaction-date { flex-basis: auto; min-width: 100%; }
+    .staff-transaction-secondary { margin-left: 0; }
+    .staff-transaction-secondary .staff-filter-row { width: 100%; gap: 6px; }
+    .staff-transaction-secondary .staff-chip { flex: 1; padding-inline: 6px; }
     .staff-hour-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .staff-walkin-line { align-items: flex-start; flex-wrap: wrap; }
     .staff-walkin-line-actions { align-items: stretch; flex-direction: column; }

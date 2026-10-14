@@ -284,6 +284,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <nav class="staff-table-pagination" data-staff-pagination="overview" aria-label="Bookings pages" hidden></nav>
                 </div>
             </section>
 
@@ -299,12 +300,6 @@
                  / Print / New walk-in.
                  ============================================================ -->
             <section class="staff-panel" data-staff-panel="walkin">
-                <div class="staff-panel-head">
-                    <div>
-                        <p>Find a customer, build an order from available hourly slots, and print a payment acknowledgment.</p>
-                    </div>
-                </div>
-
                 <div data-staff-walkin-wizard-wrap>
                     <div class="staff-wizard-steps" data-staff-walkin-steps role="list" aria-label="Walk-in steps">
                         <div class="staff-wizard-step is-current" data-staff-walkin-step-indicator="1" role="listitem">
@@ -338,10 +333,14 @@
                                 <label><input type="radio" name="staff-customer-mode" value="account" data-staff-customer-mode> Existing account</label>
                             </div>
                             <div class="staff-form-group" data-staff-account-search-wrap hidden>
-                                <label class="staff-form-label" for="staff-existing-customer-search">Find customer account</label>
-                                <input id="staff-existing-customer-search" type="search" class="staff-input" placeholder="Search name, email, or mobile" autocomplete="off" data-staff-customer-search>
-                                <div class="staff-customer-results" data-staff-customer-results role="listbox" aria-label="Matching customer accounts" hidden></div>
-                                <p class="staff-form-hint" data-staff-customer-selected hidden></p>
+                                <div class="staff-customer-search-heading">
+                                    <label class="staff-form-label" for="staff-existing-customer-search">Find customer account</label>
+                                    <p class="staff-form-hint" data-staff-customer-selected role="status" aria-live="polite" hidden></p>
+                                </div>
+                                <div class="staff-customer-search-control">
+                                    <input id="staff-existing-customer-search" type="search" class="staff-input" placeholder="Search name, email, or mobile" autocomplete="off" data-staff-customer-search>
+                                    <div class="staff-customer-results" data-staff-customer-results role="listbox" aria-label="Matching customer accounts" hidden></div>
+                                </div>
                             </div>
                             <div class="staff-form-row">
                                 <div class="staff-form-group">
@@ -350,18 +349,27 @@
                                 </div>
                                 <div class="staff-form-group">
                                     <label class="staff-form-label" for="staff-walkin-mobile">Mobile number (optional)</label>
-                                    <input id="staff-walkin-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-walkin-mobile>
+                                    <input id="staff-walkin-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" autocomplete="tel-national" aria-describedby="staffWalkinMobileStatus" data-staff-walkin-mobile>
+                                    <p class="staff-form-hint">Optional. Use a Philippine mobile number that is not already registered.</p>
+                                    <p class="staff-form-hint staff-walkin-mobile-status" id="staffWalkinMobileStatus" data-staff-walkin-mobile-status aria-live="polite"></p>
                                 </div>
                             </div>
                         </div>
 
                         <!-- STEP 2 — Sport & court/unit -->
                         <div class="staff-wizard-panel" data-staff-walkin-step="2">
-                            <h3 class="staff-wizard-panel-title">Sport &amp; court</h3>
-                            <div class="staff-form-group">
+                            <h3 class="staff-wizard-panel-title">Choose a sport and court</h3>
+                            <p class="staff-form-hint">Choose a sport, then choose one of its available courts.</p>
+                            <label class="staff-form-group" data-staff-walkin-sport-wrap>
                                 <span class="staff-form-label">Sport</span>
-                                <div class="staff-filter-row" data-staff-walkin-sport-chips>
-                                    <span class="staff-form-hint">Loading courts…</span>
+                                <select class="staff-select" data-staff-walkin-sport-select aria-label="Choose a sport">
+                                    <option value="">Choose a sport first</option>
+                                </select>
+                            </label>
+                            <div class="staff-form-group">
+                                <span class="staff-form-label">Available courts</span>
+                                <div class="staff-walkin-sport-cards" data-staff-walkin-sport-chips aria-label="Available courts">
+                                    <span class="staff-form-hint">Choose a sport first.</span>
                                 </div>
                             </div>
                             <!-- Hidden by JS when the selected court resolves to a
@@ -374,21 +382,16 @@
                             </div>
                         </div>
 
-                        <!-- STEP 3 — Select an hourly slot and duration -->
+                        <!-- STEP 3 — Select consecutive hourly slots -->
                         <div class="staff-wizard-panel" data-staff-walkin-step="3">
                             <h3 class="staff-wizard-panel-title">Choose an available time</h3>
-                            <p class="staff-form-hint">Select a start hour and duration. Each line can use a different sport, court, and time.</p>
+                            <p class="staff-form-hint" data-staff-walkin-current-court>Select a court first.</p>
+                            <p class="staff-form-hint">Select one or more consecutive hourly slots. Click a selected end slot to shorten the booking. Each line can use a different court and time.</p>
                             <div class="staff-form-group">
-                                <span class="staff-form-label">Available start times · today</span>
+                                <span class="staff-form-label">Available hourly slots · today</span>
                                 <div class="staff-hour-grid" data-staff-walkin-hour-grid role="group" aria-label="Available start times"></div>
                             </div>
                             <div class="staff-time-range" data-staff-walkin-time-range>
-                                <label class="staff-form-group" data-staff-walkin-duration-wrap>
-                                    <span class="staff-form-label">Duration</span>
-                                    <select class="staff-select" data-staff-walkin-duration>
-                                        <option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option><option value="4">4 hours</option>
-                                    </select>
-                                </label>
                                 <label class="staff-form-group staff-walkin-set-quantity" data-staff-walkin-set-quantity-wrap hidden>
                                     <span class="staff-form-label">Number of sets · 60 minutes each</span>
                                     <input type="number" class="staff-input" min="1" max="100" step="1" value="1" data-staff-rate-quantity aria-label="Number of sets">
@@ -469,23 +472,18 @@
                  real `booking` + `walk_in_booking` rows.
                  ============================================================ -->
             <section class="staff-panel" data-staff-panel="schedule">
-                <div class="staff-panel-head">
-                    <div>
-                        <p>Availability by sport, court, unit, and hour. Holds and maintenance are shown separately.</p>
-                    </div>
-                    <div class="staff-legend">
-                        <span><span class="dot available"></span>Open</span>
-                        <span><span class="dot booked"></span>Unavailable</span>
-                        <span><span class="dot held"></span>Temporarily held</span>
-                        <span><span class="dot maintenance"></span>Maintenance</span>
-                    </div>
-                </div>
-
                 <div class="staff-card">
-                    <div class="staff-card-head">
-                        <div class="staff-form-group" style="margin-bottom: 0; min-width: 190px;">
-                            <label class="staff-form-label" for="staff-schedule-date">Date</label>
-                            <input id="staff-schedule-date" type="date" class="staff-input" data-staff-schedule-date>
+                    <div class="staff-card-head staff-schedule-card-head">
+                        <div class="staff-schedule-card-top">
+                            <div class="staff-form-group" style="margin-bottom: 0; min-width: 190px;">
+                                <label class="staff-form-label" for="staff-schedule-date">Date</label>
+                                <input id="staff-schedule-date" type="date" class="staff-input" data-staff-schedule-date>
+                            </div>
+                            <div class="staff-legend" aria-label="Court schedule status legend">
+                                <span><span class="dot available"></span>Open</span>
+                                <span><span class="dot booked"></span>Unavailable</span>
+                                <span><span class="dot maintenance"></span>Maintenance</span>
+                            </div>
                         </div>
                         <div class="staff-schedule-tools">
                             <label class="staff-search-wrap staff-schedule-search">
@@ -493,13 +491,16 @@
                                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                 <input type="search" class="staff-search" placeholder="Search sport or unit…" data-staff-schedule-search>
                             </label>
+                            <label class="staff-form-group staff-schedule-sport-wrap">
+                                <span class="staff-form-label">Sport</span>
+                                <select class="staff-select" data-staff-schedule-sport aria-label="Filter schedule by sport">
+                                    <option value="all">All Sports</option>
+                                </select>
+                            </label>
                             <label class="staff-form-group staff-schedule-sort-wrap">
                                 <span class="staff-form-label">Sort by</span>
-                                <select class="staff-select" data-staff-schedule-sort><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="unit-asc">Unit number</option><option value="open-desc">Most open hours</option></select>
+                                <select class="staff-select" data-staff-schedule-sort><option value="created-desc">Newest first</option><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="unit-asc">Unit number</option><option value="open-desc">Most open hours</option></select>
                             </label>
-                        </div>
-                        <div class="staff-sport-tabs" data-staff-sport-tabs>
-                            <button type="button" class="staff-chip is-active" data-staff-chip data-staff-sport="all">All Courts</button>
                         </div>
                     </div>
 
@@ -513,42 +514,37 @@
                             </tbody>
                         </table>
                     </div>
+                    <nav class="staff-schedule-pagination" data-staff-schedule-pagination aria-label="Court schedule pages" hidden>
+                        <button type="button" class="staff-mini-btn" data-staff-schedule-page-prev disabled>Previous</button>
+                        <span data-staff-schedule-page-indicator aria-live="polite">Page 1 of 1</span>
+                        <button type="button" class="staff-mini-btn" data-staff-schedule-page-next disabled>Next</button>
+                    </nav>
                 </div>
             </section>
 
             <!-- ============================================================
-                 TRANSACTION RECORDS PANEL — Revision S1, decision S6. A
-                 time-in log (bookings + walk-ins, union, newest first) for a
-                 chosen date range, replacing the old `audit_log`-backed
-                 confirm/decline trail (that table is no longer read here —
-                 Future activity attribution is written by trusted server-side actions.
+                 TRANSACTION RECORDS — payment-level records attributed to
+                 the signed-in staff member, with one receipt per payment.
                  ============================================================ -->
             <section class="staff-panel" data-staff-panel="transactions">
-                <div class="staff-panel-head"><div><p>Every booking and walk-in for the selected date range, with attendance and payment history.</p></div></div>
-
                 <div class="staff-card">
                     <div class="staff-card-head">
-                        <div class="staff-form-row" style="gap: 12px;">
-                            <div class="staff-form-group" style="margin-bottom: 0;">
-                                <span class="staff-form-label">From</span>
-                                <input type="date" class="staff-input" data-staff-tx-from>
+                        <div class="staff-toolbar staff-transaction-toolbar">
+                            <div class="staff-transaction-primary">
+                                <label class="staff-form-group staff-sort-control"><span class="staff-form-label">Sort</span><select class="staff-select" data-staff-tx-sort><option value="date-desc">Newest date</option><option value="date-asc">Oldest date</option><option value="name-asc">Customer A–Z</option><option value="name-desc">Customer Z–A</option></select></label>
+                                <label class="staff-form-group staff-transaction-date"><span class="staff-form-label">Transaction date</span><input type="date" class="staff-input" data-staff-tx-date aria-label="Filter transactions by transaction date"></label>
                             </div>
-                            <div class="staff-form-group" style="margin-bottom: 0;">
-                                <span class="staff-form-label">To</span>
-                                <input type="date" class="staff-input" data-staff-tx-to>
+                            <div class="staff-transaction-secondary">
+                                <label class="staff-search-wrap">
+                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                                    <input type="search" class="staff-search" placeholder="Search customer or court…" aria-label="Search transactions by customer or court" data-staff-search="transactions">
+                                </label>
+                                <div class="staff-filter-row" data-staff-filter-group="transactions" role="group" aria-label="Filter transactions by source">
+                                    <button type="button" class="staff-chip is-active" data-staff-chip data-staff-filter="all" aria-pressed="true">All</button>
+                                    <button type="button" class="staff-chip" data-staff-chip data-staff-filter="online" aria-pressed="false">Online</button>
+                                    <button type="button" class="staff-chip" data-staff-chip data-staff-filter="walkin" aria-pressed="false">Walk-in</button>
+                                </div>
                             </div>
-                        </div>
-                        <div class="staff-toolbar">
-                            <div class="staff-search-wrap">
-                                <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                                <input type="text" class="staff-search" placeholder="Search customer or court…" data-staff-search="transactions">
-                            </div>
-                            <div class="staff-filter-row" data-staff-filter-group="transactions">
-                                <button type="button" class="staff-chip is-active" data-staff-chip data-staff-filter="all">All</button>
-                                <button type="button" class="staff-chip" data-staff-chip data-staff-filter="online">Online</button>
-                                <button type="button" class="staff-chip" data-staff-chip data-staff-filter="walkin">Walk-in</button>
-                            </div>
-                            <label class="staff-form-group staff-sort-control"><span class="staff-form-label">Sort</span><select class="staff-select" data-staff-tx-sort><option value="date-desc">Newest date</option><option value="date-asc">Oldest date</option><option value="name-asc">Customer A–Z</option><option value="name-desc">Customer Z–A</option></select></label>
                         </div>
                     </div>
 
@@ -557,25 +553,21 @@
                             <thead>
                                 <tr>
                                     <th>Date</th>
-                                    <th>Customer</th>
-                                    <th>Sport</th>
-                                    <th>Court</th>
-                                    <th>Unit</th>
+                                    <th>Customer Name</th>
+                                    <th>Sports</th>
+                                    <th>Court/Unit</th>
                                     <th>Time</th>
                                     <th>Source</th>
-                                    <th>Payment</th>
-                                    <th>Timed in</th>
-                                    <th>Timed out</th>
-                                    <th>Status</th>
-                                    <th>Payment history</th>
-                                    <th>Action</th>
+                                    <th>Amount</th>
+                                    <th>Receipt</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="13" class="staff-table-message">Loading transaction records…</td></tr>
+                                <tr><td colspan="8" class="staff-table-message">Loading transaction records…</td></tr>
                             </tbody>
                         </table>
                     </div>
+                    <nav class="staff-table-pagination" data-staff-pagination="transactions" aria-label="Transaction pages" hidden></nav>
                 </div>
             </section>
 
@@ -888,7 +880,7 @@
 <div class="staff-modal-overlay staff-receipt-modal" data-staff-receipt-modal hidden>
     <div class="staff-modal" role="dialog" aria-modal="true" aria-labelledby="staffReceiptModalTitle" tabindex="-1" data-staff-receipt-dialog>
         <button type="button" class="staff-modal-close" data-staff-receipt-close aria-label="Close payment acknowledgment"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-        <h3 id="staffReceiptModalTitle" class="sr-only">Payment acknowledgment</h3>
+        <h3 id="staffReceiptModalTitle" class="staff-receipt-modal-title">Payment acknowledgment</h3>
         <div data-staff-receipt-modal-content></div>
     </div>
 </div>
@@ -918,6 +910,7 @@
      staff_dashboard.js, whose Court Schedule columns and the walk-in
      wizard's From/To pickers read window.InigoBusinessHours at parse time. -->
 <script src="../includes/businessHours.js"></script>
+<script src="../includes/staffPagination.js"></script>
 <!-- Locally generated payment QR; checkout URLs stay on PayMongo and are
      encoded in the browser without a third-party QR service. -->
 <script src="../includes/qrcode-generator.js"></script>
