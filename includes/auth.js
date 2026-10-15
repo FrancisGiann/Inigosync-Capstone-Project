@@ -222,6 +222,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
     }
 
+    const LOGIN_LOCKOUT_MESSAGE = 'Too many incorrect login attempts. Login is paused for 1 minute.';
+    const loginErrorByForm = new WeakMap();
+
     function loginEmailForForm(form) {
         const fieldName = form.dataset.authPanel === 'admin' ? 'admin-email' : 'email';
         return normalizeLoginEmail(form.elements[fieldName]?.value);
@@ -239,6 +242,13 @@ document.addEventListener('DOMContentLoaded', () => {
             status.textContent = isLocked
                 ? `Too many incorrect attempts. Try again in ${formatLockoutTime(seconds)}.`
                 : '';
+        }
+        if (isLocked) {
+            if (loginErrorByForm.get(form) !== LOGIN_LOCKOUT_MESSAGE) {
+                setLoginFormError(form, LOGIN_LOCKOUT_MESSAGE);
+            }
+        } else if (loginErrorByForm.get(form) === LOGIN_LOCKOUT_MESSAGE) {
+            setLoginFormError(form);
         }
         if (submit && !submit.classList.contains('is-loading')) submit.disabled = isLocked;
         return isLocked;
@@ -263,6 +273,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function isInvalidCredentialError(err) {
         return err?.code === 'invalid_credentials' || /invalid login credentials/i.test(err?.message || '');
+    }
+
+    function setLoginFormError(form, message = '') {
+        if (!form) return;
+        const previousMessage = loginErrorByForm.get(form);
+        if (message) {
+            loginErrorByForm.set(form, message);
+            setAuthNotice(message, true);
+            return;
+        }
+        loginErrorByForm.delete(form);
+        const noticeMessage = document.querySelector('[data-auth-notice-message]')?.textContent;
+        if (previousMessage && noticeMessage === previousMessage) setAuthNotice('');
     }
 
     // ------------------------------------------------------------------
@@ -317,20 +340,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (profileError || !profile) {
             await window.sb.auth.signOut({ scope: 'local' });
-            throw new Error('Could not load your account. Please try again.');
+            const error = new Error('Could not load your account. Please try again.');
+            error.code = 'login_profile_unavailable';
+            throw error;
         }
 
         if (profile.status === 'disabled') {
             await window.sb.auth.signOut({ scope: 'local' });
-            throw new Error('This account has been disabled. Contact the front desk.');
+            const error = new Error('This account has been disabled. Contact the front desk.');
+            error.code = 'login_account_disabled';
+            throw error;
         }
 
         if (!allowedRoles.includes(profile.role)) {
             await window.sb.auth.signOut({ scope: 'local' });
-            const error = new Error(allowedRoles.includes('customer')
+            const customerLogin = allowedRoles.includes('customer');
+            const error = new Error(customerLogin
                 ? 'This account belongs to an admin or staff member and cannot be used for customer login or sign-up. Choose “Log in as Admin”, or use a different Google account for customer access.'
                 : 'This is a customer account. Please use the customer Log In tab instead of admin/staff login.');
-            error.code = 'account_role_mismatch';
+            error.code = customerLogin ? 'login_customer_role_mismatch' : 'login_staff_role_mismatch';
             throw error;
         }
 
@@ -798,6 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setActivePanel(name) {
+        panels.forEach((panel) => setLoginFormError(panel));
         if (name === 'forgot') {
             const previousPanel = overlay.querySelector('[data-auth-panel].is-active');
             const previousName = previousPanel?.dataset.authPanel;
@@ -1708,20 +1737,36 @@ document.addEventListener('DOMContentLoaded', () => {
     // rate limit exceeded") don't tell the user what to actually do.
     function friendlyAuthError(err) {
         const code = err?.code || '';
-        const message = err?.message || '';
 
-        if (code === 'over_email_send_rate_limit' || /rate limit/i.test(message)) {
-            const waitMatch = message.match(/after (\d+) seconds/i);
-            return waitMatch
-                ? `Too many attempts — please wait ${waitMatch[1]}s and try again.`
-                : 'Too many attempts — please wait a minute and try again.';
+        if (['over_email_send_rate_limit', 'over_request_rate_limit'].includes(code)) {
+            return 'Too many attempts — please wait a minute and try again.';
         }
 
-        if (code === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
+        if (code === 'email_not_confirmed') {
             return 'Please verify your email before logging in — check your inbox to confirm your account.';
         }
 
-        return message || 'Something went wrong. Please try again.';
+        if (code === 'invalid_credentials') {
+            return 'Incorrect email or password. Please check your details and try again.';
+        }
+
+        if (code === 'login_account_disabled') {
+            return 'This account has been disabled. Contact the front desk for help.';
+        }
+
+        if (code === 'login_profile_unavailable') {
+            return 'We could not load your account. Please try again shortly.';
+        }
+
+        if (code === 'login_customer_role_mismatch') {
+            return 'This account belongs to staff or management and cannot be used for customer login or sign-up. Choose “Log in as Admin”, or use a different account for customer access.';
+        }
+
+        if (code === 'login_staff_role_mismatch') {
+            return 'This is a customer account. Please use the customer Log In tab instead of admin/staff login.';
+        }
+
+        return 'We could not complete that request. Please try again shortly.';
     }
 
     // Keep both password-login panels in sync with the persisted per-email
@@ -1729,9 +1774,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // own state; a lockout in another tab is reflected through `storage`.
     panels.forEach((form) => {
         if (!['login', 'admin'].includes(form.dataset.authPanel)) return;
-        const emailFieldName = form.dataset.authPanel === 'admin' ? 'admin-email' : 'email';
-        form.elements[emailFieldName]?.addEventListener('input', () => {
+        form.addEventListener('input', (event) => {
+            if (!event.target.matches('input')) return;
             if (refreshLoginLockout(form)) startLoginLockoutCountdown();
+            else setLoginFormError(form);
         });
     });
     window.addEventListener('storage', (event) => {
@@ -1804,12 +1850,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!form.checkValidity()) {
                 const invalidField = Array.from(form.elements).find((field) => field.willValidate && !field.checkValidity());
                 if (invalidField) invalidField.focus();
-                setAuthNotice(invalidField?.validationMessage || 'Please check the information you entered and try again.', true);
+                const validationMessage = invalidField?.validationMessage || 'Please check the information you entered and try again.';
+                if (['login', 'admin'].includes(form.dataset.authPanel)) setLoginFormError(form, validationMessage);
+                else setAuthNotice(validationMessage, true);
                 return;
             }
 
             if (!window.sb) {
-                setAuthNotice('Unable to reach the server right now. Please try again shortly.', true);
+                if (['login', 'admin'].includes(form.dataset.authPanel)) setLoginFormError(form, 'Unable to reach the server right now. Please try again shortly.');
+                else setAuthNotice('Unable to reach the server right now. Please try again shortly.', true);
                 return;
             }
 
@@ -1849,6 +1898,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             setAuthNotice('');
+            if (['login', 'admin'].includes(mode)) setLoginFormError(form);
             setBusy(true);
 
             try {
@@ -1887,11 +1937,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
                     // Check the local input shape before signup. The actual
-                    // provider format/type validation and profile write happen
+                    // profile format/availability validation and write happen
                     // after email confirmation and an active profile exists.
                     const mobileCheck = data.mobile?.trim() ? window.validatePhMobile(data.mobile) : { valid: true, normalized: null };
                     if (!mobileCheck.valid) {
                         setAuthNotice(mobileCheck.message, true);
+                        return;
+                    }
+                    if (mobileCheck.normalized && window.InigoSignupPhoneAvailability
+                        && !await window.InigoSignupPhoneAvailability.check()) {
+                        const state = signupForm.querySelector('[data-signup-phone-availability-status]')?.dataset.state;
+                        setAuthNotice(state === 'in_use'
+                            ? 'This mobile number is already linked to an account. Use a different number.'
+                            : state === 'rate_limited'
+                                ? 'Too many mobile number checks. Please wait 1 minute and try again.'
+                                : state === 'invalid'
+                                    ? 'Enter a valid Philippine mobile number.'
+                                    : 'We could not check this number. Please try again shortly.', true);
                         return;
                     }
 
@@ -2159,11 +2221,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const attempt = recordInvalidLogin(loginEmail);
                     if (attempt.lockedUntil) {
                         startLoginLockoutCountdown();
-                        setAuthNotice('Too many incorrect login attempts. Login is paused for 1 minute.', true);
+                        setLoginFormError(form, LOGIN_LOCKOUT_MESSAGE);
                     } else {
                         const remaining = LOGIN_MAX_FAILURES - attempt.failures;
-                        setAuthNotice(`Incorrect email or password. ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining before a 1-minute timeout.`, true);
+                        setLoginFormError(form, `Incorrect email or password. ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining before a 1-minute timeout.`);
                     }
+                } else if (['login', 'admin'].includes(mode)) {
+                    setLoginFormError(form, friendlyAuthError(err));
                 } else if (err.code === 'account_role_mismatch') {
                     setAuthNotice(friendlyAuthError(err), true);
                 } else {
@@ -2321,14 +2385,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function syncAuthNoticeLayer() {
         const notice = document.querySelector('[data-auth-notice]');
-        if (!notice || notice.hidden || !notice.classList.contains('is-visible')) return;
+        if (!notice) return;
+        const activeOverlay = document.querySelector('.auth-overlay[data-open]');
+        if (notice.hidden) {
+            activeOverlay?.classList.remove('has-floating-auth-notice');
+            activeOverlay?.style.removeProperty('--auth-toast-clearance');
+            return;
+        }
         let nativeDialog = null;
         try { nativeDialog = document.querySelector('dialog:modal'); }
         catch (_) { /* Older browsers use the body-level fallback. */ }
         const parent = nativeDialog || document.body;
         if (notice.parentElement !== parent) parent.appendChild(notice);
         notice.classList.toggle('is-in-modal', Boolean(nativeDialog));
+
+        const overlay = document.querySelector('.auth-overlay[data-open]');
+        const modal = overlay?.querySelector('.auth-modal');
+        if (!overlay || !modal || nativeDialog || !notice.classList.contains('is-visible')) {
+            overlay?.classList.remove('has-floating-auth-notice');
+            overlay?.style.removeProperty('--auth-toast-clearance');
+            return;
+        }
+
+        const noticeRect = notice.getBoundingClientRect();
+        // Measure against the natural centered card position. Measuring while
+        // reserved would see the card below the toast, remove the reservation,
+        // then repeat that cycle on the next resize.
+        overlay.classList.remove('has-floating-auth-notice');
+        overlay.style.removeProperty('--auth-toast-clearance');
+        const modalRect = modal.getBoundingClientRect();
+        if (modalRect.top < noticeRect.bottom + 12) {
+            overlay.style.setProperty('--auth-toast-clearance', `${Math.ceil(noticeRect.bottom + 12)}px`);
+            overlay.classList.add('has-floating-auth-notice');
+        } else {
+            overlay.classList.remove('has-floating-auth-notice');
+            overlay.style.removeProperty('--auth-toast-clearance');
+        }
     }
+
+    window.addEventListener('resize', syncAuthNoticeLayer);
 
     if (document.documentElement && 'MutationObserver' in window) {
         new MutationObserver(syncAuthNoticeLayer).observe(document.documentElement, {
@@ -2353,12 +2448,12 @@ document.addEventListener('DOMContentLoaded', () => {
             closeButton.className = 'auth-status-close';
             closeButton.dataset.authNoticeClose = '';
             closeButton.setAttribute('aria-label', 'Dismiss message');
-            closeButton.textContent = '×';
             closeButton.hidden = true;
             closeButton.addEventListener('click', hideAuthNotice);
             notice.appendChild(closeButton);
             notice.hidden = true;
         }
+        if (!notice.parentElement) document.body.appendChild(notice);
         // A native modal dialog is above the document stacking context. Keep
         // auth errors above it by placing the notice within that dialog.
         syncAuthNoticeLayer();
@@ -2370,6 +2465,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const restoreFocus = notice.contains(document.activeElement) ? authNoticeReturnFocus : null;
         authNoticeReturnFocus = null;
         notice.classList.remove('is-visible');
+        syncAuthNoticeLayer();
         if (authNoticeHideTimer) window.clearTimeout(authNoticeHideTimer);
         authNoticeHideTimer = window.setTimeout(() => {
             notice.hidden = true;
@@ -2394,6 +2490,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         notice.hidden = false;
+        syncAuthNoticeLayer();
         notice.querySelector('[data-auth-notice-message]').textContent = message;
         notice.classList.toggle('is-error', isError);
         const closeButton = notice.querySelector('[data-auth-notice-close]');
@@ -2403,7 +2500,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isError && !notice.contains(document.activeElement)) {
             authNoticeReturnFocus = document.activeElement;
         }
-        requestAnimationFrame(() => notice.classList.add('is-visible'));
+        requestAnimationFrame(() => {
+            notice.classList.add('is-visible');
+            syncAuthNoticeLayer();
+        });
 
         if (!isError) authNoticeDismissTimer = window.setTimeout(hideAuthNotice, duration);
     }

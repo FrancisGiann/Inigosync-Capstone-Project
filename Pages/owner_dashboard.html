@@ -831,24 +831,13 @@
         </button>
 
         <h3 id="adminStaffModalTitle">New Staff Account</h3>
-        <p class="admin-form-hint">An email invite is sent to this address with a link for them to set their own password — nobody but the staff member ever knows it.</p>
+        <p class="admin-form-hint">Enter the staff member’s personal email and position. We’ll send their login email and a temporary password to that address. They’ll set a new password and enter their personal information when they first sign in.</p>
 
-        <div class="admin-form-row">
-            <div class="admin-form-group">
-                <span class="admin-form-label">Full name</span>
-                <input type="text" class="admin-input" placeholder="Juan Dela Cruz" data-admin-staff-name>
-            </div>
-            <div class="admin-form-group">
-                <span class="admin-form-label">Personal email address</span>
-                <input type="email" class="admin-input" placeholder="juan.delacruz@gmail.com" data-admin-staff-email>
-            </div>
+        <div class="admin-form-group">
+            <span class="admin-form-label">Personal email address</span>
+            <input type="email" class="admin-input" placeholder="staff@example.com" autocomplete="email" required data-admin-staff-email>
         </div>
-        <!-- This becomes their log-in, not a work address — Supabase only
-             ever sends the Invite user email to the account's own address
-             (docs/email_templates/invite_staff.html, docs/OWNER_ACTION_LIST.md
-             item E6), so whatever the owner types above IS the future
-             username too. -->
-        <p class="admin-form-hint">This becomes their login email — the account invite is sent here.</p>
+        <p class="admin-form-hint">This address is their login, email verification, and password recovery address.</p>
         <div class="admin-form-group">
             <span class="admin-form-label">Position</span>
             <select class="admin-select" data-admin-staff-role>
@@ -857,46 +846,9 @@
             </select>
         </div>
 
-        <!-- Revision S3 (database/schema/018_staff_details.sql) — all five
-             optional. invite-staff (the edge function above) only ever
-             writes email/full_name/position/role; these are saved in a
-             SEPARATE update() right after a successful invite (see
-             includes/owner_dashboard.js's staffSubmitBtn handler) — never
-             blocking, and never undoing, the invite itself. -->
-        <div class="admin-form-group">
-            <span class="admin-form-label">Address</span>
-            <textarea class="admin-input admin-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-admin-staff-address></textarea>
-        </div>
-        <div class="admin-form-row">
-            <div class="admin-form-group">
-                <span class="admin-form-label">Birthdate</span>
-                <input type="date" class="admin-input" data-admin-staff-birthdate required aria-label="Birthdate">
-                <label class="admin-form-label">Age<input class="admin-input" data-admin-staff-age readonly aria-label="Age" placeholder="Calculated from birthdate"></label>
-            </div>
-            <div class="admin-form-group">
-                <span class="admin-form-label">Gender</span>
-                <select class="admin-select" data-admin-staff-gender>
-                    <option value="">Select…</option>
-                    <option>Male</option>
-                    <option>Female</option>
-                    <option>Prefer not to say</option>
-                </select>
-            </div>
-        </div>
-        <div class="admin-form-row">
-            <div class="admin-form-group">
-                <span class="admin-form-label">Emergency contact name</span>
-                <input type="text" class="admin-input" placeholder="Maria Cruz" data-admin-staff-emergency-name>
-            </div>
-            <div class="admin-form-group">
-                <span class="admin-form-label">Emergency contact number</span>
-                <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-emergency-number>
-            </div>
-        </div>
-
         <div class="admin-form-actions">
             <button type="button" class="admin-btn-ghost" data-admin-staff-modal-close>Cancel</button>
-            <button type="button" class="admin-btn-save" data-admin-staff-submit>Send Invite</button>
+            <button type="button" class="admin-btn-save" data-admin-staff-submit>Create Staff Account</button>
         </div>
     </div>
 </div>
@@ -979,7 +931,8 @@
                 </div>
                 <div class="admin-form-group">
                     <span class="admin-form-label">Emergency contact number</span>
-                    <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-edit-emergency-number>
+                    <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-edit-emergency-number aria-describedby="adminStaffEditEmergencyStatus">
+                    <span class="admin-form-hint" id="adminStaffEditEmergencyStatus" data-admin-staff-edit-emergency-status role="status" aria-live="polite"></span>
                 </div>
             </div>
         </div>
@@ -1099,7 +1052,7 @@
         <div class="admin-settings-grid">
             <label class="admin-form-group"><span class="admin-form-label">Full name</span><input type="text" class="admin-input" autocomplete="name" data-admin-settings-name></label>
             <div class="admin-form-group"><span class="admin-form-label">Email address</span><p class="admin-input admin-readonly-email" data-admin-settings-email>—</p><span class="admin-form-hint">Your sign-in email cannot be changed.</span></div>
-            <div class="admin-form-group owner-mobile-verification"><span class="admin-form-label">Mobile number · optional</span><div class="owner-mobile-edit-row"><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile><button type="button" class="admin-btn-secondary" data-admin-mobile-validate disabled>Save number</button><button type="button" class="admin-btn-secondary" data-admin-mobile-remove hidden>Remove</button></div><span class="admin-form-hint" id="adminOwnerMobileStatus" data-admin-mobile-message role="status">Format, mobile type, active status, and use by another account are checked automatically. This does not confirm ownership or guarantee reachability.</span></div>
+            <div class="admin-form-group owner-mobile-verification"><span class="admin-form-label">Mobile number · optional</span><div class="owner-mobile-edit-row"><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile><button type="button" class="admin-btn-secondary" data-admin-mobile-validate disabled>Save number</button><button type="button" class="admin-btn-secondary" data-admin-mobile-remove hidden>Remove</button></div><span class="admin-form-hint" id="adminOwnerMobileStatus" data-admin-mobile-message role="status">We check Philippine mobile format and whether the number is already linked to an account.</span></div>
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>

@@ -1,25 +1,11 @@
-# Optional contact number validation
+# Philippine contact-number checks
 
-## What this check means
+Contact-number checks use the database only. The app accepts a Philippine mobile number in local `09XXXXXXXXX` or international `+639XXXXXXXXX` form, normalizes it to E.164, then checks whether the number is already saved. No phone verification provider or SMS service is called.
 
-The current plan uses the **Phone Intelligence** product in the user's Abstract dashboard for optional Philippine mobile numbers. A successful result requires Abstract to classify the number as valid, Philippine, mobile, and active. It does **not** prove that the user owns the number, that it is currently reachable, or that an SMS was delivered. UI copy and thesis claims must use **Validated number**, never **Verified owner**.
+Authenticated Account Settings checks use the `validate-contact-phone` Edge Function. It confirms the active account, applies a request rate limit, returns only a boolean availability result, and records a short-lived, purpose-specific proof. Database triggers consume that proof when a contact number is saved. Signup uses the separate `signup_phone_availability` RPC with shared and per-IP caps. Staff walk-in guest entry uses its existing database-only registration check.
 
-This replaces the former SMS OTP plan for customer, staff, and owner contact-number changes. Supabase Phone Auth can stay disabled. Email OTP for account sign-in and signup is a separate feature and remains in use.
+Contact numbers already linked to another account are blocked in the UI and by the profile write guard. Emergency-contact numbers may be shared by relatives: the UI shows an amber warning when a saved match is found, while valid numbers remain saveable. Emergency write guards still require PH format and the matching purpose proof for customer and staff self-service changes.
 
-## Owner setup
+These checks establish only format and database availability. They do not prove ownership, reachability, or delivery. Do not describe a number as verified or active based on these checks.
 
-1. Sign in to [Abstract](https://app.abstractapi.com/dashboard). Under **Your products**, select **Phone Intelligence** and copy its primary API key. Use that product's key, not the Email Reputation or IP Intelligence keys.
-2. In [Supabase Edge Function Secrets](https://supabase.com/dashboard/project/xrlwtnwamboucihsamrr/settings/functions), create the secret named `ABSTRACT_PHONE_VALIDATION_API_KEY` with that key. Enter it directly in Supabase; do not put it in chat, a repository file, browser JavaScript, or a database row.
-3. Deploy the `validate-contact-phone` Edge Function and the staff booking migrations. The function calls Abstract on the server and stores a short-lived, one-use proof tied to the signed-in account and normalized phone number. The database checks that proof when saving a changed contact number.
-4. In a test account, enter a valid Philippine mobile number in Account Settings and choose **Save Changes**. A changed number is validated before it is saved. Check that invalid or non-mobile numbers are rejected; a provider outage or exhausted quota must leave the previous saved number unchanged. Verify that an unchanged number can be retained and that removing an optional number clears its validation status.
-
-The application limits calls to protect the free allowance: up to 80 provider lookups per rolling 30 days across the app, 3 per account per 24 hours, and 1 request per second globally. These are application limits and may change if Abstract changes its allowance. [Abstract pricing](https://www.abstractapi.com/pricing) currently lists a free phone tier with 100 requests per month; check the dashboard before relying on it for more traffic. No SMS is sent.
-
-## Operational limits
-
-- Number validation is a data-quality check. It must not be used as an authentication factor, an account recovery proof, or a basis for privileged access.
-- The API key stays in an Edge Function secret. The browser calls only the authenticated project function.
-- A failed or unavailable validation must not silently save a new number as validated.
-- An Abstract **active** classification is a provider estimate, not a guaranteed live call, delivery, or proof that this user controls the number.
-
-References: [Abstract Phone Intelligence API](https://docs.abstractapi.com/api/phone-intelligence), [Abstract pricing](https://www.abstractapi.com/pricing), [Supabase Edge Function secrets](https://supabase.com/docs/guides/functions/secrets).
+Deploy the timestamped migrations in `supabase/migrations` and the `validate-contact-phone` Edge Function together. Supabase CLI was unavailable during implementation, so the migration and function deployment remain operator steps.

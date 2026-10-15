@@ -4,10 +4,12 @@ const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 const courts = [
-    { id: 'listing-badminton', name: 'Badminton', sportName: 'Badminton', bookableUnits: [{ id: 'unit-b1', label: 'Court 1', rateDay: 100, rateUnit: '/hr' }] },
-    { id: 'listing-basketball', name: 'Basketball', sportName: 'Basketball', bookableUnits: [{ id: 'unit-b2', label: 'Court 2', rateDay: 150, rateUnit: '/hr' }] },
-    { id: 'listing-set', name: 'Table Tennis', sportName: 'Table Tennis', bookableUnits: [{ id: 'unit-set', label: 'Table 1', rateDay: 50, rateUnit: '/set' }, { id: 'unit-set-2', label: 'Table 2', rateDay: 50, rateUnit: '/set' }] },
-    { id: 'listing-volleyball', name: 'Volleyball', sportName: 'Volleyball', bookableUnits: [{ id: 'unit-volleyball', label: 'Court 1', rateDay: 125, rateUnit: '/hr' }] },
+    { id: 'listing-badminton', name: 'Badminton', sportName: 'Badminton', sportSlug: 'badminton', bookableUnits: [{ id: 'unit-b1', label: 'Court 1', rateDay: 100, rateUnit: '/hr' }] },
+    { id: 'listing-basketball', name: 'Basketball', sportName: 'Basketball', sportSlug: 'basketball', bookableUnits: [{ id: 'unit-b2', label: 'Court 2', rateDay: 150, rateUnit: '/hr' }] },
+    { id: 'listing-set', name: 'Table Tennis', sportName: 'Table Tennis', sportSlug: 'table-tennis', bookableUnits: [{ id: 'unit-set', label: 'Table 1', rateDay: 50, rateUnit: '/set' }, { id: 'unit-set-2', label: 'Table 2', rateDay: 50, rateUnit: '/set' }] },
+    { id: 'listing-volleyball', name: 'Volleyball', sportName: 'Volleyball', sportSlug: 'volleyball', bookableUnits: [{ id: 'unit-volleyball', label: 'Court 1', rateDay: 125, rateUnit: '/hr' }] },
+    { id: 'listing-bowling-duckpin', name: 'Bowling — Duckpin', sportName: 'Bowling — Duckpin', sportSlug: 'bowling-duckpin', slug: 'bowling-duckpin', bookableUnits: Array.from({ length: 8 }, (_, index) => ({ id: `unit-duckpin-${index + 1}`, label: `Lane ${index + 1}`, rateDay: 30, rateUnit: '/game' })) },
+    { id: 'listing-bowling-tenpin', name: 'Bowling — Ten-Pin', sportName: 'Bowling — Duckpin', sportSlug: 'bowling-duckpin', slug: 'bowling-tenpin', bookableUnits: Array.from({ length: 12 }, (_, index) => ({ id: `unit-tenpin-${index + 1}`, label: `Lane ${index + 1}`, rateDay: 40, rateUnit: '/game' })) },
 ];
 
 function fixture(config) {
@@ -15,12 +17,15 @@ function fixture(config) {
     const qa = window.__walkinQa;
     let occupancyCallCount = 0;
     const profiles = [
-        { id: 'qa-staff', role: 'staff', status: 'active', full_name: 'QA Staff', email: 'staff@example.test', contact_num: '', contact_num_validated: false, contact_num_validated_at: null },
+        { id: 'qa-staff', role: 'staff', status: 'active', full_name: 'QA Staff', email: 'staff@example.test', contact_num: '', contact_num_validated: false, contact_num_validated_at: null,
+            address: config.staffAddress || 'Saved staff address', birthdate: '1990-01-02', gender: 'Female',
+            emergency_contact_name: config.staffEmergencyName || 'Saved emergency name', emergency_contact_number: config.staffEmergencyNumber || '+639171234568',
+            avatar_url: config.staffAvatarUrl || null },
         { id: 'qa-customer', role: 'customer', status: 'active', full_name: config.customerFullName || 'QA Customer', email: 'customer@example.test', contact_num: '+639171234567' },
     ];
     const resultFor = (table, query) => {
         if (query.write) {
-            qa.calls.push({ kind: query.write, table, payload: query.payload });
+            qa.calls.push({ kind: query.write, table, payload: query.payload, filters: query.filters });
             if (table === 'profiles' && query.write === 'update') {
                 const idFilter = query.filters.find(([key, op]) => key === 'id' && op === 'eq');
                 const profile = profiles.find(row => idFilter && String(row.id) === String(idFilter[2]));
@@ -52,7 +57,7 @@ function fixture(config) {
         from(table) {
             const query = { write: null, payload: null, one: false, filters: [] };
             const chain = {
-                select() { return chain; },
+                select(columns) { query.columns = columns; return chain; },
                 eq(key, value) { query.filters.push([key, 'eq', value]); return chain; },
                 in(key, value) { query.filters.push([key, 'in', value]); return chain; },
                 gte(key, value) { query.filters.push([key, 'gte', value]); return chain; },
@@ -64,7 +69,14 @@ function fixture(config) {
                 maybeSingle() { query.one = true; return Promise.resolve(resultFor(table, query)); },
                 update(payload) { query.write = 'update'; query.payload = payload; return chain; },
                 insert(payload) { query.write = 'insert'; query.payload = payload; return chain; },
-                then(resolve, reject) { return Promise.resolve(resultFor(table, query)).then(resolve, reject); },
+                then(resolve, reject) {
+                    const delay = table === 'profiles' && String(query.columns || '').includes('emergency_contact_name')
+                        ? Number(config.profileDetailsDelayMs || 0) : 0;
+                    const result = delay
+                        ? new Promise(done => setTimeout(() => done(resultFor(table, query)), delay))
+                        : Promise.resolve(resultFor(table, query));
+                    return result.then(resolve, reject);
+                },
             };
             return chain;
         },
@@ -132,10 +144,14 @@ function fixture(config) {
             qa.calls.push({ kind: 'function', name, options });
             if (window.__qaRecord) await window.__qaRecord({ kind: 'function', name, options });
             if (name === 'validate-contact-phone') {
+                const normalized = String(options.body.phone || '').replace(/^0/, '+63');
+                const delay = Number(config.phoneValidationDelayMsByNumber?.[normalized] || 0);
+                if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+                if (config.phoneValidationErrorByNumber?.[normalized]) return { data: null, error: config.phoneValidationErrorByNumber[normalized] };
                 if (config.phoneValidationError) return { data: null, error: config.phoneValidationError };
                 const local = String(options.body.phone || '').replace(/[^0-9]/g, '');
-                const normalized = config.phoneValidation?.normalized || (local.startsWith('09') ? `+63${local.slice(1)}` : options.body.phone);
-                return { data: config.phoneValidation || { valid: true, normalized, phone_type: 'mobile', line_status: 'active' }, error: null };
+                const response = config.phoneValidationByNumber?.[normalized] || config.phoneValidation || { valid: true, normalized: local.startsWith('09') ? `+63${local.slice(1)}` : options.body.phone, available: true };
+                return { data: response, error: null };
             }
             qa.checkoutAttempts += 1;
             if (config.failCheckoutOnce && qa.checkoutAttempts === 1) return { data: null, error: { message: 'Temporary checkout error' } };
@@ -160,7 +176,7 @@ function fixture(config) {
 }
 
 function courtsFixture() {
-    const sports = [...new Map(courts.map(court => [court.sportName, { id: court.sportName.toLowerCase(), slug: court.sportName.toLowerCase(), name: court.sportName }])).values()];
+    const sports = [...new Map(courts.map(court => [court.sportSlug, { id: court.sportSlug, slug: court.sportSlug, name: court.sportName }])).values()];
     return `window.InigoCourtsData={getCourts:async()=>${JSON.stringify(courts)},getSports:async()=>${JSON.stringify(sports)},resolveCourtUnits:c=>({pickerLabel:'Choose a court',units:c.bookableUnits}),invalidateCourts(){},monogramFor:()=>'',slugify:s=>s};`;
 }
 
@@ -194,9 +210,20 @@ async function openWalkinTimeStep(page, courtId = 'listing-badminton') {
 async function selectWalkinCourt(page, courtId) {
     const court = courts.find(item => item.id === courtId);
     assert.ok(court, `fixture contains court ${courtId}`);
-    const sportValue = court.sportName.toLowerCase();
-    await page.locator('[data-staff-walkin-sport-select]').selectOption(sportValue);
-    await page.locator(`[data-staff-walkin-sport="${courtId}"]`).click();
+    const sportValue = court.sportSlug;
+    await page.locator(`[data-staff-walkin-sport-card="${sportValue}"]`).click();
+    const choiceIndex = courts.filter(item => item.sportSlug === sportValue)
+        .slice(0, courts.filter(item => item.sportSlug === sportValue).findIndex(item => item.id === courtId))
+        .reduce((count, item) => count + item.bookableUnits.length, 0);
+    await page.locator('[data-staff-walkin-unit-select]').selectOption(String(choiceIndex));
+}
+
+async function resolveStaffConfirm(page, { accept = false, title, message } = {}) {
+    const modal = page.locator('[data-staff-confirm-modal]');
+    await modal.waitFor({ state: 'visible' });
+    if (title) assert.equal(await modal.locator('[data-staff-confirm-title]').innerText(), title);
+    if (message) assert.equal(await modal.locator('[data-staff-confirm-text]').innerText(), message);
+    await modal.locator(accept ? '[data-staff-confirm-accept]' : '[data-staff-confirm-cancel]').click();
 }
 
 function assertCardHeightStable(actual, expected, message) {
@@ -330,21 +357,46 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await customerStepPage.locator('[data-staff-account-search-wrap]').isVisible(), false, 'switching to Guest closes account suggestions');
         await customerStepPage.locator('[data-staff-walkin-name]').fill('Sport Selector Guest');
         await customerStepPage.locator('[data-staff-walkin-next]').click();
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport-select]').inputValue(), '', 'sport is not preselected');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport="listing-badminton"]').count(), 0, 'court choices stay unavailable until a sport is selected');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport-card].is-selected').count(), 0, 'sport is not preselected');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isHidden(), true, 'unit choices stay hidden until a sport is selected');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'sport and court are required before leaving step 2');
-        await customerStepPage.locator('[data-staff-walkin-sport-select]').selectOption('table tennis');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport]').count(), 1, 'sport selection shows only courts belonging to that sport');
-        await customerStepPage.locator('[data-staff-walkin-sport="listing-set"]').click();
-        assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Table 1', 'Table 2'], 'unit labels come from the selected court inventory');
-        await customerStepPage.locator('[data-staff-walkin-sport-select]').selectOption('badminton');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isVisible(), false, 'changing sport clears the prior court unit picker');
+        const cardGeometryBeforeSelect = await customerStepPage.locator('[data-staff-walkin-sport-cards]').evaluate(grid => ({
+            columns: getComputedStyle(grid).gridTemplateColumns,
+            bounds: (() => { const rect = grid.querySelector('[data-staff-walkin-sport-card]').getBoundingClientRect(); return [rect.width, rect.height]; })(),
+        }));
+        await customerStepPage.locator('[data-staff-walkin-sport-card="table-tennis"]').click();
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport-card] img[src*="sports-covers"]').count(), 6, 'sport cards use the shared landing-page sport covers');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport-card="bowling-duckpin"]').innerText(), 'Bowling Duckpin', 'Duckpin is its own sport card');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport-card="bowling-tenpin"]').innerText(), 'Bowling Ten-Pin', 'Ten-Pin is its own sport card');
+        const cardGeometryAfterSelect = await customerStepPage.locator('[data-staff-walkin-sport-cards]').evaluate(grid => ({
+            columns: getComputedStyle(grid).gridTemplateColumns,
+            bounds: (() => { const rect = grid.querySelector('[data-staff-walkin-sport-card]').getBoundingClientRect(); return [rect.width, rect.height]; })(),
+        }));
+        assert.deepEqual(cardGeometryAfterSelect, cardGeometryBeforeSelect, 'showing the unit dropdown leaves sport card columns and dimensions stable');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-step="2"] select').count(), 1, 'Step 2 has one combo box after sport selection');
+        assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', 'Table 1', 'Table 2'], 'sport selection immediately shows its available units');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select] option[value=""]').isHidden(), true, 'the prompt is hidden from the native choice list');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select] option[value=""]').evaluate(option => option.disabled), true, 'the prompt cannot be selected as a unit');
+        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('0');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Table Tennis · Table 1', 'unit selection resolves its parent court listing');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), false, 'selecting an actual unit satisfies Step 2 validation');
+        await customerStepPage.locator('[data-staff-walkin-sport-card="badminton"]').click();
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isVisible(), true, 'changing sport keeps the single unit picker available');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select]').inputValue(), '', 'changing sport clears the prior unit selection');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Select a court first.', 'changing sport clears the prior court selection');
-        await customerStepPage.locator('[data-staff-walkin-sport-select]').selectOption('volleyball');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-sport]').count(), 1, 'Volleyball shows only its linked court');
-        await customerStepPage.locator('[data-staff-walkin-sport="listing-volleyball"]').click();
+        await customerStepPage.locator('[data-staff-walkin-sport-card="volleyball"]').click();
+        assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', 'Court 1'], 'Volleyball shows its actual verified unit');
+        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('0');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Volleyball · Court 1', 'Volleyball uses its verified Court 1 label, not the previous sport’s tables');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isVisible(), false, 'a single verified court unit has no redundant picker');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-wrap]').isVisible(), true, 'the selected sport uses the same single unit picker');
+        await customerStepPage.locator('[data-staff-walkin-sport-card="bowling-duckpin"]').click();
+        assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', ...Array.from({ length: 8 }, (_, index) => `Lane ${index + 1}`)], 'Duckpin lists only its 8 verified lanes');
+        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('0');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Bowling — Duckpin · Lane 1', 'Duckpin lane selection resolves to the Duckpin listing');
+        await customerStepPage.locator('[data-staff-walkin-sport-card="bowling-tenpin"]').click();
+        assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', ...Array.from({ length: 12 }, (_, index) => `Lane ${index + 1}`)], 'Ten-Pin lists only its 12 verified lanes');
+        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('11');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Bowling — Ten-Pin · Lane 12', 'Ten-Pin lane selection resolves to the Ten-Pin listing');
         await customerStepContext.context.close();
 
         const inUsePhoneContext = await openStaffPage(browser, {
@@ -449,30 +501,26 @@ function occupancyRow(hour, source = 'online') {
         await setPage.locator('[data-staff-walkin-receipt]').getByText('Payment acknowledgment and entry pass').waitFor();
         assert.deepEqual(await setPage.evaluate(() => window.__walkinQa.createdItems.map(item => item.rate_quantity)), [3, 1], 'the multi-line set order preserves quantities of three sets and one set');
         await setPage.locator('[data-staff-walkin-reset]').click();
-        console.log('RESET DEBUG', await setPage.evaluate(() => ({
-            panel: document.querySelector('[data-staff-panel="walkin"]')?.className,
-            wizardHidden: document.querySelector('[data-staff-walkin-wizard-wrap]')?.hidden,
-            receiptHidden: document.querySelector('[data-staff-walkin-receipt-wrap]')?.hidden,
-            sportHidden: document.querySelector('[data-staff-walkin-sport-select]')?.getBoundingClientRect().height,
-            selected: document.querySelector('[data-staff-walkin-sport-select]')?.value,
-        })));
-        assert.equal(await setPage.locator('[data-staff-walkin-sport-select]').inputValue(), '', 'new walk-in resets the selected sport');
-        assert.equal(await setPage.locator('[data-staff-walkin-unit-select] option').count(), 0, 'new walk-in clears the previous unit options');
-        await setPage.locator('[data-staff-walkin-sport-select]').selectOption('table tennis');
-        assert.equal(await setPage.locator('[data-staff-walkin-sport]').count(), 1, 'sport choices remain available after starting a new walk-in');
-        await setPage.locator('[data-staff-walkin-sport="listing-set"]').click();
-        assert.deepEqual(await setPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Table 1', 'Table 2'], 'reopened wizard repopulates units from the selected court');
+        assert.equal(await setPage.locator('[data-staff-walkin-sport-card].is-selected').count(), 0, 'new walk-in resets the selected sport');
+        assert.equal(await setPage.locator('[data-staff-walkin-unit-select]').inputValue(), '', 'new walk-in clears the previous unit selection');
+        await setPage.locator('[data-staff-walkin-name]').fill('Second Walk-in Guest');
+        await setPage.locator('[data-staff-walkin-next]').click();
+        await setPage.locator('[data-staff-walkin-sport-card="table-tennis"]').click();
+        assert.equal(await setPage.locator('[data-staff-walkin-unit-select] option').count(), 3, 'sport choices remain available after starting a new walk-in');
+        assert.deepEqual(await setPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', 'Table 1', 'Table 2'], 'reopened wizard repopulates direct unit choices');
         assert.deepEqual(resetPageErrors, [], 'reset and reopened sport selection do not raise browser errors');
         await setContext.context.close();
 
         const { context, page } = await openStaffPage(browser, { timezoneId: 'Pacific/Honolulu', now: '2026-09-27T01:30:00Z', pauseClock: true });
         page.on('pageerror', error => errors.push(error.message));
         await page.locator('[data-staff-nav="walkin"]').click();
-        await page.waitForFunction(() => !document.querySelector('[data-staff-walkin-sport-select]').disabled);
+        await page.waitForFunction(() => document.querySelectorAll('[data-staff-walkin-sport-card]').length > 0);
         await page.locator('[data-staff-walkin-name]').fill('Guest Customer');
         await page.locator('[data-staff-walkin-next]').click();
-        assert.equal(await page.locator('[data-staff-walkin-sport].staff-walkin-sport-card').count(), 0, 'court choices stay hidden until a sport is selected');
-        assert.equal(await page.locator('[data-staff-walkin-sport].staff-chip').count(), 0, 'court choices use the booking flow’s photo-card pattern instead of chips');
+        assert.equal(await page.locator('[data-staff-walkin-sport-card]').count(), 6, 'all sports and Bowling variants with available inventory appear as cover cards');
+        assert.equal(await page.locator('[data-staff-walkin-unit-wrap]').isHidden(), true, 'unit choices stay hidden until a sport is selected');
+        await page.locator('[data-staff-walkin-sport-card="badminton"]').click();
+        assert.deepEqual(await page.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', 'Court 1'], 'the one dropdown contains the selected sport’s actual unit');
         await selectWalkinCourt(page, 'listing-badminton');
         await page.locator('[data-staff-walkin-next]').click();
         assert.equal(await page.locator('[data-staff-walkin-current-court]').innerText(), 'Badminton · Court 1', 'time selection identifies the selected court and unit');
@@ -522,7 +570,6 @@ function occupancyRow(hour, source = 'online') {
         const online = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });
         const onlineCalls = [];
         await online.page.exposeFunction('__qaRecord', call => onlineCalls.push(call));
-        online.page.on('dialog', dialog => dialog.accept());
         await online.page.route('https://checkout.paymongo.com/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>PayMongo test checkout fixture</title>' }));
         await online.page.locator('[data-staff-nav="walkin"]').click();
         await online.page.locator('[data-staff-walkin-name]').fill('Online Guest');
@@ -534,6 +581,7 @@ function occupancyRow(hour, source = 'online') {
         await online.page.locator('[data-staff-walkin-online-option]').click();
         await online.page.locator('[data-staff-walkin-next]').click();
         await online.page.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(online.page, { accept: true, title: 'Continue to PayMongo?' });
         await online.page.waitForURL('https://checkout.paymongo.com/qa-walkin');
         assert.ok(onlineCalls.some(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted' && call.args.p_payment_method === 'paymongo'));
         assert.ok(onlineCalls.some(call => call.kind === 'function' && call.name === 'staff-walkin-checkout' && call.options.body.order_id === 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526'));
@@ -939,7 +987,7 @@ function occupancyRow(hour, source = 'online') {
 
         const phoneContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
-            config: { phoneValidation: { valid: true, normalized: '+639171234567', phone_type: 'mobile', line_status: 'active' } },
+            config: { phoneValidation: { valid: true, normalized: '+639171234567', available: true } },
         });
         const phonePage = phoneContext.page;
         await phonePage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
@@ -947,9 +995,11 @@ function occupancyRow(hour, source = 'online') {
         const phoneLayout = await phonePage.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
         assert.ok(phoneLayout.document <= phoneLayout.viewport, `contact settings fit 360px viewport (${JSON.stringify(phoneLayout)})`);
         assert.equal(await phonePage.locator('[data-staff-phone-validate]').count(), 0, 'phone validation is part of the single Save Changes flow');
+        await phonePage.locator('[data-staff-settings-edit="profile"]').click();
         const phoneInput = phonePage.locator('[data-staff-settings-mobile]');
         await phoneInput.fill('0917 123 4567');
         await phonePage.locator('[data-staff-settings-save="profile"]').click();
+        await resolveStaffConfirm(phonePage, { accept: true, title: 'Save profile changes?' });
         await phonePage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'update' && call.table === 'profiles'));
         const phoneSave = await phonePage.evaluate(() => ({
             validation: window.__walkinQa.calls.filter(call => call.kind === 'function' && call.name === 'validate-contact-phone'),
@@ -957,12 +1007,86 @@ function occupancyRow(hour, source = 'online') {
             otpCalls: window.__walkinQa.calls.filter(call => call.kind === 'auth' && ['updateUser', 'verifyOtp'].includes(call.name)),
         }));
         assert.equal(phoneSave.validation.length, 1);
-        assert.deepEqual(phoneSave.validation[0].options.body, { phone: '09171234567' });
+        assert.deepEqual(phoneSave.validation[0].options.body, { phone: '09171234567', purpose: 'contact' });
         assert.equal(phoneSave.update.payload.contact_num, '+639171234567', 'persist the validator returned E.164 value exactly');
+        assert.deepEqual(Object.keys(phoneSave.update.payload).sort(), ['address', 'contact_num', 'emergency_contact_name', 'emergency_contact_number'], 'profile save includes only mutable profile fields');
+        assert.deepEqual(phoneSave.update.filters, [['id', 'eq', 'qa-staff']], 'profile save is scoped to the signed-in staff account');
         assert.deepEqual(phoneSave.otpCalls, [], 'staff contact validation no longer uses SMS OTP');
         assert.match(await phonePage.locator('[data-staff-phone-status]').innerText(), /Saved number format\/type check passed/i, 'settings display the server validation fields after save');
         assert.match(await phonePage.locator('[data-staff-phone-status]').innerText(), /ownership and reachability are not verified/i);
         await phoneContext.context.close();
+
+        const canceledProfileContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', config: { profileDetailsDelayMs: 350 },
+        });
+        const canceledProfilePage = canceledProfileContext.page;
+        await canceledProfilePage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-name]').getAttribute('readonly'), '', 'full name is read-only initially');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-birthdate]').getAttribute('readonly'), '', 'birthdate stays read-only');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-gender]').isDisabled(), true, 'gender stays disabled');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-edit="profile"]').isVisible(), true, 'Edit is visible initially');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-cancel="profile"]').isVisible(), false, 'Cancel is hidden initially');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-save="profile"]').isVisible(), false, 'Save is hidden until Edit');
+        assert.equal(await canceledProfilePage.locator('[data-staff-avatar-remove]').isVisible(), false, 'Remove Photo is hidden when no avatar is saved');
+        await canceledProfilePage.locator('[data-staff-settings-edit="profile"]').click();
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-edit="profile"]').isVisible(), false, 'Edit hides while editing');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-cancel="profile"]').isVisible(), true, 'Cancel appears while editing');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-save="profile"]').isVisible(), true, 'Save appears while editing');
+        await canceledProfilePage.evaluate(() => {
+            document.dispatchEvent(new CustomEvent('inigosync:profile-ready', { detail: window.inigosyncProfile }));
+            document.querySelector('[data-staff-settings-mobile]').value = 'draft mobile';
+            document.querySelector('[data-staff-settings-address]').value = 'Draft address';
+            document.querySelector('[data-staff-settings-emergency-name]').value = 'Draft emergency name';
+            document.querySelector('[data-staff-settings-emergency-number]').value = '09171234569';
+        });
+        await canceledProfilePage.waitForTimeout(500);
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-mobile]').inputValue(), 'draft mobile', 'a delayed profile load preserves the mobile draft');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-address]').inputValue(), 'Draft address', 'a delayed profile load preserves the address draft');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-emergency-name]').inputValue(), 'Draft emergency name', 'a delayed profile load preserves the emergency name draft');
+        assert.equal(await canceledProfilePage.locator('[data-staff-settings-emergency-number]').inputValue(), '09171234569', 'a delayed profile load preserves the emergency number draft');
+        await canceledProfilePage.locator('[data-staff-settings-mobile]').fill('09171234567');
+        await canceledProfilePage.locator('[data-staff-settings-save="profile"]').click();
+        await resolveStaffConfirm(canceledProfilePage, { title: 'Save profile changes?', message: 'Save these personal information changes?' });
+        await canceledProfilePage.waitForTimeout(50);
+        assert.equal(await canceledProfilePage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'canceling profile confirmation prevents writes');
+        await canceledProfileContext.context.close();
+
+        const canceledAvatarContext = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });
+        const canceledAvatarPage = canceledAvatarContext.page;
+        await canceledAvatarPage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await canceledAvatarPage.locator('[data-staff-avatar-file]').setInputFiles({
+            name: 'avatar.png', mimeType: 'image/png',
+            buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p7sAAAAASUVORK5CYII=', 'base64'),
+        });
+        await canceledAvatarPage.locator('.itools-crop-modal').waitFor({ state: 'visible' });
+        await canceledAvatarPage.locator('.itools-crop-apply').click();
+        await resolveStaffConfirm(canceledAvatarPage, { title: 'Save profile photo?', message: 'Save this photo as your profile photo?' });
+        assert.equal(await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'canceling photo confirmation preserves the original avatar');
+
+        await canceledAvatarPage.locator('[data-staff-avatar-file]').setInputFiles({
+            name: 'avatar.png', mimeType: 'image/png',
+            buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p7sAAAAASUVORK5CYII=', 'base64'),
+        });
+        await canceledAvatarPage.locator('.itools-crop-modal').waitFor({ state: 'visible' });
+        await canceledAvatarPage.locator('.itools-crop-apply').click();
+        await resolveStaffConfirm(canceledAvatarPage, { accept: true, title: 'Save profile photo?', message: 'Save this photo as your profile photo?' });
+        await canceledAvatarPage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'update' && call.table === 'profiles'));
+        const uploadedAvatar = await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.find(call => call.kind === 'update' && call.table === 'profiles'));
+        assert.match(uploadedAvatar.payload.avatar_url, /^data:image\/jpeg;base64,/i, 'confirmed crop persists as a JPEG data URL');
+        assert.deepEqual(uploadedAvatar.filters, [['id', 'eq', 'qa-staff']], 'avatar upload is scoped to the signed-in staff account');
+
+        await canceledAvatarPage.locator('[data-staff-avatar-remove]').click();
+        await resolveStaffConfirm(canceledAvatarPage, { title: 'Remove profile photo?', message: 'Are you sure you want to remove your profile photo?' });
+        await canceledAvatarPage.waitForTimeout(50);
+        assert.equal(await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 1, 'canceling removal leaves the uploaded photo saved');
+
+        await canceledAvatarPage.locator('[data-staff-avatar-remove]').click();
+        await resolveStaffConfirm(canceledAvatarPage, { accept: true, title: 'Remove profile photo?', message: 'Are you sure you want to remove your profile photo?' });
+        await canceledAvatarPage.waitForFunction(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length === 2);
+        const removedAvatar = await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles')[1]);
+        assert.equal(removedAvatar.payload.avatar_url, null, 'confirmed removal clears the saved avatar');
+        assert.deepEqual(removedAvatar.filters, [['id', 'eq', 'qa-staff']], 'avatar removal is scoped to the signed-in staff account');
+        await canceledAvatarContext.context.close();
 
         const phoneUnavailableContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
@@ -970,23 +1094,135 @@ function occupancyRow(hour, source = 'online') {
         });
         const phoneUnavailablePage = phoneUnavailableContext.page;
         await phoneUnavailablePage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await phoneUnavailablePage.locator('[data-staff-settings-edit="profile"]').click();
         await phoneUnavailablePage.locator('[data-staff-settings-mobile]').fill('09171234567');
         await phoneUnavailablePage.locator('[data-staff-settings-save="profile"]').click();
+        await resolveStaffConfirm(phoneUnavailablePage, { accept: true, title: 'Save profile changes?' });
         await phoneUnavailablePage.waitForFunction(() => window.__toastMessages.some(message => /Phone validation is unavailable/.test(message.message)));
         assert.equal(await phoneUnavailablePage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'an unavailable validation API prevents profile writes');
         await phoneUnavailableContext.context.close();
 
-        const inactivePhoneContext = await openStaffPage(browser, {
+        const duplicatePhoneContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
-            config: { phoneValidation: { valid: false, reason: 'inactive', normalized: '+639171234567', phone_type: 'mobile', line_status: 'inactive' } },
+            config: { phoneValidation: { valid: false, reason: 'in_use' } },
         });
-        const inactivePhonePage = inactivePhoneContext.page;
-        await inactivePhonePage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
-        await inactivePhonePage.locator('[data-staff-settings-mobile]').fill('09171234567');
-        await inactivePhonePage.locator('[data-staff-settings-save="profile"]').click();
-        await inactivePhonePage.waitForFunction(() => window.__toastMessages.some(message => /classified this number as inactive/.test(message.message)));
-        assert.equal(await inactivePhonePage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'provider inactive status prevents all profile writes');
-        await inactivePhoneContext.context.close();
+        const duplicatePhonePage = duplicatePhoneContext.page;
+        await duplicatePhonePage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await duplicatePhonePage.locator('[data-staff-settings-edit="profile"]').click();
+        await duplicatePhonePage.locator('[data-staff-settings-mobile]').fill('09171234567');
+        await duplicatePhonePage.locator('[data-staff-settings-save="profile"]').click();
+        await resolveStaffConfirm(duplicatePhonePage, { accept: true, title: 'Save profile changes?' });
+        await duplicatePhonePage.waitForFunction(() => window.__toastMessages.some(message => /already linked to another account/.test(message.message)));
+        assert.equal(await duplicatePhonePage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'a duplicate account number prevents profile writes');
+        await duplicatePhoneContext.context.close();
+
+        const emergencyValidationContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: {
+                phoneValidationByNumber: {
+                    '+639171234567': { valid: true, normalized: '+639171234567', available: false },
+                    '+639161234567': { valid: false, reason: 'invalid' },
+                },
+                phoneValidationErrorByNumber: {
+                    '+639151234567': { message: 'Phone availability is temporarily unavailable.' },
+                },
+                phoneValidationDelayMsByNumber: {
+                    '+639111234567': 1700,
+                    '+639131234567': 2200,
+                },
+            },
+        });
+        const emergencyPage = emergencyValidationContext.page;
+        await emergencyPage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await emergencyPage.locator('[data-staff-settings-edit="profile"]').click();
+        const emergencyInput = emergencyPage.locator('[data-staff-settings-emergency-number]');
+        const emergencyStatus = emergencyPage.locator('[data-staff-emergency-phone-status]');
+        await emergencyPage.waitForFunction(() => document.querySelector('[data-staff-settings-emergency-number]')?.value === '+639171234568');
+        await emergencyInput.fill('0917 123 4568');
+        assert.equal(await emergencyStatus.getAttribute('data-state'), 'neutral', 'the unchanged saved emergency number does not need another lookup');
+        await emergencyInput.fill('');
+        assert.equal(await emergencyStatus.getAttribute('data-state'), 'neutral', 'an optional blank emergency number remains neutral');
+        await emergencyInput.fill('09171234567');
+        await emergencyStatus.waitFor({ state: 'visible' });
+        await emergencyPage.waitForFunction(() => document.querySelector('[data-staff-emergency-phone-status]')?.dataset.state === 'warning');
+        assert.match(await emergencyStatus.innerText(), /already saved somewhere/i);
+        assert.equal(await emergencyInput.getAttribute('aria-invalid'), 'false');
+
+        await emergencyInput.fill('not a phone');
+        assert.equal(await emergencyInput.getAttribute('aria-invalid'), 'true', 'invalid local format is marked accessibly');
+        assert.match(await emergencyStatus.innerText(), /valid Philippine mobile/i);
+        assert.equal(await emergencyPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'function' && call.name === 'validate-contact-phone').length), 1, 'invalid format does not call the validation service');
+
+        await emergencyInput.fill('09161234567');
+        await emergencyPage.waitForFunction(() => document.querySelector('[data-staff-emergency-phone-status]')?.dataset.state === 'invalid' && /valid Philippine mobile/.test(document.querySelector('[data-staff-emergency-phone-status]').textContent));
+        assert.equal(await emergencyInput.getAttribute('aria-invalid'), 'true');
+
+        await emergencyInput.fill('09151234567');
+        await emergencyPage.waitForFunction(() => document.querySelector('[data-staff-emergency-phone-status]')?.dataset.state === 'invalid' && /availability could not be checked/i.test(document.querySelector('[data-staff-emergency-phone-status]').textContent));
+
+        await emergencyInput.fill('09111234567');
+        await emergencyPage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'function' && call.name === 'validate-contact-phone' && call.options.body.phone === '+639111234567'));
+        await emergencyInput.fill('09121234567');
+        await emergencyPage.waitForFunction(() => document.querySelector('[data-staff-emergency-phone-status]')?.dataset.state === 'valid');
+        assert.match(await emergencyStatus.innerText(), /Valid Philippine mobile number and not found/i);
+        await emergencyPage.waitForTimeout(1200);
+        assert.equal(await emergencyStatus.getAttribute('data-state'), 'valid', 'a delayed response for the previous number cannot replace the current result');
+        assert.equal(await emergencyInput.getAttribute('aria-invalid'), 'false');
+
+        await emergencyInput.fill('09131234567');
+        await emergencyPage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'function' && call.name === 'validate-contact-phone' && call.options.body.phone === '+639131234567'));
+        await emergencyPage.locator('[data-staff-settings-save="profile"]').click();
+        assert.equal(await emergencyPage.locator('[data-staff-confirm-modal]').isVisible(), false, 'save stays blocked while number availability is pending');
+        assert.equal(await emergencyPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'pending validation prevents the whole profile write');
+        await emergencyPage.waitForFunction(() => document.querySelector('[data-staff-emergency-phone-status]')?.dataset.state === 'valid');
+        await emergencyPage.locator('[data-staff-settings-save="profile"]').click();
+        await resolveStaffConfirm(emergencyPage, { accept: true, title: 'Save profile changes?' });
+        await emergencyPage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'update' && call.table === 'profiles'));
+        const emergencyValidationCalls = await emergencyPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'function' && call.name === 'validate-contact-phone'));
+        assert.ok(emergencyValidationCalls.length >= 5 && emergencyValidationCalls.every(call => call.options.body.purpose === 'emergency'), 'all emergency-number checks request emergency-scoped proofs');
+        const emergencySave = await emergencyPage.evaluate(() => window.__walkinQa.calls.find(call => call.kind === 'update' && call.table === 'profiles'));
+        assert.equal(emergencySave.payload.emergency_contact_number, '+639131234567', 'save persists the exact validated normalized number');
+        assert.deepEqual(emergencySave.filters, [['id', 'eq', 'qa-staff']], 'profile save remains scoped to the signed-in staff account');
+        await emergencyValidationContext.context.close();
+
+        const mobileRaceContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
+            config: { phoneValidationDelayMsByNumber: { '+639171234567': 900 } },
+        });
+        const mobileRacePage = mobileRaceContext.page;
+        await mobileRacePage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await mobileRacePage.locator('[data-staff-settings-edit="profile"]').click();
+        const raceMobile = mobileRacePage.locator('[data-staff-settings-mobile]');
+        await raceMobile.fill('09171234567');
+        await mobileRacePage.locator('[data-staff-settings-save="profile"]').click();
+        await resolveStaffConfirm(mobileRacePage, { accept: true, title: 'Save profile changes?' });
+        await mobileRacePage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'function' && call.name === 'validate-contact-phone'));
+        await raceMobile.fill('09181234568');
+        await mobileRacePage.waitForFunction(() => window.__toastMessages.some(message => /profile changed while the number was being checked/i.test(message.message)));
+        assert.equal(await mobileRacePage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles').length), 0, 'a mobile draft changed during the database check, so no stale profile patch is written');
+        await mobileRaceContext.context.close();
+
+        const passwordContext = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });
+        const passwordPage = passwordContext.page;
+        await passwordPage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await passwordPage.locator('[data-staff-pw-current]').fill('CurrentPass1!');
+        await passwordPage.locator('[data-staff-pw-next]').click();
+        await passwordPage.locator('[data-staff-pw-new]').fill('NewPass123!');
+        await passwordPage.locator('[data-staff-pw-confirm]').fill('NewPass123!');
+        const passwordSave = passwordPage.locator('[data-staff-settings-save="password"]');
+        await passwordSave.click();
+        const passwordConfirm = passwordPage.locator('[data-staff-confirm-modal]');
+        await passwordConfirm.waitFor({ state: 'visible' });
+        assert.equal(await passwordConfirm.locator('[data-staff-confirm-title]').innerText(), 'Save new password?');
+        assert.equal(await passwordPage.evaluate(() => document.activeElement?.matches('[data-staff-confirm-cancel]')), true, 'confirmation takes keyboard focus');
+        await passwordPage.keyboard.press('Escape');
+        await passwordConfirm.waitFor({ state: 'hidden' });
+        assert.equal(await passwordPage.evaluate(() => document.activeElement?.matches('[data-staff-settings-save="password"]')), true, 'Escape restores focus to the initiating Save button');
+        assert.equal(await passwordPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'auth' && call.name === 'updateUser').length), 0, 'Escape cancels password mutation');
+        await passwordSave.click();
+        await resolveStaffConfirm(passwordPage, { accept: true, title: 'Save new password?', message: 'Are you sure you want to save this new password?' });
+        await passwordPage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'auth' && call.name === 'updateUser'));
+        await passwordContext.context.close();
 
         const boundaryBookings = [
             { booking_id: 1, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', time_date: '2026-09-27T14:30:00Z', status: 'confirmed', duration_minutes: 60 },

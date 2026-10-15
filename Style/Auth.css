@@ -35,6 +35,12 @@
     pointer-events: none;
 }
 
+.auth-overlay.has-floating-auth-notice {
+    align-items: flex-start;
+    overflow-y: auto;
+    padding-top: var(--auth-toast-clearance, 100px);
+}
+
 body.auth-lock {
     overflow: hidden;
 }
@@ -58,6 +64,10 @@ body.auth-lock {
     transform: translateY(16px) scale(0.98);
     opacity: 0;
     transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+}
+
+.auth-overlay.has-floating-auth-notice .auth-modal {
+    max-height: calc(100vh - var(--auth-toast-clearance, 100px) - 24px);
 }
 
 .auth-overlay[data-open] .auth-modal {
@@ -1145,6 +1155,8 @@ body.auth-lock {
     cursor: pointer;
 }
 
+.auth-status-close::before { content: '×'; }
+
 .auth-status-close:hover {
     background: color-mix(in srgb, currentColor 12%, transparent);
 }
@@ -1578,12 +1590,12 @@ body.auth-lock {
 [data-signup-email-status]:is([data-state="taken"], [data-state="invalid"], [data-state="error"], [data-state="rate_limited"], [data-state="check_spelling"]) { color: var(--color-alert-text); }
 .signup-phone-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 [data-signup-phone-availability-status] { flex-shrink: 0; min-height: 1.5em; font-size: var(--fs-xs); line-height: 1.5; text-transform: none; letter-spacing: normal; font-weight: 600; }
-[data-signup-phone-availability-status][data-state="in_use"] { color: var(--auth-verified-color); }
-[data-signup-phone-availability-status]:is([data-state="available"], [data-state="invalid"], [data-state="error"], [data-state="rate_limited"]) { color: var(--color-alert-text); }
+[data-signup-phone-availability-status][data-state="available"] { color: var(--auth-verified-color); }
+[data-signup-phone-availability-status]:is([data-state="in_use"], [data-state="invalid"], [data-state="error"], [data-state="rate_limited"]) { color: var(--color-alert-text); }
 .auth-field input[data-availability="available"] { border-color: var(--auth-verified-color); box-shadow: 0 0 0 1px var(--auth-verified-color); }
 .auth-field input:is([data-availability="taken"], [data-availability="invalid"], [data-availability="check_spelling"]) { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
-.auth-field input[data-phone-availability="in_use"] { border-color: var(--auth-verified-color); box-shadow: 0 0 0 1px var(--auth-verified-color); }
-.auth-field input[data-phone-availability="available"] { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
+.auth-field input[data-phone-availability="available"] { border-color: var(--auth-verified-color); box-shadow: 0 0 0 1px var(--auth-verified-color); }
+.auth-field input:is([data-phone-availability="in_use"], [data-phone-availability="invalid"], [data-phone-availability="error"], [data-phone-availability="rate_limited"]) { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
 .auth-phone-row { display: flex; align-items: stretch; gap: 8px; }
 .auth-phone-row input { flex: 1; min-width: 0; padding-inline: 10px; }
 .auth-phone-button { flex: 0 0 96px; min-height: 44px; padding: 8px; border: 1px solid var(--color-line); border-radius: 10px; color: var(--color-ink); background: var(--color-bg-elevated); font: inherit; font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }

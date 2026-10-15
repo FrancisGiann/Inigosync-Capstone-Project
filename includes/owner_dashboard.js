@@ -1044,42 +1044,65 @@ document.addEventListener('DOMContentLoaded', () => {
     // isSchemaMismatchError's own comment above). The old inline
     // .admin-add-panel[data-admin-staff-form] card (shown/hidden via
     // .is-open) is gone; the "+ Add New Staff" trigger's hook was renamed
-    // from data-admin-toggle-staff-form to data-admin-staff-add. Submit
-    // logic (staffSubmitBtn below) is unchanged other than how it closes
-    // the dialog on success.
+    // from data-admin-toggle-staff-form to data-admin-staff-add. The form
+    // creates a pending account from only email/position; staff enter their
+    // personal details during first-login setup.
     // ------------------------------------------------------------------
     const staffModal = document.querySelector('[data-admin-staff-modal]');
     const staffForm = document.querySelector('[data-admin-staff-form]');
     const staffAddBtns = document.querySelectorAll('[data-admin-staff-add]');
 
+    function wireAdminEmergencyPhoneCheck(input, status) {
+        if (!input || !status) return;
+        let timer = null;
+        let revision = 0;
+        const paint = (state, message) => {
+            status.dataset.state = state;
+            status.textContent = message;
+            input.dataset.phoneAvailability = state;
+            input.setAttribute('aria-invalid', String(state === 'invalid' || state === 'error'));
+        };
+        input.addEventListener('input', () => {
+            const request = ++revision;
+            clearTimeout(timer);
+            delete input.dataset.checkedPhone;
+            const parsed = window.validatePhMobile?.(input.value.trim());
+            if (!input.value.trim()) { paint('', 'Optional. Shared family emergency numbers are allowed.'); return; }
+            if (!parsed?.valid) { paint('invalid', parsed?.message || 'Enter a valid Philippine mobile number.'); return; }
+            paint('checking', 'Checking Philippine format and whether the number is already saved…');
+            timer = setTimeout(async () => {
+                try {
+                    const { data, error } = await window.sb.rpc('admin_phone_number_exists', {
+                        p_phone_e164: `+63${parsed.normalized.slice(1)}`,
+                    });
+                    if (request !== revision || window.validatePhMobile?.(input.value.trim())?.normalized !== parsed.normalized) return;
+                    if (error || typeof data !== 'boolean') throw error || new Error('Unexpected response');
+                    input.dataset.checkedPhone = parsed.normalized;
+                    paint(data ? 'warning' : 'available', data
+                        ? 'This number is already saved somewhere. Emergency contacts may be shared with family; saving is allowed.'
+                        : 'Valid Philippine mobile number and not found in saved contact numbers.');
+                } catch (_) {
+                    if (request === revision) paint('error', 'Could not check number availability. Try again.');
+                }
+            }, 500);
+        });
+    }
+    wireAdminEmergencyPhoneCheck(
+        document.querySelector('[data-admin-staff-edit-emergency-number]'),
+        document.querySelector('[data-admin-staff-edit-emergency-status]'),
+    );
+
     function resetStaffForm() {
         if (!staffForm) return;
-        const nameInput = staffForm.querySelector('[data-admin-staff-name]');
         const emailInput = staffForm.querySelector('[data-admin-staff-email]');
-        if (nameInput) nameInput.value = '';
         if (emailInput) emailInput.value = '';
         const roleSelect = staffForm.querySelector('[data-admin-staff-role]');
         if (roleSelect) roleSelect.selectedIndex = 0;
-
-        // Revision S3 (database/schema/018_staff_details.sql) — all five optional.
-        const addressInput = staffForm.querySelector('[data-admin-staff-address]');
-        const birthdateInput = staffForm.querySelector('[data-admin-staff-birthdate]');
-        const genderSelect = staffForm.querySelector('[data-admin-staff-gender]');
-        const emergencyNameInput = staffForm.querySelector('[data-admin-staff-emergency-name]');
-        const emergencyNumberInput = staffForm.querySelector('[data-admin-staff-emergency-number]');
-        if (addressInput) addressInput.value = '';
-        if (birthdateInput) birthdateInput.value = '';
-        const ageInput = staffForm.querySelector('[data-admin-staff-age]');
-        if (ageInput) ageInput.value = '';
-        if (genderSelect) genderSelect.selectedIndex = 0;
-        if (emergencyNameInput) emergencyNameInput.value = '';
-        if (emergencyNumberInput) emergencyNumberInput.value = '';
     }
 
     // Revision S3 — Birthdate can never be set in the future. Set once here
     // (rather than baked into the HTML's static max="…", which would
-    // silently go stale) for both the Add New Staff modal's field and the
-    // Edit/View staff modal's field further below.
+    // silently go stale) for the Edit/View staff modal further below.
     function todayDateInputValue() {
         const now = new Date();
         const y = now.getFullYear();
@@ -1087,8 +1110,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = String(now.getDate()).padStart(2, '0');
         return `${y}-${m}-${d}`;
     }
-    const staffAddBirthdateInput = document.querySelector('[data-admin-staff-birthdate]');
-    if (staffAddBirthdateInput) staffAddBirthdateInput.max = todayDateInputValue();
 
     const STAFF_MODAL_CLOSE_DELAY_MS = 250;
     let staffModalHideTimer = null;
@@ -1185,51 +1206,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (staffSubmitBtn) {
         staffSubmitBtn.addEventListener('click', async () => {
-            const nameInput = document.querySelector('[data-admin-staff-name]');
             const emailInput = document.querySelector('[data-admin-staff-email]');
             const roleSelect = document.querySelector('[data-admin-staff-role]');
-            const addressInput = document.querySelector('[data-admin-staff-address]');
-            const birthdateInput = document.querySelector('[data-admin-staff-birthdate]');
-            const genderSelect = document.querySelector('[data-admin-staff-gender]');
-            const emergencyNameInput = document.querySelector('[data-admin-staff-emergency-name]');
-            const emergencyNumberInput = document.querySelector('[data-admin-staff-emergency-number]');
-
-            const name = nameInput ? nameInput.value.trim() : '';
             const email = emailInput ? emailInput.value.trim() : '';
             const position = roleSelect ? roleSelect.value : '';
 
-            if (!name || !email) {
-                if (!name && nameInput) nameInput.focus();
-                else if (emailInput) emailInput.focus();
-                return;
-            }
-
-            if (!['Secretary', 'Court Attendant'].includes(position) || !birthdateInput?.value || birthdateInput.value > todayDateInputValue() || computeAdminStaffAge(birthdateInput.value) === null) {
-                window.InigoToast?.show('Choose a staff position and enter a valid birthdate.', true);
-                birthdateInput?.focus(); return;
+            if (!email) { emailInput?.focus(); return; }
+            if (!['Secretary', 'Court Attendant'].includes(position)) {
+                window.InigoToast?.show('Choose a valid staff position.', true);
+                roleSelect?.focus(); return;
             }
             if (!emailInput.checkValidity()) { emailInput.reportValidity(); return; }
-
-            // Revision S3 — the emergency contact number is optional, but
-            // validated the same way as everywhere else in this app
-            // whenever a value IS entered; checked BEFORE the invite goes
-            // out so a typo here never leaves the owner staring at an
-            // already-sent invite with no way back to fix just this field.
-            const emergencyNumberRaw = emergencyNumberInput ? emergencyNumberInput.value.trim() : '';
-            let emergency_contact_number = '';
-            if (emergencyNumberRaw) {
-                if (!window.validatePhMobile) {
-                    window.InigoToast?.show('Unable to validate the emergency contact number right now. Please try again shortly.', true);
-                    return;
-                }
-                const check = window.validatePhMobile(emergencyNumberRaw);
-                if (!check.valid) {
-                    window.InigoToast?.show(`Emergency contact number: ${check.message}`, true);
-                    emergencyNumberInput?.focus();
-                    return;
-                }
-                emergency_contact_number = check.normalized;
-            }
 
             if (!window.sb || !window.SUPABASE_URL) {
                 window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
@@ -1237,7 +1224,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             staffSubmitBtn.disabled = true;
-            staffSubmitBtn.textContent = 'Sending invite…';
+            staffSubmitBtn.textContent = 'Creating account…';
 
             try {
                 const { data: { session } } = await window.sb.auth.getSession();
@@ -1249,23 +1236,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${session.access_token}`
                     },
-                    body: JSON.stringify({ email, full_name: name, position, role: 'staff', birthdate: birthdateInput.value, address: addressInput?.value.trim() || '', gender: genderSelect?.value || '', emergency_contact_name: emergencyNameInput?.value.trim() || '', emergency_contact_number })
+                    body: JSON.stringify({ email, position })
                 });
 
                 const result = await res.json().catch(() => ({}));
                 if (!res.ok) {
-                    throw new Error(result.error || 'Could not send the invite.');
+                    throw new Error(result.error || 'Could not create the staff account.');
                 }
 
                 refreshStaffList();
                 resetStaffForm();
                 closeStaffModal();
-                recordOwnerActivity(`Staff account invited: ${name}`, 'staff');
+                recordOwnerActivity(`Staff account created for ${email}`, 'staff');
             } catch (err) {
-                window.InigoToast?.show(err.message || 'Could not send the invite. Please try again.', true);
+                window.InigoToast?.show(err.message || 'Could not create the staff account. Please try again.', true);
             } finally {
                 staffSubmitBtn.disabled = false;
-                staffSubmitBtn.textContent = 'Send Invite';
+                staffSubmitBtn.textContent = 'Create Staff Account';
             }
         });
     }
@@ -1289,7 +1276,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const staffEditBirthdateInput = document.querySelector('[data-admin-staff-edit-birthdate]');
     if (staffEditBirthdateInput) staffEditBirthdateInput.max = todayDateInputValue();
 
-    [[staffAddBirthdateInput, '[data-admin-staff-age]'], [staffEditBirthdateInput, '[data-admin-staff-edit-age]']].forEach(([input, selector]) => {
+    [[staffEditBirthdateInput, '[data-admin-staff-edit-age]']].forEach(([input, selector]) => {
         input?.addEventListener('input', () => { document.querySelector(selector).value = computeAdminStaffAge(input.value) ?? ''; });
     });
 
@@ -1314,6 +1301,8 @@ document.addEventListener('DOMContentLoaded', () => {
         set('[data-admin-staff-edit-gender]', profile.gender || '');
         set('[data-admin-staff-edit-emergency-name]', profile.emergency_contact_name || '');
         set('[data-admin-staff-edit-emergency-number]', profile.emergency_contact_number || '');
+        staffEditDialog.querySelector('[data-admin-staff-edit-emergency-number]')
+            ?.dispatchEvent(new Event('input', { bubbles: true }));
 
         const age = computeAdminStaffAge(profile.birthdate);
         const details = [
@@ -1443,6 +1432,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 emergency_contact_number = check.normalized;
+                const emergencyInput = staffEditDialog.querySelector('[data-admin-staff-edit-emergency-number]');
+                if (emergencyInput?.dataset.checkedPhone !== check.normalized) {
+                    window.InigoToast?.show('Wait for the emergency-number availability check to finish.', true);
+                    emergencyInput?.focus();
+                    return;
+                }
             }
 
             const fullPatch = {
@@ -1518,7 +1513,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const memberSince = profile.created_at
             ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
             : '—';
-        const statusLabels = { active: 'Active', disabled: 'Deactivated', pending: 'Invited' };
+        const statusLabels = { active: 'Active', disabled: 'Deactivated', pending: 'Setup pending' };
         const statusLabel = statusLabels[profile.status] || 'Active';
         const parts = [];
         if (age !== null) parts.push(`${age} yrs old`);
@@ -1533,7 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const map = {
             active: ['active', 'Active'],
             disabled: ['inactive', 'Deactivated'],
-            pending: ['pending', 'Invited'],
+            pending: ['pending', 'Setup pending'],
         };
         const [cls, label] = map[status] || ['active', 'Active'];
         return `<span class="admin-status ${cls}">${label}</span>`;
@@ -1550,9 +1545,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // fetch — refreshStaffList() already has this same object in hand
         // from its own select('*').
         row.__staffProfile = profile;
-        // full_name/email/position are set by whoever filled in the staff
-        // invite/edit form (and, before Phase 2, an admin — but this same
-        // rendering path is what a promoted/self-edited account would also
+        // full_name/email/position are set by the staff create/edit flow
+        // (and, before Phase 2, an admin — but this same rendering path is
+        // what a promoted/self-edited account would also
         // flow through), so they're escaped before touching innerHTML — a
         // name like `<img src=x onerror=alert(1)>` must render as literal
         // text in this admin session, not run. staffStatusBadge() only
@@ -1561,7 +1556,7 @@ document.addEventListener('DOMContentLoaded', () => {
         //
         // Revision A1, decision A4 — a disabled account additionally gets
         // an Activate button (mirrors the court cards' Activate/Deactivate
-        // pair); an active/invited account keeps just Deactivate, unchanged.
+        // pair); an active/setup-pending account keeps just Deactivate.
         //
         // Revision S3 — data-admin-staff-name-cell moved onto an inner
         // <span> (was the whole <td>) so a second <span class="admin-staff-meta">
@@ -2947,11 +2942,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (ownerMobileMessage) {
             ownerMobileMessage.textContent = !profile.contact_num
-                ? 'A contact number is optional. We check Philippine format, mobile type, active status, and whether another account uses it. This does not confirm ownership.'
-                : profile.contact_num_validated
-                    ? `Validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(profile.contact_num_validated_at)}. Ownership and use by other accounts are not confirmed.`
-                    : 'This saved number has not been validated for format, mobile type, and active status.';
+                ? 'A contact number is optional. We check Philippine mobile format and whether the number is already linked to an account.'
+                : 'Saved contact number. A new number is checked for Philippine format and availability before saving.';
             ownerMobileMessage.classList.remove('is-error');
+            ownerMobileMessage.dataset.state = '';
         }
         const removeMobileBtn = document.querySelector('[data-admin-mobile-remove]');
         if (removeMobileBtn) removeMobileBtn.hidden = !profile.contact_num;
@@ -3030,6 +3024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ownerMobileMessage) return;
         ownerMobileMessage.textContent = message;
         ownerMobileMessage.classList.toggle('is-error', isError);
+        ownerMobileMessage.dataset.state = isError ? 'invalid' : ownerMobileCheckPassed ? 'available' : '';
     }
 
     async function ownerPhoneFunctionError(error) {
@@ -3044,11 +3039,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function ownerPhoneFailureMessage(reason) {
-        return reason === 'not_mobile' ? 'This is not classified as a Philippine mobile number.'
-            : reason === 'in_use' ? 'This number is already in use by another account.'
-            : reason === 'inactive' ? 'The provider reports that this number is not active.'
-                : reason === 'status_unknown' ? 'The provider could not confirm the number status. Try again later.'
-                    : 'Enter a valid Philippine mobile number.';
+        return reason === 'in_use' ? 'This number is already linked to another account.'
+            : 'Enter a valid Philippine mobile number.';
     }
 
     function ownerMobileInputMatches(normalized) {
@@ -3058,16 +3050,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function checkOwnerMobile(normalized, requestId) {
         if (!window.sb || !window.inigosyncProfile) return;
-        const currentCheck = window.validatePhMobile?.(window.inigosyncProfile.contact_num || '');
-        if (currentCheck?.valid && normalized === currentCheck.normalized && window.inigosyncProfile.contact_num_validated) {
-            ownerMobileCheckedNumber = normalized;
-            ownerMobileCheckPassed = true;
-            ownerMobileCheckedAt = Date.now();
-            ownerMobileValidateBtn.disabled = true;
-            setOwnerMobileMessage(`Already validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(window.inigosyncProfile.contact_num_validated_at)}. Use by other accounts was not checked again.`);
-            return;
-        }
-        setOwnerMobileMessage('Checking mobile type and active status…');
+        setOwnerMobileMessage('Checking Philippine format and availability…');
         try {
             const { data, error } = await window.sb.functions.invoke('validate-contact-phone', { body: { phone: normalized } });
             if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
@@ -3075,21 +3058,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data?.valid !== true) {
                 throw new Error(ownerPhoneFailureMessage(data?.reason));
             }
-            if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
-                || data.normalized !== `+63${normalized.slice(1)}` || data.line_status !== 'active') {
-                throw new Error('The provider returned an unsupported validation result. Try again later.');
+            if (!/^\+639\d{9}$/.test(data.normalized || '')
+                || data.normalized !== `+63${normalized.slice(1)}`) {
+                throw new Error('The number could not be checked safely. Try again later.');
             }
             ownerMobileCheckedNumber = normalized;
             ownerMobileCheckPassed = true;
             ownerMobileCheckedAt = Date.now();
             ownerMobileRecentChecks.set(normalized, ownerMobileCheckedAt);
-            ownerMobileValidateBtn.disabled = currentCheck?.valid && normalized === currentCheck.normalized
-                && window.inigosyncProfile.contact_num_validated === true;
-            setOwnerMobileMessage('Available for this account and classified as an active Philippine mobile number. Save number to add it to your profile. This does not confirm ownership or guarantee reachability.');
+            ownerMobileValidateBtn.disabled = false;
+            ownerMobileInput.dataset.phoneAvailability = 'available';
+            ownerMobileInput.setAttribute('aria-invalid', 'false');
+            setOwnerMobileMessage('Valid Philippine mobile number and available. Save number to add it to your profile.');
         } catch (error) {
             if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
             ownerMobileCheckPassed = false;
             ownerMobileValidateBtn.disabled = true;
+            ownerMobileInput.dataset.phoneAvailability = 'invalid';
+            ownerMobileInput.setAttribute('aria-invalid', 'true');
             console.error('[admin] contact number validation failed', error);
             setOwnerMobileMessage(error.message || 'Could not validate the number. Try again.', true);
         }
@@ -3102,34 +3088,32 @@ document.addEventListener('DOMContentLoaded', () => {
         ownerMobileCheckPassed = false;
         ownerMobileCheckedAt = 0;
         ownerMobileValidateBtn.disabled = true;
+        ownerMobileInput.dataset.phoneAvailability = '';
+        ownerMobileInput.setAttribute('aria-invalid', 'false');
         const raw = ownerMobileInput.value.trim();
         if (!raw) {
-            setOwnerMobileMessage('A contact number is optional. Format, mobile type, active status, and use by another account are checked automatically. This does not confirm ownership or guarantee reachability.');
+            setOwnerMobileMessage('A contact number is optional. We check Philippine mobile format and whether the number is already linked to an account.');
             return;
         }
         const localCheck = window.validatePhMobile?.(raw);
         if (!localCheck?.valid) {
-            setOwnerMobileMessage('Enter a Philippine mobile number, such as 09171234567 or +639171234567.');
-            return;
-        }
-        const savedCheck = window.validatePhMobile?.(window.inigosyncProfile?.contact_num || '');
-        if (savedCheck?.valid && savedCheck.normalized === localCheck.normalized && window.inigosyncProfile?.contact_num_validated) {
-            ownerMobileCheckedNumber = localCheck.normalized;
-            ownerMobileCheckPassed = true;
-            ownerMobileCheckedAt = Date.now();
-            setOwnerMobileMessage(`Already validated as an active Philippine mobile number${formatOwnerPhoneValidationDate(window.inigosyncProfile.contact_num_validated_at)}. Use by other accounts was not checked again.`);
+            ownerMobileInput.dataset.phoneAvailability = 'invalid';
+            ownerMobileInput.setAttribute('aria-invalid', 'true');
+            setOwnerMobileMessage('Enter a valid Philippine mobile number, such as 09171234567.', true);
             return;
         }
         const recentCheckAt = ownerMobileRecentChecks.get(localCheck.normalized) || 0;
-        if (recentCheckAt && Date.now() - recentCheckAt < OWNER_PHONE_PROOF_MAX_AGE_MS) {
+        if (recentCheckAt && Date.now() - recentCheckAt < 30000) {
             ownerMobileCheckedNumber = localCheck.normalized;
             ownerMobileCheckPassed = true;
             ownerMobileCheckedAt = recentCheckAt;
             ownerMobileValidateBtn.disabled = false;
-            setOwnerMobileMessage('Available for this account and classified as an active Philippine mobile number. Save number to add it to your profile. This does not confirm ownership or guarantee reachability.');
+            ownerMobileInput.dataset.phoneAvailability = 'available';
+            ownerMobileInput.setAttribute('aria-invalid', 'false');
+            setOwnerMobileMessage('Valid Philippine mobile number and available. Save number to add it to your profile.');
             return;
         }
-        setOwnerMobileMessage('Valid Philippine mobile format. Checking mobile type and active status…');
+        setOwnerMobileMessage('Valid Philippine mobile format. Checking availability…');
         ownerMobileCheckTimer = setTimeout(() => checkOwnerMobile(localCheck.normalized, requestId), 700);
     });
 
@@ -3149,7 +3133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const currentCheck = window.validatePhMobile?.(window.inigosyncProfile.contact_num || '');
         if (currentCheck?.valid && check.normalized === currentCheck.normalized && window.inigosyncProfile.contact_num_validated) {
-            setOwnerMobileMessage('This number is already saved and validated; no provider lookup was used.');
+            setOwnerMobileMessage('This number is already saved.');
             return;
         }
         ownerMobileValidateBtn.disabled = true;
@@ -3163,7 +3147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderAdminProfile(window.inigosyncProfile);
             paintOwnerDetails(window.inigosyncProfile);
             recordOwnerActivity('Owner contact number validated', 'settings');
-            setOwnerMobileMessage('Saved; available for this account and validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.');
+            setOwnerMobileMessage('Saved after Philippine format and availability checks.');
             window.InigoToast?.show('Contact number validated and saved.');
         } catch (error) {
             ownerMobileValidateBtn.disabled = false;

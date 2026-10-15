@@ -8,7 +8,7 @@ function mockClient(options) {
     let authUserEmail = 'customer@example.test';
     let currentEmailChangeOtp = '111111';
     let newEmailChangeOtp = '222222';
-    let session = options.oauth || options.dashboard ? { user } : null;
+    let session = options.oauth || options.dashboard || sessionStorage.getItem('fixture-authenticated') === '1' ? { user } : null;
     const record = (kind, data) => {
         const calls = JSON.parse(sessionStorage.getItem('fixture-calls') || '[]');
         calls.push({ kind, data }); sessionStorage.setItem('fixture-calls', JSON.stringify(calls));
@@ -83,11 +83,12 @@ function mockClient(options) {
                 return { data: { session } };
             },
             onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-            signOut: async () => { record('signOut'); session = null; return {}; },
+            signOut: async () => { record('signOut'); session = null; sessionStorage.removeItem('fixture-authenticated'); return {}; },
             signInWithPassword: async () => {
                 record('passwordSessionCreated');
+                if (options.passwordProviderError) return { data: {}, error: { code: 'provider_failure', message: options.passwordProviderError } };
                 if (options.passwordError) return { data: {}, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } };
-                session = { user }; return { data: { user, session } };
+                session = { user }; sessionStorage.setItem('fixture-authenticated', '1'); return { data: { user, session } };
             },
             signInWithOtp: async data => { record('emailOtp', data); return {}; },
             signUp: async data => {
@@ -157,13 +158,14 @@ function mockClient(options) {
                     return { data: null, error: { message, context: new Response(JSON.stringify({ message }), { status: options.validationStatus || 503, headers: { 'content-type': 'application/json' } }) } };
                 }
                 if (options.validationReason) return { data: { valid: false, reason: options.validationReason }, error: null };
-                return { data: { valid: true, normalized: options.validationNormalized || '+639171234567', phone_type: options.phoneType || 'mobile' }, error: null };
+                return { data: { valid: true, normalized: options.validationNormalized || '+639171234567', available: true }, error: null };
             }
         },
         from: table => {
             let write = false;
+            let selectedColumns = '';
             const query = {
-                select() { return query; }, eq() { return query; }, order() { return query; }, limit() { return query; },
+                select(columns = '') { selectedColumns = columns; return query; }, eq() { return query; }, order() { return query; }, limit() { return query; },
                 in() { return query; }, gte() { return query; }, lte() { return query; }, is() { return query; }, not() { return query; }, or() { return query; },
                 update(data) { record(table === 'customer_private_details' ? 'privateWrite' : 'profileWrite', data); write = true; return query; },
                 upsert: async data => { record('sessionWrite', data); return {}; },
@@ -173,13 +175,17 @@ function mockClient(options) {
             };
             function rowData() {
                 if (table === 'customer_private_details') return { data: { user_id: user.id, birthdate: null, gender: options.gender || null, civil_status: null, emergency_contact_name: null, emergency_contact_number: null } };
+                if (options.missingOnboardingColumn && selectedColumns.includes('onboarding_complete')) {
+                    return { data: null, error: { code: '42703', message: 'column profiles.onboarding_complete does not exist' } };
+                }
                 return profile();
             }
             return query;
         }
     };
     function profile() {
-        return { data: { id: user.id, role: options.role || 'customer', status: options.disabled ? 'disabled' : 'active', email: 'customer@example.test', full_name: 'Fixture Customer', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null } };
+        if (options.profileLoadError) return { data: null, error: { message: 'Internal profile query detail' } };
+        return { data: { id: user.id, role: options.role || 'customer', status: options.status || (options.disabled ? 'disabled' : 'active'), email: 'customer@example.test', full_name: 'Fixture Customer', contact_num: options.contactNum || null, contact_num_validated: options.contactNumValidated || false, contact_num_validated_at: options.contactNumValidatedAt || null } };
     }
 }
 (async () => {
@@ -192,7 +198,9 @@ function mockClient(options) {
             await page.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify(options)})` }));
             await page.route('**/includes/landingPage.js', r => r.fulfill({ contentType: 'application/javascript', body: '' }));
             await page.route('https://elfsightcdn.com/**', r => r.abort());
-            await page.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
+            if (!options.guardDashboard) {
+                await page.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
+            }
             if (options.termsFailure) {
                 await page.route('**/Pages/terms.html', r => r.fulfill({ status: 503, contentType: 'text/plain', body: 'Terms unavailable' }));
             }
@@ -209,6 +217,140 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        if (process.env.ONBOARDING_SCHEMA_FALLBACK_ONLY === '1') {
+            for (const role of ['customer', 'staff', 'admin']) {
+                const page = await setup({ role, guardDashboard: true, missingOnboardingColumn: true });
+                await page.locator('.cta-buttons [data-auth-open]').click();
+                if (role !== 'customer') await page.locator('[data-auth-tab="admin"]').click();
+                const panel = role === 'customer' ? 'login' : 'admin';
+                const form = page.locator(`[data-auth-panel="${panel}"]`);
+                await form.locator('input[type="email"]').fill('account@example.test');
+                await form.locator('input[type="password"]').fill('Fixture2026!');
+                await form.locator('button[type="submit"]').click();
+                await page.locator('[data-auth-panel="verify"].is-active').waitFor();
+                for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+                await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+                const destination = role === 'customer' ? '**/user_dashboard.html'
+                    : role === 'admin' ? '**/owner_dashboard.html' : '**/staff_dashboard.html';
+                await page.waitForURL(destination);
+                try { await page.waitForFunction(() => window.inigosyncProfile?.id === 'fixture-user'); }
+                catch (error) { throw new Error(`${role} dashboard did not become ready at ${page.url()}, calls=${JSON.stringify(await calls(page))}: ${error.message}`); }
+                assert.equal(await page.evaluate(() => window.inigosyncProfile.role), role);
+                assert.equal((await calls(page)).filter(call => call.kind === 'signOut').length, 0);
+                await page.close();
+            }
+            const pendingStaff = await setup({ role: 'staff', status: 'pending', guardDashboard: true, missingOnboardingColumn: true });
+            await pendingStaff.locator('.cta-buttons [data-auth-open]').click();
+            await pendingStaff.locator('[data-auth-tab="admin"]').click();
+            const pendingForm = pendingStaff.locator('[data-auth-panel="admin"]');
+            await pendingForm.locator('input[type="email"]').fill('account@example.test');
+            await pendingForm.locator('input[type="password"]').fill('Fixture2026!');
+            await pendingForm.locator('button[type="submit"]').click();
+            await pendingStaff.locator('[data-auth-panel="verify"].is-active').waitFor();
+            for (let i = 0; i < 6; i++) await pendingStaff.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await pendingStaff.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await pendingStaff.waitForURL('**/staff_onboarding.html');
+            await pendingStaff.waitForFunction(() => window.inigosyncProfile?.role === 'staff');
+            assert.equal(await pendingStaff.locator('body').getAttribute('data-staff-onboarding-page') !== null, true);
+            assert.equal((await calls(pendingStaff)).filter(call => call.kind === 'signOut').length, 0);
+            await pendingStaff.close();
+            console.log('PASS missing onboarding column preserves customer/admin/active-staff dashboards and keeps pending staff gated at onboarding');
+            return;
+        }
+        if (process.env.AUTH_LOGIN_ERRORS_ONLY === '1') {
+            const disabledOauth = await setup({ oauth: true, disabled: true });
+            await disabledOauth.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+            assert.match(await disabledOauth.locator('[data-auth-notice]').innerText(), /disabled.*front desk/i);
+            await disabledOauth.close();
+
+            for (const [options, expected] of [
+                [{ disabled: true }, /disabled.*front desk/i],
+                [{ profileLoadError: true }, /could not load your account/i],
+                [{ passwordProviderError: 'Internal provider token: do-not-display' }, /could not complete that request/i],
+            ]) {
+                const page = await setup(options);
+                await page.locator('.cta-buttons [data-auth-open]').click();
+                const form = page.locator('[data-auth-panel="login"]');
+                await form.locator('[name="email"]').fill('account@example.test');
+                await form.locator('[name="password"]').fill('Fixture2026!');
+                await form.locator('button[type="submit"]').click();
+                const error = page.locator('[data-auth-notice]');
+                await error.waitFor({ state: 'visible' });
+                const text = await error.innerText();
+                assert.match(text, expected);
+                assert.doesNotMatch(text, /Internal profile query detail|do-not-display|provider token/i);
+                await page.close();
+            }
+
+            const oauthProviderFailure = await setup({ oauthReturn: true, sessionReadError: 'Internal session lookup detail' });
+            await oauthProviderFailure.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+            const oauthErrorText = await oauthProviderFailure.locator('[data-auth-notice]').innerText();
+            assert.match(oauthErrorText, /could not complete that request/i);
+            assert.doesNotMatch(oauthErrorText, /Internal session lookup detail/);
+            await oauthProviderFailure.close();
+
+            const nativeDialogNotice = await setup();
+            await nativeDialogNotice.evaluate(() => {
+                const dialog = document.createElement('dialog');
+                dialog.dataset.authNoticeFixture = '';
+                document.body.appendChild(dialog);
+                dialog.showModal();
+                window.InigoAuthNotice.showError('Native dialog alert');
+            });
+            const topLayerNotice = nativeDialogNotice.locator('[data-auth-notice]');
+            await topLayerNotice.waitFor({ state: 'visible' });
+            assert.equal(await topLayerNotice.evaluate(el => el.parentElement?.matches('[data-auth-notice-fixture]')), true);
+            assert.equal(await topLayerNotice.evaluate(el => el.classList.contains('is-in-modal')), true);
+            await nativeDialogNotice.close();
+
+            const persistedLockout = await setup();
+            await persistedLockout.evaluate(email => {
+                const normalized = email.trim().toLowerCase();
+                let hash = 0x811c9dc5;
+                for (let i = 0; i < normalized.length; i += 1) {
+                    hash ^= normalized.charCodeAt(i);
+                    hash = Math.imul(hash, 0x01000193);
+                }
+                localStorage.setItem(`inigosync-login-attempts:${(hash >>> 0).toString(36)}`, JSON.stringify({ failures: 5, lockedUntil: Date.now() + 120000 }));
+            }, 'account@example.test');
+            await persistedLockout.locator('.cta-buttons [data-auth-open]').click();
+            const lockedForm = persistedLockout.locator('[data-auth-panel="login"]');
+            await lockedForm.locator('[name="email"]').fill('account@example.test');
+            const lockoutError = persistedLockout.locator('[data-auth-notice]');
+            await lockoutError.waitFor({ state: 'visible' });
+            const fixedLockoutText = 'Too many incorrect login attempts. Login is paused for 1 minute.';
+            assert.equal(await lockoutError.innerText(), fixedLockoutText);
+            const lockoutTimer = lockedForm.locator('[data-login-lockout]');
+            assert.equal(await lockoutTimer.getAttribute('role'), 'status');
+            assert.match(await lockoutTimer.innerText(), /Try again in/);
+            assert.equal(await lockedForm.locator('button[type="submit"]').isDisabled(), true);
+            await persistedLockout.waitForTimeout(1100);
+            assert.equal(await lockoutError.innerText(), fixedLockoutText, 'the inline message stays fixed during the polite timer countdown');
+            await persistedLockout.close();
+
+            for (const role of ['staff', 'admin', 'customer']) {
+                const page = await setup({ role });
+                await page.locator('.cta-buttons [data-auth-open]').click();
+                const panel = role === 'customer' ? 'admin' : 'login';
+                if (panel === 'admin') await page.locator('[data-auth-tab="admin"]').click();
+                const form = page.locator(`[data-auth-panel="${panel}"]`);
+                await form.locator('input[type="email"]').fill('account@example.test');
+                await form.locator('input[type="password"]').fill('Fixture2026!');
+                await form.locator('button[type="submit"]').click();
+                const roleError = page.locator('[data-auth-notice]');
+                await roleError.waitFor({ state: 'visible' });
+                if (role === 'customer') {
+                    assert.match(await roleError.innerText(), /customer account.*customer Log In tab/i);
+                } else {
+                    assert.match(await roleError.innerText(), /cannot be used for customer.*Log in as Admin/i);
+                }
+                assert.equal(await roleError.getAttribute('role'), 'alert');
+                assert((await calls(page)).some(call => call.kind === 'signOut'));
+                await page.close();
+            }
+            console.log('PASS disabled/profile errors remain actionable, unknown Auth errors stay generic in OAuth/password flows, and persisted lockout uses a floating alert');
+            return;
+        }
         if (process.env.PHONE_AVAILABILITY_ONLY === '1') {
             for (const [phoneMode, number, text, state, token] of [
                 ['in_use', '09612654203', 'Existing', 'in_use', '--auth-verified-color'],
@@ -533,10 +675,78 @@ function mockClient(options) {
             await failedPasswordForm.locator('button[type="submit"]').click();
             await failedPassword.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'passwordSessionCreated'));
             await failedPassword.waitForTimeout(50);
+            const customerLoginError = failedPassword.locator('[data-auth-notice]');
+            await customerLoginError.waitFor({ state: 'visible' });
+            assert.match(await customerLoginError.innerText(), /incorrect email or password/i);
+            assert.equal(await customerLoginError.getAttribute('role'), 'alert');
+            const customerErrorLayout = await failedPassword.evaluate(() => {
+                const notice = document.querySelector('[data-auth-notice]');
+                const card = document.querySelector('.auth-modal');
+                return { outsideCard: !card.contains(notice), position: getComputedStyle(notice).position,
+                    noticeBottom: notice.getBoundingClientRect().bottom, cardTop: card.getBoundingClientRect().top };
+            });
+            assert.equal(customerErrorLayout.outsideCard, true, 'customer login errors float outside the auth card');
+            assert.equal(customerErrorLayout.position, 'fixed', 'customer login errors do not affect form layout');
+            assert(customerErrorLayout.noticeBottom < customerErrorLayout.cardTop, 'customer login error sits above the modal card');
+            await failedPasswordForm.locator('[name="password"]').fill('try-again');
+            await customerLoginError.waitFor({ state: 'hidden' });
             assert(!(await calls(failedPassword)).some(c => c.kind === 'rememberSessionChoice'));
             assert.equal(await failedPassword.evaluate(() => localStorage.getItem('sb-xrlwtnwamboucihsamrr-auth-token')), 'existing-persistent-session');
             assert.equal(await failedPassword.evaluate(() => sessionStorage.getItem('inigosync-session-only')), null);
             await failedPassword.close();
+
+            for (const role of ['staff', 'admin']) {
+                for (const viewport of [{ width: 762, height: 835 }, { width: 390, height: 844 }]) {
+                    const failedAdminPassword = await setup({ role, passwordError: true });
+                    await failedAdminPassword.setViewportSize(viewport);
+                    await failedAdminPassword.addStyleTag({ content: '.auth-modal, .auth-modal * { animation:none!important; transition:none!important; }' });
+                    await failedAdminPassword.locator('.cta-buttons [data-auth-open]').click();
+                    await failedAdminPassword.locator('[data-auth-tab="admin"]').click();
+                    const adminForm = failedAdminPassword.locator('[data-auth-panel="admin"]');
+                    await adminForm.locator('[name="admin-email"]').fill('account@example.test');
+                    await adminForm.locator('[name="admin-password"]').fill('wrong-password');
+                    const headerOffsetBefore = await failedAdminPassword.locator('.auth-modal h2').evaluate(el => el.getBoundingClientRect().top - el.closest('.auth-modal').getBoundingClientRect().top);
+                    const naturalCardTopBefore = await failedAdminPassword.locator('.auth-modal').evaluate(el => el.getBoundingClientRect().top);
+                    await adminForm.locator('button[type="submit"]').click();
+                    const adminError = failedAdminPassword.locator('[data-auth-notice]');
+                    await adminError.waitFor({ state: 'visible' });
+                    assert.match(await adminError.innerText(), /incorrect email or password/i);
+                    assert.equal(await adminError.getAttribute('role'), 'alert');
+                    const layout = await failedAdminPassword.evaluate(() => {
+                        const notice = document.querySelector('[data-auth-notice]');
+                        const card = document.querySelector('.auth-modal');
+                        const heading = card.querySelector('h2');
+                        return { outsideCard: !card.contains(notice), position: getComputedStyle(notice).position,
+                            alertBottom: notice.getBoundingClientRect().bottom, cardTop: card.getBoundingClientRect().top,
+                            headerOffset: heading.getBoundingClientRect().top - card.getBoundingClientRect().top,
+                            reserved: document.querySelector('.auth-overlay').classList.contains('has-floating-auth-notice') };
+                    });
+                    assert.equal(layout.outsideCard, true, `${viewport.width}px ${viewport.height}px: admin/staff alert is outside the card`);
+                    assert.equal(layout.position, 'fixed', 'admin/staff alert remains viewport-positioned');
+                    assert(layout.alertBottom + 8 <= layout.cardTop,
+                        `${viewport.width}px ${viewport.height}px: alert is fully above the card (alert bottom ${layout.alertBottom}, card top ${layout.cardTop})`);
+                    assert.equal(layout.headerOffset, headerOffsetBefore, 'floating error placement does not reflow the form inside the card');
+                    const shouldReserveSpace = naturalCardTopBefore < layout.alertBottom + 12;
+                    assert.equal(layout.reserved, shouldReserveSpace, 'clearance matches the natural card position');
+                    for (let i = 0; i < 2; i += 1) {
+                        await failedAdminPassword.setViewportSize({ width: viewport.width + 1, height: viewport.height });
+                        await failedAdminPassword.setViewportSize(viewport);
+                        const resizedLayout = await failedAdminPassword.evaluate(() => {
+                            const notice = document.querySelector('[data-auth-notice]');
+                            const card = document.querySelector('.auth-modal');
+                            return { alertBottom: notice.getBoundingClientRect().bottom, cardTop: card.getBoundingClientRect().top,
+                                reserved: document.querySelector('.auth-overlay').classList.contains('has-floating-auth-notice') };
+                        });
+                        assert(resizedLayout.alertBottom + 8 <= resizedLayout.cardTop,
+                            `${viewport.width}x${viewport.height}: alert/card separation survives resize ${i + 1}`);
+                        assert.equal(resizedLayout.reserved, shouldReserveSpace, 'resize does not oscillate the clearance class');
+                    }
+                    await failedAdminPassword.locator('[data-auth-tab="login"]').click();
+                    await adminError.waitFor({ state: 'hidden' });
+                    await failedAdminPassword.waitForFunction(() => !document.querySelector('.auth-overlay').classList.contains('has-floating-auth-notice'));
+                    await failedAdminPassword.close();
+                }
+            }
 
             const failedSignup = await setup({ registrationRace: 'error' });
             await signup(failedSignup, '', true);
@@ -860,8 +1070,8 @@ function mockClient(options) {
             return form;
         }
         for (const [phoneMode, number, text, state] of [
-            ['in_use', '09171234567', 'Existing', 'in_use'],
-            ['available', '09981234567', 'Not found', 'available'],
+            ['in_use', '09171234567', 'Already in use', 'in_use'],
+            ['available', '09981234567', 'Valid and available', 'available'],
         ]) {
             const page = await setup({ phoneMode });
             const form = await secondStep(page);
@@ -881,7 +1091,7 @@ function mockClient(options) {
                 const resolved = getComputedStyle(probe).color;
                 probe.remove();
                 return resolved;
-            }, state === 'in_use' ? '--auth-verified-color' : '--color-alert-text'));
+            }, state === 'available' ? '--auth-verified-color' : '--color-alert-text'));
             const inputBorder = await form.locator('[name="mobile"]').evaluate(el => getComputedStyle(el).borderTopColor);
             assert.equal(inputBorder, await form.locator('[name="mobile"]').evaluate((el, key) => {
                 const probe = document.createElement('span');
@@ -890,7 +1100,7 @@ function mockClient(options) {
                 const resolved = getComputedStyle(probe).color;
                 probe.remove();
                 return resolved;
-            }, state === 'in_use' ? '--auth-verified-color' : '--color-alert-text'));
+            }, state === 'available' ? '--auth-verified-color' : '--color-alert-text'));
             assert.equal(await form.locator('[name="mobile"]').getAttribute('required'), null, 'phone remains optional');
             await page.close();
         }
@@ -951,7 +1161,64 @@ function mockClient(options) {
         const disabled = await setup({ oauth: true, disabled: true });
         await disabled.locator('[data-auth-notice]').waitFor({ state: 'visible' });
         assert.match(await disabled.locator('[data-auth-notice]').innerText(), /disabled/);
+        assert.match(await disabled.locator('[data-auth-notice]').innerText(), /Contact the front desk/);
         await disabled.close();
+        const disabledPassword = await setup({ disabled: true });
+        await disabledPassword.locator('.cta-buttons [data-auth-open]').click();
+        const disabledPasswordForm = disabledPassword.locator('[data-auth-panel="login"]');
+        await disabledPasswordForm.locator('[name="email"]').fill('account@example.test');
+        await disabledPasswordForm.locator('[name="password"]').fill('Fixture2026!');
+        await disabledPasswordForm.locator('button[type="submit"]').click();
+        const disabledPasswordError = disabledPassword.locator('[data-auth-notice]');
+        await disabledPasswordError.waitFor({ state: 'visible' });
+        assert.match(await disabledPasswordError.innerText(), /disabled.*front desk/i);
+        await disabledPassword.close();
+        const profileLoadFailure = await setup({ profileLoadError: true });
+        await profileLoadFailure.locator('.cta-buttons [data-auth-open]').click();
+        const profileFailureForm = profileLoadFailure.locator('[data-auth-panel="login"]');
+        await profileFailureForm.locator('[name="email"]').fill('account@example.test');
+        await profileFailureForm.locator('[name="password"]').fill('Fixture2026!');
+        await profileFailureForm.locator('button[type="submit"]').click();
+        const profileFailureError = profileLoadFailure.locator('[data-auth-notice]');
+        await profileFailureError.waitFor({ state: 'visible' });
+        assert.match(await profileFailureError.innerText(), /could not load your account/i);
+        assert.doesNotMatch(await profileFailureError.innerText(), /Internal profile query detail/);
+        await profileLoadFailure.close();
+        const providerFailure = await setup({ passwordProviderError: 'Internal provider token: do-not-display' });
+        await providerFailure.locator('.cta-buttons [data-auth-open]').click();
+        const providerFailureForm = providerFailure.locator('[data-auth-panel="login"]');
+        await providerFailureForm.locator('[name="email"]').fill('account@example.test');
+        await providerFailureForm.locator('[name="password"]').fill('Fixture2026!');
+        await providerFailureForm.locator('button[type="submit"]').click();
+        const providerFailureError = providerFailure.locator('[data-auth-notice]');
+        await providerFailureError.waitFor({ state: 'visible' });
+        assert.match(await providerFailureError.innerText(), /could not complete that request/i);
+        assert.doesNotMatch(await providerFailureError.innerText(), /do-not-display|provider token/i);
+        await providerFailure.close();
+        const persistedLockout = await setup();
+        await persistedLockout.evaluate(email => {
+            const normalized = email.trim().toLowerCase();
+            let hash = 0x811c9dc5;
+            for (let i = 0; i < normalized.length; i += 1) {
+                hash ^= normalized.charCodeAt(i);
+                hash = Math.imul(hash, 0x01000193);
+            }
+            localStorage.setItem(`inigosync-login-attempts:${(hash >>> 0).toString(36)}`, JSON.stringify({ failures: 5, lockedUntil: Date.now() + 120000 }));
+        }, 'account@example.test');
+        await persistedLockout.locator('.cta-buttons [data-auth-open]').click();
+        const lockedForm = persistedLockout.locator('[data-auth-panel="login"]');
+        await lockedForm.locator('[name="email"]').fill('account@example.test');
+        const lockoutError = persistedLockout.locator('[data-auth-notice]');
+        await lockoutError.waitFor({ state: 'visible' });
+        assert.equal(await lockoutError.innerText(), 'Too many incorrect login attempts. Login is paused for 1 minute.');
+        const firstLockoutText = await lockoutError.innerText();
+        const lockoutTimer = lockedForm.locator('[data-login-lockout]');
+        assert.equal(await lockoutTimer.getAttribute('role'), 'status');
+        assert.match(await lockoutTimer.innerText(), /Try again in/);
+        assert.equal(await lockedForm.locator('button[type="submit"]').isDisabled(), true);
+        await persistedLockout.waitForTimeout(1100);
+        assert.equal(await lockoutError.innerText(), firstLockoutText, 'the fixed inline error is not reannounced as the timer counts down');
+        await persistedLockout.close();
         const customer = await setup(
             { oauth: true },
             'http://127.0.0.1:4178/index.html#access_token=fixture-access&refresh_token=fixture-refresh'
@@ -968,7 +1235,8 @@ function mockClient(options) {
         const rejectedOauthSession = await setup({ oauthReturn: true, sessionReadError: 'Session lookup failed.' });
         const loading = rejectedOauthSession.locator('.inigo-loading-overlay');
         await rejectedOauthSession.locator('[data-auth-notice]').waitFor({ state: 'visible' });
-        assert.match(await rejectedOauthSession.locator('[data-auth-notice]').innerText(), /Session lookup failed/);
+        assert.match(await rejectedOauthSession.locator('[data-auth-notice]').innerText(), /could not complete that request/i);
+        assert.doesNotMatch(await rejectedOauthSession.locator('[data-auth-notice]').innerText(), /Session lookup failed/);
         assert.equal(await rejectedOauthSession.locator('[data-auth-overlay]').isVisible(), true);
         await rejectedOauthSession.waitForFunction(() => {
             const el = document.querySelector('.inigo-loading-overlay');
@@ -986,7 +1254,14 @@ function mockClient(options) {
             await form.locator('input[type="email"]').fill('account@example.test');
             await form.locator('input[type="password"]').fill('Fixture2026!');
             await form.locator('button[type="submit"]').click();
-            await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
+            const roleError = page.locator('[data-auth-notice]');
+            await roleError.waitFor({ state: 'visible' });
+            if (role === 'customer') {
+                assert.match(await roleError.innerText(), /customer account.*customer Log In tab/i);
+            } else {
+                assert.match(await roleError.innerText(), /cannot be used for customer.*Log in as Admin/i);
+            }
+            assert.equal(await roleError.getAttribute('role'), 'alert');
             assert(!(await calls(page)).some(c => ['emailOtp', 'sessionWrite'].includes(c.kind)));
             assert((await calls(page)).some(c => c.kind === 'signOut'));
             await page.close();
@@ -1047,6 +1322,27 @@ function mockClient(options) {
             await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
             await page.waitForURL(role === 'staff' ? '**/staff_dashboard.html' : '**/owner_dashboard.html');
             assert(await page.evaluate(roleName => InigoAuthStorage.isDeviceTrusted('fixture-user', roleName), role), `${role} password login records role-specific trust`);
+            await page.close();
+        }
+
+        // Reproduce a staged deploy where the app includes the onboarding
+        // guard but the live profiles table has not received that column yet.
+        // Existing customer/admin and legacy active-staff sessions must reach
+        // their dashboards; pending staff must remain inside the onboarding gate.
+        for (const role of ['customer', 'staff', 'admin']) {
+            const page = await setup({ role, guardDashboard: true, missingOnboardingColumn: true });
+            await passwordLogin(page, role === 'customer' ? 'login' : 'admin');
+            await page.locator('[data-auth-panel="verify"].is-active').waitFor();
+            for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            const destination = role === 'customer' ? '**/user_dashboard.html'
+                : role === 'admin' ? '**/owner_dashboard.html' : '**/staff_dashboard.html';
+            await page.waitForURL(destination);
+            await page.waitForFunction(() => window.inigosyncProfile?.id === 'fixture-user');
+            assert.equal(await page.evaluate(() => window.inigosyncProfile.role), role,
+                `${role} profile fallback lets the valid session reach its dashboard`);
+            assert((await calls(page)).filter(call => call.kind === 'signOut').length === 0,
+                `${role} is not signed out because the optional onboarding column is absent`);
             await page.close();
         }
 
@@ -1114,7 +1410,7 @@ function mockClient(options) {
             await page.locator('[data-auth-panel="phone"].is-active').waitFor();
             assert.equal(await page.locator('[data-signup-phone-validate]').innerText(), 'Validate and save');
             await page.locator('[data-signup-phone-validate]').click();
-            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('Validated as an active'));
+            await page.waitForFunction(() => document.querySelector('[data-signup-phone-status]').textContent.includes('available for this account'));
             const currentCalls = await calls(page);
             const validationCall = currentCalls.find(c => c.kind === 'function');
             assert.equal(validationCall.data.name, 'validate-contact-phone');
@@ -1122,13 +1418,13 @@ function mockClient(options) {
             const profileWrite = currentCalls.find(c => c.kind === 'profileWrite');
             assert.deepEqual(profileWrite.data, { contact_num: '+639171234567' });
             assert.equal(Object.hasOwn(profileWrite.data, 'phone_verified'), false);
-            assert.match(await page.locator('[data-signup-phone-status]').innerText(), /does not confirm ownership/);
+            assert.match(await page.locator('[data-signup-phone-status]').innerText(), /available for this account/);
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html');
             await page.close();
         }
 
-        for (const validationReason of ['invalid', 'not_mobile', 'inactive', 'status_unknown', 'in_use']) {
+        for (const validationReason of ['invalid', 'in_use']) {
             const page = await setup({ validationReason }); await signup(page, '09171234567');
             await page.locator('[data-signup-phone-validate]').click();
             await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
@@ -1137,8 +1433,8 @@ function mockClient(options) {
             await page.locator('[data-signup-phone-skip]').click();
             await page.waitForURL('**/user_dashboard.html'); await page.close();
         }
-        for (const validationError of ['budget exceeded', 'provider unavailable']) {
-            const page = await setup({ validationError, validationStatus: validationError === 'budget exceeded' ? 429 : 503 });
+        for (const validationError of ['rate limit', 'availability unavailable']) {
+            const page = await setup({ validationError, validationStatus: validationError === 'rate limit' ? 429 : 503 });
             await signup(page, '09171234567');
             await page.locator('[data-signup-phone-validate]').click();
             await page.locator('[data-auth-notice]').waitFor({ state: 'visible' });
@@ -1222,7 +1518,7 @@ function mockClient(options) {
         const mobileInput = dashboard.locator('[data-dash-settings-mobile]');
         await mobileInput.fill('09171234567');
         await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('Validated as an active'));
-        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'one valid changed number triggers one automatic provider validation');
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'one valid changed number triggers one automatic database check');
         await dashboard.locator('[data-dash-mobile-validate]').click();
         await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
         assert.equal((await calls(dashboard)).filter(c => c.kind === 'profileWrite' && Object.hasOwn(c.data, 'contact_num')).length, 0, 'validated phone waits for save confirmation');
@@ -1231,14 +1527,14 @@ function mockClient(options) {
         const dashboardCalls = await calls(dashboard);
         assert.deepEqual(dashboardCalls.find(c => c.kind === 'function').data, { name: 'validate-contact-phone', body: { phone: '09171234567', purpose: 'contact' } });
         assert.deepEqual(dashboardCalls.find(c => c.kind === 'profileWrite' && Object.hasOwn(c.data, 'contact_num')).data, { contact_num: '09171234567' });
-        assert.equal(dashboardCalls.filter(c => c.kind === 'function').length, 1, 'one click must cause exactly one provider lookup');
-        assert.match(await dashboard.locator('[data-dash-mobile-status]').innerText(), /does not confirm ownership/);
+        assert.equal(dashboardCalls.filter(c => c.kind === 'function').length, 1, 'saving consumes the proof from the completed database check');
+        assert.match(await dashboard.locator('[data-dash-mobile-status]').innerText(), /Saved contact number/);
         await mobileInput.fill('09171234567');
-        await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('unchanged'));
-        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'unchanged number must not use provider quota');
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('available for this account'));
+        assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 1, 'recent same-number check is reused');
 
         await dashboard.locator('[data-dash-settings-emergency-number]').fill('09171234567');
-        await dashboard.waitForFunction(() => document.querySelector('[data-dash-emergency-status]').textContent.includes('Validated as an active'));
+        await dashboard.waitForFunction(() => document.querySelector('[data-dash-emergency-status]').textContent.includes('Valid Philippine mobile number'));
         assert.equal((await calls(dashboard)).filter(c => c.kind === 'function').length, 2, 'emergency number is independently validated even when it matches the own number');
         await dashboard.locator('[data-dash-emergency-save]').click();
         await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
@@ -1250,11 +1546,11 @@ function mockClient(options) {
         assert.deepEqual(emergencyCalls.find(c => c.kind === 'privateWrite' && Object.hasOwn(c.data, 'emergency_contact_number')).data, { emergency_contact_number: '09171234567' });
         await dashboard.close();
 
-        const rejectedDashboard = await setupDashboard({ validationReason: 'inactive' });
+        const rejectedDashboard = await setupDashboard({ validationReason: 'in_use' });
         await rejectedDashboard.locator('[data-dash-nav="settings"]').first().click();
         await rejectedDashboard.locator('[data-dash-personal-edit]').click();
         await rejectedDashboard.locator('[data-dash-settings-mobile]').fill('09171234567');
-        await rejectedDashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('not active'));
+        await rejectedDashboard.waitForFunction(() => document.querySelector('[data-dash-mobile-status]').textContent.includes('already linked'));
         assert(!(await calls(rejectedDashboard)).some(c => c.kind === 'profileWrite'));
         await rejectedDashboard.close();
 
@@ -1265,7 +1561,7 @@ function mockClient(options) {
         assert.deepEqual(signOutEvents.map(call => call.data), [{ p_kind: 'sign_out', p_reason: 'app_logout' }], 'explicit app sign-out uses the server-derived account session RPC without a client actor ID');
         await signOutDashboard.close();
 
-        console.log('PASS signup and customer contact number validation: no unproved signup metadata, active provider result required, failures do not save, unchanged values avoid provider quota, and one UI click makes one authenticated lookup');
+        console.log('PASS signup and customer contact number validation: no unproved signup metadata, format and database availability required, failures do not save, and recent results avoid duplicate checks');
         console.log('PASS early email checks: taken/available, edit recovery, stale responses, network failure, rate limit and final-signup races');
         console.log('PASS OAuth role/disabled rejections, customer OAuth, email-confirmed and immediate signup, optional/invalid number, validation failure, and no SMS or Auth phone OTP');
     } finally { await browser.close(); }

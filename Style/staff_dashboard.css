@@ -9,6 +9,7 @@
    prices) since Space Mono was removed.
    ========================================================================== */
 :root {
+    scrollbar-gutter: stable;
     --color-bg: #14110d;
     --color-bg-elevated: #1c1712;
     --color-bg-card: #201a14;
@@ -808,6 +809,17 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    adds what a <textarea> needs that an <input> doesn't. */
 .staff-textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
 
+.staff-input[data-validation-state="valid"] { border-color: var(--color-court-green); }
+.staff-input[data-validation-state="invalid"] { border-color: var(--color-alert); }
+.staff-phone-status[data-state="valid"] { color: var(--color-court-green); }
+.staff-phone-status[data-state="invalid"] { color: var(--color-alert); }
+.staff-phone-status[data-state="available"] { color: var(--color-court-green); }
+.staff-phone-status[data-state="warning"] { color: #9a6700; }
+.staff-phone-status[data-state="neutral"] { color: var(--color-ink-faint); }
+[data-staff-settings-mobile][data-phone-availability="available"],[data-staff-settings-emergency-number][data-validation-state="valid"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
+[data-staff-settings-mobile][data-phone-availability="invalid"],[data-staff-settings-emergency-number][data-validation-state="invalid"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }
+[data-staff-settings-emergency-number][data-validation-state="warning"] { border-color: #b7791f; box-shadow: 0 0 0 1px #b7791f; }
+
 /* Account Settings' password fields (Style/Dashboard.css's
    .dash-input-wrap/.dash-toggle-visibility pattern). */
 .staff-input-wrap { position: relative; display: flex; align-items: center; }
@@ -912,6 +924,15 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-btn-ghost:hover { border-color: var(--color-primary); color: var(--color-ink); }
 
 .staff-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* These account controls use .staff-btn-primary/.staff-btn-ghost display
+   rules above, which override the browser's default [hidden] styling. */
+.staff-account-photo [data-staff-avatar-remove][hidden],
+.staff-form-actions [data-staff-settings-edit="profile"][hidden],
+.staff-form-actions [data-staff-settings-cancel="profile"][hidden],
+.staff-form-actions [data-staff-settings-save="profile"][hidden] {
+    display: none;
+}
 
 .staff-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 6px; flex-wrap: wrap; min-width: 0; }
 
@@ -1079,6 +1100,14 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     margin-right: auto;
 }
 
+/* Keep password wizard actions hidden when their step is inactive. The
+   primary button's author-level display rule overrides the browser's default
+   display:none for [hidden], so restate it at matching scope. */
+.staff-wizard-nav [data-staff-settings-save="password"][hidden],
+.staff-wizard-nav [data-staff-pw-next][hidden] {
+    display: none;
+}
+
 /* Walk-in wizard's Step 5 summary — same rows/divider/total classes the
    .staff-summary sidebar card uses, just without that class's sticky
    positioning (there's nothing to scroll past inside a single step). */
@@ -1236,7 +1265,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    replacing the old fixed 2-hour/all-courts-as-columns CSS grid.
    ========================================================================== */
 .staff-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--color-ink-faint); }
-.staff-panel[data-staff-panel="schedule"] .staff-legend { margin-left: auto; gap: 12px; font-size: var(--fs-xs); }
+.staff-panel[data-staff-panel="schedule"] .staff-legend { justify-content: flex-end; gap: 14px; font-size: var(--fs-xs); }
 
 .staff-legend span { display: inline-flex; align-items: center; gap: 6px; }
 
@@ -1421,6 +1450,10 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     display: none;
 }
 
+.staff-confirm-overlay {
+    z-index: 90;
+}
+
 .staff-modal {
     position: relative;
     /* Smaller cap than the owner dashboard's 720px form modal — this one
@@ -1471,6 +1504,18 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-modal-close:hover {
     color: var(--color-ink);
     border-color: var(--color-primary);
+}
+
+.staff-confirm-modal h3 {
+    margin-bottom: 10px;
+    padding-right: 0;
+}
+
+.staff-confirm-text {
+    color: var(--color-ink-dim);
+    font-size: var(--fs-md);
+    line-height: 1.55;
+    margin-bottom: 24px;
 }
 
 /* ==========================================================================
@@ -1663,13 +1708,15 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-card-description { color: var(--color-ink-faint); font-size: var(--fs-sm); margin-top: 4px; }
 .staff-table-message { color: var(--color-ink-faint) !important; text-align: center; padding: 24px !important; }
 .staff-card-head > div:first-child { min-width: 0; }
-.staff-schedule-card-head { flex-direction: column; align-items: stretch; gap: 14px; }
-.staff-schedule-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%; }
-.staff-schedule-tools { display: flex; align-items: flex-end; gap: 12px; flex: 1; min-width: 260px; }
-.staff-schedule-card-head .staff-schedule-tools { width: 100%; }
-.staff-schedule-search { max-width: 360px; }
-.staff-schedule-sport-wrap { min-width: 150px; margin-bottom: 0; }
-.staff-schedule-sort-wrap { min-width: 150px; margin-bottom: 0; }
+.staff-schedule-card-head { flex-direction: column; align-items: stretch; gap: 16px; }
+.staff-schedule-card-top { display: flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; }
+.staff-schedule-date-wrap { flex: 0 0 220px; min-width: 190px; margin: 0; }
+.staff-schedule-date-wrap .staff-input { min-height: 44px; }
+.staff-schedule-tools { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(160px, 1fr)); align-items: end; gap: 12px; width: 100%; min-width: 0; }
+.staff-schedule-search { min-width: 0; max-width: none; }
+.staff-schedule-search .staff-search { min-height: 44px; }
+.staff-schedule-sport-wrap, .staff-schedule-sort-wrap { min-width: 0; margin: 0; }
+.staff-schedule-sport-wrap .staff-select, .staff-schedule-sort-wrap .staff-select { min-height: 44px; }
 .staff-sort-control { min-width: 150px; margin-bottom: 0; }
 .staff-legend .dot.held { background: var(--color-primary); }
 .staff-legend .dot.maintenance { background: #f5c542; }
@@ -1722,13 +1769,27 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-mobile-status:empty { visibility: hidden; }
 .staff-walkin-mobile-status[data-state="available"] { color: var(--color-court-green); }
 .staff-walkin-mobile-status[data-state="in_use"], .staff-walkin-mobile-status[data-state="invalid"], .staff-walkin-mobile-status[data-state="error"] { color: var(--color-alert); }
-.staff-walkin-sport-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.staff-walkin-sport-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .staff-walkin-sport-card { min-width: 0; overflow: hidden; padding: 0; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg-elevated); color: var(--color-ink); text-align: left; cursor: pointer; }
 .staff-walkin-sport-card:hover, .staff-walkin-sport-card:focus-visible, .staff-walkin-sport-card.is-selected { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
-.staff-walkin-sport-card-media { display: grid; place-items: center; height: 104px; overflow: hidden; background: var(--color-bg-card); }
+.staff-walkin-sport-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.staff-walkin-sport-card-media { display: grid; place-items: center; height: 132px; overflow: hidden; background: var(--color-bg-card); }
 .staff-walkin-sport-card-media img { width: 100%; height: 100%; object-fit: cover; }
 .staff-walkin-sport-card-media > span { font: 700 28px var(--font-numeric); color: var(--color-primary); }
-.staff-walkin-sport-card strong { display: block; padding: 10px 12px; font-size: var(--fs-sm); }
+.staff-walkin-sport-card strong { display: flex; align-items: center; height: 42px; overflow: hidden; padding: 8px 12px; font-size: var(--fs-sm); white-space: nowrap; text-overflow: ellipsis; }
+
+@media (max-width: 1199px) {
+    .staff-walkin-sport-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 899px) {
+    .staff-walkin-sport-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+    .staff-walkin-sport-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 380px) {
+    .staff-walkin-sport-cards { grid-template-columns: minmax(0, 1fr); }
+}
 
 .staff-hour-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
 .staff-hour-slot { min-height: 58px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 4px; padding: 9px 11px; border: 1px solid var(--color-line); border-radius: 9px; background: var(--color-bg-elevated); color: var(--color-ink); text-align: left; cursor: pointer; }
@@ -1870,8 +1931,15 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 @media (max-width: 768px) {
     .staff-topbar-title p { max-width: 38ch; }
-    .staff-schedule-tools { flex-basis: 100%; }
-    .staff-schedule-search { min-width: min(220px, 100%); }
+    .staff-schedule-card-top { align-items: flex-start; }
+    .staff-schedule-tools { grid-template-columns: minmax(0, 1fr) minmax(150px, 1fr); }
+    .staff-schedule-search { grid-column: 1 / -1; }
+}
+
+@media (max-width: 640px) {
+    .staff-schedule-card-top { flex-direction: column; align-items: stretch; gap: 14px; }
+    .staff-schedule-date-wrap { flex-basis: auto; min-width: 0; width: 100%; }
+    .staff-panel[data-staff-panel="schedule"] .staff-legend { justify-content: flex-start; }
 }
 
 @media (max-width: 480px) {
@@ -1883,13 +1951,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     .staff-notif { position: static; }
     .staff-notif-menu { right: 0; }
     .staff-card-head { align-items: stretch; }
-    .staff-schedule-card-top { flex-wrap: wrap; }
     .staff-card-head > .staff-toolbar, .staff-toolbar { width: 100%; }
     .staff-search-wrap { min-width: 100%; max-width: none; }
     .staff-overview-filters { align-items: stretch; }
     .staff-overview-filters .staff-search-wrap, .staff-overview-filter { min-width: 100%; max-width: none; }
-    .staff-schedule-tools { flex-direction: column; align-items: stretch; min-width: 100%; }
-    .staff-schedule-sport-wrap, .staff-schedule-sort-wrap, .staff-sort-control { min-width: 100%; }
+    .staff-schedule-tools { grid-template-columns: minmax(0, 1fr); }
+    .staff-schedule-search { grid-column: auto; }
+    .staff-schedule-sport-wrap, .staff-schedule-sort-wrap, .staff-sort-control { min-width: 0; width: 100%; }
     .staff-transaction-primary, .staff-transaction-secondary { width: 100%; flex-direction: column; align-items: stretch; }
     .staff-transaction-toolbar .staff-sort-control, .staff-transaction-date { flex-basis: auto; min-width: 100%; }
     .staff-transaction-secondary { margin-left: 0; }

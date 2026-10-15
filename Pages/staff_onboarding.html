@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#102a24">
+    <title>Finish Staff Setup | InigoSync</title>
+    <link rel="stylesheet" href="../Style/Auth.css">
+    <style>
+        body.staff-onboarding { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:rgba(12,28,24,.96); color:#1c302b; font-family:Inter,system-ui,sans-serif; }
+        .staff-onboarding-card { width:min(100%,560px); max-height:calc(100vh - 48px); overflow:auto; padding:30px; border-radius:20px; background:#fff; box-shadow:0 24px 80px #0005; }
+        .staff-onboarding-card h1 { margin:0 0 8px; font-size:1.55rem; }
+        .staff-onboarding-card p { color:#61716c; line-height:1.5; }
+        .staff-onboarding-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+        .staff-onboarding-field { display:grid; gap:6px; margin:12px 0; }
+        .staff-onboarding-field.full { grid-column:1/-1; }
+        .staff-onboarding-field label { font-size:.9rem; font-weight:650; }
+        .staff-onboarding-field input,.staff-onboarding-field select,.staff-onboarding-field textarea { width:100%; box-sizing:border-box; border:1px solid #cbd6d1; border-radius:9px; padding:11px 12px; font:inherit; color:#1c302b; background:#fff; }
+        .staff-onboarding-rules { margin:4px 0; padding-left:20px; color:#61716c; font-size:.82rem; }
+        .staff-onboarding-error { min-height:1.4em; color:#a62d28!important; font-size:.9rem; }
+        .staff-onboarding-submit { width:100%; border:0; border-radius:10px; padding:13px; background:#12705a; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+        .staff-onboarding-submit:disabled { opacity:.65; cursor:wait; }
+        [data-staff-onboarding-content] { display:none; }
+        @media(max-width:560px) { .staff-onboarding-card { padding:22px; } .staff-onboarding-grid { grid-template-columns:1fr; } .staff-onboarding-field.full { grid-column:auto; } }
+    </style>
+</head>
+<body class="staff-onboarding" data-required-role="staff" data-staff-onboarding-page>
+    <main class="staff-onboarding-card" aria-labelledby="staffSetupTitle">
+        <div data-staff-onboarding-loading role="status">Checking your secure staff session…</div>
+        <div data-staff-onboarding-content>
+            <h1 id="staffSetupTitle">Finish setting up your account</h1>
+            <p>Choose a new password and add your personal information. You’ll need to finish this step before staff tools become available. You can leave and sign in again later to continue.</p>
+            <form data-staff-onboarding-form novalidate>
+                <div class="staff-onboarding-grid">
+                    <div class="staff-onboarding-field full">
+                        <label for="staffSetupName">Full name</label>
+                        <input id="staffSetupName" name="full_name" autocomplete="name" maxlength="120" required>
+                    </div>
+                    <div class="staff-onboarding-field">
+                        <label for="staffSetupBirthdate">Birthdate</label>
+                        <input id="staffSetupBirthdate" name="birthdate" type="date" min="1900-01-01" required>
+                    </div>
+                    <div class="staff-onboarding-field full">
+                        <label for="staffSetupAddress">Address</label>
+                        <textarea id="staffSetupAddress" name="address" rows="2" maxlength="250" autocomplete="street-address"></textarea>
+                    </div>
+                    <div class="staff-onboarding-field">
+                        <label for="staffSetupGender">Gender</label>
+                        <select id="staffSetupGender" name="gender">
+                            <option value="">Select…</option><option>Male</option><option>Female</option><option>Prefer not to say</option>
+                        </select>
+                    </div>
+                    <div class="staff-onboarding-field">
+                        <label for="staffSetupEmergencyName">Emergency contact name</label>
+                        <input id="staffSetupEmergencyName" name="emergency_contact_name" maxlength="120">
+                    </div>
+                    <div class="staff-onboarding-field full">
+                        <label for="staffSetupPassword">New password</label>
+                        <input id="staffSetupPassword" name="password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                        <ul class="staff-onboarding-rules"><li>8–15 characters</li><li>Uppercase and lowercase letters</li><li>At least one number and one special character</li></ul>
+                    </div>
+                    <div class="staff-onboarding-field full">
+                        <label for="staffSetupConfirm">Confirm new password</label>
+                        <input id="staffSetupConfirm" name="confirm_password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                    </div>
+                </div>
+                <p class="staff-onboarding-error" data-staff-onboarding-error role="alert" aria-live="polite"></p>
+                <button class="staff-onboarding-submit" type="submit" data-staff-onboarding-submit>Save and continue</button>
+            </form>
+        </div>
+    </main>
+    <script src="../Config/supabaseClient.js"></script>
+    <script src="../includes/emailMfa.js"></script>
+    <script src="../includes/authGuard.js"></script>
+    <script src="../includes/staff_onboarding.js"></script>
+</body>
+</html>

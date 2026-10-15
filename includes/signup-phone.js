@@ -1,14 +1,11 @@
-// Optional post-confirmation format/type validation for a new customer's
-// contact number. The authenticated Edge Function validates it with Abstract
-// and stores a one-use proof consumed by the profiles update trigger.
+// Optional post-confirmation PH-format and availability check for a new
+// customer's contact number. The authenticated Edge Function records the
+// one-use database proof consumed by the profiles update trigger.
 (() => {
     let cancel = () => {};
 
     function reasonMessage(reason) {
         if (reason === 'in_use') return 'This number is already linked to another account.';
-        if (reason === 'not_mobile') return 'Enter a Philippine mobile number.';
-        if (reason === 'inactive') return 'The provider reports that this number is not active.';
-        if (reason === 'status_unknown') return 'The provider could not confirm the number status. Try again later.';
         return 'Enter a valid Philippine mobile number.';
     }
 
@@ -78,7 +75,7 @@
                     busy = true;
                     validate.disabled = skip.disabled = true;
                     validate.textContent = 'Validating…';
-                    status.textContent = 'Checking Philippine format, mobile type, and active status…';
+                    status.textContent = 'Checking Philippine format and availability…';
                     try {
                         const { data, error } = await window.sb.functions.invoke('validate-contact-phone', {
                             body: { phone: check.normalized },
@@ -89,9 +86,9 @@
                             showError(reasonMessage(data?.reason));
                             return;
                         }
-                        if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
+                        if (!/^\+639\d{9}$/.test(data.normalized || '')
                             || data.normalized !== `+63${check.normalized.slice(1)}`) {
-                            showError('The provider returned an unsupported validation result. Try again later.');
+                            showError('The number could not be checked safely. Try again later.');
                             return;
                         }
 
@@ -105,7 +102,7 @@
 
                         saved = true;
                         validate.textContent = 'Validated and saved';
-                        status.textContent = 'Validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.';
+                        status.textContent = 'Valid Philippine mobile number; available for this account.';
                         skip.textContent = 'Continue';
                     } catch (error) {
                         if (active) showError(error.message || 'Phone validation is temporarily unavailable. You can continue without a number.');

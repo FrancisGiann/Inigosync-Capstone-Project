@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const status = form.querySelector('[data-signup-phone-availability-status]');
     if (!field || !status) return;
 
-    let revision = 0, timer, pending = null;
+    let revision = 0, timer, pending = null, cached = null;
     const value = () => field.value.trim();
     const active = () => form.classList.contains('is-active')
         && form.querySelector('[data-signup-step="2"]')?.classList.contains('is-active');
@@ -17,11 +17,15 @@ document.addEventListener('DOMContentLoaded', () => {
         field.dataset.phoneAvailability = state;
     }
 
-    async function check() {
+    async function check(force = false) {
         const phone = value(), version = revision;
         if (!phone) { paint(''); return false; }
         const parsed = window.validatePhMobile?.(phone);
         if (!parsed?.valid) { paint('Enter a complete mobile number.', 'invalid'); return false; }
+        if (!force && cached?.phone === parsed.normalized && Date.now() - cached.at < 30000) {
+            paint(cached.state === 'available' ? 'Available' : cached.state === 'in_use' ? 'Already in use' : cached.state, cached.state);
+            return cached.state === 'available';
+        }
         if (pending?.phone === parsed.normalized && pending.version === version) return pending.promise;
 
         paint('Checking…', 'checking');
@@ -37,14 +41,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (error) throw error;
                 if (!['in_use', 'available', 'rate_limited', 'invalid'].includes(data)) throw new Error('Unexpected response');
                 const messages = {
-                    in_use: ['Existing', 'in_use'],
-                    available: ['Not found', 'available'],
+                    in_use: ['Already in use', 'in_use'],
+                    available: ['Valid and available', 'available'],
                     rate_limited: ['Wait 1 min', 'rate_limited'],
                     invalid: ['Enter a complete mobile number.', 'invalid'],
                 };
                 const [text, state] = messages[data];
                 paint(text, state);
-                field.setAttribute('aria-invalid', String(data === 'invalid'));
+                field.setAttribute('aria-invalid', String(data === 'invalid' || data === 'in_use'));
+                cached = { phone: parsed.normalized, state, at: Date.now() };
                 return data === 'available';
             } catch (_) {
                 if (version === revision && value() === phone) paint('Try again', 'error');
@@ -61,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     field.addEventListener('input', () => {
         revision++;
+        cached = null;
         field.removeAttribute('aria-invalid');
         field.removeAttribute('aria-busy');
         clearTimeout(timer);
@@ -72,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     field.addEventListener('blur', () => { clearTimeout(timer); if (active()) check(); });
     form.addEventListener('reset', () => {
         revision++;
+        cached = null;
         clearTimeout(timer);
         paint('');
         field.removeAttribute('aria-busy');

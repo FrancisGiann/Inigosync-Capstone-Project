@@ -350,8 +350,7 @@
                                 <div class="staff-form-group">
                                     <label class="staff-form-label" for="staff-walkin-mobile">Mobile number (optional)</label>
                                     <input id="staff-walkin-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" autocomplete="tel-national" aria-describedby="staffWalkinMobileStatus" data-staff-walkin-mobile>
-                                    <p class="staff-form-hint">Optional. Use a Philippine mobile number that is not already registered.</p>
-                                    <p class="staff-form-hint staff-walkin-mobile-status" id="staffWalkinMobileStatus" data-staff-walkin-mobile-status aria-live="polite"></p>
+                                    <p class="staff-form-hint staff-walkin-mobile-status" id="staffWalkinMobileStatus" data-staff-walkin-mobile-status aria-live="polite">Optional. Use a Philippine mobile number that is not already registered.</p>
                                 </div>
                             </div>
                         </div>
@@ -359,27 +358,18 @@
                         <!-- STEP 2 — Sport & court/unit -->
                         <div class="staff-wizard-panel" data-staff-walkin-step="2">
                             <h3 class="staff-wizard-panel-title">Choose a sport and court</h3>
-                            <p class="staff-form-hint">Choose a sport, then choose one of its available courts.</p>
-                            <label class="staff-form-group" data-staff-walkin-sport-wrap>
-                                <span class="staff-form-label">Sport</span>
-                                <select class="staff-select" data-staff-walkin-sport-select aria-label="Choose a sport">
-                                    <option value="">Choose a sport first</option>
-                                </select>
-                            </label>
                             <div class="staff-form-group">
-                                <span class="staff-form-label">Available courts</span>
-                                <div class="staff-walkin-sport-cards" data-staff-walkin-sport-chips aria-label="Available courts">
-                                    <span class="staff-form-hint">Choose a sport first.</span>
+                                <span class="staff-form-label">Choose a sport</span>
+                                <div class="staff-walkin-sport-cards" data-staff-walkin-sport-cards role="group" aria-label="Available sports">
+                                    <span class="staff-form-hint">Loading available sports…</span>
                                 </div>
                             </div>
-                            <!-- Hidden by JS when the selected court resolves to a
-                                 single unit — nothing to choose between (mirrors
-                                 includes/Dashboard.js's own
-                                 [data-dash-book-unit-wrap]). -->
-                            <div class="staff-form-group" data-staff-walkin-unit-wrap hidden>
-                                <span class="staff-form-label" data-staff-walkin-unit-label>Choose a court</span>
-                                <select class="staff-select" data-staff-walkin-unit-select></select>
-                            </div>
+                            <label class="staff-form-group" data-staff-walkin-unit-wrap hidden>
+                                <span class="staff-form-label" data-staff-walkin-unit-label>Choose a court, lane, or table</span>
+                                <select class="staff-select" data-staff-walkin-unit-select aria-label="Choose a court, lane, or table" disabled>
+                                    <option value="" selected disabled hidden>Choose a sport first</option>
+                                </select>
+                            </label>
                         </div>
 
                         <!-- STEP 3 — Select consecutive hourly slots -->
@@ -475,7 +465,7 @@
                 <div class="staff-card">
                     <div class="staff-card-head staff-schedule-card-head">
                         <div class="staff-schedule-card-top">
-                            <div class="staff-form-group" style="margin-bottom: 0; min-width: 190px;">
+                            <div class="staff-form-group staff-schedule-date-wrap">
                                 <label class="staff-form-label" for="staff-schedule-date">Date</label>
                                 <input id="staff-schedule-date" type="date" class="staff-input" data-staff-schedule-date>
                             </div>
@@ -670,7 +660,7 @@
                                     <button type="button" class="staff-btn-ghost" data-staff-avatar-remove hidden>Remove Photo</button>
                                     <input type="file" accept="image/*" class="staff-visually-hidden" data-staff-avatar-file>
                                 </div>
-                                <p class="staff-form-hint">Choose any image; it will be resized and cropped automatically.</p>
+                                <p class="staff-form-hint">Choose an image, adjust its crop, then confirm before it is saved.</p>
                             </div>
                         </div>
                     </section>
@@ -680,36 +670,31 @@
                         <div class="staff-form-row">
                             <div class="staff-form-group">
                                 <label class="staff-form-label" for="staff-settings-name">Full name</label>
-                                <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name>
+                                <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name readonly aria-readonly="true">
                             </div>
                             <div class="staff-form-group">
                                 <label class="staff-form-label" for="staff-settings-mobile">Contact number</label>
-                                <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-describedby="staff-phone-status">
-                                <p id="staff-phone-status" class="staff-form-hint" data-staff-phone-status aria-live="polite">Optional. Saving a changed number checks its Philippine mobile format and type; it does not verify ownership or reachability.</p>
+                                <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-invalid="false" aria-describedby="staff-phone-status">
+                                <p id="staff-phone-status" class="staff-form-hint staff-phone-status" data-staff-phone-status aria-live="polite">Optional. We check Philippine mobile format and whether the number is already linked to an account.</p>
                             </div>
                         </div>
                         <!-- Revision S3 — address/birthdate/gender/emergency
                              contact (database/schema/018_staff_details.sql).
-                             Loaded by loadStaffProfileDetails() on
-                             inigosync:profile-ready (a request of its own — see
-                             that function's comment in
-                             includes/staff_dashboard.js); saved together with
-                             full_name/contact_num above by the same Save
-                             Changes button, with a schema-mismatch retry that
-                             drops just these five if 018 hasn't been applied
-                             yet. -->
+                             Loaded by loadStaffProfileDetails(). Address and
+                             emergency contact values are mutable; full name,
+                             birthdate, and gender remain display-only. -->
                         <div class="staff-form-group">
                             <span class="staff-form-label">Address</span>
-                            <textarea class="staff-input staff-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-staff-settings-address></textarea>
+                            <textarea class="staff-input staff-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-staff-settings-address readonly aria-readonly="true"></textarea>
                         </div>
                         <div class="staff-form-row">
                             <div class="staff-form-group">
                                 <span class="staff-form-label">Birthdate</span>
-                                <input type="date" class="staff-input" data-staff-settings-birthdate>
+                                <input type="date" class="staff-input" data-staff-settings-birthdate readonly aria-readonly="true">
                             </div>
                             <div class="staff-form-group">
                                 <span class="staff-form-label">Gender</span>
-                                <select class="staff-select" data-staff-settings-gender>
+                                <select class="staff-select" data-staff-settings-gender disabled aria-readonly="true">
                                     <option value="">Select…</option>
                                     <option>Male</option>
                                     <option>Female</option>
@@ -720,16 +705,19 @@
                         <div class="staff-form-row">
                             <div class="staff-form-group">
                                 <span class="staff-form-label">Emergency contact name</span>
-                                <input type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name>
+                                <input type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name readonly aria-readonly="true">
                             </div>
                             <div class="staff-form-group">
                                 <span class="staff-form-label">Emergency contact number</span>
-                                <input type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number>
+                                <input type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number aria-invalid="false" aria-describedby="staff-emergency-phone-status">
+                                <p id="staff-emergency-phone-status" class="staff-form-hint staff-phone-status" data-staff-emergency-phone-status data-state="neutral" aria-live="polite">Optional. Shared family emergency contacts are allowed; an existing number shows a warning.</p>
                             </div>
                         </div>
                         <p class="staff-form-hint" data-staff-settings-details-hint hidden>Address, birthdate, gender, and emergency contact aren't available yet — ask the owner to run database update 018.</p>
                         <div class="staff-form-actions">
-                            <button type="button" class="staff-btn-primary" data-staff-settings-save="profile">Save Changes</button>
+                            <button type="button" class="staff-btn-ghost" data-staff-settings-edit="profile">Edit</button>
+                            <button type="button" class="staff-btn-ghost" data-staff-settings-cancel="profile" hidden>Cancel</button>
+                            <button type="button" class="staff-btn-primary" data-staff-settings-save="profile" hidden>Save Changes</button>
                         </div>
                     </section>
                 </div>
@@ -885,6 +873,17 @@
     </div>
 </div>
 
+<div class="staff-modal-overlay staff-confirm-overlay" data-staff-confirm-modal hidden>
+    <div class="staff-modal staff-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="staffConfirmTitle" aria-describedby="staffConfirmText" tabindex="-1" data-staff-confirm-dialog>
+        <h3 id="staffConfirmTitle" data-staff-confirm-title>Confirm action</h3>
+        <p class="staff-confirm-text" id="staffConfirmText" data-staff-confirm-text></p>
+        <div class="staff-form-actions">
+            <button type="button" class="staff-btn-ghost" data-staff-confirm-cancel>Cancel</button>
+            <button type="button" class="staff-btn-primary" data-staff-confirm-accept>Continue</button>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="../Config/supabaseClient.js"></script>
 <script src="../includes/emailMfa.js"></script>
@@ -906,6 +905,7 @@
      Schedule's per-unit rows). Both must load before staff_dashboard.js. -->
 <script src="../includes/courts-data.js"></script>
 <script src="../includes/courtsData.js"></script>
+<script src="../includes/landing-visuals.js"></script>
 <!-- Shared operating-hours constants (8 AM-8 PM) — must load before
      staff_dashboard.js, whose Court Schedule columns and the walk-in
      wizard's From/To pickers read window.InigoBusinessHours at parse time. -->

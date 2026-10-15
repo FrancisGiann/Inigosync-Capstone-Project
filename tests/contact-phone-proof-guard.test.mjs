@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const migrations = [
-  "../supabase/migrations/20260929040335_fix_contact_phone_missing_proof.sql",
+  "../supabase/migrations/20261015000000_database_only_contact_phone_checks.sql",
 ];
 
 for (const migrationPath of migrations) {

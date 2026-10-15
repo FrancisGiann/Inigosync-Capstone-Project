@@ -68,7 +68,7 @@ function deferred() {
     return { promise, resolve };
 }
 
-function makeWizard(role, { signIn, confirm = true } = {}) {
+function makeWizard(role, { signIn, confirm = true, staffConfirm = confirm } = {}) {
     const prefix = { customer: 'dash', owner: 'admin', staff: 'staff' }[role];
     const saveSelector = `[data-${prefix}-settings-save="password"]`;
     const current = new FakeElement();
@@ -125,11 +125,39 @@ function makeWizard(role, { signIn, confirm = true } = {}) {
             querySelectorAll: (selector) => lists.get(selector) || [],
         },
         confirmSettingsChange: async () => { confirmCalls.count += 1; return confirm; },
+        confirmStaffAction: () => {
+            confirmCalls.count += 1;
+            return typeof staffConfirm === 'function' ? staffConfirm(confirmCalls.count) : staffConfirm;
+        },
         recordOwnerActivity() {},
     };
     runInNewContext(extractFlow(role, sources[role]), context);
     return { current, fresh, confirmation, next, back, save, panels, cancel, authCalls, confirmCalls };
 }
+
+test('staff Save waits for the in-page confirmation and skips reauthentication when canceled', async () => {
+    const pendingConfirm = deferred();
+    const wizard = makeWizard('staff', { staffConfirm: () => pendingConfirm.promise });
+    wizard.current.value = 'Correct123!';
+    await wizard.current.dispatch('input');
+    await wizard.next.dispatch('click');
+    wizard.fresh.value = 'Strong1!';
+    wizard.confirmation.value = 'Strong1!';
+    await wizard.fresh.dispatch('input');
+    await wizard.confirmation.dispatch('input');
+
+    const saveOperation = wizard.save.dispatch('click');
+    await Promise.resolve();
+    assert.equal(wizard.confirmCalls.count, 1, 'staff Save opens the in-page confirmation exactly once');
+    assert.equal(wizard.authCalls.signIn, 1, 'save-time reauthentication waits for confirmation');
+    assert.equal(wizard.authCalls.update, 0);
+
+    pendingConfirm.resolve(false);
+    await saveOperation;
+    assert.equal(wizard.authCalls.signIn, 1, 'canceling confirmation skips save-time reauthentication');
+    assert.equal(wizard.authCalls.update, 0, 'canceling confirmation prevents password mutation');
+    assert.equal(wizard.save.disabled, false, 'a canceled confirmation leaves the valid wizard ready for another attempt');
+});
 
 for (const role of ['customer', 'owner', 'staff']) {
     test(`${role} wizard rejects a wrong current password, advances after verification, and rechecks before saving`, async () => {

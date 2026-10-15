@@ -45,9 +45,9 @@ Settings. A failed validation leaves the saved number unchanged.
 Email availability uses a compact label beside the email heading and green/red
 field borders. Status changes reserve the same space, so the card does not resize.
 
-The Edge Function calls Abstract's Phone Intelligence API using a server-side
-secret. On a valid PH mobile response it creates a short-lived, one-use proof
-bound to the account and number. The database consumes that proof when a changed
+The Edge Function checks Philippine mobile format and database availability
+without calling a paid phone provider. It creates a short-lived, purpose-bound
+proof for the account and number. The database consumes that proof when a changed
 `profiles.contact_num` is saved. The database records
 `contact_num_validated` and `contact_num_validated_at`; browser code cannot set
 them or bypass the proof. The older client-writable `phone_verified` flag is
@@ -56,18 +56,17 @@ start with the new validation state false. Supabase
 Phone Auth and SMS delivery are not used for this
 feature. See [owner setup](phone-validation-setup.md).
 
-The displayed state is **Validated number**. It means the provider classified
-the number as valid, Philippine, mobile, and active. It does not establish
-ownership, guaranteed current reachability, or delivery. It is never an
-authorization claim; account roles still come from the protected profile
-role. Email OTP for signup and login is
-unchanged.
+The displayed state reports that the value has Philippine mobile format and is
+available in the database. It does not establish ownership, reachability, or
+delivery. Emergency-contact matches produce a warning but remain saveable
+because relatives may share a number. Account roles still come from the
+protected profile role. Email OTP for signup and login is unchanged.
 
 ## Verification
 
 `tests/auth-account-flows.cjs` uses mocked Auth and validation responses; it
-creates no real accounts or provider requests. It covers rejected Google roles,
-successful customer OAuth, optional and malformed phone values, both
-email-confirmation paths, successful validation, rejection, unavailable provider,
-and skipping. Live Abstract validation needs a configured secret and a test
-account; mocked tests alone do not prove provider behavior.
+creates no real accounts. It covers rejected Google roles, successful customer
+OAuth, optional and malformed phone values, both email-confirmation paths,
+successful format/availability checks, rejection, unavailable checks, and
+skipping. Database deployment and a live account are needed to verify the
+server-side proof and rate-limit behavior.

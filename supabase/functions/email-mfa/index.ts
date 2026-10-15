@@ -122,8 +122,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const { data: profile, error: profileError } = await admin.from('profiles')
-    .select('email, role, status').eq('id', userId).maybeSingle();
-  if (profileError || !profile || profile.status !== 'active'
+    .select('email, role, status, onboarding_complete').eq('id', userId).maybeSingle();
+  const canVerifyEmail = profile?.status === 'active'
+    || (profile?.role === 'staff' && profile?.status === 'pending' && profile?.onboarding_complete === false);
+  if (profileError || !profile || !canVerifyEmail
     || !['customer', 'staff', 'admin'].includes(profile.role)
     || !authData.user.email || profile.email?.toLowerCase() !== authData.user.email.toLowerCase()) {
     return json({ message: 'This account cannot complete email verification. Contact the front desk.' }, 403);

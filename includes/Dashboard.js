@@ -3722,10 +3722,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // Account Settings — contact number format/type validation.
-    // Validation is provider-backed by an authenticated Edge Function; it
-    // does not establish ownership. A successful response creates a one-use
-    // proof consumed by the database trigger when contact_num is updated.
+    // Account Settings — PH mobile-format and database availability checks.
+    // A successful authenticated check creates a purpose-specific, one-use
+    // proof consumed by the matching database write guard.
     // ------------------------------------------------------------------
     const mobileValidateBtn = document.querySelector('[data-dash-mobile-validate]');
     const mobileRemoveBtn = document.querySelector('[data-dash-mobile-remove]');
@@ -3752,10 +3751,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mobileValidateBtn) mobileValidateBtn.hidden = true;
         if (mobileStatus && !mobileInput?.dataset.dirty) {
             mobileStatus.textContent = !savedNumber
-                ? 'A contact number is optional. We check Philippine format, mobile type, and active status, not ownership.'
-                : profile.contact_num_validated
-                    ? `Validated as an active Philippine mobile number${formatPhoneValidationDate(profile.contact_num_validated_at)}. This does not confirm ownership or guarantee reachability.`
-                    : 'This saved number has not been validated for format, mobile type, and active status.';
+                ? 'A contact number is optional. We check Philippine mobile format and whether it is already linked to an account.'
+                : 'Saved contact number. A new number is checked for Philippine format and availability before saving.';
             mobileStatus.classList.remove('is-error');
         }
     }
@@ -3779,9 +3776,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function validationReasonMessage(reason) {
-        if (reason === 'not_mobile') return 'Enter a Philippine mobile number.';
-        if (reason === 'inactive') return 'The provider reports that this number is not active.';
-        if (reason === 'status_unknown') return 'The provider could not confirm the number status. Try again later.';
+        if (reason === 'in_use') return 'This number is already linked to another account.';
         return 'Enter a valid Philippine mobile number.';
     }
 
@@ -3796,6 +3791,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!status) return;
         status.textContent = message;
         status.classList.toggle('is-error', error);
+        status.classList.toggle('is-warning', !error && status.dataset.state === 'warning');
+        status.classList.toggle('is-success', !error && status.dataset.state === 'valid');
     }
 
     function schedulePhoneValidation(input) {
@@ -3808,32 +3805,32 @@ document.addEventListener('DOMContentLoaded', () => {
         delete input.dataset.validatedNumber;
         if (ui.save) { ui.save.hidden = true; ui.save.disabled = true; }
         const raw = String(input.value || '').trim();
+        input.dataset.phoneValidation = '';
+        input.setAttribute('aria-invalid', 'false');
+        if (ui.status) ui.status.dataset.state = '';
         if (!raw) {
             setPhoneStatus(ui.status, 'A contact number is optional. This check does not verify ownership.');
             return;
         }
         const check = window.validatePhMobile?.(raw);
         if (!check?.valid) {
+            input.dataset.phoneValidation = 'invalid';
+            input.setAttribute('aria-invalid', 'true');
             setPhoneStatus(ui.status, check?.message || 'Enter a valid Philippine mobile number.', true);
-            return;
-        }
-        const current = window.validatePhMobile?.(ui.current() || '');
-        if (current?.valid && current.normalized === check.normalized) {
-            setPhoneStatus(ui.status, 'This saved number is unchanged; no provider lookup was used.');
             return;
         }
         const cachedAt = Number(input.dataset.cachedValidAt || 0);
         if (input.dataset.cachedValidNumber === check.normalized && Date.now() - cachedAt < 4 * 60 * 1000) {
             input.dataset.validatedNumber = check.normalized;
             if (ui.save) { ui.save.hidden = false; ui.save.disabled = false; }
-            setPhoneStatus(ui.status, 'Validated as an active Philippine mobile number. This does not confirm ownership.');
+            setPhoneStatus(ui.status, 'Valid Philippine mobile number; available for this account.');
             return;
         }
         if (!window.sb?.functions) {
             setPhoneStatus(ui.status, 'Phone validation is unavailable. Please try again later.', true);
             return;
         }
-        setPhoneStatus(ui.status, 'Checking Philippine format, mobile type, and active status…');
+        setPhoneStatus(ui.status, 'Checking Philippine format and availability…');
         state.timer = setTimeout(async () => {
             const controller = new AbortController();
             state.controller = controller;
@@ -3848,18 +3845,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (request !== state.request) return;
                 if (error) throw new Error(await mobileFunctionErrorMessage(error));
                 if (data?.valid !== true) throw new Error(validationReasonMessage(data?.reason));
-                if (data.phone_type !== 'mobile' || !/^\+639\d{9}$/.test(data.normalized || '')
+                if (!/^\+639\d{9}$/.test(data.normalized || '')
                     || data.normalized !== `+63${check.normalized.slice(1)}`) {
-                    throw new Error('The provider returned an unsupported validation result. Try again later.');
+                    throw new Error('The number could not be checked safely. Try again later.');
                 }
+                if (ui.field === 'emergency_contact_number' && data.available === false) {
+                    input.dataset.phoneValidation = 'warning';
+                    input.setAttribute('aria-invalid', 'false');
+                    if (ui.status) ui.status.dataset.state = 'warning';
+                    input.dataset.validatedNumber = check.normalized;
+                    input.dataset.cachedValidNumber = check.normalized;
+                    input.dataset.cachedValidAt = String(Date.now());
+                    if (ui.save) { ui.save.hidden = false; ui.save.disabled = false; }
+                    setPhoneStatus(ui.status, 'This number is already saved somewhere. Emergency contacts may be shared with family; saving is allowed.', false);
+                    return;
+                }
+                input.dataset.phoneValidation = 'valid';
+                input.setAttribute('aria-invalid', 'false');
+                if (ui.status) ui.status.dataset.state = 'valid';
                 input.dataset.cachedValidNumber = check.normalized;
                 input.dataset.cachedValidAt = String(Date.now());
                 input.dataset.validatedNumber = check.normalized;
                 if (ui.save) { ui.save.hidden = false; ui.save.disabled = false; }
-                setPhoneStatus(ui.status, 'Validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.');
+                setPhoneStatus(ui.status, 'Valid Philippine mobile number and available.');
             } catch (error) {
                 if (controller.signal.aborted || request !== state.request) return;
-                setPhoneStatus(ui.status, error.message || 'Could not validate the number. Try again.', true);
+            input.dataset.phoneValidation = 'invalid';
+            input.setAttribute('aria-invalid', 'true');
+            if (ui.status) ui.status.dataset.state = 'invalid';
+            setPhoneStatus(ui.status, error.message || 'Could not check the number. Try again.', true);
             }
         }, 600);
     }
@@ -3896,7 +3910,7 @@ document.addEventListener('DOMContentLoaded', () => {
             delete input.dataset.cachedValidAt;
             renderProfile(profile);
             if (button) button.hidden = true;
-            setPhoneStatus(ui.status, 'Validated as an active Philippine mobile number. This does not confirm ownership or guarantee reachability.');
+            setPhoneStatus(ui.status, 'Valid Philippine mobile number saved.');
             window.InigoToast?.show('Validated number saved.');
         } catch (error) {
             setPhoneStatus(ui.status, error.message || 'Could not save the validated number.', true);

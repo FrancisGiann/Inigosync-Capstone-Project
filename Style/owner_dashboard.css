@@ -1908,6 +1908,17 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-mobile-edit-row .admin-btn-secondary { flex: 0 0 auto; }
 .owner-mobile-verification [data-admin-mobile-message] { min-height: 1.5em; margin-top: 7px; }
 .owner-mobile-verification [data-admin-mobile-message].is-error { color: var(--color-alert); }
+.owner-mobile-verification [data-admin-mobile-message][data-state="available"] { color: var(--color-court-green); }
+.owner-mobile-verification [data-admin-mobile-message][data-state="invalid"] { color: var(--color-alert); }
+.owner-mobile-verification [data-admin-mobile-message][data-state="warning"] { color: #9a6700; }
+[data-admin-settings-mobile][data-phone-availability="available"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
+[data-admin-settings-mobile][data-phone-availability="invalid"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }
+[data-admin-staff-emergency-number][data-phone-availability="available"],[data-admin-staff-edit-emergency-number][data-phone-availability="available"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
+[data-admin-staff-emergency-number][data-phone-availability="invalid"],[data-admin-staff-edit-emergency-number][data-phone-availability="invalid"],[data-admin-staff-emergency-number][data-phone-availability="error"],[data-admin-staff-edit-emergency-number][data-phone-availability="error"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }
+[data-admin-staff-emergency-number][data-phone-availability="warning"],[data-admin-staff-edit-emergency-number][data-phone-availability="warning"] { border-color: #b7791f; box-shadow: 0 0 0 1px #b7791f; }
+[data-admin-staff-emergency-status][data-state="available"],[data-admin-staff-edit-emergency-status][data-state="available"] { color: var(--color-court-green); }
+[data-admin-staff-emergency-status][data-state="warning"],[data-admin-staff-edit-emergency-status][data-state="warning"] { color: #9a6700; }
+[data-admin-staff-emergency-status][data-state="invalid"],[data-admin-staff-edit-emergency-status][data-state="invalid"],[data-admin-staff-emergency-status][data-state="error"],[data-admin-staff-edit-emergency-status][data-state="error"] { color: var(--color-alert); }
 .owner-mobile-verification [data-admin-mobile-validate] { min-height: 42px; }
 
 @media (max-width: 640px) {

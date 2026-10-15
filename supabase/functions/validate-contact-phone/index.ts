@@ -1,11 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { hasVerifiedEmailSession } from "../_shared/email-mfa.ts";
-import { normalizePhilippineMobile, validateWithAbstract } from "./_shared/abstract-phone.ts";
+import { normalizePhilippineMobile } from "./_shared/ph-mobile.ts";
 import {
   jsonCorsResponse as json,
   phoneValidationPreflight,
-  phoneValidationUnavailable,
 } from "./_shared/http.ts";
 
 Deno.serve(async (req: Request) => {
@@ -17,17 +16,19 @@ Deno.serve(async (req: Request) => {
 
   const url = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const abstractKey = Deno.env.get("ABSTRACT_PHONE_VALIDATION_API_KEY");
-  if (!url || !serviceKey || !abstractKey)
+  if (!url || !serviceKey)
     return json({ message: "Phone validation is unavailable." }, 503, origin);
 
-  let body: { phone?: unknown };
+  let body: { phone?: unknown; purpose?: unknown };
   try {
     if (Number(req.headers.get("content-length") || 0) > 4096) return json({ message: "Invalid request." }, 413, origin);
     body = await req.json();
   } catch { return json({ message: "Invalid request." }, 400, origin); }
   if (!body || typeof body !== "object" || Array.isArray(body))
     return json({ message: "Invalid request." }, 400, origin);
+  const purpose = body.purpose === undefined ? "contact" : body.purpose;
+  if (purpose !== "contact" && purpose !== "emergency")
+    return json({ message: "Invalid phone validation purpose." }, 400, origin);
   const normalized = normalizePhilippineMobile(body.phone);
   if (!normalized) return json({ valid: false, reason: "invalid" }, 200, origin);
 
@@ -41,42 +42,38 @@ Deno.serve(async (req: Request) => {
   if (profileError || !profile) return json({ message: "Active account required." }, 403, origin);
   if (profile.status !== "active" || !["staff", "customer", "admin"].includes(profile.role))
     return json({ message: "Active account required." }, 403, origin);
+  if (purpose === "emergency" && !["staff", "customer"].includes(profile.role))
+    return json({ message: "Emergency contact validation is not available for this account." }, 403, origin);
 
-  if (profile.contact_num_validated === true
-      && normalizePhilippineMobile(profile.contact_num) === normalized)
-    return json({ valid: true, normalized, phone_type: "mobile", line_status: "active" }, 200, origin);
-
-  const { error: quotaError } = await admin.rpc("reserve_contact_phone_validation", {
+  const { error: rateLimitError } = await admin.rpc("reserve_contact_phone_check", {
     p_user_id: authData.user.id,
   });
-  if (quotaError) {
-    const detail = (quotaError.message || "").toLowerCase();
-    if (detail.includes("rate limit") || detail.includes("safety limit"))
-      return json({ message: "Phone validation limit reached. Try again later." }, 429, origin);
+  if (rateLimitError) {
+    const detail = (rateLimitError.message || "").toLowerCase();
+    if (detail.includes("rate limit"))
+      return json({ message: "Too many number checks. Wait a moment and try again." }, 429, origin);
     return json({ message: "Phone validation is unavailable." }, 503, origin);
   }
 
-  const result = await validateWithAbstract(normalized, abstractKey);
-  if (result.status === "unavailable") return phoneValidationUnavailable(result.retryAfterSeconds);
-  if (result.status === "invalid") return json({ valid: false, reason: result.reason }, 200, origin);
-
-  // Check duplicates only after reserving the existing per-user/global quota
-  // and confirming provider status. The RPC returns a boolean and never
-  // exposes another profile's ID or stored phone value.
-  const { data: phoneInUse, error: availabilityError } = await admin.rpc("contact_phone_in_use", {
+  // This check uses only the database and returns a boolean, never another
+  // profile's ID or stored phone value. It also excludes the user's own row.
+  const availabilityFunction = purpose === "emergency" ? "contact_phone_exists" : "contact_phone_in_use";
+  const { data: phoneInUse, error: availabilityError } = await admin.rpc(availabilityFunction, {
     p_user_id: authData.user.id,
-    p_phone_e164: result.normalized,
+    p_phone_e164: normalized,
   });
   if (availabilityError || typeof phoneInUse !== "boolean")
     return json({ message: "Phone availability is temporarily unavailable." }, 503, origin);
-  if (phoneInUse)
-    return json({ valid: false, reason: "in_use", phone_type: "mobile", line_status: "active" }, 200, origin);
+  if (phoneInUse && purpose === "contact")
+    return json({ valid: false, reason: "in_use" }, 200, origin);
 
   const { data: recorded, error: proofError } = await admin.rpc("record_contact_phone_validation", {
-    p_user_id: authData.user.id, p_phone_e164: result.normalized,
+    p_user_id: authData.user.id,
+    p_phone_e164: normalized,
+    p_purpose: purpose,
   });
   if (proofError || recorded !== true)
     return json({ message: "The number could not be saved safely. Validate it again." }, 503, origin);
 
-  return json({ valid: true, normalized: result.normalized, phone_type: "mobile", line_status: "active" }, 200, origin);
+  return json({ valid: true, normalized, available: !phoneInUse, reason: phoneInUse ? "in_use" : null }, 200, origin);
 });

@@ -162,8 +162,8 @@ function fixture() {
             if (name === 'payment-health') return { data: { api_connected: true, webhook_configured: true, last_confirmed_payment_at: '2026-09-26T10:00:00Z' }, error: null };
             if (name === 'validate-contact-phone') {
                 state.calls.push({ function: name, options });
-                if (state.phoneInUse) return { data: { valid: false, reason: 'in_use', phone_type: 'mobile', line_status: 'active' }, error: null };
-                return { data: { valid: true, normalized: '+639171234567', phone_type: 'mobile', line_status: 'active' }, error: null };
+                if (state.phoneInUse) return { data: { valid: false, reason: 'in_use' }, error: null };
+                return { data: { valid: true, normalized: '+639171234567', available: true }, error: null };
             }
             return { data: null, error: { message: 'Unknown function' } };
         } },
@@ -426,17 +426,17 @@ function fixture() {
                     const ownerMobile = page.locator('[data-admin-settings-mobile]');
                     await ownerMobile.fill('+63 917 123 4567');
                     await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Save number to add'));
-                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'one complete number triggers one debounced provider check');
-                    assert.deepEqual(await page.evaluate(() => window.__ownerQa.calls.find(call => call.function === 'validate-contact-phone').options.body), { phone: '09171234567' }, 'international input is normalized for the provider');
-                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /does not confirm ownership/);
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'one complete number triggers one debounced database check');
+                    assert.deepEqual(await page.evaluate(() => window.__ownerQa.calls.find(call => call.function === 'validate-contact-phone').options.body), { phone: '09171234567' }, 'international input is normalized before the database check');
+                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /format and available/);
                     assert.equal(await page.locator('[data-admin-mobile-validate]').isEnabled(), true);
                     await ownerMobile.fill('09171234567');
                     await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Save number to add'));
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'same normalized value in another format reuses its recent check');
                     await page.locator('[data-admin-mobile-validate]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.contact_num === '+639171234567'));
-                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'saving uses the completed check without a second provider lookup');
-                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /does not confirm ownership/);
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'saving uses the completed check without a second lookup');
+                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /format and availability checks/);
                     await page.evaluate(() => window.__ownerQa.phoneInUse = true);
                     await ownerMobile.fill('09991234567');
                     await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('already in use by another account'));
@@ -572,9 +572,10 @@ function fixture() {
                     await page.locator('[data-admin-staff-add]').first().click();
                     const positions = await page.locator('[data-admin-staff-role] option').allTextContents();
                     assert.deepEqual(positions.map(s => s.trim()), ['Secretary', 'Court Attendant']);
-                    await page.locator('[data-admin-staff-birthdate]').fill('2000-09-26');
-                    assert.equal(await page.locator('[data-admin-staff-age]').inputValue(), '26');
-                    assert.equal(await page.locator('[data-admin-staff-age]').getAttribute('readonly'), '');
+                    assert.equal(await page.locator('[data-admin-staff-email]').count(), 1);
+                    for (const selector of ['[data-admin-staff-name]', '[data-admin-staff-birthdate]', '[data-admin-staff-address]', '[data-admin-staff-gender]', '[data-admin-staff-emergency-name]']) {
+                        assert.equal(await page.locator(selector).count(), 0, `${selector} is collected during staff setup, not by the owner`);
+                    }
                     await page.locator('[data-admin-staff-modal-close]').first().click();
 
                     // Aggregate must stay fixed when the list is filtered.

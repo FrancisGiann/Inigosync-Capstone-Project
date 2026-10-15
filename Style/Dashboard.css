@@ -2460,7 +2460,12 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     font-size: var(--fs-xs);
     line-height: 1.5;
 }
-.dash-mobile-status.is-error { color: var(--color-alert-text); }
+.dash-mobile-status.is-error,[data-dash-mobile-status][data-state="invalid"],[data-dash-emergency-status][data-state="invalid"] { color: var(--color-alert-text); }
+.dash-mobile-status.is-success,[data-dash-mobile-status][data-state="valid"],[data-dash-emergency-status][data-state="valid"] { color: var(--color-court-green); }
+.dash-mobile-status.is-warning,[data-dash-emergency-status][data-state="warning"] { color: #9a6700; }
+[data-dash-settings-mobile][data-phone-validation="valid"],[data-dash-settings-emergency-number][data-phone-validation="valid"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
+[data-dash-settings-mobile][data-phone-validation="invalid"],[data-dash-settings-emergency-number][data-phone-validation="invalid"] { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
+[data-dash-settings-emergency-number][data-phone-validation="warning"] { border-color: #b7791f; box-shadow: 0 0 0 1px #b7791f; }
 .dash-mobile-verify-row [hidden] { display: none; }
 
 .dash-input-wrap {

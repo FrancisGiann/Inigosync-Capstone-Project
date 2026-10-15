@@ -1,10 +1,10 @@
 # IñigoSync — Owner Action List
 
-> **2026-09-29 phone-plan update:** The earlier SMS and OTP instructions in
-> historical project notes are superseded. Current owner action **E5** uses
-> Abstract Phone Validation with an Edge Function secret. The project manager
-> has removed SMS phone ownership verification from scope. See
-> [current setup](phone-validation-setup.md). Some older items below document
+> **2026-10-15 phone validation update:** SMS and paid provider active-line
+> checks are out of scope. Phone entry uses Philippine mobile format and
+> database availability checks, with emergency-number duplicates advisory
+> because relatives may share a number. See [current setup](phone-validation-setup.md).
+> Some older items below document
 > the prior deployment state and should not be read as the new staff portal rollout.
 
 This file includes historical setup notes. The current task has authorized
@@ -384,103 +384,44 @@ straight in the customer dashboard.
 
 ---
 
-## E5. Configure Abstract Phone Validation *(REQUIRED for saving a changed optional contact number)*
+## E5. Deploy database-only phone validation
 
-The project manager removed SMS verification from scope. Do not enable
-Supabase Phone Auth, an SMS provider, or test OTP numbers for this feature.
-Abstract validates number format and mobile type; it does not prove ownership.
+Phone entry checks Philippine mobile format and whether a contact number is
+already in use. Contact numbers must be unique. Emergency contacts may be
+shared; an existing number shows a warning but remains saveable. No SMS
+ownership check or paid active-line provider is used.
 
-1. Sign in to [Abstract](https://app.abstractapi.com/dashboard), open **Phone Intelligence** under Your products, and copy that product's API key.
-2. In the Supabase project's **Edge Functions → Secrets**, add
-   `ABSTRACT_PHONE_VALIDATION_API_KEY`. Enter the value directly in Supabase,
-   never in chat or source code.
-3. Deploy the `validate-contact-phone` Edge Function and the database migration
-   that enforces its short-lived, one-use validation proof.
-4. In a test account, validate a Philippine mobile number in Account Settings.
-   Confirm that invalid/non-mobile numbers, provider failure, and exhausted
-   quota leave the old number unchanged. The UI should say **Validated number**.
+Apply the current timestamped migration in `supabase/migrations` and deploy
+the `validate-contact-phone` Edge Function. Confirm signup availability uses
+its existing rate-limited RPC. The Edge Function and database guards enforce
+format, contact uniqueness, and short-lived one-use proofs for account writes.
 
-See [phone validation setup](phone-validation-setup.md) for limitations and the
-free-tier budget. The older `013_profile_phone_verified.sql` column is historical;
-the new server-enforced validation flow replaces the old SMS badge semantics.
+See [phone validation setup](phone-validation-setup.md) for the current
+contract and deployment verification steps. Historical SMS badge columns and
+provider notes do not represent current validation behavior.
 
 ---
 
-## E6. Paste in the Invite user email template *(recommended — branding, and makes the log-in email explicit)*
+## E6. Configure staff account email delivery
 
-**Why it's blocked:** it's an email template in the Supabase dashboard, the
-same place as E2–E4 above, just a different template — **Invite user**
-instead of Magic Link / Reset Password / Confirm signup.
+Staff account creation sends a generated temporary password to the staff
+member's personal email through Resend. Supabase Auth continues to deliver
+the separate email MFA codes. The owner form accepts only the personal email
+address and position; the staff member supplies their details on first
+sign-in.
 
-**Why this matters, but isn't a REQUIRED item like E2–E4.** Staff Management
-→ **+ Add New Staff** invites the new hire through the `invite-staff` Edge
-Function, which creates their account and asks Supabase to send its **Invite
-user** email. Nothing is broken if you skip this — Supabase's own default
-Invite user template already contains a working link, so the invite still
-arrives and still gets the new hire in. What you get without this file is
-Supabase's generic default wording (no IñigoSync branding, no mention of
-what the account is for or what position it's for), and no reminder of the
-one thing that trips people up: **Supabase always sends this email to the
-account's own address, so whatever the owner types into Add New Staff's
-"Personal email address" field is both where this email goes AND that
-person's future log-in.** There is no separate "work email" anywhere in this
-flow.
+Before testing Add New Staff, verify a sending domain in Resend, create an
+API key, and configure `RESEND_API_KEY`, `STAFF_ONBOARDING_FROM_EMAIL`, and
+`STAFF_ONBOARDING_LOGIN_URL` as Supabase Edge Function secrets. The sender
+address must belong to the verified domain. The login URL must be the site's
+public HTTPS `index.html` URL. Follow the full rollout and test checklist in
+[staff-onboarding.md](staff-onboarding.md).
 
-**What to do:** open `docs/email_templates/invite_staff.html`, copy the whole
-file, then go to Supabase Dashboard → **Authentication → Email Templates →
-Invite user**, paste it into the message body, and Save. Suggested subject:
-
-```
-Your IñigoSync staff account
-```
-
-**Two settings on the same URL Configuration page need to be correct before
-you test this** (Authentication → URL Configuration):
-1. **Site URL** must be set to your real app URL (e.g.
-   `http://localhost:8532` for local development). This template reads
-   `{{ .SiteURL }}` twice — once in the footer, once to build the "sign in at
-   the Staff Portal" line — so a blank or wrong Site URL sends both to the
-   wrong place.
-2. **Redirect URLs** (the same page, just below Site URL) must allow
-   wherever the invite link is meant to land — see item E above for exactly
-   how to set this. Unlike E2–E4, which were all rewritten to be code-only
-   specifically so they no longer depend on this allowlist, **this is the one
-   template in this folder that keeps a real link on purpose** (see the
-   file's own header comment for why), so it is the one that still needs
-   item E done.
-
-**Enter the staff member's personal email, not a work address.** Supabase
-gives no way to send account creation to one address and day-to-day log-in
-to another — they are the same field. Pages/owner_dashboard.html's Add New
-Staff modal already labels the field "Personal email address" and says this
-next to it for that reason.
-
-**How to test:** Staff Management → **+ Add New Staff** → fill in a real
-address you can read → **Send Invite**. The email should arrive branded as
-IñigoSync (not Supabase's generic default wording), greet the name you
-typed (or "Hi there" if you left it blank), show the position if you chose
-one, and its button should lead to a working "set your password" screen.
-
-**Notes worth knowing:**
-- **This one keeps its link on purpose — unlike E2–E4.** Those three are
-  deliberately code-only because the same browser waiting for the code has
-  to receive it. Here, the OWNER is the one at the keyboard, not the invited
-  staff member, so there is no tab anywhere waiting for a code — a link is
-  the only way for the invite to reach whatever device the new hire actually
-  reads their email on.
-- **Do not "tidy" the file.** As with E2–E4, the tables, inline styles and
-  the `<!--[if mso]>` blocks are deliberate. This one has an extra piece the
-  other three don't: a small VML block so the button still renders as a
-  button in Outlook, not just the other three's code box.
-- **"24 hours"** is what the template quotes for how long the invite link
-  stays valid — see the file's own header comment for exactly which
-  dashboard setting controls that, and how it compares to the shorter figure
-  E2–E4 quote for their 6-digit codes.
-- **The button's "set your password" screen is this site's own** —
-  `{{ .ConfirmationURL }}` lands on `Pages/Index.html`, which detects the
-  `type=invite` it carries and opens a "Set your password" panel (reusing
-  the password-recovery UI in `includes/auth.js`); submitting signs the new
-  hire straight into `staff_dashboard.html`, no separate log-in step needed.
+The owner dashboard fails closed when delivery configuration is missing. A
+provider failure removes the newly created account when possible, and the
+temporary password is never returned to the owner view. The retired
+`docs/email_templates/invite_staff.html` is not used; do not paste it into
+the Supabase Auth Invite user template.
 
 ---
 

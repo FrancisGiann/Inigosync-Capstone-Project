@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         staff: '../Pages/staff_dashboard.html',
         admin: '../Pages/owner_dashboard.html'
     };
+    const onboardingPath = '../Pages/staff_onboarding.html';
 
     // `reason` (optional) is stashed in sessionStorage for includes/auth.js
     // to pick up on the landing page — see AUTH_NOTICE_STORAGE_KEY above.
@@ -97,11 +98,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    const { data: profile, error } = await window.sb
+    const profileColumns = 'id, role, full_name, email, status, contact_num, position, avatar_url';
+    const onboardingColumn = 'onboarding_complete';
+    const isMissingOnboardingColumn = error => {
+        const message = String(error?.message || '').toLowerCase();
+        return ['42703', 'PGRST204'].includes(String(error?.code || ''))
+            && message.includes(onboardingColumn)
+            && /(column|schema cache|could not find)/.test(message);
+    };
+    let { data: profile, error } = await window.sb
         .from('profiles')
-        .select('id, role, full_name, email, status, contact_num, position, avatar_url')
+        .select(`${profileColumns}, ${onboardingColumn}`)
         .eq('id', session.user.id)
         .single();
+
+    // Keep existing customer/admin accounts usable during staggered deploys:
+    // this newer onboarding column may not exist in the live schema yet.
+    // Only legacy active staff retain the access they had before this
+    // migration; pending staff remain behind the onboarding gate below.
+    if (error && isMissingOnboardingColumn(error)) {
+        ({ data: profile, error } = await window.sb
+            .from('profiles')
+            .select(profileColumns)
+            .eq('id', session.user.id)
+            .single());
+    }
 
     if (error || !profile || profile.status === 'disabled') {
         await window.sb.auth.signOut();
@@ -109,8 +130,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // Before the onboarding migration, active staff were already approved
+    // through the legacy staff flow. Preserve that access when the column is
+    // genuinely absent; pending staff still go through onboarding. Server
+    // role/status policies remain authoritative for all protected data.
+    const legacyActiveStaff = profile.role === 'staff'
+        && !Object.prototype.hasOwnProperty.call(profile, onboardingColumn)
+        && profile.status === 'active';
+
     if (profile.role !== 'customer') {
         try { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); } catch (_) { /* storage may be disabled */ }
+    }
+
+    const isStaffOnboardingPage = document.body.hasAttribute('data-staff-onboarding-page');
+    if (profile.role === 'staff' && profile.onboarding_complete !== true && !legacyActiveStaff && !isStaffOnboardingPage) {
+        window.location.replace(new URL(onboardingPath, window.location.href).toString());
+        return;
+    }
+    if (isStaffOnboardingPage && (profile.role !== 'staff' || profile.onboarding_complete === true || legacyActiveStaff)) {
+        window.location.replace(new URL(dashboardByRole[profile.role] || '../index.html', window.location.href).toString());
+        return;
     }
 
     if (requiredRole && profile.role !== requiredRole) {

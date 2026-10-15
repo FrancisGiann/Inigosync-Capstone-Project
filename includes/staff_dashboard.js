@@ -1,5 +1,60 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const STAFF_TIME_ZONE = 'Asia/Manila';
+
+    // Keep staff confirmations inside the page so they share the dashboard
+    // theme and remain keyboard accessible. A newer prompt safely cancels
+    // any unresolved prompt before taking focus.
+    const staffConfirmModal = document.querySelector('[data-staff-confirm-modal]');
+    const staffConfirmDialog = staffConfirmModal?.querySelector('[data-staff-confirm-dialog]');
+    const staffConfirmTitle = staffConfirmModal?.querySelector('[data-staff-confirm-title]');
+    const staffConfirmText = staffConfirmModal?.querySelector('[data-staff-confirm-text]');
+    let pendingStaffConfirm = null;
+
+    function closeStaffConfirm(accepted) {
+        if (!staffConfirmModal || !pendingStaffConfirm) return;
+        staffConfirmModal.hidden = true;
+        staffConfirmModal.removeAttribute('data-open');
+        const { resolve, returnFocus } = pendingStaffConfirm;
+        pendingStaffConfirm = null;
+        resolve(accepted);
+        returnFocus?.focus?.();
+    }
+
+    function confirmStaffAction(message, title = 'Confirm action', acceptLabel = 'Continue') {
+        if (!staffConfirmModal || !staffConfirmDialog) return Promise.resolve(false);
+        if (pendingStaffConfirm) closeStaffConfirm(false);
+        const returnFocus = document.activeElement;
+        staffConfirmTitle.textContent = title;
+        staffConfirmText.textContent = message;
+        const acceptButton = staffConfirmDialog.querySelector('[data-staff-confirm-accept]');
+        if (acceptButton) acceptButton.textContent = acceptLabel;
+        staffConfirmModal.hidden = false;
+        staffConfirmModal.setAttribute('data-open', '');
+        return new Promise(resolve => {
+            pendingStaffConfirm = { resolve, returnFocus };
+            staffConfirmDialog.querySelector('[data-staff-confirm-cancel]')?.focus();
+        });
+    }
+
+    staffConfirmModal?.querySelector('[data-staff-confirm-cancel]')?.addEventListener('click', () => closeStaffConfirm(false));
+    staffConfirmModal?.querySelector('[data-staff-confirm-accept]')?.addEventListener('click', () => closeStaffConfirm(true));
+    staffConfirmModal?.addEventListener('click', event => {
+        if (event.target === staffConfirmModal) closeStaffConfirm(false);
+    });
+    staffConfirmModal?.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeStaffConfirm(false);
+            return;
+        }
+        if (event.key === 'Tab' && staffConfirmDialog) {
+            const controls = Array.from(staffConfirmDialog.querySelectorAll('button:not(:disabled)'));
+            const first = controls[0], last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+    });
+
     // ------------------------------------------------------------------
     // Panel switching (sidebar + topbar shortcuts)
     // ------------------------------------------------------------------
@@ -1148,10 +1203,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinCustomerResults = document.querySelector('[data-staff-customer-results]');
     const walkinCustomerSelected = document.querySelector('[data-staff-customer-selected]');
     const walkinMobileStatus = document.querySelector('[data-staff-walkin-mobile-status]');
-    const walkinSportSelect = document.querySelector('[data-staff-walkin-sport-select]');
-    const walkinSportChips = document.querySelector('[data-staff-walkin-sport-chips]');
+    const walkinSportCards = document.querySelector('[data-staff-walkin-sport-cards]');
     const walkinUnitWrap = document.querySelector('[data-staff-walkin-unit-wrap]');
-    const walkinUnitLabel = document.querySelector('[data-staff-walkin-unit-label]');
     const walkinUnitSelect = document.querySelector('[data-staff-walkin-unit-select]');
     const walkinFromSelect = document.querySelector('[data-staff-walkin-from]');
     const walkinToSelect = document.querySelector('[data-staff-walkin-to]');
@@ -1267,9 +1320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (step === 1) return Boolean(walkinState.name) && !walkinState.mobileError && guestMobileReady
             && (walkinState.customerMode !== 'account' || Boolean(walkinState.customerId));
         if (step === 2) {
-            if (!walkinState.court || !window.InigoCourtsData) return false;
-            const { units } = window.InigoCourtsData.resolveCourtUnits(walkinState.court);
-            return units.length > 1 ? Boolean(walkinState.unit) : true;
+            return Boolean(walkinState.court && walkinState.unit && window.InigoCourtsData);
         }
         if (step === 3) return Boolean(walkinBusinessRules?.authoritative && walkinBookings.ok && walkinWalkins.ok)
             && ((walkinState.selectedHours?.length > 0
@@ -1580,70 +1631,116 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function walkinCourtsForSelectedSport() {
         if (!walkinState.sport) return [];
+        if (walkinState.sport.walkinCourtSlug) {
+            return walkinState.courts.filter((court) => court.slug === walkinState.sport.walkinCourtSlug);
+        }
         const selectedKey = walkinSportKey(walkinState.sport);
         return walkinState.courts.filter((court) => walkinSportKey({ slug: court.sportSlug || court.sportName }) === selectedKey);
     }
 
-    function renderWalkinSportChips() {
-        if (!walkinSportChips) return;
-        walkinSportChips.classList.add('staff-walkin-sport-cards');
-        const courts = walkinCourtsForSelectedSport();
-        if (!walkinState.sport) {
-            walkinSportChips.innerHTML = '<span class="staff-form-hint">Choose a sport first.</span>';
-            return;
-        }
-        if (!courts.length) {
-            walkinSportChips.innerHTML = '<span class="staff-form-hint">No verified courts are available for this sport.</span>';
-            return;
-        }
-        walkinSportChips.innerHTML = courts.map((court) => {
-            const active = walkinState.court && String(walkinState.court.id) === String(court.id);
-            const units = window.InigoCourtsData.resolveCourtUnits(court).units;
-            const imageUrl = court.imageUrl || units.find((unit) => unit.imageUrl)?.imageUrl || '';
-            const media = imageUrl
-                ? `<img src="${window.escapeHtml(imageUrl)}" alt="" loading="lazy">`
-                : `<span aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(court.sportSlug, court.sportName || court.name))}</span>`;
-            return `<button type="button" class="staff-walkin-sport-card${active ? ' is-selected' : ''}" data-staff-walkin-sport="${window.escapeHtml(String(court.id))}" aria-pressed="${Boolean(active)}"><span class="staff-walkin-sport-card-media">${media}</span><strong>${window.escapeHtml(court.name)}</strong></button>`;
-        }).join('');
+    function walkinSportsForVerifiedCourts(sports, courts) {
+        const available = [];
+        sports.forEach((sport) => {
+            const key = walkinSportKey(sport);
+            const sportCourts = courts.filter((court) => walkinSportKey({ slug: court.sportSlug || court.sportName }) === key);
+            if (!sportCourts.length) return;
 
-        walkinSportChips.querySelectorAll('[data-staff-walkin-sport]').forEach((chip) => {
-            chip.addEventListener('click', () => {
-                const court = walkinState.courts.find((c) => String(c.id) === chip.dataset.staffWalkinSport);
-                if (court) selectWalkinCourt(court);
+            // Supabase currently stores one Bowling — Duckpin sport row
+            // (slug `bowling-duckpin`) with separate Duckpin and Ten-Pin court
+            // listings. Surface each verified listing as its own card even
+            // though the parent sport slug is not the generic `bowling` slug.
+            if (/^bowling(?:-|$)/.test(key)) {
+                const bowlingListings = sportCourts.filter((court) => /^bowling-(?:duckpin|tenpin)$/.test(String(court.slug || '')));
+                if (bowlingListings.length) {
+                    bowlingListings.forEach((court) => {
+                        const variant = court.name.replace(/^bowling\s*[—–-]\s*/i, '').trim();
+                        available.push({ ...sport, slug: court.slug, name: `Bowling ${variant || court.name}`, walkinCourtSlug: court.slug });
+                    });
+                    return;
+                }
+            }
+            available.push(sport);
+        });
+        return available;
+    }
+
+    function walkinUnitsForSelectedSport() {
+        const courts = walkinCourtsForSelectedSport();
+        const hasMultipleListings = courts.length > 1;
+        return courts.flatMap((court) => window.InigoCourtsData.resolveCourtUnits(court).units.map((unit) => {
+            let listingLabel = court.name;
+            if (hasMultipleListings && walkinState.sport?.name && listingLabel.startsWith(walkinState.sport.name)) {
+                listingLabel = listingLabel.slice(walkinState.sport.name.length).replace(/^[\s—–:·-]+/, '').trim() || listingLabel;
+            }
+            return {
+                court,
+                unit,
+                label: hasMultipleListings ? `${listingLabel} · ${unit.label || court.name}` : (unit.label || court.name),
+            };
+        }));
+    }
+
+    function renderWalkinSportCards() {
+        if (!walkinSportCards) return;
+        if (!walkinState.sports.length) {
+            walkinSportCards.innerHTML = '<span class="staff-form-hint">No sports with verified, available inventory.</span>';
+            return;
+        }
+        walkinSportCards.innerHTML = walkinState.sports.map((sport) => {
+            const key = walkinSportKey(sport);
+            const active = walkinState.sport && walkinSportKey(walkinState.sport) === key;
+            const coverUrl = window.InigoVisuals?.sportCover(sport.slug) || null;
+            const media = coverUrl
+                ? `<img src="${window.escapeHtml(coverUrl)}" alt="" loading="lazy">`
+                : `<span aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(sport.slug, sport.name))}</span>`;
+            return `<button type="button" class="staff-walkin-sport-card${active ? ' is-selected' : ''}" data-staff-walkin-sport-card="${window.escapeHtml(key)}" aria-pressed="${Boolean(active)}"><span class="staff-walkin-sport-card-media">${media}</span><strong>${window.escapeHtml(sport.name)}</strong></button>`;
+        }).join('');
+        walkinSportCards.querySelectorAll('[data-staff-walkin-sport-card]').forEach((card) => {
+            card.addEventListener('click', () => {
+                const sport = walkinState.sports.find((item) => walkinSportKey(item) === card.dataset.staffWalkinSportCard);
+                if (!sport) return;
+                walkinState.sport = sport;
+                clearWalkinCurrentLine();
+                walkinState.court = null;
+                walkinState.unit = null;
+                walkinState.unitId = null;
+                if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
+                if (walkinUnitWrap) walkinUnitWrap.hidden = true;
+                if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
+                renderWalkinSportCards();
+                renderWalkinUnitOptions();
+                resetWalkinTimeSelectionAndRefresh();
+                renderWalkinWizard();
+                walkinUnitSelect?.focus();
             });
         });
     }
 
-    function selectWalkinCourt(court) {
+    function renderWalkinUnitOptions() {
+        if (!walkinUnitSelect || !walkinUnitWrap) return;
+        const choices = walkinUnitsForSelectedSport();
+        walkinUnitWrap.hidden = !walkinState.sport;
+        walkinUnitSelect.disabled = !walkinState.sport || !choices.length;
+        walkinUnitSelect.setAttribute('aria-label', walkinState.sport ? `Choose a court, lane, or table for ${walkinState.sport.name}` : 'Choose a court, lane, or table');
+        walkinUnitSelect.innerHTML = `<option value="" selected disabled hidden>${choices.length ? 'Choose an available unit' : 'No verified units available'}</option>`
+            + choices.map((choice, index) => `<option value="${index}">${window.escapeHtml(choice.label)}</option>`).join('');
+        if (walkinState.court && walkinState.unit) {
+            const selectedIndex = choices.findIndex((choice) => String(choice.court.id) === String(walkinState.court.id)
+                && String(choice.unit.id || '') === String(walkinState.unitId || '')
+                && String(choice.unit.label || choice.court.name) === String(walkinState.unit));
+            walkinUnitSelect.value = selectedIndex >= 0 ? String(selectedIndex) : '';
+        } else walkinUnitSelect.value = '';
+    }
+
+    function selectWalkinUnit(court, unit) {
         if (!walkinState.sport || !walkinCourtsForSelectedSport().some((available) => String(available.id) === String(court?.id))) return;
         walkinState.court = court;
-        const { pickerLabel, units } = window.InigoCourtsData.resolveCourtUnits(court);
-
-        if (units.length > 1) {
-            if (walkinUnitWrap) walkinUnitWrap.hidden = false;
-            if (walkinUnitLabel) walkinUnitLabel.textContent = pickerLabel;
-            if (walkinUnitSelect) {
-                walkinUnitSelect.innerHTML = units.map((u, i) => {
-                    const label = u.label || `Unit ${i + 1}`;
-                    return `<option value="${window.escapeHtml(label)}" data-unit-id="${window.escapeHtml(u.id || '')}">${window.escapeHtml(label)}</option>`;
-                }).join('');
-                walkinState.unit = units[0].label || 'Unit 1';
-                walkinState.unitId = units[0].id || null;
-                setWalkinUnitRate(units[0], court);
-                walkinUnitSelect.value = walkinState.unit;
-            }
-        } else {
-            if (walkinUnitWrap) walkinUnitWrap.hidden = true;
-            if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
-            walkinState.unit = (units[0] && units[0].label) || null;
-            walkinState.unitId = (units[0] && units[0].id) || null;
-            setWalkinUnitRate(units[0], court);
-        }
-
+        walkinState.unit = unit?.label || court.name;
+        walkinState.unitId = unit?.id || null;
+        setWalkinUnitRate(unit, court);
         if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = `${court.name}${walkinState.unit ? ` · ${walkinState.unit}` : ''}`;
-        renderWalkinSportChips();
-        resetWalkinTimeSelectionAndRefresh();
-        renderWalkinWizard();
+        renderWalkinSportCards();
+        renderWalkinUnitOptions();
     }
 
     function setWalkinUnitRate(unit, court) {
@@ -1655,30 +1752,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (walkinUnitSelect) {
         walkinUnitSelect.addEventListener('change', () => {
-            walkinState.unit = walkinUnitSelect.value || null;
-            walkinState.unitId = walkinUnitSelect.selectedOptions[0]?.dataset.unitId || null;
-            const units = window.InigoCourtsData.resolveCourtUnits(walkinState.court).units;
-            setWalkinUnitRate(units.find((u) => String(u.id || '') === String(walkinState.unitId || '')) || units[0], walkinState.court);
-            if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = `${walkinState.court.name}${walkinState.unit ? ` · ${walkinState.unit}` : ''}`;
-            resetWalkinTimeSelectionAndRefresh();
-            renderWalkinWizard();
-        });
-    }
-
-    if (walkinSportSelect) {
-        walkinSportSelect.addEventListener('change', () => {
-            walkinState.sport = walkinState.sports.find((sport) => walkinSportKey(sport) === walkinSportSelect.value) || null;
-            // A court/unit is meaningful only within its selected sport. Clear
-            // it before rendering so neither the picker nor downstream time
-            // selection can retain a stale listing from the previous sport.
-            clearWalkinCurrentLine();
-            walkinState.court = null;
-            walkinState.unit = null;
-            walkinState.unitId = null;
-            if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
-            if (walkinUnitWrap) walkinUnitWrap.hidden = true;
-            if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
-            renderWalkinSportChips();
+            const choice = walkinUnitsForSelectedSport()[Number(walkinUnitSelect.value)];
+            if (!choice || walkinUnitSelect.value === '') {
+                walkinState.court = null;
+                walkinState.unit = null;
+                walkinState.unitId = null;
+                walkinState.rateDay = null;
+                walkinState.rateNight = null;
+                walkinState.rate = null;
+                walkinState.rateUnit = '/hr';
+                if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
+            } else selectWalkinUnit(choice.court, choice.unit);
             resetWalkinTimeSelectionAndRefresh();
             renderWalkinWizard();
         });
@@ -1694,18 +1778,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // fallback quantities describe public content, not bookable records.
         walkinState.courts = courts.filter((court) => !court.inventoryLoadFailed
             && Array.isArray(court.bookableUnits) && court.bookableUnits.length > 0);
-        const availableSportKeys = new Set(walkinState.courts.map((court) =>
-            walkinSportKey({ slug: court.sportSlug || court.sportName })));
-        walkinState.sports = sports.filter((sport) => availableSportKeys.has(walkinSportKey(sport)));
-        if (walkinSportSelect) {
-            walkinSportSelect.innerHTML = '<option value="">Choose a sport first</option>' + walkinState.sports.map((sport) =>
-                `<option value="${window.escapeHtml(walkinSportKey(sport))}">${window.escapeHtml(sport.name)}</option>`).join('');
-            walkinSportSelect.disabled = !walkinState.sports.length;
-        }
+        walkinState.sports = walkinSportsForVerifiedCourts(sports, walkinState.courts);
         walkinState.sport = null;
         walkinState.court = null;
         if (walkinUnitWrap) walkinUnitWrap.hidden = true;
-        renderWalkinSportChips();
+        renderWalkinSportCards();
+        renderWalkinUnitOptions();
     }
     loadWalkinCourts();
     if (window.InigoAppSettings) window.InigoAppSettings.getSettings().then((settings) => {
@@ -2177,7 +2255,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.items.push(line);
         clearWalkinCurrentLine();
         renderWalkinLines();
-        renderWalkinSportChips();
+        renderWalkinSportCards();
+        renderWalkinUnitOptions();
         refreshWalkinTimePickers();
         updateWalkinSummary();
         goToWalkinStep(2);
@@ -2442,10 +2521,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinNameInput) walkinNameInput.readOnly = false;
         if (walkinMobileInput) walkinMobileInput.readOnly = false;
         if (walkinLinesEl) walkinLinesEl.replaceChildren();
-        if (walkinSportSelect) walkinSportSelect.value = '';
+        walkinState.sport = null;
+        walkinState.court = null;
+        walkinState.unit = null;
+        walkinState.unitId = null;
         if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
         if (walkinUnitWrap) walkinUnitWrap.hidden = true;
-        renderWalkinSportChips();
+        renderWalkinSportCards();
+        renderWalkinUnitOptions();
         walkinBookings = { ok: true, rows: [] };
         walkinWalkins = { ok: true, rows: [] };
         renderWalkinTimePickers();
@@ -2821,7 +2904,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('A court price is unavailable. Refresh availability and review the order again.', true);
             return;
         }
-        if (walkinState.payment === 'paymongo' && !window.confirm('You will be redirected to PayMongo to complete the online payment. Continue?')) return;
+        if (walkinState.payment === 'paymongo' && !await confirmStaffAction(
+            'You will be redirected to PayMongo to complete the online payment. Continue?',
+            'Continue to PayMongo?',
+            'Continue to payment',
+        )) return;
 
         button.disabled = true;
         const originalText = button.textContent;
@@ -3714,6 +3801,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ------------------------------------------------------------------
     const STAFF_AVATAR_OUTPUT_SIZE = 256;
     const STAFF_AVATAR_JPEG_QUALITY = 0.82;
+    // Declared before renderStaffProfile() because profile-ready may fire
+    // before this DOMContentLoaded handler's initial render runs.
+    let staffSettingsEditing = false;
 
     const staffAvatarFileInput = document.querySelector('[data-staff-avatar-file]');
     const staffAvatarUploadBtn = document.querySelector('[data-staff-avatar-upload-trigger]');
@@ -3727,17 +3817,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return typeof value === 'string' && value.length > 0 && (value.startsWith('data:') || value.startsWith('https://'));
     }
 
-    async function saveStaffAvatarUrl(avatarUrl) {
-        if (!window.sb || !window.inigosyncProfile) {
+    async function saveStaffAvatarUrl(avatarUrl, profileId = window.inigosyncProfile?.id) {
+        if (!window.sb || !profileId || window.inigosyncProfile?.id !== profileId) {
             window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
             return false;
         }
-        const { error } = await window.sb.from('profiles').update({ avatar_url: avatarUrl }).eq('id', window.inigosyncProfile.id);
+        const { error } = await window.sb.from('profiles').update({ avatar_url: avatarUrl }).eq('id', profileId);
         if (error) {
             console.error('[staff] avatar_url update failed', error);
             window.InigoToast?.show(error.message || 'Could not save your photo. Please try again.', true);
             return false;
         }
+        if (window.inigosyncProfile?.id !== profileId) return false;
         window.inigosyncProfile.avatar_url = avatarUrl;
         renderStaffProfile(window.inigosyncProfile);
         return true;
@@ -3752,17 +3843,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             const file = staffAvatarFileInput.files && staffAvatarFileInput.files[0];
             staffAvatarFileInput.value = '';
             if (!file || !window.InigoImageTools) return;
+            const profileId = window.inigosyncProfile?.id;
+            if (!profileId) return;
 
             const originalLabel = staffAvatarUploadBtn ? staffAvatarUploadBtn.textContent : '';
             if (staffAvatarUploadBtn) {
                 staffAvatarUploadBtn.disabled = true;
-                staffAvatarUploadBtn.textContent = 'Uploading…';
+                staffAvatarUploadBtn.textContent = 'Preparing…';
             }
             if (staffAvatarRemoveBtn) staffAvatarRemoveBtn.disabled = true;
 
             try {
-                const dataUrl = await window.InigoImageTools.downscaleImageToDataUrl(file, { size: STAFF_AVATAR_OUTPUT_SIZE, quality: STAFF_AVATAR_JPEG_QUALITY });
-                const ok = await saveStaffAvatarUrl(dataUrl);
+                const croppedBlob = await window.InigoImageTools.openCropEditor(file, {
+                    aspect: 1,
+                    maxW: STAFF_AVATAR_OUTPUT_SIZE,
+                    maxH: STAFF_AVATAR_OUTPUT_SIZE,
+                    quality: STAFF_AVATAR_JPEG_QUALITY,
+                });
+                if (!croppedBlob) return;
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('Could not finish processing the cropped photo.'));
+                    reader.readAsDataURL(croppedBlob);
+                });
+                if (!await confirmStaffAction('Save this photo as your profile photo?', 'Save profile photo?', 'Save photo')) return;
+                const ok = await saveStaffAvatarUrl(dataUrl, profileId);
                 if (ok) window.InigoToast?.show('Profile photo updated.');
             } catch (err) {
                 console.error('[staff] avatar upload failed', err);
@@ -3779,9 +3885,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (staffAvatarRemoveBtn) {
         staffAvatarRemoveBtn.addEventListener('click', async () => {
+            if (!await confirmStaffAction('Are you sure you want to remove your profile photo?', 'Remove profile photo?', 'Remove photo')) return;
+            const profileId = window.inigosyncProfile?.id;
+            if (!profileId) return;
             staffAvatarRemoveBtn.disabled = true;
             if (staffAvatarUploadBtn) staffAvatarUploadBtn.disabled = true;
-            const ok = await saveStaffAvatarUrl(null);
+            const ok = await saveStaffAvatarUrl(null, profileId);
             staffAvatarRemoveBtn.disabled = false;
             if (staffAvatarUploadBtn) staffAvatarUploadBtn.disabled = false;
             if (ok) window.InigoToast?.show('Profile photo removed.');
@@ -3823,7 +3932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const nameInput = document.querySelector('[data-staff-settings-name]');
         const mobileInput = document.querySelector('[data-staff-settings-mobile]');
         if (nameInput) nameInput.value = profile.full_name || '';
-        if (mobileInput) mobileInput.value = profile.contact_num || '';
+        if (mobileInput && !staffSettingsEditing) mobileInput.value = profile.contact_num || '';
 
         // Revision S3 (database/schema/018_staff_details.sql) — these five
         // live outside authGuard.js's fixed login-gate select, so `profile`
@@ -3836,11 +3945,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const genderInput = document.querySelector('[data-staff-settings-gender]');
         const emergencyNameInput = document.querySelector('[data-staff-settings-emergency-name]');
         const emergencyNumberInput = document.querySelector('[data-staff-settings-emergency-number]');
-        if (addressInput) addressInput.value = profile.address || '';
+        if (addressInput && !staffSettingsEditing) addressInput.value = profile.address || '';
         if (birthdateInput) birthdateInput.value = profile.birthdate || '';
         if (genderInput) genderInput.value = profile.gender || '';
-        if (emergencyNameInput) emergencyNameInput.value = profile.emergency_contact_name || '';
-        if (emergencyNumberInput) emergencyNumberInput.value = profile.emergency_contact_number || '';
+        if (emergencyNameInput && !staffSettingsEditing) emergencyNameInput.value = profile.emergency_contact_name || '';
+        if (emergencyNumberInput && !staffSettingsEditing) emergencyNumberInput.value = profile.emergency_contact_number || '';
     }
 
     document.addEventListener('inigosync:profile-ready', (e) => renderStaffProfile(e.detail));
@@ -3923,7 +4032,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Keep personal details usable against older deployments that have
         // not applied the phone-validation columns yet. In that case the
         // UI reports the saved number's validation status as unavailable,
-        // while changed numbers still need a live provider check on save.
+        // while changed numbers still need a live database check on save.
         if (error && isSchemaMismatchError(error)) {
             const fallback = await window.sb
                 .from('profiles')
@@ -3985,7 +4094,240 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const staffSettingsMobileInput = document.querySelector('[data-staff-settings-mobile]');
     const staffPhoneStatus = document.querySelector('[data-staff-phone-status]');
+    const staffEmergencyNumberInput = document.querySelector('[data-staff-settings-emergency-number]');
+    const staffEmergencyPhoneStatus = document.querySelector('[data-staff-emergency-phone-status]');
+    const staffMobileAvailability = { request: 0, timer: null, controller: null };
+    function scheduleStaffMobileAvailability() {
+        if (!staffSettingsMobileInput) return;
+        clearTimeout(staffMobileAvailability.timer);
+        staffMobileAvailability.controller?.abort();
+        const request = ++staffMobileAvailability.request;
+        staffMobileAvailability.controller = null;
+        staffSettingsMobileInput.dataset.phoneAvailability = '';
+        delete staffSettingsMobileInput.dataset.checkedPhone;
+        staffSettingsMobileInput.setAttribute('aria-invalid', 'false');
+        if (staffPhoneStatus) { staffPhoneStatus.dataset.state = ''; staffPhoneStatus.classList.remove('is-error'); }
+        const raw = staffSettingsMobileInput.value.trim();
+        if (!raw) { if (staffPhoneStatus) staffPhoneStatus.textContent = 'Optional. Enter a Philippine mobile number to check format and availability.'; return; }
+        const parsed = window.validatePhMobile?.(raw);
+        if (!parsed?.valid) {
+            staffSettingsMobileInput.dataset.phoneAvailability = 'invalid';
+            staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
+            if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = parsed?.message || 'Enter a valid Philippine mobile number.'; }
+            return;
+        }
+        if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'checking'; staffPhoneStatus.textContent = 'Checking Philippine format and availability…'; }
+        staffMobileAvailability.timer = setTimeout(async () => {
+            const controller = new AbortController();
+            staffMobileAvailability.controller = controller;
+            try {
+                const { data, error } = await window.sb.functions.invoke('validate-contact-phone', {
+                    body: { phone: parsed.normalized, purpose: 'contact' }, signal: controller.signal,
+                });
+                if (request !== staffMobileAvailability.request || window.validatePhMobile?.(staffSettingsMobileInput.value.trim())?.normalized !== parsed.normalized) return;
+                if (error || data?.valid !== true || data.normalized !== `+63${parsed.normalized.slice(1)}`) {
+                    const message = data?.reason === 'in_use' ? 'This number is already linked to another account.' : 'Could not check this number. Try again.';
+                    throw new Error(message);
+                }
+                staffSettingsMobileInput.dataset.phoneAvailability = 'available';
+                staffSettingsMobileInput.setAttribute('aria-invalid', 'false');
+                staffSettingsMobileInput.dataset.checkedPhone = parsed.normalized;
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'available'; staffPhoneStatus.classList.remove('is-error'); staffPhoneStatus.textContent = 'Valid Philippine mobile number and available.'; }
+            } catch (error) {
+                if (controller.signal.aborted || request !== staffMobileAvailability.request) return;
+                staffSettingsMobileInput.dataset.phoneAvailability = 'invalid';
+                staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = error.message || 'Could not check this number. Try again.'; }
+            }
+        }, 500);
+    }
+    staffSettingsMobileInput?.addEventListener('input', scheduleStaffMobileAvailability);
+    const staffSettingsEditBtn = document.querySelector('[data-staff-settings-edit="profile"]');
+    const staffSettingsCancelBtn = document.querySelector('[data-staff-settings-cancel="profile"]');
+    const staffSettingsSaveProfileBtn = document.querySelector('[data-staff-settings-save="profile"]');
+    const staffSettingsMutableInputs = [
+        staffSettingsMobileInput,
+        document.querySelector('[data-staff-settings-address]'),
+        document.querySelector('[data-staff-settings-emergency-name]'),
+        staffEmergencyNumberInput,
+    ].filter(Boolean);
     let staffPhoneValidationBusy = false;
+    const staffEmergencyPhoneValidation = {
+        timer: null,
+        controller: null,
+        request: 0,
+        number: '',
+        validatedAt: 0,
+        phase: 'neutral',
+        error: '',
+    };
+
+    function setStaffEmergencyPhoneStatus(state, message) {
+        if (staffEmergencyPhoneStatus) {
+            staffEmergencyPhoneStatus.textContent = message;
+            staffEmergencyPhoneStatus.dataset.state = state;
+        }
+        if (staffEmergencyNumberInput) {
+            if (state === 'valid' || state === 'invalid' || state === 'warning') staffEmergencyNumberInput.dataset.validationState = state;
+            else delete staffEmergencyNumberInput.dataset.validationState;
+            staffEmergencyNumberInput.setAttribute('aria-invalid', String(state === 'invalid'));
+        }
+    }
+
+    function cancelStaffEmergencyPhoneValidation() {
+        clearTimeout(staffEmergencyPhoneValidation.timer);
+        staffEmergencyPhoneValidation.controller?.abort();
+        staffEmergencyPhoneValidation.request += 1;
+        staffEmergencyPhoneValidation.controller = null;
+        staffEmergencyPhoneValidation.timer = null;
+        staffEmergencyPhoneValidation.number = '';
+        staffEmergencyPhoneValidation.validatedAt = 0;
+        staffEmergencyPhoneValidation.phase = 'neutral';
+        staffEmergencyPhoneValidation.error = '';
+        setStaffEmergencyPhoneStatus('neutral', 'Optional. We check format and show a warning if the number is already saved; shared family contacts are allowed.');
+    }
+
+    function currentStaffEmergencyNumberNormalized() {
+        const saved = String(window.inigosyncProfile?.emergency_contact_number || '').trim();
+        if (!saved) return '';
+        const checked = window.validatePhMobile(saved);
+        return checked?.valid ? checked.normalized : '';
+    }
+
+    function scheduleStaffEmergencyPhoneValidation() {
+        if (!staffEmergencyNumberInput) return;
+        const state = staffEmergencyPhoneValidation;
+        clearTimeout(state.timer);
+        state.controller?.abort();
+        state.controller = null;
+        state.timer = null;
+        state.request += 1;
+        state.validatedAt = 0;
+        state.error = '';
+
+        const raw = staffEmergencyNumberInput.value.trim();
+        if (!raw) {
+            state.number = '';
+            state.phase = 'neutral';
+            setStaffEmergencyPhoneStatus('neutral', 'Optional. We check format and show a warning if the number is already saved; shared family contacts are allowed.');
+            return;
+        }
+
+        const localCheck = window.validatePhMobile(raw);
+        if (!localCheck.valid) {
+            state.number = '';
+            state.phase = 'invalid';
+            state.error = localCheck.message || 'Enter a valid Philippine mobile number.';
+            setStaffEmergencyPhoneStatus('invalid', state.error);
+            return;
+        }
+
+        const request = state.request;
+        state.number = localCheck.normalized;
+        state.phase = 'pending';
+        setStaffEmergencyPhoneStatus('neutral', 'Checking Philippine format and whether the number is already saved…');
+        state.timer = setTimeout(async () => {
+            const controller = new AbortController();
+            state.controller = controller;
+            try {
+                if (!window.sb?.functions?.invoke) throw new Error('Phone availability could not be checked. Try again later.');
+                const { data, error } = await window.sb.functions.invoke('validate-contact-phone', {
+                    body: { phone: localCheck.normalized, purpose: 'emergency' },
+                    signal: controller.signal,
+                });
+                if (request !== state.request) return;
+                if (error) {
+                    let message = '';
+                    if (error.context && typeof error.context.clone === 'function') {
+                        try { message = (await error.context.clone().json())?.message || ''; } catch (_) { /* Use a generic message below. */ }
+                    }
+                    throw new Error(message || 'Phone availability could not be checked. Try again later.');
+                }
+
+                if (data?.valid !== true) {
+                    const reasonMessages = {
+                        invalid: 'Enter a valid Philippine mobile number.',
+                    };
+                    throw new Error(reasonMessages[data?.reason] || 'This number could not be validated. Try again later.');
+                }
+
+                const returnedNumber = typeof data.normalized === 'string' ? data.normalized : '';
+                const returnedCheck = returnedNumber ? window.validatePhMobile(returnedNumber) : null;
+                if (!/^\+639\d{9}$/.test(returnedNumber)
+                    || !returnedCheck?.valid || returnedCheck.normalized !== localCheck.normalized) {
+                    throw new Error('The number could not be checked safely. Try again later.');
+                }
+
+                if (request !== state.request
+                    || !staffSettingsEditing
+                    || window.validatePhMobile(staffEmergencyNumberInput.value.trim())?.normalized !== localCheck.normalized) return;
+                state.phase = 'valid';
+                state.validatedAt = Date.now();
+                state.warning = data.available === false;
+                setStaffEmergencyPhoneStatus(state.warning ? 'warning' : 'valid', state.warning
+                    ? 'This number is already saved somewhere. Emergency contacts may be shared with family; saving is allowed.'
+                    : 'Valid Philippine mobile number and not found in saved contact numbers.');
+            } catch (error) {
+                if (controller.signal.aborted || request !== state.request) return;
+                state.phase = 'invalid';
+                state.error = error.message || 'Phone availability could not be checked. Try again later.';
+                setStaffEmergencyPhoneStatus('invalid', state.error);
+            } finally {
+                if (request === state.request) {
+                    state.controller = null;
+                    state.timer = null;
+                }
+            }
+        }, 600);
+    }
+
+    function ensureStaffEmergencyPhoneValidated() {
+        if (!staffEmergencyNumberInput) return true;
+        const raw = staffEmergencyNumberInput.value.trim();
+        if (!raw) return true;
+        const localCheck = window.validatePhMobile(raw);
+        if (!localCheck.valid) {
+            setStaffEmergencyPhoneStatus('invalid', localCheck.message || 'Enter a valid Philippine mobile number.');
+            staffEmergencyNumberInput.focus();
+            return false;
+        }
+        if (localCheck.normalized === currentStaffEmergencyNumberNormalized()) return true;
+
+        const state = staffEmergencyPhoneValidation;
+        const proofIsFresh = state.phase === 'valid'
+            && state.number === localCheck.normalized
+            && Date.now() - state.validatedAt < 4 * 60 * 1000;
+        if (proofIsFresh) return true;
+
+        if (state.phase === 'valid' && state.number === localCheck.normalized) {
+            scheduleStaffEmergencyPhoneValidation();
+        } else if (state.number !== localCheck.normalized || state.phase === 'neutral') {
+            scheduleStaffEmergencyPhoneValidation();
+        } else if (state.phase === 'pending') {
+            setStaffEmergencyPhoneStatus('neutral', 'Wait for the emergency contact number availability check to finish before saving.');
+        }
+        staffEmergencyNumberInput.focus();
+        return false;
+    }
+
+    function setStaffSettingsEditing(editing) {
+        staffSettingsEditing = Boolean(editing);
+        staffSettingsMutableInputs.forEach((input) => {
+            input.readOnly = !staffSettingsEditing;
+            input.setAttribute('aria-readonly', String(!staffSettingsEditing));
+        });
+        if (staffSettingsEditBtn) staffSettingsEditBtn.hidden = staffSettingsEditing;
+        if (staffSettingsCancelBtn) staffSettingsCancelBtn.hidden = !staffSettingsEditing;
+        if (staffSettingsSaveProfileBtn) staffSettingsSaveProfileBtn.hidden = !staffSettingsEditing;
+        if (!staffSettingsEditing) cancelStaffEmergencyPhoneValidation();
+        else {
+            staffSettingsMobileInput?.dispatchEvent(new Event('input', { bubbles: true }));
+            staffEmergencyNumberInput?.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
+
+    setStaffSettingsEditing(false);
+    staffSettingsEditBtn?.addEventListener('click', () => setStaffSettingsEditing(true));
 
     function currentStaffMobileNormalized() {
         const current = window.inigosyncProfile?.contact_num || '';
@@ -4002,52 +4344,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function refreshStaffPhoneValidationUi() {
         const parsed = typedStaffMobile();
-        const unchanged = parsed.valid && parsed.normalized && parsed.normalized === currentStaffMobileNormalized();
         if (!staffPhoneStatus) return;
         if (!staffSettingsMobileInput?.value.trim()) {
-            staffPhoneStatus.textContent = 'Contact number is optional. Saving a changed number checks its Philippine mobile format and type; it does not verify ownership or reachability.';
+            staffPhoneStatus.textContent = 'Optional. We check Philippine mobile format and whether the number is already linked to an account.';
         } else if (!parsed.valid) {
             staffPhoneStatus.textContent = parsed.message || 'Enter a valid Philippine mobile number.';
-        } else if (unchanged) {
-            const validated = window.inigosyncProfile?.contact_num_validated;
-            const checkedAt = window.inigosyncProfile?.contact_num_validated_at;
-            if (validated === true) {
-                const dateLabel = checkedAt ? new Date(checkedAt).toLocaleString('en-PH', {
-                    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila',
-                }) : '';
-                staffPhoneStatus.textContent = `Saved number format/type check passed${dateLabel ? ` on ${dateLabel}` : ''}. Ownership and reachability are not verified.`;
-            } else if (validated === false) {
-                staffPhoneStatus.textContent = 'This is your current saved number. It has not passed the provider format/type check.';
-            } else {
-                staffPhoneStatus.textContent = 'This is your current saved number. Its provider validation status is unavailable.';
-            }
+        } else if (staffSettingsMobileInput.dataset.phoneAvailability === 'available') {
+            staffPhoneStatus.textContent = 'Valid Philippine mobile number and available.';
+        } else if (staffSettingsMobileInput.dataset.phoneAvailability === 'invalid') {
+            // Keep the specific red message from the completed format or DB check.
         } else {
-            staffPhoneStatus.textContent = 'Save Changes to check this number as an active Philippine mobile number. The check does not verify ownership or reachability.';
+            staffPhoneStatus.textContent = 'Checking Philippine format and availability…';
         }
     }
 
     if (staffSettingsMobileInput) staffSettingsMobileInput.addEventListener('input', refreshStaffPhoneValidationUi);
+    staffEmergencyNumberInput?.addEventListener('input', scheduleStaffEmergencyPhoneValidation);
     document.addEventListener('inigosync:profile-ready', refreshStaffPhoneValidationUi);
 
-    const staffSettingsSaveProfileBtn = document.querySelector('[data-staff-settings-save="profile"]');
     if (staffSettingsSaveProfileBtn) {
         staffSettingsSaveProfileBtn.addEventListener('click', async () => {
-            if (!window.sb || !window.inigosyncProfile || staffPhoneValidationBusy) return;
-            const nameInput = document.querySelector('[data-staff-settings-name]');
+            if (!staffSettingsEditing || !window.sb || !window.inigosyncProfile || staffPhoneValidationBusy) return;
+            const profileId = window.inigosyncProfile.id;
+            if (!profileId) return;
             const mobileInput = document.querySelector('[data-staff-settings-mobile]');
             const addressInput = document.querySelector('[data-staff-settings-address]');
-            const birthdateInput = document.querySelector('[data-staff-settings-birthdate]');
-            const genderInput = document.querySelector('[data-staff-settings-gender]');
             const emergencyNameInput = document.querySelector('[data-staff-settings-emergency-name]');
             const emergencyNumberInput = document.querySelector('[data-staff-settings-emergency-number]');
-            const full_name = nameInput ? nameInput.value.trim() : '';
+            if (!ensureStaffEmergencyPhoneValidated()) return;
+            if (!await confirmStaffAction('Save these personal information changes?', 'Save profile changes?', 'Save changes')) return;
+            if (!ensureStaffEmergencyPhoneValidated()) return;
+            // Capture mutable drafts after the async confirmation resolves.
+            // Inputs remain editable behind the dialog, so earlier values
+            // must never be used to validate or write a stale mobile number.
             const mobileRaw = mobileInput ? mobileInput.value.trim() : '';
-
-            if (!full_name) {
-                window.InigoToast?.show('Enter your full name.', true);
-                nameInput?.focus();
-                return;
-            }
+            const addressRaw = addressInput ? addressInput.value.trim() : '';
+            const emergencyNameRaw = emergencyNameInput ? emergencyNameInput.value.trim() : '';
+            const emergencyNumberRaw = emergencyNumberInput ? emergencyNumberInput.value.trim() : '';
 
             // Mobile is optional (a staff account's contact_num can be
             // blank) but validated the same way as everywhere else in this
@@ -4072,7 +4405,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             // (unlike the account's own mobile above, an emergency contact
             // might not be on file yet at all) but gets the exact same
             // PH-mobile validation whenever a value IS entered.
-            const emergencyNumberRaw = emergencyNumberInput ? emergencyNumberInput.value.trim() : '';
             let emergency_contact_number = '';
             if (emergencyNumberRaw) {
                 const emCheck = window.validatePhMobile(emergencyNumberRaw);
@@ -4085,15 +4417,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             const fullPatch = {
-                full_name,
                 contact_num,
-                address: addressInput ? addressInput.value.trim() : '',
-                // A `date` column rejects '' outright (only a real date or
-                // NULL) — unlike every text field here, an empty birthdate
-                // must become null, never ''.
-                birthdate: (birthdateInput && birthdateInput.value) ? birthdateInput.value : null,
-                gender: genderInput ? genderInput.value : '',
-                emergency_contact_name: emergencyNameInput ? emergencyNameInput.value.trim() : '',
+                address: addressRaw,
+                emergency_contact_name: emergencyNameRaw,
                 emergency_contact_number,
             };
 
@@ -4115,12 +4441,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
 
-                if (staffPhoneStatus) staffPhoneStatus.textContent = 'Checking the new number with the provider…';
+                if (staffPhoneStatus) staffPhoneStatus.textContent = 'Checking Philippine format and availability…';
                 staffSettingsSaveProfileBtn.textContent = 'Checking number…';
                 let validationResult;
                 try {
                     validationResult = await window.sb.functions.invoke('validate-contact-phone', {
-                        body: { phone: mobileCheck.normalized },
+                        body: { phone: mobileCheck.normalized, purpose: 'contact' },
                     });
                 } catch (validationError) {
                     validationResult = { error: validationError };
@@ -4138,46 +4464,79 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const returnedNumber = typeof validation.normalized === 'string' ? validation.normalized : '';
                 const returnedCheck = returnedNumber ? window.validatePhMobile(returnedNumber) : null;
                 const isCanonicalE164 = /^\+639\d{9}$/.test(returnedNumber);
-                if (validation.valid !== true || validation.line_status !== 'active' || validation.phone_type !== 'mobile'
-                    || !isCanonicalE164 || !returnedCheck?.valid || returnedCheck.normalized !== mobileCheck.normalized) {
-                    const messages = {
-                        inactive: 'The provider classified this number as inactive. No profile changes were saved.',
-                        status_unknown: 'The provider could not confirm this number status. No profile changes were saved.',
-                        not_mobile: 'The provider did not classify this as a mobile number. No profile changes were saved.',
-                    };
-                    const message = messages[validation.reason] || 'The provider could not validate this as an active Philippine mobile number. No profile changes were saved.';
+                if (validation.valid !== true || !isCanonicalE164 || !returnedCheck?.valid || returnedCheck.normalized !== mobileCheck.normalized) {
+                    const message = validation.reason === 'in_use'
+                        ? 'This number is already linked to another account. No profile changes were saved.'
+                        : 'The number could not be checked safely. No profile changes were saved.';
                     restoreSaveButton();
                     if (staffPhoneStatus) staffPhoneStatus.textContent = message;
                     window.InigoToast?.show(message, true);
                     return;
                 }
 
-                // Persist exactly the provider's normalized E.164 value;
-                // the database trigger consumes the one-use proof and
-                // derives the validation fields server-side.
+                // Persist the canonical E.164 value; the database trigger
+                // consumes the one-use proof and derives validation fields.
                 contact_num = returnedNumber;
                 fullPatch.contact_num = returnedNumber;
-                if (staffPhoneStatus) staffPhoneStatus.textContent = 'Provider format/type checks passed for an active mobile number. Ownership and reachability are not verified.';
+                if (staffPhoneStatus) staffPhoneStatus.textContent = 'Valid Philippine mobile number and available.';
                 staffSettingsSaveProfileBtn.textContent = 'Saving changes…';
+            }
+
+            // Contact-number availability checks above can take time while the
+            // settings fields remain editable. Recheck the emergency draft
+            // immediately before the profile write so its proof still
+            // matches the exact value that would be persisted.
+            const latestMobileRaw = mobileInput ? mobileInput.value.trim() : '';
+            const latestAddressRaw = addressInput ? addressInput.value.trim() : '';
+            const latestEmergencyNameRaw = emergencyNameInput ? emergencyNameInput.value.trim() : '';
+            if (latestMobileRaw !== mobileRaw || latestAddressRaw !== addressRaw || latestEmergencyNameRaw !== emergencyNameRaw) {
+                refreshStaffPhoneValidationUi();
+                window.InigoToast?.show('Your profile changed while the number was being checked. Review the fields and save again.', true);
+                mobileInput?.focus();
+                restoreSaveButton();
+                return;
+            }
+            if (latestMobileRaw && staffSettingsMobileInput?.dataset.checkedPhone !== mobileCheck?.normalized) {
+                scheduleStaffMobileAvailability();
+                staffSettingsMobileInput?.focus();
+                restoreSaveButton();
+                window.InigoToast?.show('Wait for the contact-number availability check to finish.', true);
+                return;
+            }
+            const latestEmergencyRaw = staffEmergencyNumberInput?.value.trim() || '';
+            let latestEmergencyNumber = '';
+            if (latestEmergencyRaw) {
+                const latestEmergencyCheck = window.validatePhMobile(latestEmergencyRaw);
+                if (!latestEmergencyCheck.valid) {
+                    setStaffEmergencyPhoneStatus('invalid', latestEmergencyCheck.message || 'Enter a valid Philippine mobile number.');
+                    staffEmergencyNumberInput?.focus();
+                    restoreSaveButton();
+                    return;
+                }
+                latestEmergencyNumber = latestEmergencyCheck.normalized;
+            }
+            if (latestEmergencyNumber !== emergency_contact_number || !ensureStaffEmergencyPhoneValidated()) {
+                staffEmergencyNumberInput?.focus();
+                restoreSaveButton();
+                return;
             }
 
             let updateResult;
             try {
-                updateResult = await window.sb.from('profiles').update(fullPatch).eq('id', window.inigosyncProfile.id);
+                if (window.inigosyncProfile?.id !== profileId) throw new Error('The signed-in profile changed before these changes could be saved.');
+                updateResult = await window.sb.from('profiles').update(fullPatch).eq('id', profileId);
             } catch (updateError) {
                 updateResult = { error: updateError };
             }
             let { error } = updateResult || {};
 
-            // Revision S3 (database/schema/018_staff_details.sql) — not
-            // applied yet: retry with just full_name/contact_num, the two
-            // columns every prior revision already relied on, same
-            // schema-mismatch-retry idiom the Walk-In wizard's save uses
-            // further up this file.
+            // If schema 018 is not installed, preserve the phone update
+            // through the legacy contact_num column only.
             let usedReducedPayload = false;
             if (error && isSchemaMismatchError(error)) {
                 try {
-                    ({ error } = await window.sb.from('profiles').update({ full_name, contact_num }).eq('id', window.inigosyncProfile.id));
+                    if (window.inigosyncProfile?.id !== profileId) throw new Error('The signed-in profile changed before these changes could be saved.');
+                    ({ error } = await window.sb.from('profiles').update({ contact_num }).eq('id', profileId));
                 } catch (fallbackError) {
                     error = fallbackError;
                 }
@@ -4188,30 +4547,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (error) {
                 if (contactNumberChanged && staffPhoneStatus) {
-                    staffPhoneStatus.textContent = 'The number passed provider checks, but the profile could not be saved. No contact number was applied.';
+                    staffPhoneStatus.textContent = 'The number passed format and availability checks, but could not be saved.';
                 }
                 window.InigoToast?.show(error.message || 'Could not save your changes.', true);
                 return;
             }
 
-            Object.assign(window.inigosyncProfile, fullPatch);
+            Object.assign(window.inigosyncProfile, usedReducedPayload ? { contact_num } : fullPatch);
             if (staffPhoneStatus) staffPhoneStatus.textContent = !contact_num
                 ? 'Contact number removed.'
                 : contactNumberChanged
-                    ? 'Contact number saved. Provider format/type checks passed; ownership and reachability are not verified.'
+                    ? 'Contact number saved after format and availability checks.'
                     : 'Contact number is saved.';
             renderStaffProfile(window.inigosyncProfile);
             await loadStaffProfileDetails();
+            setStaffSettingsEditing(false);
+            renderStaffProfile(window.inigosyncProfile);
             window.InigoToast?.show(usedReducedPayload
                 ? 'Profile updated — address/birthdate/gender/emergency contact need a database update (ask the owner to run 018).'
                 : 'Profile updated.');
         });
     }
 
-    document.querySelectorAll('[data-staff-settings-cancel="profile"]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            if (window.inigosyncProfile) renderStaffProfile(window.inigosyncProfile);
-        });
+    staffSettingsCancelBtn?.addEventListener('click', () => {
+        setStaffSettingsEditing(false);
+        if (window.inigosyncProfile) renderStaffProfile(window.inigosyncProfile);
     });
 
     // ---- Password visibility toggles ----
@@ -4374,7 +4734,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.InigoToast?.show('Passwords do not match.', true);
                 return;
             }
-            if (!window.confirm('Are you sure you want to save this new password?')) return;
+            if (!await confirmStaffAction('Are you sure you want to save this new password?', 'Save new password?', 'Save password')) return;
 
             staffPwSaveInProgress = true;
             const generation = ++staffPwVerificationGeneration;

@@ -28,11 +28,3 @@ export function phoneValidationPreflight(): Response {
   });
 }
 
-export function phoneValidationUnavailable(retryAfterSeconds?: number): Response {
-  return jsonCorsResponse(
-    { message: "Phone validation is temporarily unavailable. Try again later." },
-    503,
-    "",
-    retryAfterSeconds ? { "retry-after": String(retryAfterSeconds) } : {},
-  );
-}
