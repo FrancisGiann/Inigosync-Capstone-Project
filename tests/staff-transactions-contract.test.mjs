@@ -6,6 +6,7 @@ import pagination from '../includes/staffPagination.js';
 const html = await readFile(new URL('../Pages/staff_dashboard.html', import.meta.url), 'utf8');
 const script = await readFile(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../Style/staff_dashboard.css', import.meta.url), 'utf8');
+const receiptStyles = await readFile(new URL('../Style/paymentAcknowledgment.css', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20261013043015_staff_transaction_records.sql', import.meta.url), 'utf8');
 const transactionPanelStart = html.indexOf('<section class="staff-panel" data-staff-panel="transactions"');
 const transactionPanelEnd = html.indexOf('<section class="staff-panel" data-staff-panel="profile"', transactionPanelStart);
@@ -60,22 +61,17 @@ test('staff table pagination shows ten rows, navigates numbered pages, and clamp
 
 test('View receipt opens the shared acknowledgment card with working print and download actions', () => {
     assert.match(html, /data-staff-receipt-modal[\s\S]*?role="dialog"[\s\S]*?aria-modal="true"[\s\S]*?data-staff-receipt-modal-content/);
-    assert.match(script, /if \(receiptButton && row\?\.acknowledgment\)\s*\{\s*openTransactionAcknowledgment\(\{ acknowledgment: row\.acknowledgment \}\);/);
-    assert.match(script, /renderStaffReceipt\(ack, staffReceiptModalContent, 'transaction'\)/);
+    assert.match(script, /if \(receiptButton && row\?\.acknowledgment\)\s*\{\s*openTransactionAcknowledgment\(\{ acknowledgment: row\.acknowledgment, payment_id: row\.payment_id, source: row\.source \}\);/);
+    assert.match(script, /renderStaffReceipt\(\{ \.\.\.ack, transaction_id: ack\.transaction_id \|\| payment\.payment_id, source: payment\.source \}, staffReceiptModalContent, 'transaction'\)/);
     assert.match(script, /data-staff-receipt-download="\$\{idAttr\}"/);
     assert.match(script, /data-staff-receipt-print/);
-    assert.match(script, /staff-printing-transaction-receipt/);
+    assert.match(script, /InigoPaymentAcknowledgment\.print\(staffReceiptModalContent\?\.querySelector\('\.payment-ack-card'\)\)/);
     assert.match(script, /downloadStaffReceiptAsPng\(card, downloadBtn\.dataset\.staffReceiptDownload/);
-    assert.match(script, /window\.addEventListener\('afterprint', clearPrintTarget/);
     assert.match(script, /staffReceiptModal\.setAttribute\('data-open', ''\)/);
     assert.match(script, /staffReceiptModal\.removeAttribute\('data-open'\)/);
-    assert.match(styles, /body\.staff-printing-transaction-receipt \.staff-receipt-card,\s*body\.staff-printing-transaction-receipt \.staff-receipt-card \* \{ visibility: hidden !important; \}/);
-    assert.match(styles, /body\.staff-printing-transaction-receipt \.staff-receipt-modal \.staff-receipt-card,\s*body\.staff-printing-transaction-receipt \.staff-receipt-modal \.staff-receipt-card \* \{ visibility: visible !important; \}/);
-    assert.match(styles, /@page \{ size: 80mm 300mm; margin: 3mm; \}/);
-    assert.match(styles, /body\.staff-printing-transaction-receipt > :not\(\.staff-receipt-modal\) \{ display: none !important; \}/);
-    assert.match(styles, /body\.staff-printing-transaction-receipt \.staff-receipt-modal \{[\s\S]*?position: static !important;[\s\S]*?overflow: visible !important;/);
-    assert.match(styles, /body\.staff-printing-transaction-receipt \.staff-receipt-modal \.staff-modal \{[\s\S]*?max-height: none !important;[\s\S]*?overflow: visible !important;[\s\S]*?transform: none !important;/);
-    assert.match(styles, /body\.staff-printing-transaction-receipt \.staff-receipt-modal \.staff-receipt-card \{[\s\S]*?position: static !important;[\s\S]*?width: min\(74mm, 100%\) !important;/);
+    assert.match(receiptStyles, /@page \{ size: auto; margin: 2mm; \}/);
+    assert.match(receiptStyles, /body\.payment-ack-printing > :not\(\.payment-ack-print-root\)/);
+    assert.doesNotMatch(styles + receiptStyles, /80mm 300mm/);
 });
 
 test('transaction RPC binds attribution to the active authenticated staff identity', () => {

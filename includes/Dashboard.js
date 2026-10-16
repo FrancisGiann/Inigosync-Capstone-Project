@@ -2590,47 +2590,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (receiptsGrid) receiptsGrid.innerHTML = RECEIPT_LOADING_HTML;
 
-    function acknowledgmentAmount(value) {
-        if (value === null || value === undefined || value === '') return '—';
-        const amount = Number(value);
-        return Number.isFinite(amount) ? `₱${amount.toFixed(2)}` : '—';
-    }
-
-    function acknowledgmentMoney(major, minor) {
-        if (major !== null && major !== undefined && major !== '') return acknowledgmentAmount(major);
-        if (minor !== null && minor !== undefined && minor !== '') return acknowledgmentAmount(Number(minor) / 100);
-        return '—';
-    }
-
-    function renderPaymentAcknowledgment(acknowledgment, cardKey, referenceLabel) {
-        const items = Array.isArray(acknowledgment.items) ? acknowledgment.items : [];
-        const safeKey = window.escapeHtml(String(cardKey || acknowledgment.receipt_id || acknowledgment.receipt_number || 'payment'));
-        const receiptNo = window.escapeHtml(String(acknowledgment.receipt_number || acknowledgment.receipt_id || 'Payment acknowledgment'));
-        const paymentStatus = String(acknowledgment.payment_status || 'confirmed').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-        const statusLabel = window.escapeHtml(String(acknowledgment.payment_status || 'Confirmed').replace(/[_-]+/g, ' '));
-        const itemRows = items.length ? items.map(item => {
-            const place = [item.sport, item.court, item.unit].filter(Boolean).map(value => window.escapeHtml(String(value))).join(' · ') || 'Court access';
-            const when = `${window.escapeHtml(formatBookingDate(item.starts_at))} · ${window.escapeHtml(formatBookingTime(item.starts_at, item.ends_at))}`;
-            return `<div class="dash-ack-item"><strong>${place}</strong><span>${when}</span><span class="dash-ack-item-amount">${window.escapeHtml(acknowledgmentMoney(item.subtotal, item.subtotal_minor))}</span></div>`;
-        }).join('') : '<p class="dash-receipt-thanks">Saved item details are unavailable.</p>';
-        const method = String(acknowledgment.payment_method || '—').replace(/[_-]+/g, ' ');
-        const issuedAt = acknowledgment.issued_at ? notificationTime(acknowledgment.issued_at) : '—';
-        const disclaimer = acknowledgment.disclaimer || 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
-        return `<article class="dash-receipt-card dash-payment-ack-card" data-dash-receipt-card="${safeKey}">
-            <div class="dash-receipt-brand"><span class="dash-receipt-brand-name">IñigoSync</span><span class="dash-receipt-brand-tag">Payment acknowledgment and entry pass</span></div>
-            <p class="dash-receipt-no">${window.escapeHtml(String(referenceLabel || 'Payment'))} · Acknowledgment #${receiptNo}</p>
-            <div class="dash-receipt-divider"></div>
-            <div class="dash-receipt-top"><h4>${window.escapeHtml(String(acknowledgment.customer_name || 'Customer'))}</h4><span class="dash-status ${window.escapeHtml(paymentStatus)}">${statusLabel}</span></div>
-            <div class="dash-receipt-meta"><div class="dash-summary-row"><span>Mobile</span><strong>${window.escapeHtml(String(acknowledgment.mobile || '—'))}</strong></div><div class="dash-summary-row"><span>Issued</span><strong>${window.escapeHtml(issuedAt)}</strong></div><div class="dash-summary-row"><span>Payment method</span><strong>${window.escapeHtml(method)}</strong></div></div>
-            <div class="dash-receipt-divider"></div>
-            <div class="dash-ack-items">${itemRows}</div>
-            <div class="dash-receipt-divider"></div>
-            <div class="dash-receipt-meta"><div class="dash-summary-row"><span>Subtotal</span><strong>${window.escapeHtml(acknowledgmentMoney(acknowledgment.subtotal, acknowledgment.subtotal_minor))}</strong></div><div class="dash-summary-row"><span>Processing fee</span><strong>${window.escapeHtml(acknowledgmentMoney(acknowledgment.fee, acknowledgment.fee_minor))}</strong></div></div>
-            <div class="dash-receipt-total"><span>Total paid</span><span>${window.escapeHtml(acknowledgmentMoney(acknowledgment.total, acknowledgment.gross_minor))}</span></div>
-            <div class="dash-receipt-divider"></div>
-            <p class="dash-receipt-thanks">${window.escapeHtml(disclaimer)}</p>
-            <div class="dash-receipt-actions"><button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button></div>
-        </article>`;
+    function renderPaymentAcknowledgment(entry) {
+        const acknowledgment = entry.acknowledgment;
+        const safeKey = window.escapeHtml(String(entry.cardKey || acknowledgment.receipt_id || acknowledgment.receipt_number || 'payment'));
+        const sourceId = entry.sourceId || acknowledgment.source_id || acknowledgment.items?.[0]?.reservation_id || '';
+        const hasWalkinOrderId = entry.source === 'walkin' && Boolean(entry.sourceId || acknowledgment.source_id);
+        const sourceLabel = entry.source !== 'walkin' ? 'Booking ID' : hasWalkinOrderId ? 'Walk-in order ID' : 'Walk-in visit ID';
+        const actionsHtml = `<button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button><button type="button" class="dash-btn-ghost" data-dash-receipt-print>Print</button>`;
+        return window.InigoPaymentAcknowledgment.render(acknowledgment, {
+            sourceLabel, sourceId, itemReferenceLabel: entry.source === 'walkin' ? 'Visit ID' : '', transactionId: acknowledgment.transaction_id,
+            cardAttributes: `data-dash-receipt-card="${safeKey}"`, actionsHtml,
+        });
     }
 
     // Promisifies HTMLCanvasElement.toBlob (callback-only in every browser)
@@ -2717,6 +2687,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ok) window.InigoToast?.show('Payment acknowledgment downloaded.');
             });
         });
+        document.querySelectorAll('.dash-receipt-grid [data-dash-receipt-print]').forEach((btn) => {
+            if (btn.dataset.dashReceiptPrintBound === 'true') return;
+            btn.dataset.dashReceiptPrintBound = 'true';
+            btn.addEventListener('click', () => window.InigoPaymentAcknowledgment.print(btn.closest('[data-dash-receipt-card]')));
+        });
     }
 
     // Reads immutable acknowledgment snapshots for paid bookings. The
@@ -2740,6 +2715,7 @@ document.addEventListener('DOMContentLoaded', () => {
             receipt_number: snapshot.receipt_number || historyEntry.receipt_number,
             issued_at: snapshot.issued_at || historyEntry.issued_at,
             payment_method: snapshot.payment_method || historyEntry.method,
+            transaction_id: snapshot.transaction_id || historyEntry.payment_id,
         };
     }
 
@@ -2781,11 +2757,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const filtered = window.InigoCustomerReceipts.filterAcknowledgments(receiptAcknowledgments, {
             source, idQuery: query, paymentDate,
         }, paymentDateKey);
-        const cards = filtered.map(entry => renderPaymentAcknowledgment(
-            entry.acknowledgment,
-            entry.cardKey,
-            entry.referenceLabel,
-        ));
+        const cards = filtered.map(renderPaymentAcknowledgment);
         const message = cards.length
             ? ''
             : query || paymentDate
@@ -2862,6 +2834,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (error) loadErrors.push(`Booking #${bookingId} payment acknowledgments could not be loaded.`);
                 saved.forEach(acknowledgment => loadedAcknowledgments.push({
                     source: 'booking',
+                    sourceId: bookingId,
                     acknowledgment,
                     searchIds: [bookingId.toLowerCase()],
                     referenceLabel: `Booking #${bookingId}`,
@@ -2879,6 +2852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     receipt_id: row.receipt_id || snapshot.receipt_id,
                     receipt_number: row.receipt_number || snapshot.receipt_number,
                     issued_at: row.issued_at || snapshot.issued_at,
+                    transaction_id: snapshot.transaction_id || row.payment_id,
                 };
                 const orderId = String(row.order_id || '');
                 const visitIds = Array.isArray(acknowledgment.items)
@@ -2886,6 +2860,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     : [];
                 loadedAcknowledgments.push({
                     source: 'walkin',
+                    sourceId: orderId,
                     acknowledgment,
                     searchIds: [orderId, ...visitIds].filter(Boolean).map(id => id.toLowerCase()),
                     referenceLabel: `Walk-in order #${orderId || acknowledgment.receipt_id}`,

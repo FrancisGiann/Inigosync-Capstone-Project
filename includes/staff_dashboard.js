@@ -2387,75 +2387,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!target) return;
         const idAttr = window.escapeHtml(String(receipt.receipt_number || receipt.receipt_id || receipt.id || '—'));
         const items = Array.isArray(receipt.items) ? receipt.items : [];
-        const amountText = (value) => value === null || value === undefined || !Number.isFinite(Number(value)) ? '—' : formatStaffPeso(Number(value));
-        const itemSubtotalText = (item) => item.subtotal_minor !== null && item.subtotal_minor !== undefined
-            ? amountText(Number(item.subtotal_minor) / 100)
-            : amountText(item.subtotal);
-        const amountFromMinor = (minor, fallback) => minor !== null && minor !== undefined
-            ? amountText(Number(minor) / 100)
-            : amountText(fallback);
-        const courtSubtotal = amountFromMinor(receipt.court_subtotal_minor, receipt.court_subtotal ?? receipt.subtotal);
-        const paymentReceived = amountFromMinor(receipt.amount_paid_minor ?? receipt.payment_base_minor, receipt.amount_paid ?? receipt.subtotal);
-        const remainingBalance = amountFromMinor(receipt.remaining_balance_minor ?? receipt.remaining_minor, receipt.remaining_balance);
-        const processingFee = amountFromMinor(receipt.fee_minor, receipt.fee);
-        const customerCharged = amountFromMinor(receipt.gross_minor, receipt.total);
-        const disclaimer = receipt.disclaimer || 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
-
-        target.innerHTML = `
-            <div class="staff-receipt-layout">
-            <div class="staff-receipt-card" data-staff-receipt-card>
-                <div class="staff-receipt-brand">
-                    <span class="staff-receipt-brand-name">IñigoSync</span>
-                    <span class="staff-receipt-brand-tag">Payment acknowledgment</span>
-                </div>
-                <p class="staff-receipt-no">Acknowledgment #${idAttr}</p>
-
-                <div class="staff-receipt-divider"></div>
-
-                <div class="staff-receipt-meta">
-                    <div class="staff-summary-row"><span>Customer</span><strong>${window.escapeHtml(receipt.customer_name || 'Customer')}</strong></div>
-                    ${receipt.mobile ? `<div class="staff-summary-row"><span>Mobile</span><strong>${window.escapeHtml(receipt.mobile)}</strong></div>` : ''}
-                    <div class="staff-summary-row"><span>Issued</span><strong>${window.escapeHtml(formatWalkinDateLabel(receipt.issued_at || new Date().toISOString()))}</strong></div>
-                </div>
-
-                <div class="staff-receipt-divider"></div>
-
-                <div class="staff-receipt-items">${items.map((item) => `<div class="staff-receipt-item">
-                    <strong>${window.escapeHtml(item.sport || 'Sport')} · ${window.escapeHtml(item.court || 'Court')}${item.unit ? ` · ${window.escapeHtml(item.unit)}` : ''}</strong>
-                    <span>${window.escapeHtml(formatWalkinDateLabel(item.starts_at))}</span>
-                    <span>${window.escapeHtml(formatIsoTime12h(item.starts_at))}–${window.escapeHtml(formatIsoTime12h(item.ends_at))}</span>
-                    <span>${window.escapeHtml(itemSubtotalText(item))}</span>
-                </div>`).join('')}</div>
-
-                <div class="staff-receipt-divider"></div>
-
-                <div class="staff-receipt-meta">
-                    <div class="staff-summary-row"><span>Court subtotal</span><strong>${window.escapeHtml(courtSubtotal)}</strong></div>
-                    <div class="staff-summary-row"><span>Payment received</span><strong>${window.escapeHtml(paymentReceived)}</strong></div>
-                    <div class="staff-summary-row"><span>Remaining balance</span><strong>${window.escapeHtml(remainingBalance)}</strong></div>
-                    <div class="staff-summary-row"><span>Processing fee</span><strong>${window.escapeHtml(processingFee)}</strong></div>
-                    <div class="staff-summary-row"><span>Payment method</span><strong>${window.escapeHtml(receipt.payment_method || '—')}</strong></div>
-                    <div class="staff-summary-row"><span>Payment status</span><strong>${window.escapeHtml(receipt.payment_status || '—')}</strong></div>
-                </div>
-
-                <div class="staff-receipt-total">
-                    <span>Customer charged</span>
-                    <span>${window.escapeHtml(customerCharged)}</span>
-                </div>
-
-                <div class="staff-receipt-divider"></div>
-
-                <p class="staff-receipt-thanks">Thank you for visiting Iñigos Sports Center!</p>
-                <p class="staff-receipt-disclaimer">${window.escapeHtml(disclaimer)}</p>
-
-            </div>
-                <div class="staff-receipt-actions">
-                    <button type="button" class="staff-btn-primary" data-staff-receipt-download="${idAttr}">Download PNG</button>
-                    <button type="button" class="staff-btn-ghost" data-staff-receipt-print>Print</button>
-                    ${context === 'walkin' ? '<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>' : ''}
-                </div>
-            </div>
-        `;
+        const sourceId = receipt.source_id || receipt.order_id || receipt.walkin_order_id || items[0]?.reservation_id || '';
+        const isBooking = context === 'transaction' && receipt.source === 'booking';
+        const hasWalkinOrderId = Boolean(receipt.source_id || receipt.order_id || receipt.walkin_order_id);
+        const sourceLabel = isBooking ? 'Booking ID' : hasWalkinOrderId ? 'Walk-in order ID' : 'Walk-in visit ID';
+        const actionsHtml = `<button type="button" class="staff-btn-primary" data-staff-receipt-download="${idAttr}">Download PNG</button>
+            <button type="button" class="staff-btn-ghost" data-staff-receipt-print>Print</button>
+            ${context === 'walkin' ? '<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>' : ''}`;
+        target.innerHTML = `<div class="staff-receipt-layout">${window.InigoPaymentAcknowledgment.render(receipt, {
+            sourceLabel, sourceId, itemReferenceLabel: isBooking ? '' : 'Visit ID', transactionId: receipt.transaction_id,
+            cardAttributes: 'data-staff-receipt-card', actionsHtml,
+        })}</div>`;
     }
 
     function canvasToBlobAsyncStaff(canvas) {
@@ -2558,7 +2500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!row || !Array.isArray(row.items) || !row.items.length || !['paid', 'succeeded', 'completed'].includes(String(row.payment_status || '').toLowerCase())) {
             return { pending: true, error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
         }
-        return { receipt: row };
+        return { receipt: { ...row, source_id: orderId } };
     }
 
     function safePayMongoCheckoutUrl(value) {
@@ -2824,7 +2766,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             staffReceiptModalContent.innerHTML = '<p class="staff-notif-empty">No payment acknowledgment is available until a payment is confirmed.</p>';
             return;
         }
-        renderStaffReceipt(ack, staffReceiptModalContent, 'transaction');
+        renderStaffReceipt({ ...ack, transaction_id: ack.transaction_id || payment.payment_id, source: payment.source }, staffReceiptModalContent, 'transaction');
     }
 
     function closeStaffReceiptModal() {
@@ -2839,10 +2781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function printTransactionAcknowledgment() {
         if (!staffReceiptModal) return;
-        document.body.classList.add('staff-printing-transaction-receipt');
-        const clearPrintTarget = () => document.body.classList.remove('staff-printing-transaction-receipt');
-        window.addEventListener('afterprint', clearPrintTarget, { once: true });
-        window.print();
+        window.InigoPaymentAcknowledgment.print(staffReceiptModalContent?.querySelector('.payment-ack-card'));
     }
 
     if (staffReceiptModal) {
@@ -2853,7 +2792,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             const downloadBtn = event.target.closest('[data-staff-receipt-download]');
             if (downloadBtn) {
-                const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.staff-receipt-card');
+                const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.payment-ack-card');
                 if (!card) return;
                 const original = downloadBtn.textContent;
                 downloadBtn.disabled = true;
@@ -3001,7 +2940,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const qrCheckoutRetryBtn = e.target.closest('[data-staff-walkin-qr-checkout-retry]');
 
             if (downloadBtn) {
-                const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.staff-receipt-card');
+                const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.payment-ack-card');
                 if (!card) return;
                 const original = downloadBtn.textContent;
                 downloadBtn.disabled = true;
@@ -3013,7 +2952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             if (printBtn) {
-                window.print();
+                window.InigoPaymentAcknowledgment.print(printBtn.closest('.staff-receipt-layout')?.querySelector('.payment-ack-card'));
                 return;
             }
             if (retryBtn) {
@@ -3785,7 +3724,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const receiptButton = event.target.closest('[data-staff-payment-ack]');
         const row = transactionRows[Number(event.target.closest('tr')?.dataset.rowIndex)];
         if (receiptButton && row?.acknowledgment) {
-            openTransactionAcknowledgment({ acknowledgment: row.acknowledgment });
+            openTransactionAcknowledgment({ acknowledgment: row.acknowledgment, payment_id: row.payment_id, source: row.source });
         }
     });
 

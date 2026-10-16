@@ -5,6 +5,8 @@ import test from 'node:test';
 
 const html = await readFile(new URL('../Pages/user_dashboard.html', import.meta.url), 'utf8');
 const css = await readFile(new URL('../Style/Dashboard.css', import.meta.url), 'utf8');
+const receiptCss = await readFile(new URL('../Style/paymentAcknowledgment.css', import.meta.url), 'utf8');
+const receiptHelper = await readFile(new URL('../includes/paymentAcknowledgment.js', import.meta.url), 'utf8');
 const dashboard = await readFile(new URL('../includes/Dashboard.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20260930110844_customer_booking_payment_acknowledgments.sql', import.meta.url), 'utf8');
 const receiptFilterSource = await readFile(new URL('../includes/customerReceipts.js', import.meta.url), 'utf8');
@@ -17,12 +19,17 @@ test('receipts panel combines both payment sources behind shared ID and payment 
     assert.match(html, /Payment date[\s\S]*?data-dash-receipt-date/);
     assert.match(html, /Payment source[\s\S]*?All payments[\s\S]*?Online bookings[\s\S]*?Walk-ins/);
     assert.match(html, /customerReceipts\.js[\s\S]*?Dashboard\.js/);
+    assert.match(html, /paymentAcknowledgment\.js[\s\S]*?Dashboard\.js/);
     assert.match(html, /data-dash-receipts/);
     assert.doesNotMatch(html, /Online booking payments|Walk-in payments|data-dash-walkin-receipts|data-dash-booking-receipts/);
     assert.match(css, /\.dash-receipts-group\s*\{[^}]*background:\s*var\(--color-bg-elevated\)/s);
     assert.match(css, /\.dash-receipt-filters\s*\{[^}]*grid-template-columns/s);
     assert.match(css, /@media \(max-width:\s*640px\)[\s\S]*?\.dash-receipt-filters\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
     assert.match(css, /:root\[data-theme="light"\]/);
+    assert.match(receiptCss, /@page \{ size: auto; margin: 2mm; \}/);
+    assert.match(receiptCss, /payment-ack-print-root\.payment-ack-measuring[\s\S]*?width: 74mm/);
+    assert.match(receiptHelper, /@page \{ size: 80mm \$\{pageHeightMm\}mm; margin: 2mm; \}/);
+    assert.match(receiptCss, /body\.payment-ack-printing > :not\(\.payment-ack-print-root\)/);
 });
 
 test('booking receipts render only saved acknowledgment snapshots, preserving deposit and balance history', () => {

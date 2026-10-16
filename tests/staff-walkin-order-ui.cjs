@@ -625,9 +625,9 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(qrSetup.remoteQrImage, false, 'the QR is rendered locally without a third-party QR image service');
         await qrPage.locator('[data-staff-walkin-qr-check]').click();
         assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1);
-        assert.equal(await qrPage.locator('.staff-receipt-card').count(), 0, 'a pending status check does not show a paid acknowledgment');
+        assert.equal(await qrPage.locator('.payment-ack-card').count(), 0, 'a pending status check does not show a paid acknowledgment');
         await qrPage.clock.fastForward(5000);
-        await qrPage.locator('.staff-receipt-card').waitFor();
+        await qrPage.locator('.payment-ack-card').waitFor();
         assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 2, 'the staff screen polls again while the checkout remains in expiry window');
         await qrContext.context.close();
 
@@ -657,7 +657,7 @@ function occupancyRow(hour, source = 'online') {
         await expiredQrPage.locator('[data-staff-walkin-qr-check]').click();
         assert.equal(await expiredQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1,
             'staff can manually verify a late payment after the checkout expiry');
-        assert.equal(await expiredQrPage.locator('.staff-receipt-card').count(), 0,
+        assert.equal(await expiredQrPage.locator('.payment-ack-card').count(), 0,
             'an expired but unconfirmed checkout still has no acknowledgment');
         await expiredQrContext.context.close();
 
@@ -687,7 +687,7 @@ function occupancyRow(hour, source = 'online') {
             config: { paymentStatus: 'pending', paymentMethod: 'PayMongo', ackItems: ackItem },
         });
         await pendingReturn.page.locator('.staff-receipt-pending').waitFor();
-        assert.equal(await pendingReturn.page.locator('.staff-receipt-card').count(), 0, 'return query alone must never produce a paid receipt');
+        assert.equal(await pendingReturn.page.locator('.payment-ack-card').count(), 0, 'return query alone must never produce a paid receipt');
         assert.equal(new URL(pendingReturn.page.url()).searchParams.has('walkin_checkout'), false, 'return markers should be removed from the address bar');
         await pendingReturn.context.close();
 
@@ -695,12 +695,12 @@ function occupancyRow(hour, source = 'online') {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:30:00Z', query: '?walkin_checkout=return&order=a25dc45b-40ba-4b5b-96d6-4487dbe7a526',
             config: { paymentStatus: 'paid', paymentMethod: 'PayMongo', ackItems: ackItem },
         });
-        await paidReturn.page.locator('[data-staff-panel="walkin"].is-active .staff-receipt-card').waitFor();
+        await paidReturn.page.locator('[data-staff-panel="walkin"].is-active .payment-ack-card').waitFor();
         assert.equal(new URL(paidReturn.page.url()).searchParams.has('order'), false);
-        assert.match(await paidReturn.page.locator('.staff-receipt-card').innerText(), /Court subtotal\s+₱350\.00/);
-        assert.match(await paidReturn.page.locator('.staff-receipt-card').innerText(), /Payment received\s+₱350\.00/);
-        assert.match(await paidReturn.page.locator('.staff-receipt-card').innerText(), /Remaining balance\s+₱0\.00/);
-        assert.match(await paidReturn.page.locator('.staff-receipt-card').innerText(), /CUSTOMER CHARGED\s+₱350\.00/);
+        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /Subtotal \(this payment\)\s+₱350\.00/);
+        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /TOTAL PAID\s+₱350\.00/);
+        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /Payment status\s+Paid/);
+        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /NOT AN OFFICIAL RECEIPT/);
         await paidReturn.context.close();
 
         const transactionBooking = {
@@ -778,25 +778,35 @@ function occupancyRow(hour, source = 'online') {
         const receiptDialog = transactionPage.locator('[data-staff-receipt-dialog]');
         await receiptDialog.waitFor();
         assert.match(await receiptDialog.innerText(), /PA-BALANCE/);
+        assert.match(await receiptDialog.innerText(), /Sport:\s+Badminton/);
+        assert.match(await receiptDialog.innerText(), /Court:\s+Badminton/);
+        assert.match(await receiptDialog.innerText(), /Unit:\s+Court 1/);
         assert.equal(await transactionPage.locator('[data-staff-receipt-print]').count(), 1, 'receipt modal has a print action');
         assert.equal(await transactionPage.locator('[data-staff-receipt-download]').count(), 1, 'receipt modal has a download action');
-        await transactionPage.evaluate(() => document.body.classList.add('staff-printing-transaction-receipt'));
+        await transactionPage.evaluate(() => { window.print = () => {}; window.InigoPaymentAcknowledgment.print(document.querySelector('.payment-ack-card')); });
+        const dynamicPageSize = await transactionPage.evaluate(() => {
+            const style = document.querySelector('style[data-payment-ack-page-size]');
+            const rule = style?.sheet?.cssRules?.[0];
+            return {
+                applied: style?.dataset.paymentAckPageSizeApplied,
+                ruleType: rule?.type,
+                pageRuleType: CSSRule.PAGE_RULE,
+                size: rule?.style?.getPropertyValue('size')?.trim() || '',
+            };
+        });
+        assert.equal(dynamicPageSize.applied, 'true', 'print inserts the measured page size through CSSOM');
+        assert.equal(dynamicPageSize.ruleType, dynamicPageSize.pageRuleType, 'the measured rule parses as a CSSPageRule');
+        assert.match(dynamicPageSize.size, /^80mm \d+mm$/, 'the thermal width is paired with a valid measured height');
+        assert.notEqual(dynamicPageSize.size, '80mm 300mm', 'the measured page does not use the former long fixed page');
         await transactionPage.emulateMedia({ media: 'print' });
-        const printedReceipt = await transactionPage.locator('.staff-receipt-modal .staff-receipt-card').evaluate(card => {
+        const printedReceipt = await transactionPage.locator('.payment-ack-print-root .payment-ack-card').evaluate(card => {
             const rect = card.getBoundingClientRect();
-            const overlay = getComputedStyle(card.closest('.staff-receipt-modal'));
-            const dialog = getComputedStyle(card.closest('.staff-modal'));
             return {
                 visible: getComputedStyle(card).visibility === 'visible',
                 x: rect.x,
                 y: rect.y,
                 width: rect.width,
                 height: rect.height,
-                overlayPosition: overlay.position,
-                overlayOverflow: overlay.overflow,
-                dialogPosition: dialog.position,
-                dialogMaxHeight: dialog.maxHeight,
-                dialogOverflow: dialog.overflow,
                 text: card.innerText,
             };
         });
@@ -804,17 +814,15 @@ function occupancyRow(hour, source = 'online') {
         assert.ok(printedReceipt.x < 20, 'receipt begins at the page edge instead of the centered dialog position');
         assert.ok(printedReceipt.y < 20, 'receipt starts near the top of the page without preceding dashboard content');
         assert.ok(printedReceipt.width <= 74 * 96 / 25.4 + 1, 'receipt fits the 80 mm thermal page content width');
-        assert.ok(printedReceipt.height > 250, 'all receipt detail remains in the printed card');
-        assert.equal(printedReceipt.overlayPosition, 'static', 'print resets the fixed dialog overlay');
-        assert.equal(printedReceipt.overlayOverflow, 'visible', 'print does not clip through the overlay');
-        assert.equal(printedReceipt.dialogPosition, 'static', 'print resets the centered dialog positioning');
-        assert.equal(printedReceipt.dialogMaxHeight, 'none', 'print removes the dialog viewport-height cap');
-        assert.equal(printedReceipt.dialogOverflow, 'visible', 'print does not clip through the dialog');
-        assert.match(printedReceipt.text, /Customer charged/i);
+        assert.ok(printedReceipt.height > 150 && printedReceipt.height < 300 * 96 / 25.4, 'receipt content fits without a fixed 300mm page');
+        assert.match(printedReceipt.text, /Subtotal \(this payment\)/i);
+        assert.match(printedReceipt.text, /Booking total/i);
+        assert.match(printedReceipt.text, /Remaining balance/i);
+        assert.match(printedReceipt.text, /TOTAL PAID/i);
         assert.match(printedReceipt.text, /Payment method/);
         assert.match(printedReceipt.text, /PA-BALANCE/);
         await transactionPage.emulateMedia({ media: 'screen' });
-        await transactionPage.evaluate(() => document.body.classList.remove('staff-printing-transaction-receipt'));
+        await transactionPage.evaluate(() => window.dispatchEvent(new Event('afterprint')));
         await transactionPage.keyboard.press('Escape');
         await transactionPage.locator('[data-staff-receipt-modal]').waitFor({ state: 'hidden' });
         await transactionPage.locator('[data-staff-tx-sort]').selectOption('date-asc');
@@ -1302,7 +1310,7 @@ function occupancyRow(hour, source = 'online') {
             }
             return '';
         });
-        assert.equal(thermalPageSize, '80mm 300mm', 'receipt print page must parse as a valid 80mm thermal format');
+        assert.equal(thermalPageSize, 'auto', 'the fallback @page size is valid CSSOM syntax');
         assert.deepEqual(errors, [], 'walk-in browser console must have no uncaught page errors');
         await responsive.context.close();
         console.log('PASS staff walk-in UI: atomic orders, GCash QR lifecycle and retry, Manila date boundary, and responsive widths');
