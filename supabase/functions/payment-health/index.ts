@@ -35,7 +35,7 @@ Deno.serve(async (req: Request) => {
   const { data: last } = await admin.from("payment").select("created_at").eq("payment_method", "PayMongo")
     .gt("paid", 0).order("created_at", { ascending: false }).limit(1).maybeSingle();
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const methods = settingsError ? [] : enabledPaymongoMethods(settings);
   const key = Deno.env.get("PAYMONGO_SECRET_KEY") || "";
   const keyMode = key.startsWith("sk_test_") ? "test" : key.startsWith("sk_live_") ? "live" : "unknown";
@@ -51,13 +51,14 @@ Deno.serve(async (req: Request) => {
       if (response.ok) {
         const payload = await response.json();
         const expectedUrl = `${url}/functions/v1/paymongo-webhook`;
-        const configured = (payload?.data || []).some((entry: any) => {
+        const hasEvent = (eventType: string) => (payload?.data || []).some((entry: any) => {
           const attrs = entry?.attributes || {};
           return attrs.url === expectedUrl && attrs.status === "enabled"
             && attrs.livemode === (keyMode === "live")
-            && Array.isArray(attrs.events) && attrs.events.includes("checkout_session.payment.paid");
+            && Array.isArray(attrs.events) && attrs.events.includes(eventType);
         });
-        webhookConfigured = Boolean(webhookSecret && configured);
+        webhookConfigured = Boolean(webhookSecret && hasEvent("checkout_session.payment.paid")
+          && (settings?.qrph_enabled !== true || hasEvent("payment.paid")));
       }
     } catch { apiConnected = null; }
   } else if (!key) {

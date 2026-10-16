@@ -1969,9 +1969,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const ownerPaymongoWebhook = document.querySelector('[data-owner-paymongo-webhook]');
     const ownerPaymongoLast = document.querySelector('[data-owner-paymongo-last-payment]');
     const ownerPaymongoRefresh = document.querySelector('[data-owner-paymongo-refresh]');
-    const ownerPaymentInputs = Object.fromEntries(['cash', 'card', 'gcash'].map(method => [method,
+    const ownerPaymentInputs = Object.fromEntries(['cash', 'card', 'gcash', 'qrph'].map(method => [method,
         document.querySelector(`[data-owner-payment-method="${method}"]`)]));
-    const ownerPaymentDefaults = { downpaymentPct: 50, cashEnabled: true, cardEnabled: false, gcashEnabled: true };
+    const ownerPaymentDefaults = { downpaymentPct: 50, cashEnabled: true, cardEnabled: false, gcashEnabled: true, qrphEnabled: false };
     let ownerPaymentLoadGeneration = 0;
 
     function setOwnerPaymentMessage(message, isError = false) {
@@ -1986,6 +1986,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ownerPaymentInputs.cash) ownerPaymentInputs.cash.checked = settings.cashEnabled !== false;
         if (ownerPaymentInputs.card) ownerPaymentInputs.card.checked = settings.cardEnabled === true;
         if (ownerPaymentInputs.gcash) ownerPaymentInputs.gcash.checked = settings.gcashEnabled !== false;
+        if (ownerPaymentInputs.qrph) ownerPaymentInputs.qrph.checked = settings.qrphEnabled === true;
     }
 
     async function loadOwnerPaymentSettings() {
@@ -1999,7 +2000,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         try {
             const { data, error } = await window.sb.from('app_settings')
-                .select('downpayment_pct,cash_enabled,card_enabled,gcash_enabled')
+                .select('downpayment_pct,cash_enabled,card_enabled,gcash_enabled,qrph_enabled')
                 .eq('id', true).maybeSingle();
             if (generation !== ownerPaymentLoadGeneration) return;
             if (error) throw error;
@@ -2009,6 +2010,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     cashEnabled: data.cash_enabled,
                     cardEnabled: data.card_enabled,
                     gcashEnabled: data.gcash_enabled,
+                    qrphEnabled: data.qrph_enabled,
                 });
                 setOwnerPaymentMessage('Settings loaded. Changes apply to new checkouts.');
             } else {
@@ -2037,9 +2039,10 @@ document.addEventListener('DOMContentLoaded', () => {
             cash_enabled: Boolean(ownerPaymentInputs.cash?.checked),
             card_enabled: Boolean(ownerPaymentInputs.card?.checked),
             gcash_enabled: Boolean(ownerPaymentInputs.gcash?.checked),
+            qrph_enabled: Boolean(ownerPaymentInputs.qrph?.checked),
         };
-        if (!settings.card_enabled && !settings.gcash_enabled) {
-            setOwnerPaymentMessage('Enable at least one online payment method (Card or GCash) for customer bookings.', true);
+        if (!settings.card_enabled && !settings.gcash_enabled && !settings.qrph_enabled) {
+            setOwnerPaymentMessage('Enable at least one online payment method (Card, GCash, or QR Ph) for customer bookings.', true);
             ownerPaymentInputs.card?.focus();
             return;
         }

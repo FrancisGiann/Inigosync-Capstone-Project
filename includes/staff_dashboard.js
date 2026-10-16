@@ -1179,9 +1179,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ------------------------------------------------------------------
     // Walk-In Management — Revision S1, decisions S3/S4. Replaces the old
-    // single-page form (duration 1/2/3h + start time + GCash/Cash) with a
+    // single-page form (duration 1/2/3h + start time + Cash/QR Ph) with a
     // 5-step wizard: ① Customer -> ② Sport & court -> ③ Time (today only,
-    // From/To limited to free hours) -> ④ Payment -> ⑤ Review & save. On
+    // consecutive hourly slots) -> ④ Payment -> ⑤ Review & save. On
     // success the wizard is swapped for a receipt card (Download PNG /
     // Print / New walk-in).
     // ------------------------------------------------------------------
@@ -1206,11 +1206,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinSportCards = document.querySelector('[data-staff-walkin-sport-cards]');
     const walkinUnitWrap = document.querySelector('[data-staff-walkin-unit-wrap]');
     const walkinUnitSelect = document.querySelector('[data-staff-walkin-unit-select]');
-    const walkinFromSelect = document.querySelector('[data-staff-walkin-from]');
-    const walkinToSelect = document.querySelector('[data-staff-walkin-to]');
-    const walkinTimeRange = document.querySelector('[data-staff-walkin-time-range]');
-    const walkinToWrap = document.querySelector('[data-staff-walkin-to-wrap]');
-    const walkinSetQuantityWrap = document.querySelector('[data-staff-walkin-set-quantity-wrap]');
     const walkinOpenWindowsEl = document.querySelector('[data-staff-walkin-open-windows]');
     const walkinHourGrid = document.querySelector('[data-staff-walkin-hour-grid]');
     const walkinLinesEl = document.querySelector('[data-staff-walkin-lines]');
@@ -1226,18 +1221,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const walkinSummaryName = document.querySelector('[data-staff-walkin-summary-name]');
     const walkinSummaryMobile = document.querySelector('[data-staff-walkin-summary-mobile]');
-    const walkinSummaryCourt = document.querySelector('[data-staff-walkin-summary-court]');
-    const walkinSummaryTime = document.querySelector('[data-staff-walkin-summary-time]');
-    const walkinSummaryRateLabel = document.querySelector('[data-staff-walkin-summary-rate-label]');
-    const walkinSummaryRate = document.querySelector('[data-staff-walkin-summary-rate]');
     const walkinSummaryPayment = document.querySelector('[data-staff-walkin-summary-payment]');
     const walkinSummaryTotal = document.querySelector('[data-staff-walkin-summary-total]');
-    const walkinRateQuantityInput = document.querySelector('[data-staff-rate-quantity]');
+    const walkinCashDetails = document.querySelector('[data-staff-walkin-cash-details]');
+    const walkinCashTenderedInput = document.querySelector('[data-staff-walkin-cash-tendered]');
+    const walkinCashValidation = document.querySelector('[data-staff-walkin-cash-validation]');
+    const walkinCashChange = document.querySelector('[data-staff-walkin-cash-change]');
 
     const WALKIN_STEP_COUNT = 5;
     let walkinWizardStep = 1;
     let staffCashEnabled = true;
-    let staffGcashEnabled = true;
+    let staffQrphEnabled = false;
 
     let walkinState = {
         name: '',
@@ -1256,7 +1250,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         rateDay: null,
         rateNight: null,
         rateUnit: '/hr',
-        rateQuantity: 1,
         nightRateStartsAt: null,
         startHour: null,
         endHour: null,
@@ -1275,7 +1268,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let walkinQrCheckInFlight = false;
 
     // { ok, rows } — today's bookings/walk-ins for the CURRENTLY selected
-    // court, refreshed by refreshWalkinTimePickers() below. Same shape as
+    // court, refreshed by refreshWalkinTimeSlots() below. Same shape as
     // includes/Dashboard.js's slotGridBookings/slotGridWalkins.
     let walkinBookings = { ok: true, rows: [] };
     let walkinWalkins = { ok: true, rows: [] };
@@ -1283,7 +1276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function applyStaffPaymentSettings(settings) {
         staffCashEnabled = settings?.cashEnabled !== false;
-        staffGcashEnabled = settings?.gcashEnabled !== false;
+        staffQrphEnabled = settings?.qrphEnabled === true;
         document.querySelectorAll('[data-staff-walkin-cash-option], [data-staff-timein-cash-option]').forEach((option) => {
             option.hidden = !staffCashEnabled;
             if (!staffCashEnabled) {
@@ -1293,13 +1286,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
         const qrOption = document.querySelector('[data-staff-walkin-qr-option]');
-        if (qrOption) qrOption.hidden = !staffGcashEnabled;
-        if (walkinQrUnavailableEl) walkinQrUnavailableEl.hidden = staffGcashEnabled;
+        if (qrOption) qrOption.hidden = !staffQrphEnabled;
+        if (walkinQrUnavailableEl) walkinQrUnavailableEl.hidden = staffQrphEnabled;
         if (walkinCashUnavailableEl) walkinCashUnavailableEl.hidden = staffCashEnabled;
-        if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = null;
+        if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = staffQrphEnabled ? 'paymongo_qr' : null;
         if (staffCashEnabled && !walkinState.payment) walkinState.payment = 'cash';
-        if (!staffGcashEnabled && walkinState.payment === 'paymongo_qr') {
-            walkinState.payment = staffCashEnabled ? 'cash' : 'paymongo';
+        if (!staffQrphEnabled && walkinState.payment === 'paymongo_qr') {
+            walkinState.payment = staffCashEnabled ? 'cash' : null;
         }
         walkinPaymentOptionEls.forEach((option) => {
             const radio = option.querySelector('input[type="radio"]');
@@ -1323,12 +1316,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             return Boolean(walkinState.court && walkinState.unit && window.InigoCourtsData);
         }
         if (step === 3) return Boolean(walkinBusinessRules?.authoritative && walkinBookings.ok && walkinWalkins.ok)
-            && ((walkinState.selectedHours?.length > 0
-                && (walkinState.rateUnit !== '/set' || walkinState.selectedHours.length === walkinState.rateQuantity))
+            && (walkinState.selectedHours?.length > 0
                 || (!walkinState.court && walkinState.items.length > 0));
         if (step === 4) return Boolean(walkinState.payment)
             && (walkinState.payment !== 'cash' || staffCashEnabled)
-            && (walkinState.payment !== 'paymongo_qr' || staffGcashEnabled);
+            && (walkinState.payment !== 'paymongo_qr' || staffQrphEnabled);
         return true;
     }
 
@@ -1350,7 +1342,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinSaveBtn) {
             walkinSaveBtn.disabled = !walkinState.items.length || !walkinBusinessRules?.authoritative
                 || (walkinState.payment === 'cash' && !staffCashEnabled)
-                || (walkinState.payment === 'paymongo_qr' && !staffGcashEnabled);
+                || (walkinState.payment === 'paymongo_qr' && !staffQrphEnabled)
+                || (walkinState.payment === 'cash' && !walkinCashTenderIsValid());
         }
         if (walkinWizardStep === WALKIN_STEP_COUNT) updateWalkinSummary();
     }
@@ -1368,7 +1361,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // selected slots into a booking line.
                 walkinStep3Rechecking = true;
                 walkinNextBtn.disabled = true;
-                await refreshWalkinTimePickers();
+                await refreshWalkinTimeSlots();
                 walkinStep3Rechecking = false;
                 if (walkinWizardStep !== 3) return;
                 const line = buildWalkinLine();
@@ -1793,10 +1786,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // ---- Step 3 — Time (today only) ----
-    // Ported from includes/Dashboard.js's fetchDayOccupancy()/
-    // computeFreeWindows()/renderTimePickers() (Revision 5, D3) — same
-    // From/To picker shape, minus a date parameter (a walk-in is always
-    // today, per S3).
+    // Reads today's live occupancy for the hourly slot grid.
     async function fetchWalkinOccupancyForCourt(courtName) {
         if (!window.sb || !courtName) return { ok: false, rows: [] };
         const { start, end } = todayRange();
@@ -1806,11 +1796,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 from_at: start.toISOString(), to_at: end.toISOString(),
             });
         } catch (error) {
-            console.error('[staff] failed to load occupancy for the walk-in time pickers', error);
+            console.error('[staff] failed to load occupancy for the walk-in time slots', error);
             return { ok: false, rows: [] };
         }
         if (res.error) {
-            console.error('[staff] failed to load occupancy for the walk-in time pickers', res.error);
+            console.error('[staff] failed to load occupancy for the walk-in time slots', res.error);
             return { ok: false, rows: [] };
         }
         return { ok: true, rows: (res.data || []).filter((row) => sameCourtName(row.courts, courtName)) };
@@ -1860,164 +1850,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         return 'available';
     }
 
-    function computeWalkinFreeWindows() {
-        if (!window.InigoBusinessHours) return [];
-        const hours = window.InigoBusinessHours.hoursRange();
-        const windows = [];
-        let runStart = null;
-        hours.forEach((hour) => {
-            if (walkinSlotStatus(hour) === 'available') {
-                if (runStart === null) runStart = hour;
-            } else if (runStart !== null) {
-                windows.push({ startHour: runStart, endHourExclusive: hour });
-                runStart = null;
-            }
-        });
-        if (runStart !== null) windows.push({ startHour: runStart, endHourExclusive: window.InigoBusinessHours.CLOSE_HOUR });
-        return windows;
-    }
-
-    function renderWalkinTimePickers() {
-        if (!walkinFromSelect || !walkinToSelect || !window.InigoBusinessHours) return;
-
-        const perSet = walkinState.rateUnit === '/set';
-        if (walkinTimeRange) walkinTimeRange.classList.toggle('has-sets', perSet);
-        if (walkinToWrap) walkinToWrap.hidden = perSet;
-        if (walkinSetQuantityWrap) walkinSetQuantityWrap.hidden = !perSet;
-
-        if (!walkinState.court) {
-            walkinFromSelect.innerHTML = '<option value="">Select a sport first</option>';
-            walkinToSelect.innerHTML = '<option value="">Select a sport first</option>';
-            walkinFromSelect.disabled = true;
-            walkinToSelect.disabled = true;
-            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Select a sport first.';
-            renderWalkinWizard();
-            return;
-        }
-
-        if (!walkinBookings.ok || !walkinWalkins.ok) {
-            walkinFromSelect.innerHTML = '<option value="">Unavailable</option>';
-            walkinToSelect.innerHTML = '<option value="">Unavailable</option>';
-            walkinFromSelect.disabled = true;
-            walkinToSelect.disabled = true;
-            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Could not check live availability right now — please try again.';
-            renderWalkinWizard();
-            return;
-        }
-
-        const fmt = window.InigoBusinessHours.formatHourLabel;
-        const windows = computeWalkinFreeWindows();
-
-        if (windows.length === 0) {
-            walkinFromSelect.innerHTML = '<option value="">No times available</option>';
-            walkinToSelect.innerHTML = '<option value="">No times available</option>';
-            walkinFromSelect.disabled = true;
-            walkinToSelect.disabled = true;
-            walkinState.startHour = null;
-            walkinState.endHour = null;
-            if (walkinOpenWindowsEl) {
-                const noneBooked = window.InigoBusinessHours.hoursRange().every((h) => walkinSlotStatus(h) !== 'booked');
-                walkinOpenWindowsEl.textContent = noneBooked ? 'No more times available today.' : 'Fully booked today.';
-            }
-            renderWalkinWizard();
-            return;
-        }
-
-        const requiredHours = perSet ? Math.max(1, Math.min(100, Number(walkinState.rateQuantity) || 1)) : 1;
-        const freeHours = [];
-        windows.forEach((w) => {
-            for (let h = w.startHour; h + requiredHours <= w.endHourExclusive; h++) freeHours.push(h);
-        });
-        if (freeHours.length === 0) {
-            walkinFromSelect.innerHTML = '<option value="">No times available</option>';
-            walkinToSelect.innerHTML = '<option value="">No times available</option>';
-            walkinFromSelect.disabled = true;
-            walkinToSelect.disabled = true;
-            walkinState.startHour = null;
-            walkinState.endHour = null;
-            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = perSet
-                ? `No open time block is long enough for ${requiredHours} set${requiredHours === 1 ? '' : 's'}.`
-                : 'No more times available today.';
-            renderWalkinWizard();
-            return;
-        }
-        if (walkinState.startHour !== null && !freeHours.includes(walkinState.startHour)) {
-            walkinState.startHour = null;
-            walkinState.endHour = null;
-        }
-
-        walkinFromSelect.disabled = false;
-        const fromPlaceholder = `<option value=""${walkinState.startHour === null ? ' selected' : ''} disabled>Select a start time</option>`;
-        const fromOptions = freeHours.map((h) => `<option value="${h}"${h === walkinState.startHour ? ' selected' : ''}>${window.escapeHtml(fmt(h))}</option>`).join('');
-        walkinFromSelect.innerHTML = fromPlaceholder + fromOptions;
-
-        if (perSet) {
-            walkinState.endHour = walkinState.startHour === null ? null : walkinState.startHour + requiredHours - 1;
-            walkinToSelect.innerHTML = '<option value="">Selected set duration</option>';
-            walkinToSelect.disabled = true;
-        } else if (walkinState.startHour === null) {
-            walkinToSelect.innerHTML = '<option value="" selected disabled>Select a start time first</option>';
-            walkinToSelect.disabled = true;
-        } else {
-            const run = windows.find((w) => walkinState.startHour >= w.startHour && walkinState.startHour < w.endHourExclusive);
-            const runEndExclusive = run ? run.endHourExclusive : walkinState.startHour + 1;
-            const toPlaceholder = `<option value=""${walkinState.endHour === null ? ' selected' : ''} disabled>Select an end time</option>`;
-            const toOptions = [];
-            for (let endExclusive = walkinState.startHour + 1; endExclusive <= runEndExclusive; endExclusive++) {
-                const endHourValue = endExclusive - 1;
-                toOptions.push(`<option value="${endHourValue}"${endHourValue === walkinState.endHour ? ' selected' : ''}>${window.escapeHtml(fmt(endExclusive))}</option>`);
-            }
-            walkinToSelect.innerHTML = toPlaceholder + toOptions.join('');
-            walkinToSelect.disabled = false;
-        }
-
-        if (walkinOpenWindowsEl) {
-            const windowLabels = windows.map((w) => `${fmt(w.startHour)} – ${fmt(w.endHourExclusive)}`).join(', ');
-            walkinOpenWindowsEl.textContent = `Open today: ${windowLabels}`;
-        }
-        renderWalkinWizard();
-    }
-
-    if (walkinFromSelect) {
-        walkinFromSelect.addEventListener('change', () => {
-            const value = walkinFromSelect.value;
-            walkinState.startHour = value === '' ? null : Number(value);
-            walkinState.endHour = null;
-            renderWalkinTimePickers();
-            updateWalkinSummary();
-        });
-    }
-    if (walkinToSelect) {
-        walkinToSelect.addEventListener('change', () => {
-            const value = walkinToSelect.value;
-            walkinState.endHour = value === '' ? null : Number(value);
-            renderWalkinWizard();
-            updateWalkinSummary();
-        });
-    }
-
-    async function refreshWalkinTimePickers() {
-        if (!walkinFromSelect || !walkinToSelect) return;
-        const mySeq = ++walkinRequestSeq;
-        if (!walkinState.court) { renderWalkinTimePickers(); return; }
-
-        walkinFromSelect.innerHTML = '<option value="">Checking availability…</option>';
-        walkinToSelect.innerHTML = '<option value="">Checking availability…</option>';
-        walkinFromSelect.disabled = true;
-        walkinToSelect.disabled = true;
-        if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Checking availability…';
-
-        const occupancyRes = await fetchWalkinOccupancyForCourt(walkinState.court.name);
-        if (mySeq !== walkinRequestSeq) return; // a newer refresh already owns the pickers
-        walkinBookings = { ok: occupancyRes.ok, rows: occupancyRes.rows.filter((row) => row.source === 'online') };
-        walkinWalkins = { ok: occupancyRes.ok, rows: occupancyRes.rows.filter((row) => row.source === 'walkin' || row.source === 'maintenance') };
-        renderWalkinTimePickers();
-    }
-
-    // New staff wizard uses a visible hourly grid with a contiguous selection
-    // of one or more available hourly slots. These declarations replace the
-    // old single-range picker implementation above while preserving its
-    // shared occupancy loader and pricing helpers.
+    // Staff chooses a contiguous run of available hourly slots; both duration
+    // and the backend quantity for per-slot pricing derive from this selection.
     let walkinHoursForDay = [];
     function walkinSlotStatus(hour) {
         if (isWalkinHourPast(hour)) return 'past';
@@ -2033,26 +1867,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         return 'open';
     }
 
-    function computeWalkinFreeWindows() {
-        const hours = walkinHoursForDay;
-        const windows = [];
-        let runStart = null;
-        hours.forEach((hour) => {
-            if (walkinSlotStatus(hour) === 'open') {
-                if (runStart === null) runStart = hour;
-            } else if (runStart !== null) {
-                windows.push({ startHour: runStart, endHourExclusive: hour });
-                runStart = null;
-            }
-        });
-        if (runStart !== null && hours.length) windows.push({ startHour: runStart, endHourExclusive: hours[hours.length - 1] + 1 });
-        return windows;
-    }
-
-    function renderWalkinTimePickers() {
+    function renderWalkinTimeSlots() {
         if (!walkinHourGrid || !window.InigoBusinessHours) return;
-        const isSetRate = walkinState.rateUnit === '/set';
-        if (walkinSetQuantityWrap) walkinSetQuantityWrap.hidden = !isSetRate;
         if (!walkinState.court) {
             walkinHourGrid.innerHTML = '<p class="staff-form-hint">Select a sport and court first.</p>';
             if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Select a sport and court first.';
@@ -2094,7 +1910,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const available = slotStatus === 'open';
             const selected = currentSelection.includes(hour);
             return `<button type="button" class="staff-hour-slot is-${slotStatus}${selected ? ' is-selected' : ''}" data-staff-walkin-hour="${hour}" aria-pressed="${selected}" ${available ? '' : 'disabled'}>
-                <strong>${window.escapeHtml(fmt(hour))}</strong><span>${window.escapeHtml(selected ? 'Selected' : labels[slotStatus] || 'Unavailable')}</span>
+                <strong>${window.escapeHtml(fmt(hour))}–${window.escapeHtml(fmt(hour + 1))}</strong><span>${window.escapeHtml(selected ? 'Selected' : labels[slotStatus] || 'Unavailable')}</span>
             </button>`;
         }).join('') || '<p class="staff-form-hint">No opening hours are configured for this date.</p>';
         walkinHourGrid.querySelectorAll('[data-staff-walkin-hour]').forEach((button) => button.addEventListener('click', () => {
@@ -2119,15 +1935,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
             }
-            if (isSetRate && selection.length > walkinState.rateQuantity) {
-                if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = `Select ${walkinState.rateQuantity} consecutive hour${walkinState.rateQuantity === 1 ? '' : 's'} for ${walkinState.rateQuantity} set${walkinState.rateQuantity === 1 ? '' : 's'}.`;
-                return;
-            }
             if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = '';
             walkinState.selectedHours = selection;
             walkinState.startHour = selection.length ? selection[0] : null;
             walkinState.endHour = selection.length ? selection[selection.length - 1] : null;
-            renderWalkinTimePickers();
+            renderWalkinTimeSlots();
             updateWalkinSummary();
             renderWalkinWizard();
         }));
@@ -2141,7 +1953,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    async function refreshWalkinTimePickers() {
+    async function refreshWalkinTimeSlots() {
         if (!walkinHourGrid) return;
         const mySeq = ++walkinRequestSeq;
         walkinBusinessRules = window.InigoBusinessHours?.getForDate
@@ -2151,33 +1963,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             walkinHoursForDay = [];
             walkinBookings = { ok: false, rows: [] };
             walkinWalkins = { ok: false, rows: [] };
-            renderWalkinTimePickers();
+            renderWalkinTimeSlots();
             renderWalkinWizard();
             return;
         }
         const open = Number(walkinBusinessRules?.openHour ?? window.InigoBusinessHours?.OPEN_HOUR ?? 8);
         const close = Number(walkinBusinessRules?.closeHour ?? window.InigoBusinessHours?.CLOSE_HOUR ?? 20);
         walkinHoursForDay = walkinBusinessRules?.isClosed || close <= open ? [] : Array.from({ length: close - open }, (_, index) => open + index);
-        if (!walkinState.court) { renderWalkinTimePickers(); return; }
+        if (!walkinState.court) { renderWalkinTimeSlots(); return; }
         walkinHourGrid.innerHTML = '<p class="staff-form-hint">Checking live availability…</p>';
         if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Checking live availability…';
         const occupancyRes = await fetchWalkinOccupancyForCourt(walkinState.court.name);
         if (mySeq !== walkinRequestSeq) return;
         walkinBookings = { ok: occupancyRes.ok, rows: occupancyRes.rows.filter((row) => row.source === 'online') };
         walkinWalkins = { ok: occupancyRes.ok, rows: occupancyRes.rows.filter((row) => row.source !== 'online') };
-        renderWalkinTimePickers();
+        renderWalkinTimeSlots();
     }
 
     function resetWalkinTimeSelectionAndRefresh() {
         walkinState.selectedHours = [];
         walkinState.startHour = null;
         walkinState.endHour = null;
-        refreshWalkinTimePickers();
+        refreshWalkinTimeSlots();
     }
 
     function estimateCurrentWalkinAmount() {
         const hours = walkinHoursSelected();
-        if (walkinState.rateUnit === '/set' && typeof walkinState.rateDay === 'number') return walkinState.rateDay * walkinState.rateQuantity;
+        if (walkinState.rateUnit === '/set' && typeof walkinState.rateDay === 'number') return walkinState.rateDay * hours;
         if (!hours) return null;
         if (typeof walkinState.rateDay === 'number' && (typeof walkinState.rateNight !== 'number' || walkinState.rateDay === walkinState.rateNight)) return walkinState.rateDay * hours;
         if (typeof walkinState.rateDay !== 'number' && typeof walkinState.rate === 'number') return walkinState.rate * hours;
@@ -2189,7 +2001,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!walkinState.court || !walkinBookings.ok || !walkinWalkins.ok || !walkinState.selectedHours.length || walkinState.startHour === null || walkinState.endHour === null) return null;
         if (walkinState.selectedHours.some((hour, index) => walkinSlotStatus(hour) !== 'open'
             || (index > 0 && hour !== walkinState.selectedHours[index - 1] + 1))) return null;
-        if (walkinState.rateUnit === '/set' && walkinState.selectedHours.length !== walkinState.rateQuantity) return null;
         const date = todayDateInputValue();
         const startsAt = manilaDateTime(date, walkinState.startHour).toISOString();
         const endsAt = manilaDateTime(date, walkinState.endHour + 1).toISOString();
@@ -2203,7 +2014,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             endsAt,
             startHour: walkinState.startHour,
             endHour: walkinState.endHour,
-            rateQuantity: walkinState.rateUnit === '/set' ? walkinState.rateQuantity : 1,
+            rateQuantity: walkinState.rateUnit === '/set' ? walkinState.selectedHours.length : 1,
             subtotal: estimateCurrentWalkinAmount(),
         };
     }
@@ -2216,11 +2027,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.rateNight = null;
         walkinState.rate = null;
         walkinState.rateUnit = '/hr';
-        walkinState.rateQuantity = 1;
         walkinState.startHour = null;
         walkinState.endHour = null;
         walkinState.selectedHours = [];
-        if (walkinRateQuantityInput) walkinRateQuantityInput.value = '1';
         if (walkinUnitWrap) walkinUnitWrap.hidden = true;
         if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = '';
@@ -2228,7 +2037,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderWalkinLines() {
         if (!walkinLinesEl) return;
-        walkinLinesEl.innerHTML = walkinState.items.length ? `<strong>Added booking lines</strong>${walkinState.items.map((line, index) => `<div class="staff-walkin-line"><span>${index + 1}. ${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}<small>${window.escapeHtml(formatIsoTime12h(line.startsAt))}–${window.escapeHtml(formatIsoTime12h(line.endsAt))}</small></span><strong>${line.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(line.subtotal))}</strong><button type="button" class="staff-icon-btn" aria-label="Remove line ${index + 1}" data-staff-walkin-remove-line="${index}">×</button></div>`).join('')}` : '';
+        walkinLinesEl.innerHTML = walkinState.items.length ? `<strong>Added booking lines</strong>${walkinState.items.map((line, index) => {
+            const hours = line.endHour - line.startHour + 1;
+            return `<div class="staff-walkin-line"><span>${index + 1}. ${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}<small>${window.escapeHtml(formatIsoTime12h(line.startsAt))}–${window.escapeHtml(formatIsoTime12h(line.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</small></span><strong>${line.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(line.subtotal))}</strong><button type="button" class="staff-icon-btn" aria-label="Remove line ${index + 1}" data-staff-walkin-remove-line="${index}">×</button></div>`;
+        }).join('')}` : '';
         walkinLinesEl.querySelectorAll('[data-staff-walkin-remove-line]').forEach((button) => button.addEventListener('click', () => {
             walkinState.items.splice(Number(button.dataset.staffWalkinRemoveLine), 1);
             renderWalkinLines();
@@ -2241,7 +2053,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinStep3Rechecking) return;
         walkinStep3Rechecking = true;
         walkinAddLineBtn.disabled = true;
-        await refreshWalkinTimePickers();
+        await refreshWalkinTimeSlots();
         walkinStep3Rechecking = false;
         walkinAddLineBtn.disabled = false;
         if (walkinWizardStep !== 3) return;
@@ -2257,7 +2069,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderWalkinLines();
         renderWalkinSportCards();
         renderWalkinUnitOptions();
-        refreshWalkinTimePickers();
+        refreshWalkinTimeSlots();
         updateWalkinSummary();
         goToWalkinStep(2);
     });
@@ -2266,7 +2078,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.selectedHours = [];
         walkinState.startHour = null;
         walkinState.endHour = null;
-        refreshWalkinTimePickers();
+        refreshWalkinTimeSlots();
     }
 
     // ---- Step 4 — Payment ----
@@ -2283,6 +2095,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    function walkinCashDueMinor() {
+        if (!walkinState.items.length || walkinState.items.some((item) => !Number.isFinite(item.subtotal))) return null;
+        const due = walkinState.items.reduce((sum, item) => sum + Math.round(item.subtotal * 100), 0);
+        return Number.isSafeInteger(due) && due > 0 ? due : null;
+    }
+
+    function walkinCashTenderMinor() {
+        const raw = String(walkinCashTenderedInput?.value || '').trim();
+        if (!/^(?:\d+)(?:\.\d{1,2})?$/.test(raw)) return null;
+        const [whole, fraction = ''] = raw.split('.');
+        const minor = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+        return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
+    }
+
+    function walkinCashTenderIsValid() {
+        const due = walkinCashDueMinor();
+        const tendered = walkinCashTenderMinor();
+        return due !== null && tendered !== null && tendered >= due;
+    }
+
+    if (walkinCashTenderedInput) {
+        walkinCashTenderedInput.addEventListener('input', () => {
+            updateWalkinSummary();
+            renderWalkinWizard();
+        });
+    }
+
     // ---- Step 5 — Review & save ----
     function walkinHoursSelected() {
         if (walkinState.startHour === null) return 0;
@@ -2295,45 +2134,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hours === 0 || !window.InigoBusinessHours) return null;
         const effectiveEnd = walkinState.endHour !== null ? walkinState.endHour : walkinState.startHour;
         const fmt = window.InigoBusinessHours.formatHourLabel;
-        if (walkinState.rateUnit === '/set') {
-            return `${fmt(walkinState.startHour)} – ${fmt(effectiveEnd + 1)} · ${walkinState.rateQuantity} set${walkinState.rateQuantity === 1 ? '' : 's'} · 60 min each`;
-        }
         return `${fmt(walkinState.startHour)} – ${fmt(effectiveEnd + 1)} · ${hours} hr${hours === 1 ? '' : 's'}`;
     }
-
-    function updateWalkinSummary() {
-        const hours = walkinHoursSelected();
-        const court = walkinState.court;
-        const hasRate = typeof walkinState.rateDay === 'number' || (court && walkinState.rate !== null && walkinState.rate !== undefined);
-        let amount = null;
-        if (walkinState.rateUnit === '/set' && typeof walkinState.rateDay === 'number') amount = walkinState.rateDay * walkinState.rateQuantity;
-        else if (hours > 0 && hasRate) {
-            if (typeof walkinState.rateDay === 'number' && (typeof walkinState.rateNight !== 'number' || walkinState.rateDay === walkinState.rateNight)) {
-                amount = walkinState.rateDay * hours;
-            } else if (typeof walkinState.rateDay !== 'number' && typeof walkinState.rate === 'number') {
-                amount = walkinState.rate * hours;
-            } else amount = walkinHourlyAmount(hours);
-        }
-
-        if (walkinSummaryName) walkinSummaryName.textContent = walkinState.name || '—';
-        if (walkinSummaryMobile) walkinSummaryMobile.textContent = walkinState.mobile || 'Not provided';
-        if (walkinSummaryCourt) {
-            const unitPart = walkinState.unit ? ` · ${walkinState.unit}` : '';
-            walkinSummaryCourt.textContent = court ? `${court.name}${unitPart}` : '—';
-        }
-        if (walkinSummaryTime) walkinSummaryTime.textContent = walkinTimeRangeLabel() || '— Select a time —';
-        if (walkinSummaryRateLabel) walkinSummaryRateLabel.textContent = amount !== null ? 'Estimated total' : 'Rate';
-        if (walkinSummaryRate) walkinSummaryRate.textContent = hasRate ? (walkinState.rateUnit === '/set' ? `₱${walkinState.rateDay}/set × ${walkinState.rateQuantity}` : `₱${walkinState.rateDay ?? walkinState.rate}${walkinState.rateUnit} · ${hours} hr${hours === 1 ? '' : 's'}`) : 'Rate TBA';
-        if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'cash' ? 'Cash' : 'Unavailable';
-        if (walkinSummaryTotal) walkinSummaryTotal.textContent = amount !== null ? `₱${amount.toFixed(2)}` : 'Rate TBA';
-    }
-
-    if (walkinRateQuantityInput) walkinRateQuantityInput.addEventListener('input', () => {
-        walkinState.rateQuantity = Math.max(1, Math.min(100, Number.parseInt(walkinRateQuantityInput.value, 10) || 1));
-        walkinRateQuantityInput.value = String(walkinState.rateQuantity);
-        if (walkinState.rateUnit === '/set') renderWalkinTimePickers();
-        updateWalkinSummary();
-    });
 
     function walkinHourlyAmount(hours) {
         const match = /^(\d{2}):(\d{2})/.exec(String(walkinState.nightRateStartsAt || ''));
@@ -2353,21 +2155,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinSummaryName) walkinSummaryName.textContent = walkinState.name || '—';
         if (walkinSummaryMobile) walkinSummaryMobile.textContent = walkinState.mobile || 'Not provided';
         if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'paymongo_qr'
-            ? 'E-wallet QR · GCash'
-            : walkinState.payment === 'paymongo' ? 'PayMongo online' : 'Cash';
+            ? 'QR Ph'
+            : 'Cash';
         if (walkinSummaryTotal) walkinSummaryTotal.textContent = subtotal === null ? 'Confirm at front desk' : formatStaffPeso(subtotal);
-        if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = !['paymongo', 'paymongo_qr'].includes(walkinState.payment);
+        if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = walkinState.payment !== 'paymongo_qr';
+        if (walkinCashDetails) walkinCashDetails.hidden = walkinState.payment !== 'cash';
+        if (walkinCashTenderedInput) {
+            walkinCashTenderedInput.disabled = walkinState.payment !== 'cash';
+        }
+        const dueMinor = walkinCashDueMinor();
+        const tenderedMinor = walkinCashTenderMinor();
+        const cashValid = dueMinor !== null && tenderedMinor !== null && tenderedMinor >= dueMinor;
+        if (walkinCashChange) walkinCashChange.textContent = cashValid
+            ? formatStaffPeso((tenderedMinor - dueMinor) / 100) : '—';
+        if (walkinCashValidation) {
+            walkinCashValidation.textContent = dueMinor === null
+                ? 'A confirmed total is required before collecting cash.'
+                : tenderedMinor === null ? 'Enter the cash received to calculate change.'
+                    : tenderedMinor < dueMinor ? `Enter at least ${formatStaffPeso(dueMinor / 100)}.`
+                        : `Cash received: ${formatStaffPeso(tenderedMinor / 100)}.`;
+            walkinCashValidation.setAttribute('aria-invalid', dueMinor !== null && tenderedMinor !== null && tenderedMinor < dueMinor ? 'true' : 'false');
+        }
         if (walkinAcknowledgmentNote) walkinAcknowledgmentNote.textContent = walkinState.payment === 'paymongo_qr'
             ? 'A payment acknowledgment is available only after PayMongo confirms payment.'
             : 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
         if (walkinSaveBtn) walkinSaveBtn.textContent = walkinState.payment === 'paymongo_qr'
-            ? 'Show GCash QR'
-            : walkinState.payment === 'paymongo' ? 'Next · Pay online' : 'Complete cash payment';
+            ? 'Show QR Ph'
+            : 'Complete cash payment';
         if (walkinReviewLinesEl) {
-            walkinReviewLinesEl.innerHTML = walkinState.items.map((item, index) => `<div class="staff-walkin-review-line">
+            walkinReviewLinesEl.innerHTML = walkinState.items.map((item, index) => {
+                const hours = item.endHour - item.startHour + 1;
+                return `<div class="staff-walkin-review-line">
                 <div><strong>${index + 1}. ${window.escapeHtml(item.sport)} · ${window.escapeHtml(item.court)}${item.unit ? ` · ${window.escapeHtml(item.unit)}` : ''}</strong>
-                <span>${window.escapeHtml(formatWalkinDateLabel(item.startsAt))} · ${window.escapeHtml(formatIsoTime12h(item.startsAt))}–${window.escapeHtml(formatIsoTime12h(item.endsAt))}</span></div>
-                <strong>${item.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(item.subtotal))}</strong></div>`).join('');
+                <span>${window.escapeHtml(formatWalkinDateLabel(item.startsAt))} · ${window.escapeHtml(formatIsoTime12h(item.startsAt))}–${window.escapeHtml(formatIsoTime12h(item.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</span></div>
+                <strong>${item.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(item.subtotal))}</strong></div>`;
+            }).join('');
         }
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = walkinTimeRangeLabel() || '';
         if (walkinLinesEl && walkinState.items.length) renderWalkinLines();
@@ -2385,8 +2207,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderStaffReceipt(receipt, target = walkinReceiptEl, context = 'walkin') {
         if (!target) return;
+        const staffWalkinReceipt = context === 'walkin' || (context === 'transaction' && receipt.source === 'walkin')
+            ? {
+                ...receipt,
+                items: (Array.isArray(receipt.items) ? receipt.items : []).map((item) => {
+                    if (item.rate_unit !== '/set') return item;
+                    const start = new Date(item.starts_at).getTime();
+                    const end = new Date(item.ends_at).getTime();
+                    const minutes = Number(item.duration_minutes) > 0
+                        ? Number(item.duration_minutes)
+                        : Number.isFinite(start) && Number.isFinite(end) && end > start
+                            ? Math.round((end - start) / 60000) : 0;
+                    const hours = minutes / 60;
+                    const totalMinor = Number(item.subtotal_minor);
+                    return {
+                        ...item,
+                        rate_unit: '/hr',
+                        rate_quantity: 1,
+                        billable_quantity: hours,
+                        ...(hours > 0 && Number.isFinite(totalMinor)
+                            ? { rate_minor: Math.round(totalMinor / hours) } : {}),
+                    };
+                }),
+            }
+            : receipt;
         const idAttr = window.escapeHtml(String(receipt.receipt_number || receipt.receipt_id || receipt.id || '—'));
-        const items = Array.isArray(receipt.items) ? receipt.items : [];
+        const items = Array.isArray(staffWalkinReceipt.items) ? staffWalkinReceipt.items : [];
         const sourceId = receipt.source_id || receipt.order_id || receipt.walkin_order_id || items[0]?.reservation_id || '';
         const isBooking = context === 'transaction' && receipt.source === 'booking';
         const hasWalkinOrderId = Boolean(receipt.source_id || receipt.order_id || receipt.walkin_order_id);
@@ -2394,10 +2240,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         const actionsHtml = `<button type="button" class="staff-btn-primary" data-staff-receipt-download="${idAttr}">Download PNG</button>
             <button type="button" class="staff-btn-ghost" data-staff-receipt-print>Print</button>
             ${context === 'walkin' ? '<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>' : ''}`;
-        target.innerHTML = `<div class="staff-receipt-layout">${window.InigoPaymentAcknowledgment.render(receipt, {
+        target.innerHTML = `<div class="staff-receipt-layout">${window.InigoPaymentAcknowledgment.render(staffWalkinReceipt, {
             sourceLabel, sourceId, itemReferenceLabel: isBooking ? '' : 'Visit ID', transactionId: receipt.transaction_id,
             cardAttributes: 'data-staff-receipt-card', actionsHtml,
         })}</div>`;
+        const cashTenderedMinor = Number(receipt.cash_tendered_minor);
+        const cashChangeMinor = Number(receipt.cash_change_minor);
+        if (receipt.payment_method === 'Cash' && Number.isSafeInteger(cashTenderedMinor)
+            && Number.isSafeInteger(cashChangeMinor) && cashTenderedMinor >= 0 && cashChangeMinor >= 0) {
+            const card = target.querySelector('.payment-ack-card');
+            const thanks = card?.querySelector('.payment-ack-thanks');
+            if (card && thanks) {
+                const cashMeta = document.createElement('div');
+                cashMeta.className = 'payment-ack-meta';
+                cashMeta.innerHTML = `<div class="payment-ack-meta-row"><span>Cash tendered</span><strong>${window.escapeHtml(formatStaffPeso(cashTenderedMinor / 100))}</strong></div>
+                    <div class="payment-ack-meta-row"><span>Change due</span><strong>${window.escapeHtml(formatStaffPeso(cashChangeMinor / 100))}</strong></div>`;
+                thanks.before(cashMeta);
+            }
+        }
     }
 
     function canvasToBlobAsyncStaff(canvas) {
@@ -2450,10 +2310,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sports = walkinState.sports || [];
         const courts = walkinState.courts;
         const nightRateStartsAt = walkinState.nightRateStartsAt || null;
-        walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, mobileAvailability: '', sports, sport: null, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', rateQuantity: 1, nightRateStartsAt, startHour: null, endHour: null, selectedHours: [], items: [], payment: staffCashEnabled ? 'cash' : 'paymongo' };
-        if (walkinRateQuantityInput) walkinRateQuantityInput.value = '1';
+        walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, mobileAvailability: '', sports, sport: null, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', nightRateStartsAt, startHour: null, endHour: null, selectedHours: [], items: [], payment: staffCashEnabled ? 'cash' : (staffQrphEnabled ? 'paymongo_qr' : null) };
         if (walkinNameInput) walkinNameInput.value = '';
         if (walkinMobileInput) walkinMobileInput.value = '';
+        if (walkinCashTenderedInput) walkinCashTenderedInput.value = '';
         paintWalkinMobileStatus('');
         if (walkinCustomerSearch) walkinCustomerSearch.value = '';
         if (walkinCustomerResults) { walkinCustomerResults.hidden = true; walkinCustomerResults.replaceChildren(); }
@@ -2473,7 +2333,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderWalkinUnitOptions();
         walkinBookings = { ok: true, rows: [] };
         walkinWalkins = { ok: true, rows: [] };
-        renderWalkinTimePickers();
+        renderWalkinTimeSlots();
         walkinPaymentOptionEls.forEach((option) => {
             const radio = option.querySelector('input[type="radio"]');
             const isSelected = Boolean(radio && radio.dataset.staffPayment === walkinState.payment);
@@ -2540,8 +2400,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
         if (!walkinReceiptEl) return;
         walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending">
-            <h3>GCash QR unavailable</h3>
-            <p>${window.escapeHtml(message)} The walk-in order is still pending. Retry to prepare its PayMongo checkout QR.</p>
+            <h3>QR Ph unavailable</h3>
+            <p>${window.escapeHtml(message)} The walk-in order is still pending. Retry to prepare its PayMongo QR Ph checkout.</p>
             <button type="button" class="staff-btn-primary" data-staff-walkin-qr-checkout-retry="${window.escapeHtml(String(orderId))}">Retry checkout setup</button>
             <button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>
         </div>`;
@@ -2578,35 +2438,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (title) title.textContent = 'Checkout expired';
     }
 
-    function renderWalkinQrPanel(orderId, amount, checkoutUrl, expiresAtMs) {
-        if (typeof window.qrcode !== 'function') {
-            renderWalkinQrError(orderId, amount, 'The local QR generator is unavailable on this screen.');
+    function renderWalkinQrPanel(orderId, amount, qrImageUrl, expiresAtMs, testMode = false, testUrl = null) {
+        const safeTestUrl = (() => {
+            if (typeof testUrl !== 'string') return null;
+            try {
+                const parsed = new URL(testUrl);
+                return parsed.protocol === 'https:' && parsed.hostname === 'test.paymongo.com'
+                    && !parsed.username && !parsed.password ? parsed.href : null;
+            } catch { return null; }
+        })();
+        if (!testMode && (typeof qrImageUrl !== 'string' || !/^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(qrImageUrl)
+            || qrImageUrl.length > 1500000)) {
+            renderWalkinQrError(orderId, amount, 'PayMongo did not return a valid dynamic QR Ph image.');
             return false;
         }
         try {
             const expired = Date.now() >= expiresAtMs;
-            let svg = '';
-            if (!expired) {
-                const code = window.qrcode(0, 'M');
-                code.addData(checkoutUrl, 'Byte');
-                code.make();
-                svg = code.createSvgTag(4, 4, 'PayMongo GCash checkout QR code', 'PayMongo checkout QR');
-            }
-            activeWalkinQr = { orderId, amount, checkoutUrl, expiresAtMs, startedAt: Date.now() };
+            activeWalkinQr = { orderId, amount, checkoutUrl: testMode ? 'sandbox-simulation' : qrImageUrl, expiresAtMs, startedAt: Date.now(), testMode };
             if (walkinWizardWrap) walkinWizardWrap.hidden = true;
             if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
             if (!walkinReceiptEl) return false;
             const amountText = Number.isFinite(amount) ? formatStaffPeso(amount) : 'Confirm in PayMongo';
             walkinReceiptEl.innerHTML = `<section class="staff-walkin-qr-card" aria-labelledby="staffWalkinQrTitle">
-                <div class="staff-walkin-qr-code" data-staff-walkin-qr-image>${expired ? 'QR expired' : svg}</div>
+                <div class="staff-walkin-qr-code" data-staff-walkin-qr-image>${testMode ? '<span>TEST MODE</span>' : expired ? 'QR expired' : `<img src="${window.escapeHtml(qrImageUrl)}" alt="Dynamic QR Ph payment code" decoding="async">`}</div>
                 <div class="staff-walkin-qr-copy">
-                    <span class="staff-form-label">PayMongo checkout · GCash</span>
-                    <h3 id="staffWalkinQrTitle">${expired ? 'Checkout expired' : 'Scan to pay'}</h3>
-                    <p>Ask the customer to scan this QR with their phone, then finish payment on PayMongo. This QR opens a hosted checkout; it is not a direct wallet transfer.</p>
+                    <span class="staff-form-label">PayMongo · QR Ph${testMode ? ' · SANDBOX' : ''}</span>
+                    <h3 id="staffWalkinQrTitle">${testMode ? 'Simulate sandbox payment' : expired ? 'Checkout expired' : 'Scan to pay'}</h3>
+                    <p>${testMode
+                        ? 'Sandbox QR codes can charge real money if scanned. Do not show or scan a QR code in test mode. Use PayMongo’s simulator action to test this payment.'
+                        : 'Ask the customer to scan this amount-specific QR code with a participating bank or e-wallet app. PayMongo confirms payment before an acknowledgment is issued.'}</p>
+                    ${testMode ? (safeTestUrl
+                        ? `<a class="staff-btn-primary" data-staff-walkin-qr-simulate href="${window.escapeHtml(safeTestUrl)}" target="_blank" rel="noopener noreferrer">Open PayMongo sandbox simulator</a>`
+                        : '<p class="staff-walkin-qr-warning" role="alert">PayMongo did not provide a trusted sandbox simulator link. No QR is shown; this test payment cannot be simulated from this screen.</p>') : ''}
                     <div class="staff-walkin-qr-meta">
-                        <div class="staff-summary-row"><span>Amount before processing fee</span><strong>${window.escapeHtml(amountText)}</strong></div>
-                        <p>PayMongo shows any processing fee and the final amount before the customer pays.</p>
-                        <p class="staff-walkin-qr-status" data-staff-walkin-qr-status role="status" aria-live="polite">${expired ? 'Checkout expired. Check once more for a late payment confirmation.' : 'Waiting for PayMongo payment confirmation…'}</p>
+                        <div class="staff-summary-row"><span>Amount to pay</span><strong>${window.escapeHtml(amountText)}</strong></div>
+                        <p class="staff-walkin-qr-status" data-staff-walkin-qr-status role="status" aria-live="polite">${testMode ? 'After choosing a simulator result, check for PayMongo confirmation.' : expired ? 'Checkout expired. Check once more for a late payment confirmation.' : 'Waiting for PayMongo payment confirmation…'}</p>
                         <div class="staff-summary-row"><span>Checkout expires</span><time datetime="${new Date(expiresAtMs).toISOString()}">${window.escapeHtml(formatWalkinCheckoutExpiry(expiresAtMs))}</time></div>
                     </div>
                     <div class="staff-walkin-qr-actions">
@@ -2615,7 +2481,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
             </section>`;
-            if (!expired) scheduleWalkinQrPoll();
+            if (!expired && !testMode) scheduleWalkinQrPoll();
             return true;
         } catch (error) {
             console.error('[staff] local walk-in QR generation failed', error);
@@ -2625,11 +2491,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function showWalkinQrCheckoutData(orderId, amount, checkoutData) {
-        const checkoutUrl = safePayMongoCheckoutUrl(checkoutData?.checkout_url);
+        const qrImageUrl = checkoutData?.qr_image_url;
         const expiresAtMs = parseWalkinCheckoutExpiry(checkoutData?.expires_at);
-        if (!checkoutUrl || !expiresAtMs) {
+        const testMode = checkoutData?.test_mode === true;
+        if ((!testMode && typeof qrImageUrl !== 'string') || !expiresAtMs) {
             renderWalkinQrError(orderId, amount,
-                !checkoutUrl ? 'PayMongo did not return a valid checkout.paymongo.com URL.'
+                typeof qrImageUrl !== 'string' ? 'PayMongo did not return a dynamic QR Ph code.'
                     : 'PayMongo did not return a valid checkout expiry.');
             return false;
         }
@@ -2637,7 +2504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? NaN : Number(checkoutData.base_minor);
         const authoritativeAmount = Number.isSafeInteger(checkoutMinor) && checkoutMinor > 0
             ? checkoutMinor / 100 : amount;
-        return renderWalkinQrPanel(orderId, authoritativeAmount, checkoutUrl, expiresAtMs);
+        return renderWalkinQrPanel(orderId, authoritativeAmount, qrImageUrl, expiresAtMs, testMode, checkoutData?.qr_test_url);
     }
 
     async function checkWalkinQrPayment(orderId, manual = true) {
@@ -2684,7 +2551,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         let checkout;
         try {
             checkout = await window.sb.functions.invoke('staff-walkin-checkout', {
-                body: { order_id: String(orderId), channel: 'gcash' },
+                body: { order_id: String(orderId), channel: 'qrph' },
             });
         } catch (error) { checkout = { error }; }
         if (checkout?.error) {
@@ -2834,8 +2701,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('Cash payment is currently unavailable.', true);
             return;
         }
-        if (walkinState.payment === 'paymongo_qr' && !staffGcashEnabled) {
-            window.InigoToast?.show('GCash checkout is currently unavailable.', true);
+        if (walkinState.payment === 'paymongo_qr' && !staffQrphEnabled) {
+            window.InigoToast?.show('QR Ph checkout is currently unavailable.', true);
             return;
         }
         if (walkinState.items.some((item) => !Number.isFinite(item.subtotal)
@@ -2843,11 +2710,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('A court price is unavailable. Refresh availability and review the order again.', true);
             return;
         }
-        if (walkinState.payment === 'paymongo' && !await confirmStaffAction(
-            'You will be redirected to PayMongo to complete the online payment. Continue?',
-            'Continue to PayMongo?',
-            'Continue to payment',
-        )) return;
+        if (walkinState.payment === 'cash' && !walkinCashTenderIsValid()) {
+            window.InigoToast?.show('Enter an amount tendered that covers the cash amount due.', true);
+            walkinCashTenderedInput?.focus();
+            return;
+        }
 
         button.disabled = true;
         const originalText = button.textContent;
@@ -2860,6 +2727,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ends_at: item.endsAt,
             rate_quantity: item.rateQuantity,
             quoted_minor: Math.round(item.subtotal * 100),
+            ...(walkinState.payment === 'cash' ? { cash_tendered_minor: walkinCashTenderMinor() } : {}),
         }));
         let create;
         try {
@@ -2887,26 +2755,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if (walkinState.payment === 'paymongo') {
-            button.textContent = 'Opening PayMongo…';
-            let checkout;
-            try { checkout = await window.sb.functions.invoke('staff-walkin-checkout', { body: { order_id: String(order.order_id) } }); }
-            catch (error) { checkout = { error }; }
-            const checkoutUrl = safePayMongoCheckoutUrl(checkout?.data?.checkout_url);
-            if (checkout?.error || !checkoutUrl) {
-                button.disabled = false;
-                button.textContent = originalText;
-                window.InigoToast?.show(checkout?.error?.message || 'PayMongo did not return a valid checkout.paymongo.com URL. The order is still pending; retry from Transactions after checking its status.', true);
-                refreshBookingOverview();
-                refreshTransactions();
-                return;
-            }
-            window.location.assign(checkoutUrl);
-            return;
-        }
+        walkinCashReceiptSnapshot = null;
 
         if (walkinState.payment === 'paymongo_qr') {
-            button.textContent = 'Preparing GCash QR…';
+            button.textContent = 'Preparing QR Ph…';
             const orderMinor = order.base_minor === null || order.base_minor === undefined
                 ? NaN : Number(order.base_minor);
             const amount = Number.isSafeInteger(orderMinor) && orderMinor > 0 ? orderMinor / 100 : null;
@@ -2984,7 +2836,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     renderWalkinWizard();
     updateWalkinSummary();
-    renderWalkinTimePickers();
+    renderWalkinTimeSlots();
 
     // ------------------------------------------------------------------
     // Time-In payment popup — Revision S2 (implementation_plan.md, decisions
@@ -3072,11 +2924,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (timeInCourtEl) timeInCourtEl.textContent = row.unit ? `${row.courts || '—'} · ${row.unit}` : (row.courts || '—');
         if (timeInDateEl) timeInDateEl.textContent = formatWalkinDateLabel(info.start.toISOString());
         if (timeInTimeEl) timeInTimeEl.textContent = `${formatIsoTime12h(info.start.toISOString())} – ${formatIsoTime12h(info.end.toISOString())}`;
-        if (timeInHoursEl) {
-            timeInHoursEl.textContent = row.raw.rate_unit_snapshot === '/set'
-                ? `${Math.max(1, Number(row.raw.rate_quantity) || 1)} set${Number(row.raw.rate_quantity) === 1 ? '' : 's'} · 60 min each`
-                : `${info.hours} hr${info.hours === 1 ? '' : 's'}`;
-        }
+        if (timeInHoursEl) timeInHoursEl.textContent = `${info.hours} hr${info.hours === 1 ? '' : 's'}`;
 
         const knownTotal = info.total !== null;
         const needsPayment = knownTotal && info.balance > 0;

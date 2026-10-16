@@ -16,21 +16,27 @@
     overflow-wrap: anywhere;
 }
 .payment-ack-heading { display: grid; gap: 1mm; text-align: center; }
+.payment-ack-heading .payment-ack-address { font-size: 8px; line-height: 1.2; }
 .payment-ack-heading strong { font-size: 18px; letter-spacing: .04em; }
 .payment-ack-heading span { font-size: 10px; }
 .payment-ack-heading b { margin-top: 1mm; font-size: 11px; letter-spacing: .08em; }
 .payment-ack-rule { width: 100%; border-top: 1px dashed #555; }
 .payment-ack-meta { display: grid; gap: 1.2mm; }
-.payment-ack-meta-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 3mm; }
-.payment-ack-meta-row strong { text-align: right; }
+.payment-ack-meta-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 2mm; }
+.payment-ack-meta-row > span, .payment-ack-meta-row > strong { min-width: 0; overflow-wrap: anywhere; }
+.payment-ack-meta-row > strong { text-align: right; }
 .payment-ack-items { display: grid; gap: 1mm; }
 .payment-ack-item { display: grid; gap: .6mm; padding: 1mm 0; break-inside: avoid; }
+.payment-ack-item > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .payment-ack-place { display: grid; gap: .4mm; font-size: 11px; }
-.payment-ack-item-field { display: flex; gap: 2mm; }
-.payment-ack-item-field > span { flex: 0 0 13mm; }
-.payment-ack-item-amount { display: flex; justify-content: space-between; gap: 3mm; }
+.payment-ack-item-field { display: grid; grid-template-columns: 13mm minmax(0, 1fr); gap: 2mm; }
+.payment-ack-item-field > span, .payment-ack-item-field > strong { min-width: 0; overflow-wrap: anywhere; }
+.payment-ack-item-amount { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 2mm; }
+.payment-ack-item-amount strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-align: right; }
 .payment-ack-totals { display: grid; gap: 1.2mm; }
-.payment-ack-total { display: flex; justify-content: space-between; gap: 3mm; padding-top: 1.5mm; border-top: 1px solid #111; font-size: 13px; font-weight: 700; }
+.payment-ack-total { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 2mm; padding-top: 1.5mm; border-top: 1px solid #111; font-size: 13px; font-weight: 700; }
+.payment-ack-total > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.payment-ack-total strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; text-align: right; }
 .payment-ack-thanks, .payment-ack-disclaimer { margin: 0; text-align: center; }
 .payment-ack-disclaimer { font-size: 12px; font-weight: 700; letter-spacing: .06em; }
 .payment-ack-disclaimer span { font-size: 9px; font-weight: 400; letter-spacing: 0; }
@@ -44,12 +50,14 @@
     top: 0;
     left: -10000px;
     display: block;
-    width: 74mm;
+    box-sizing: border-box;
+    width: 47.5mm;
+    padding: .75mm;
     visibility: hidden;
 }
 .payment-ack-measuring .payment-ack-card {
-    width: 74mm;
-    max-width: 74mm;
+    width: 46mm;
+    max-width: 46mm;
     margin: 0;
     padding: 0;
     border: 0;
@@ -57,11 +65,17 @@
 }
 
 @media print {
-    @page { size: auto; margin: 2mm; }
-    body.payment-ack-printing { margin: 0 !important; background: #fff !important; }
+    @page { size: auto; margin: 0; }
+    body.payment-ack-printing {
+        min-height: 0 !important;
+        height: auto !important;
+        margin: 0 !important;
+        background: #fff !important;
+    }
+    body.dash-body.payment-ack-printing::before { content: none !important; display: none !important; }
     body.payment-ack-printing > :not(.payment-ack-print-root) { display: none !important; }
-    body.payment-ack-printing > .payment-ack-print-root { display: block !important; width: 74mm; margin: 0; padding: 0; }
-    body.payment-ack-printing .payment-ack-card { width: 74mm; max-width: 74mm; margin: 0; padding: 0; border: 0; border-radius: 0; }
+    body.payment-ack-printing > .payment-ack-print-root { display: block !important; box-sizing: border-box; width: 47.5mm; margin: 0; padding: .75mm; }
+    body.payment-ack-printing .payment-ack-card { width: 46mm; max-width: 46mm; margin: 0; padding: 0; border: 0; border-radius: 0; }
     body.payment-ack-printing .payment-ack-card,
     body.payment-ack-printing .payment-ack-card * { visibility: visible !important; }
     body.payment-ack-printing .payment-ack-actions { display: none !important; }

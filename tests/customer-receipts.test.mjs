@@ -26,10 +26,21 @@ test('receipts panel combines both payment sources behind shared ID and payment 
     assert.match(css, /\.dash-receipt-filters\s*\{[^}]*grid-template-columns/s);
     assert.match(css, /@media \(max-width:\s*640px\)[\s\S]*?\.dash-receipt-filters\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
     assert.match(css, /:root\[data-theme="light"\]/);
-    assert.match(receiptCss, /@page \{ size: auto; margin: 2mm; \}/);
-    assert.match(receiptCss, /payment-ack-print-root\.payment-ack-measuring[\s\S]*?width: 74mm/);
-    assert.match(receiptHelper, /@page \{ size: 80mm \$\{pageHeightMm\}mm; margin: 2mm; \}/);
+    assert.match(receiptCss, /@page \{ size: auto; margin: 0; \}/);
+    assert.match(receiptCss, /payment-ack-print-root\.payment-ack-measuring[\s\S]*?width: 47\.5mm;\s*padding: \.75mm/);
+    assert.match(receiptCss, /payment-ack-measuring \.payment-ack-card\s*\{[^}]*width: 46mm;[^}]*max-width: 46mm/s);
+    assert.match(receiptHelper, /@page \{ size: 58mm \$\{pageHeightMm\}mm; margin: 0; \}/);
+    assert.match(receiptCss, /body\.payment-ack-printing > \.payment-ack-print-root\s*\{[^}]*width:\s*47\.5mm;[^}]*padding:\s*\.75mm;/s);
+    assert.match(receiptCss, /body\.payment-ack-printing \.payment-ack-card\s*\{[^}]*width: 46mm;[^}]*max-width: 46mm/s);
+    assert.match(receiptHelper, /const PRINT_LOCATION = 'Brgy\. Bocohan, Diversion Road, Lucena City, Quezon, Philippines'/);
+    assert.match(receiptHelper, /class="payment-ack-address">\$\{escape\(PRINT_LOCATION\)\}/);
+    assert.doesNotMatch(receiptHelper, /Printed|addPrintHeader|payment-ack-print-meta/);
+    assert.match(receiptHelper, /Payment date/);
+    assert.match(receiptCss, /payment-ack-meta-row > span, \.payment-ack-meta-row > strong\s*\{[^}]*overflow-wrap: anywhere/s);
+    assert.match(receiptCss, /payment-ack-item-field > span, \.payment-ack-item-field > strong\s*\{[^}]*overflow-wrap: anywhere/s);
     assert.match(receiptCss, /body\.payment-ack-printing > :not\(\.payment-ack-print-root\)/);
+    assert.match(receiptCss, /body\.payment-ack-printing\s*\{[^}]*min-height:\s*0 !important;[^}]*height:\s*auto !important;/s);
+    assert.match(receiptCss, /body\.dash-body\.payment-ack-printing::before\s*\{[^}]*display:\s*none !important;/);
 });
 
 test('booking receipts render only saved acknowledgment snapshots, preserving deposit and balance history', () => {

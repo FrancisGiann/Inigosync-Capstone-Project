@@ -10,12 +10,12 @@
 -- rows.
 --
 -- Rates are left NULL on every court on purpose — the owner (Ms. Driz)
--- hasn't confirmed hourly/per-game rates yet. Do not invent prices here;
+-- hasn't confirmed listing rates. Do not invent prices here;
 -- the frontend renders the existing '—' placeholder for a NULL rate.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- sport — the 8 sport categories offered, matching includes/courts-data.js
+-- sport — the 9 sport categories offered, matching includes/courts-data.js
 -- ----------------------------------------------------------------------------
 insert into public.sport (slug, name, display_order)
 values
@@ -23,17 +23,26 @@ values
     ('badminton',    'Badminton',    2),
     ('lawn-tennis',  'Lawn Tennis',  3),
     ('pickleball',   'Pickleball',   4),
-    ('bowling',      'Bowling',      5),
-    ('billiards',    'Billiards',    6),
-    ('table-tennis', 'Table Tennis', 7),
-    ('volleyball',   'Volleyball',   8)
+    ('bowling-duckpin', 'Bowling — Duckpin', 5),
+    ('bowling-tenpin',  'Bowling — Ten-Pin', 6),
+    ('billiards',       'Billiards',         7),
+    ('table-tennis',    'Table Tennis',      8),
+    ('volleyball',      'Volleyball',        9)
 on conflict (slug) do nothing;
 
+-- Repair the established Ten-Pin listing's sport relationship on re-runs.
+-- Updating this FK leaves the court row id and its booking/unit history intact.
+update public.court c
+set sport_id = s.id
+from public.sport s
+where s.slug = 'bowling-tenpin'
+  and c.slug = 'bowling-tenpin'
+  and c.sport_id is distinct from s.id;
+
 -- ----------------------------------------------------------------------------
--- court — one row per bookable unit on the landing page's Courts & Facilities
--- grid. Duckpin and ten-pin are two rows under the one 'bowling' sport, same
--- split as includes/courts-data.js; the landing page merges them back into a
--- single "Bowling" card at render time.
+-- court — one row per bookable listing on the landing page's Courts & Facilities
+-- grid. Duckpin and ten-pin are separate sports and separate court listings;
+-- the landing page can still merge them into one marketing "Bowling" card.
 -- ----------------------------------------------------------------------------
 insert into public.court (sport_id, slug, name, quantity, unit, description, rate, rate_unit, status, display_order)
 select s.id, v.slug, v.name, v.quantity, v.unit, v.description, null, v.rate_unit, 'Available', v.display_order
@@ -42,8 +51,8 @@ from (values
     ('badminton',       'badminton',        'Badminton',            9,  'courts', 'Indoor · Rackets for rent',                        '/hr',   2),
     ('lawn-tennis',     'lawn-tennis',      'Lawn Tennis',          3,  'courts', 'Outdoor · Professional grade',                     '/hr',   3),
     ('pickleball',      'pickleball',       'Pickleball',           2,  'courts', 'Indoor · Recently added',                          '/hr',   4),
-    ('bowling',         'bowling-duckpin',  'Bowling — Duckpin',    8,  'lanes',  'Duckpin bowling · Shoes included',                 '/game', 5),
-    ('bowling',         'bowling-tenpin',   'Bowling — Ten-Pin',    12, 'lanes',  'Ten-pin bowling · Shoes included',                 '/game', 6),
+    ('bowling-duckpin', 'bowling-duckpin',  'Bowling — Duckpin',    8,  'lanes',  'Duckpin bowling · Shoes included',                 '/set',  5),
+    ('bowling-tenpin',  'bowling-tenpin',   'Bowling — Ten-Pin',    12, 'lanes',  'Ten-pin bowling · Shoes included',                 '/set',  6),
     ('billiards',       'billiards',        'Billiards',            2,  'tables', 'Professional pool tables · Cue service available', '/hr',   7),
     ('table-tennis',    'table-tennis',     'Table Tennis',         2,  'tables', 'Tournament-grade tables · Paddles for rent',       '/hr',   8),
     ('volleyball',      'volleyball',       'Volleyball',           1,  'court',  'Full court · Indoor · Net included',               '/hr',   9)
@@ -69,7 +78,7 @@ from (values
     ('basketball', 'Tournament',    'Bocohan Summer Basketball League — Finals', 'Court 1 · Elimination round',              (current_date + 2)::date, '../database/web/basketball.jpg',   1),
     (null,         'This weekend',  'Weekend Open Play',                         'Sat & Sun · 8:00 AM – 10:00 PM · all courts', (current_date + 3)::date, '../database/web/announcement.jpg', 2),
     ('badminton',  'New courts',    'Badminton Courts Now Open',                 '9 courts total · book any slot online',     null,                     '../database/web/badminton.jpg',    3),
-    ('bowling',    'Lanes',         'Duckpin & Ten-Pin Night',                   '20 lanes total · Mon–Thu',                  null,                     '../database/web/bowling.jpg',      4),
+    (null,         'Lanes',         'Duckpin & Ten-Pin Night',                   '20 lanes total · Mon–Thu',                  null,                     '../database/web/bowling.jpg',      4),
     ('volleyball', 'Open gym',      'Volleyball Open Gym',                       'Every Friday · 6:00 PM – 9:00 PM',          null,                     '../database/web/volleyball.jpg',   5)
 ) as v(sport_slug, tag, title, meta, event_date, image_url, display_order)
 left join public.sport s on s.slug = v.sport_slug

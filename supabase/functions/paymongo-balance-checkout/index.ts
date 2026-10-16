@@ -43,7 +43,7 @@ Deno.serve(async (req: Request) => {
       webhookSecret: Deno.env.get("PAYMONGO_WEBHOOK_SECRET"), supabaseUrl: url }))
     return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const methods = settingsError ? [] : enabledPaymongoMethods(settings);
   if (!methods.length) return json({ message: "Online payment settings are unavailable." }, 503, origin);
   const { data: prepared, error: prepareError } = await admin.rpc("prepare_paymongo_balance_checkout", {

@@ -4,6 +4,7 @@
     'use strict';
 
     const TIME_ZONE = 'Asia/Manila';
+    const PRINT_LOCATION = 'Brgy. Bocohan, Diversion Road, Lucena City, Quezon, Philippines';
 
     function escape(value) {
         if (typeof window.escapeHtml === 'function') return window.escapeHtml(String(value));
@@ -126,6 +127,7 @@
             <header class="payment-ack-heading">
                 <strong>InigoSync</strong>
                 <span>(Inigos Sports Center)</span>
+                <span class="payment-ack-address">${escape(PRINT_LOCATION)}</span>
                 <b>PAYMENT ACKNOWLEDGEMENT</b>
             </header>
             <div class="payment-ack-rule"></div>
@@ -161,8 +163,8 @@
         clone.querySelectorAll('.payment-ack-actions').forEach((element) => element.remove());
         root.appendChild(clone);
         document.body.appendChild(root);
-        // Measure the actual print-styled receipt and set a valid, explicit
-        // page height. `80mm auto` is invalid CSS Paged Media syntax.
+        // Measure the receipt at the POS-58's printable width and set a valid,
+        // explicit page height. `58mm auto` is invalid CSS Paged Media syntax.
         const measuredHeightPx = clone.getBoundingClientRect().height;
         const measuredHeightMm = measuredHeightPx * 25.4 / 96;
         const pageHeightMm = Math.max(40, Math.ceil(measuredHeightMm + 6));
@@ -171,9 +173,10 @@
         document.head.appendChild(pageStyle);
         let pageRuleInserted = false;
         try {
-            pageStyle.sheet.insertRule(`@page { size: 80mm ${pageHeightMm}mm; margin: 2mm; }`, 0);
+            pageStyle.sheet.insertRule(`@page { size: 58mm ${pageHeightMm}mm; margin: 0; }`, 0);
             pageRuleInserted = pageStyle.sheet.cssRules[0]?.type === CSSRule.PAGE_RULE
-                && pageStyle.sheet.cssRules[0].style.getPropertyValue('size').trim() === `80mm ${pageHeightMm}mm`;
+                && pageStyle.sheet.cssRules[0].style.getPropertyValue('size').trim() === `58mm ${pageHeightMm}mm`
+                && pageStyle.sheet.cssRules[0].style.getPropertyValue('margin') === '0px';
         } catch { /* The valid `auto` page-size fallback remains available. */ }
         pageStyle.dataset.paymentAckPageSizeApplied = String(pageRuleInserted);
         root.classList.remove('payment-ack-measuring');

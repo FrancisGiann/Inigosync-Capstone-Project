@@ -26,6 +26,7 @@
     const DEFAULT_SETTINGS = Object.freeze({
         cardEnabled: true,
         gcashEnabled: true,
+        qrphEnabled: false,
         cashEnabled: true,
         downpaymentPct: 50,
         nightRateStartsAt: null,
@@ -49,6 +50,7 @@
         return {
             cardEnabled: row.card_enabled !== false,
             gcashEnabled: row.gcash_enabled !== false,
+            qrphEnabled: row.qrph_enabled === true,
             cashEnabled: row.cash_enabled !== false,
             downpaymentPct: Number.isFinite(pct) ? pct : DEFAULT_SETTINGS.downpaymentPct,
             nightRateStartsAt: row.night_rate_starts_at || null,

@@ -64,10 +64,10 @@ const COURTS_INVENTORY = [
         unit: 'lanes',
         description: 'Duckpin bowling · Shoes included',
         rate: '—',
-        rateUnit: '/game',
+        rateUnit: '/set',
         status: 'Available',
         image_url: null,
-        note: '// TODO: confirm if duckpin is billed per-game or per-hour; may need different booking flow'
+        note: '// Bowling is scheduled in one-hour slots; live inventory uses /set pricing.'
     },
     {
         id: 'bowling-tenpin',
@@ -76,10 +76,10 @@ const COURTS_INVENTORY = [
         unit: 'lanes',
         description: 'Ten-pin bowling · Shoes included',
         rate: '—',
-        rateUnit: '/game',
+        rateUnit: '/set',
         status: 'Available',
         image_url: null,
-        note: '// TODO: confirm if ten-pin is billed per-game or per-hour; may need different booking flow'
+        note: '// Bowling is scheduled in one-hour slots; live inventory uses /set pricing.'
     },
     {
         id: 'billiards',

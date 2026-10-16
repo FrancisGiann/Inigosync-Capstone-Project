@@ -55,6 +55,7 @@ create table if not exists public.app_settings (
     id                boolean primary key default true
         constraint app_settings_singleton check (id = true),
     gcash_enabled     boolean not null default true,
+    qrph_enabled      boolean not null default false,
     cash_enabled      boolean not null default true,
     downpayment_pct   numeric(5,2) not null default 50
         constraint app_settings_downpayment_pct_range check (downpayment_pct >= 0 and downpayment_pct <= 100),
@@ -73,8 +74,8 @@ comment on column public.app_settings.downpayment_pct is 'Percentage of a bookin
 -- Configuration and click Save first. `on conflict do nothing` keeps this
 -- idempotent — re-running this file never resets values an admin has
 -- already changed.
-insert into public.app_settings (id, gcash_enabled, cash_enabled, downpayment_pct)
-values (true, true, true, 50)
+insert into public.app_settings (id, gcash_enabled, qrph_enabled, cash_enabled, downpayment_pct)
+values (true, true, false, true, 50)
 on conflict (id) do nothing;
 
 

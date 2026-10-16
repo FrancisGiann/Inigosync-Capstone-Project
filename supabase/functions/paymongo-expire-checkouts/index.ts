@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { paidCheckoutPayment } from "./_shared/paid-checkout.ts";
+import { paidQrPhPayment } from "../_shared/paid-qrph-payment.mjs";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -33,6 +34,7 @@ Deno.serve(async (req: Request) => {
   for (const item of Array.isArray(due) ? due : []) {
     const attemptId = item?.attempt_id;
     let sessionId = item?.session_id;
+    const qrPhIntent = item?.checkout_request?.payment_method_allowed?.[0] === "qrph";
     if (typeof attemptId !== "string") { deferred++; continue; }
     try {
       if (typeof sessionId !== "string") {
@@ -71,7 +73,10 @@ Deno.serve(async (req: Request) => {
         if (attachError || attached !== true) { deferred++; continue; }
       }
 
-      const getResponse = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
+      const resourceUrl = qrPhIntent
+        ? `https://orders-api.paymongo.com/v1/payment_intents/${encodeURIComponent(sessionId)}`
+        : `https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`;
+      const getResponse = await fetch(resourceUrl, {
         headers: { authorization: `Basic ${basic}` },
         signal: AbortSignal.timeout(10000),
       });
@@ -82,6 +87,50 @@ Deno.serve(async (req: Request) => {
           || typeof attributes?.livemode !== "boolean"
           || attributes.livemode !== paymongoKey.startsWith("sk_live_")) {
         deferred++;
+        continue;
+      }
+
+      if (qrPhIntent) {
+        if (resource.id !== sessionId || resource.type !== "payment_intent"
+            || attributes.currency !== "PHP" || attributes.amount !== item.checkout_request.amount
+            || !Array.isArray(attributes.payment_method_allowed)
+            || !attributes.payment_method_allowed.includes("qrph")) {
+          deferred++;
+          continue;
+        }
+        const paidEntry = Array.isArray(attributes.payments)
+          ? attributes.payments.find((entry: any) => entry?.attributes?.source?.type === "qrph"
+            && (entry?.attributes?.status ?? entry?.status) === "paid") : null;
+        const paidPayment = paidEntry ? paidQrPhPayment(paidEntry) : null;
+        if (attributes.status === "succeeded") {
+          if (!paidPayment || paidPayment.intentId !== sessionId) { deferred++; continue; }
+          const { data: recorded, error } = await admin.rpc("record_paymongo_qrph_paid", {
+            p_event_id: `expiry-reconcile:${sessionId}:${paidPayment.paymentId}`,
+            p_intent_id: sessionId, p_payment_id: paidPayment.paymentId,
+            p_amount_minor: paidPayment.amountMinor, p_fee_minor: paidPayment.feeMinor,
+            p_net_minor: paidPayment.netMinor,
+          });
+          if (error || !["paid", "duplicate", "review"].includes(recorded)) {
+            console.error("Could not reconcile paid PayMongo QR Ph intent", error?.message || recorded);
+            deferred++;
+          } else {
+            if (recorded === "review") console.error("Paid PayMongo QR Ph intent needs staff review", { sessionId, attemptId });
+            paid++;
+          }
+          continue;
+        }
+        if (!["awaiting_next_action", "awaiting_payment_method"].includes(attributes.status)) {
+          deferred++;
+          continue;
+        }
+        // QR expiry is set to the same or shorter lifetime than the saved
+        // walk-in hold. The provider reports no payment at this terminal
+        // stage; late signed payment events are still routed to review by SQL.
+        const { data: marked, error: markError } = await admin.rpc("mark_paymongo_checkout_expired", {
+          p_attempt_id: attemptId, p_session_id: sessionId,
+        });
+        if (markError || marked !== true) deferred++;
+        else expired++;
         continue;
       }
 

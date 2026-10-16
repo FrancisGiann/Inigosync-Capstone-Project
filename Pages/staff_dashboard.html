@@ -380,13 +380,7 @@
                             <p class="staff-form-hint">Select one or more consecutive hourly slots. Click a selected end slot to shorten the booking. Each line can use a different court and time.</p>
                             <div class="staff-form-group">
                                 <span class="staff-form-label">Available hourly slots · today</span>
-                                <div class="staff-hour-grid" data-staff-walkin-hour-grid role="group" aria-label="Available start times"></div>
-                            </div>
-                            <div class="staff-time-range" data-staff-walkin-time-range>
-                                <label class="staff-form-group staff-walkin-set-quantity" data-staff-walkin-set-quantity-wrap hidden>
-                                    <span class="staff-form-label">Number of sets · 60 minutes each</span>
-                                    <input type="number" class="staff-input" min="1" max="100" step="1" value="1" data-staff-rate-quantity aria-label="Number of sets">
-                                </label>
+                                <div class="staff-hour-grid" data-staff-walkin-hour-grid role="group" aria-label="Available hourly slots"></div>
                             </div>
                             <p class="staff-form-hint" data-staff-walkin-open-windows>Select a sport and court first.</p>
                             <div class="staff-walkin-lines" data-staff-walkin-lines aria-live="polite"></div>
@@ -407,17 +401,13 @@
                                     </span>
                                     <p>Collected on-site by staff.</p>
                                 </label>
-                                <label class="staff-payment-option" data-staff-payment-option data-staff-walkin-online-option>
-                                    <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo"> Online payment</span>
-                                    <p>Continue to PayMongo secure checkout.</p>
-                                </label>
                                 <label class="staff-payment-option" data-staff-payment-option data-staff-walkin-qr-option>
-                                    <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo_qr"> E-wallet QR · GCash</span>
-                                    <p>Show a PayMongo checkout QR on this screen for the customer to scan.</p>
+                                    <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo_qr"> QR Ph</span>
+                                    <p>Show a checkout QR for the customer; payment completes with QR Ph.</p>
                                 </label>
                             </div>
                             <p class="staff-form-hint" data-staff-walkin-cash-unavailable hidden>Cash collection is unavailable. Ask the owner to enable Cash in Payment Configuration.</p>
-                            <p class="staff-form-hint" data-staff-walkin-qr-unavailable hidden>GCash checkout is unavailable. Ask the owner to enable GCash in Payment Configuration.</p>
+                            <p class="staff-form-hint" data-staff-walkin-qr-unavailable hidden>QR Ph checkout is unavailable. Ask the owner to enable QR Ph in Payment Configuration.</p>
                         </div>
 
                         <!-- STEP 5 — Review & save -->
@@ -431,6 +421,12 @@
                                 <div class="staff-summary-total">
                                     <span>Court subtotal</span>
                                     <span data-staff-walkin-summary-total>—</span>
+                                </div>
+                                <div class="staff-form-group" data-staff-walkin-cash-details>
+                                    <label class="staff-form-label" for="staffWalkinCashTendered">Amount tendered</label>
+                                    <input id="staffWalkinCashTendered" class="staff-input" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" data-staff-walkin-cash-tendered autocomplete="off">
+                                    <p class="staff-form-hint" data-staff-walkin-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
+                                    <div class="staff-summary-row"><span>Change due</span><strong data-staff-walkin-cash-change>—</strong></div>
                                 </div>
                                 <p class="staff-form-hint" data-staff-walkin-online-fee-note hidden>PayMongo shows any processing fee and the final total before the customer pays.</p>
                                 <p class="staff-form-hint" data-staff-walkin-acknowledgment-note>Payment acknowledgment and entry pass — not a BIR invoice or official receipt.</p>
@@ -446,7 +442,7 @@
                 </div>
 
                 <!-- Receipt (S4) — hidden until a walk-in is saved; rendered by
-                     includes/staff_dashboard.js's renderStaffReceiptCard()
+                     includes/staff_dashboard.js's renderStaffReceipt()
                      into [data-staff-walkin-receipt]. -->
                 <div data-staff-walkin-receipt-wrap hidden>
                     <div data-staff-walkin-receipt></div>
@@ -907,9 +903,8 @@
 <script src="../includes/courts-data.js"></script>
 <script src="../includes/courtsData.js"></script>
 <script src="../includes/landing-visuals.js"></script>
-<!-- Shared operating-hours constants (8 AM-8 PM) — must load before
-     staff_dashboard.js, whose Court Schedule columns and the walk-in
-     wizard's From/To pickers read window.InigoBusinessHours at parse time. -->
+<!-- Shared operating-hours helpers — must load before staff_dashboard.js,
+     whose Court Schedule and walk-in hourly slots read window.InigoBusinessHours. -->
 <script src="../includes/businessHours.js"></script>
 <script src="../includes/staffPagination.js"></script>
 <!-- Locally generated payment QR; checkout URLs stay on PayMongo and are

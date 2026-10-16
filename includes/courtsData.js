@@ -68,7 +68,8 @@
         'badminton': 'Badminton',
         'lawn-tennis': 'Lawn Tennis',
         'pickleball': 'Pickleball',
-        'bowling': 'Bowling',
+        'bowling-duckpin': 'Bowling — Duckpin',
+        'bowling-tenpin': 'Bowling — Ten-Pin',
         'billiards': 'Billiards',
         'table-tennis': 'Table Tennis',
         'volleyball': 'Volleyball',
@@ -285,8 +286,8 @@
         { id: 'badminton', name: 'Badminton', quantity: 9, unit: 'courts', description: 'Indoor · Rackets for rent', rate: null, rateUnit: '/hr', status: 'Available', image_url: null },
         { id: 'lawn-tennis', name: 'Lawn Tennis', quantity: 3, unit: 'courts', description: 'Outdoor · Professional grade', rate: null, rateUnit: '/hr', status: 'Available', image_url: null },
         { id: 'pickleball', name: 'Pickleball', quantity: 10, unit: 'courts', description: 'Shared across Basketball, Volleyball & Lawn Tennis', rate: null, rateUnit: '/hr', status: 'Available', image_url: null },
-        { id: 'bowling-duckpin', name: 'Bowling — Duckpin', quantity: 8, unit: 'lanes', description: 'Duckpin bowling · Shoes included', rate: null, rateUnit: '/game', status: 'Available', image_url: null },
-        { id: 'bowling-tenpin', name: 'Bowling — Ten-Pin', quantity: 12, unit: 'lanes', description: 'Ten-pin bowling · Shoes included', rate: null, rateUnit: '/game', status: 'Available', image_url: null },
+        { id: 'bowling-duckpin', name: 'Bowling — Duckpin', quantity: 8, unit: 'lanes', description: 'Duckpin bowling · Shoes included', rate: null, rateUnit: '/set', status: 'Available', image_url: null },
+        { id: 'bowling-tenpin', name: 'Bowling — Ten-Pin', quantity: 12, unit: 'lanes', description: 'Ten-pin bowling · Shoes included', rate: null, rateUnit: '/set', status: 'Available', image_url: null },
         { id: 'billiards', name: 'Billiards', quantity: 2, unit: 'tables', description: 'Professional pool tables · Cue service available', rate: null, rateUnit: '/hr', status: 'Available', image_url: null },
         { id: 'table-tennis', name: 'Table Tennis', quantity: 2, unit: 'tables', description: 'Tournament-grade tables · Paddles for rent', rate: null, rateUnit: '/hr', status: 'Available', image_url: null },
         { id: 'volleyball', name: 'Volleyball', quantity: 1, unit: 'court', description: 'Full court · Indoor · Net included', rate: null, rateUnit: '/hr', status: 'Available', image_url: null },
@@ -295,10 +296,7 @@
     function fallbackCourts() {
         const source = (typeof COURTS_INVENTORY !== 'undefined') ? COURTS_INVENTORY : INLINE_FALLBACK;
         return source.map((item, index) => {
-            // Duckpin/ten-pin ids carry a suffix so they land under the one
-            // 'bowling' sport group — same trick includes/landingPage.js's
-            // normalizeCourtFromFallback uses.
-            const sportSlug = String(item.id).replace(/-duckpin$|-tenpin$/, '');
+            const sportSlug = String(item.id);
             return {
                 id: `fallback-${item.id}`,
                 sportId: null,

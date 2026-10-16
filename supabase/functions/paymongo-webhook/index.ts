@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { validPaymongoSignature } from "./_shared/paymongo-signature.ts";
 import { paidCheckoutPayment } from "./_shared/paid-checkout.ts";
+import { paidQrPhPayment } from "../_shared/paid-qrph-payment.mjs";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -34,6 +35,28 @@ Deno.serve(async (req: Request) => {
     // signed, immutable raw body gives retries the same deduplication key.
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawBody)));
     eventId = `evt_${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  }
+  if (eventType === "payment.paid") {
+    const payment = envelope?.attributes?.data ?? envelope?.data;
+    const attributes = payment?.attributes;
+    if (attributes?.source?.type !== "qrph") return json({ received: true, ignored: true });
+    const eventLivemode = envelope?.attributes?.livemode ?? envelope?.livemode ?? attributes?.livemode;
+    const paidPayment = paidQrPhPayment(payment);
+    if (!paidPayment || typeof eventLivemode !== "boolean" || eventLivemode !== !testMode) {
+      return json({ message: "QR Ph payment details are invalid." }, 400);
+    }
+    const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: result, error } = await admin.rpc("record_paymongo_qrph_paid", {
+      p_event_id: eventId, p_intent_id: paidPayment.intentId, p_payment_id: paidPayment.paymentId,
+      p_amount_minor: paidPayment.amountMinor, p_fee_minor: paidPayment.feeMinor, p_net_minor: paidPayment.netMinor,
+    });
+    if (error) {
+      console.error("Could not record PayMongo QR Ph payment", error.message);
+      return json({ message: "Payment could not be recorded yet." }, 503);
+    }
+    if (result === "review" || result === "unmatched")
+      console.error("PayMongo QR Ph payment needs reconciliation", { result, intentId: paidPayment.intentId, eventId });
+    return json({ received: true, result });
   }
   if (eventType !== "checkout_session.payment.paid") return json({ received: true, ignored: true });
 

@@ -69,9 +69,15 @@ test('View receipt opens the shared acknowledgment card with working print and d
     assert.match(script, /downloadStaffReceiptAsPng\(card, downloadBtn\.dataset\.staffReceiptDownload/);
     assert.match(script, /staffReceiptModal\.setAttribute\('data-open', ''\)/);
     assert.match(script, /staffReceiptModal\.removeAttribute\('data-open'\)/);
-    assert.match(receiptStyles, /@page \{ size: auto; margin: 2mm; \}/);
+    assert.match(receiptStyles, /@page \{ size: auto; margin: 0; \}/);
+    assert.match(receiptStyles, /body\.payment-ack-printing > \.payment-ack-print-root\s*\{[^}]*width:\s*47\.5mm;[^}]*padding:\s*\.75mm;/s);
+    assert.match(receiptStyles, /body\.payment-ack-printing \.payment-ack-card\s*\{[^}]*width:\s*46mm;[^}]*max-width:\s*46mm/s);
+    assert.match(receiptStyles, /\.payment-ack-total\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s);
+    assert.match(receiptStyles, /\.payment-ack-total strong\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+    assert.match(receiptStyles, /\.payment-ack-total > \*\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere/s);
+    assert.match(receiptStyles, /\.payment-ack-item > \*\s*\{[^}]*max-width:\s*100%;[^}]*overflow-wrap:\s*anywhere/s);
     assert.match(receiptStyles, /body\.payment-ack-printing > :not\(\.payment-ack-print-root\)/);
-    assert.doesNotMatch(styles + receiptStyles, /80mm 300mm/);
+    assert.doesNotMatch(styles + receiptStyles, /58mm 300mm/);
 });
 
 test('transaction RPC binds attribution to the active authenticated staff identity', () => {

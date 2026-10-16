@@ -31,7 +31,7 @@ test('new saved snapshots render the shared thermal acknowledgment with payment 
     }, { sourceLabel: 'Booking ID', sourceId: 42 });
 
     for (const text of [
-        'InigoSync', '(Inigos Sports Center)', 'PAYMENT ACKNOWLEDGEMENT',
+        'InigoSync', '(Inigos Sports Center)', 'Brgy. Bocohan, Diversion Road, Lucena City, Quezon, Philippines', 'PAYMENT ACKNOWLEDGEMENT',
         'Booking ID', '#42', 'Transaction ID', '12345', 'Ari Customer',
         'Badminton', 'Court 1', 'Duration: 2 hrs', '2 hrs × Rate unavailable per hour', '₱1,000.00',
         'Booking total', '₱1,000.00', 'Subtotal (this payment)', 'Processing fee', '₱50.00', 'TOTAL PAID', '₱1,050.00', 'Paid',
