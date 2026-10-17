@@ -2393,16 +2393,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinQrPollTimer = null;
     }
 
-    function renderWalkinQrError(orderId, amount, message) {
+    function renderWalkinQrError(orderId, amount, message, allowReviewRetry = false) {
         stopWalkinQrPolling();
         activeWalkinQr = { orderId, amount, checkoutUrl: null, expiresAtMs: null, startedAt: Date.now() };
         if (walkinWizardWrap) walkinWizardWrap.hidden = true;
         if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
         if (!walkinReceiptEl) return;
+        const retryAction = orderId
+            ? `<button type="button" class="staff-btn-primary" data-staff-walkin-qr-checkout-retry="${window.escapeHtml(String(orderId))}">Retry checkout setup</button>`
+            : allowReviewRetry
+                ? '<button type="button" class="staff-btn-primary" data-staff-walkin-qr-review-retry>Review and try again</button>'
+                : '';
+        const pendingMessage = orderId
+            ? 'The walk-in order is still pending. Retry to prepare its PayMongo QR Ph checkout.'
+            : allowReviewRetry
+                ? 'No walk-in order was created. Review the details and try again.'
+                : 'The checkout response was interrupted. Ask the owner to verify whether an order was created before retrying.';
         walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending">
             <h3>QR Ph unavailable</h3>
-            <p>${window.escapeHtml(message)} The walk-in order is still pending. Retry to prepare its PayMongo QR Ph checkout.</p>
-            <button type="button" class="staff-btn-primary" data-staff-walkin-qr-checkout-retry="${window.escapeHtml(String(orderId))}">Retry checkout setup</button>
+            <p>${window.escapeHtml(message)} ${pendingMessage}</p>
+            ${retryAction}
             <button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>
         </div>`;
         const retry = walkinReceiptEl.querySelector('[data-staff-walkin-qr-checkout-retry]');
@@ -2447,8 +2457,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     && !parsed.username && !parsed.password ? parsed.href : null;
             } catch { return null; }
         })();
-        if (!testMode && (typeof qrImageUrl !== 'string' || !/^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(qrImageUrl)
-            || qrImageUrl.length > 1500000)) {
+        if (typeof qrImageUrl !== 'string' || !/^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(qrImageUrl)
+            || qrImageUrl.length > 1500000) {
             renderWalkinQrError(orderId, amount, 'PayMongo did not return a valid dynamic QR Ph image.');
             return false;
         }
@@ -2460,16 +2470,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!walkinReceiptEl) return false;
             const amountText = Number.isFinite(amount) ? formatStaffPeso(amount) : 'Confirm in PayMongo';
             walkinReceiptEl.innerHTML = `<section class="staff-walkin-qr-card" aria-labelledby="staffWalkinQrTitle">
-                <div class="staff-walkin-qr-code" data-staff-walkin-qr-image>${testMode ? '<span>TEST MODE</span>' : expired ? 'QR expired' : `<img src="${window.escapeHtml(qrImageUrl)}" alt="Dynamic QR Ph payment code" decoding="async">`}</div>
+                <div class="staff-walkin-qr-code" data-staff-walkin-qr-image>${expired ? 'QR expired' : `<img src="${window.escapeHtml(qrImageUrl)}" alt="${testMode ? 'PayMongo test QR Ph code. Do not scan or pay.' : 'Dynamic QR Ph payment code'}" decoding="async">`}</div>
                 <div class="staff-walkin-qr-copy">
                     <span class="staff-form-label">PayMongo · QR Ph${testMode ? ' · SANDBOX' : ''}</span>
                     <h3 id="staffWalkinQrTitle">${testMode ? 'Simulate sandbox payment' : expired ? 'Checkout expired' : 'Scan to pay'}</h3>
                     <p>${testMode
-                        ? 'Sandbox QR codes can charge real money if scanned. Do not show or scan a QR code in test mode. Use PayMongo’s simulator action to test this payment.'
+                        ? 'This is PayMongo’s actual test QR image. Do not scan or pay this test QR; use the simulator for test confirmation.'
                         : 'Ask the customer to scan this amount-specific QR code with a participating bank or e-wallet app. PayMongo confirms payment before an acknowledgment is issued.'}</p>
+                    ${testMode ? '<p class="staff-walkin-qr-warning" role="alert">Do not scan or pay this test QR. Scanning it can process a real transaction.</p>' : ''}
                     ${testMode ? (safeTestUrl
                         ? `<a class="staff-btn-primary" data-staff-walkin-qr-simulate href="${window.escapeHtml(safeTestUrl)}" target="_blank" rel="noopener noreferrer">Open PayMongo sandbox simulator</a>`
-                        : '<p class="staff-walkin-qr-warning" role="alert">PayMongo did not provide a trusted sandbox simulator link. No QR is shown; this test payment cannot be simulated from this screen.</p>') : ''}
+                        : '<p class="staff-walkin-qr-warning" role="alert">PayMongo did not provide a trusted sandbox simulator link. The QR is shown for inspection only; do not scan or pay it.</p>') : ''}
                     <div class="staff-walkin-qr-meta">
                         <div class="staff-summary-row"><span>Amount to pay</span><strong>${window.escapeHtml(amountText)}</strong></div>
                         <p class="staff-walkin-qr-status" data-staff-walkin-qr-status role="status" aria-live="polite">${testMode ? 'After choosing a simulator result, check for PayMongo confirmation.' : expired ? 'Checkout expired. Check once more for a late payment confirmation.' : 'Waiting for PayMongo payment confirmation…'}</p>
@@ -2494,7 +2505,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const qrImageUrl = checkoutData?.qr_image_url;
         const expiresAtMs = parseWalkinCheckoutExpiry(checkoutData?.expires_at);
         const testMode = checkoutData?.test_mode === true;
-        if ((!testMode && typeof qrImageUrl !== 'string') || !expiresAtMs) {
+        if (typeof qrImageUrl !== 'string' || !expiresAtMs) {
             renderWalkinQrError(orderId, amount,
                 typeof qrImageUrl !== 'string' ? 'PayMongo did not return a dynamic QR Ph code.'
                     : 'PayMongo did not return a valid checkout expiry.');
@@ -2560,6 +2571,37 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         }
         return showWalkinQrCheckoutData(orderId, amount, checkout?.data);
+    }
+
+    async function createWalkinQrCheckout(details, amount) {
+        let checkout;
+        try {
+            checkout = await window.sb.functions.invoke('staff-walkin-checkout', {
+                body: { ...details, channel: 'qrph' },
+            });
+        } catch (error) { checkout = { error }; }
+        if (checkout?.error) {
+            let orderId = null;
+            let orderNotCreated = false;
+            try {
+                const response = checkout.error.context;
+                if (response && typeof response.json === 'function') {
+                    const payload = await response.json();
+                    if (typeof payload?.order_id === 'string') orderId = payload.order_id;
+                    else orderNotCreated = true;
+                    if (payload?.message) checkout.error.message = payload.message;
+                }
+            } catch { /* The Edge Function error may have no readable response body. */ }
+            renderWalkinQrError(orderId, amount,
+                checkout.error.message || 'Could not prepare the PayMongo checkout.', orderNotCreated);
+            return false;
+        }
+        const orderId = checkout?.data?.order_id;
+        if (typeof orderId !== 'string' || !orderId) {
+            renderWalkinQrError(null, amount, 'The verified checkout service did not return an order reference.');
+            return false;
+        }
+        return showWalkinQrCheckoutData(orderId, amount, checkout.data);
     }
 
     async function showWalkinAcknowledgment(orderId) {
@@ -2729,6 +2771,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             quoted_minor: Math.round(item.subtotal * 100),
             ...(walkinState.payment === 'cash' ? { cash_tendered_minor: walkinCashTenderMinor() } : {}),
         }));
+        if (walkinState.payment === 'paymongo_qr') {
+            button.textContent = 'Preparing QR Ph…';
+            const estimate = requestedLines.reduce((sum, item) => sum + item.subtotal, 0);
+            await createWalkinQrCheckout({
+                customer_id: walkinState.customerId || null,
+                guest_name: walkinState.customerId ? null : walkinState.name,
+                guest_mobile: walkinState.mobile || null,
+                items: rpcItems,
+            }, estimate);
+            refreshBookingOverview();
+            refreshCourtSchedule();
+            refreshTransactions();
+            return;
+        }
         let create;
         try {
             create = await window.sb.rpc('staff_create_walkin_order_quoted', {
@@ -2736,7 +2792,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 p_guest_name: walkinState.customerId ? null : walkinState.name,
                 p_guest_mobile: walkinState.mobile || null,
                 p_items: rpcItems,
-                p_payment_method: walkinState.payment === 'paymongo_qr' ? 'paymongo' : walkinState.payment,
+                p_payment_method: walkinState.payment,
             });
         } catch (error) { create = { error }; }
         const order = normalizeRpcRow(create?.data);
@@ -2756,18 +2812,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         walkinCashReceiptSnapshot = null;
-
-        if (walkinState.payment === 'paymongo_qr') {
-            button.textContent = 'Preparing QR Ph…';
-            const orderMinor = order.base_minor === null || order.base_minor === undefined
-                ? NaN : Number(order.base_minor);
-            const amount = Number.isSafeInteger(orderMinor) && orderMinor > 0 ? orderMinor / 100 : null;
-            await prepareWalkinQrCheckout(order.order_id, amount);
-            refreshBookingOverview();
-            refreshCourtSchedule();
-            refreshTransactions();
-            return;
-        }
 
         button.textContent = 'Loading acknowledgment…';
         await showWalkinAcknowledgment(order.order_id);
@@ -2790,6 +2834,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const retryBtn = e.target.closest('[data-staff-receipt-retry]');
             const qrCheckBtn = e.target.closest('[data-staff-walkin-qr-check]');
             const qrCheckoutRetryBtn = e.target.closest('[data-staff-walkin-qr-checkout-retry]');
+            const qrReviewRetryBtn = e.target.closest('[data-staff-walkin-qr-review-retry]');
 
             if (downloadBtn) {
                 const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.payment-ack-card');
@@ -2824,6 +2869,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 qrCheckoutRetryBtn.textContent = 'Preparing…';
                 const ready = await prepareWalkinQrCheckout(orderId, amount);
                 if (!ready) refreshTransactions();
+                return;
+            }
+            if (qrReviewRetryBtn) {
+                activeWalkinQr = null;
+                if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
+                if (walkinWizardWrap) walkinWizardWrap.hidden = false;
+                goToWalkinStep(WALKIN_STEP_COUNT);
                 return;
             }
             if (resetBtn) {

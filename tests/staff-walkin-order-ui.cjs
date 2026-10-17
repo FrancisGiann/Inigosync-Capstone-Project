@@ -2,6 +2,8 @@
 // mock only; no production/test payment account, inserts, or network writes.
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+// Valid, generated QR-like PNG fixture: never encodes a payment or provider URL.
+const qrImageFixture = 'data:image/png;base64,' + require('node:fs').readFileSync(require('node:path').join(__dirname, 'fixtures/qr-like.png')).toString('base64');
 
 const courts = [
     { id: 'listing-badminton', name: 'Badminton', sportName: 'Badminton', sportSlug: 'badminton', bookableUnits: [{ id: 'unit-b1', label: 'Court 1', rateDay: 100, rateUnit: '/hr' }] },
@@ -164,11 +166,15 @@ function fixture(config) {
                 const response = config.phoneValidationByNumber?.[normalized] || config.phoneValidation || { valid: true, normalized: local.startsWith('09') ? `+63${local.slice(1)}` : options.body.phone, available: true };
                 return { data: response, error: null };
             }
+            if (options.body.channel === 'qrph' && Array.isArray(options.body.items)) qa.createdItems = options.body.items;
             qa.checkoutAttempts += 1;
-            if (config.failCheckoutOnce && qa.checkoutAttempts === 1) return { data: null, error: { message: 'Temporary checkout error' } };
+            if (config.failCheckoutOnce && qa.checkoutAttempts === 1) return { data: null, error: {
+                message: 'Temporary checkout error',
+                ...(config.checkoutFailureResponse ? { context: new Response(JSON.stringify(config.checkoutFailureResponse), { status: 409 }) } : {}),
+            } };
             return { data: {
-                order_id: options.body.order_id, attempt_id: 'qa-attempt',
-                qr_image_url: config.qrImageUrl || 'data:image/png;base64,AAAA',
+                order_id: options.body.order_id || 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', attempt_id: 'qa-attempt',
+                qr_image_url: config.qrImageUrl,
                 ...(config.testMode ? { test_mode: true, qr_test_url: config.qrTestUrl } : {}),
                 base_minor: config.checkoutBaseMinor ?? 35000,
                 expires_at: config.checkoutExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
@@ -198,9 +204,10 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
     page.setDefaultTimeout(12000);
     await page.clock.install({ time: new Date(now) });
     if (pauseClock) await page.clock.pauseAt(new Date(now));
+    const pageConfig = { ...config, qrImageUrl: config.qrImageUrl || qrImageFixture };
     await page.route(/^https:\/\//, route => route.abort());
     await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.__toastMessages=[];window.InigoLoading={show(){},hide(){}};window.InigoToast={show(message,isError){window.__toastMessages.push({message,isError:Boolean(isError)});}};` }));
-    await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})(${JSON.stringify(config)});` }));
+    await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})(${JSON.stringify(pageConfig)});` }));
     await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.inigosyncProfile={id:'qa-staff',role:'staff',status:'active',full_name:'QA Staff',email:'staff@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
     await page.route('**/includes/appSettings.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoAppSettings={DEFAULT_SETTINGS:{downpaymentPct:50,cashEnabled:true,cardEnabled:true,gcashEnabled:true,qrphEnabled:true},getSettings:async()=>({downpaymentPct:50,cashEnabled:true,cardEnabled:true,gcashEnabled:true,qrphEnabled:true,nightRateStartsAt:'18:00'})};` }));
     await page.route('**/includes/courtsData.js', route => route.fulfill({ contentType: 'application/javascript', body: courtsFixture() }));
@@ -723,21 +730,29 @@ function occupancyRow(hour, source = 'online') {
         await qrPage.locator('[data-staff-walkin-next]').click();
         await qrPage.locator('[data-staff-walkin-save]').click();
         await qrPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/"]').waitFor();
+        await qrPage.waitForFunction(() => {
+            const image = document.querySelector('[data-staff-walkin-qr-image] img');
+            return image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
+        });
         assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /Amount to pay\s+₱375\.00/, 'QR amount follows the server checkout charge, not the stale client estimate');
         assert.match(await qrPage.locator('[data-staff-walkin-qr-status]').innerText(), /Waiting for PayMongo payment confirmation/);
         assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /scan this amount-specific QR code/i);
         const qrSetup = await qrPage.evaluate(() => ({
-            create: window.__walkinQa.calls.find(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted'),
+            orderCreates: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted'),
             checkout: window.__walkinQa.calls.find(call => call.kind === 'function' && call.name === 'staff-walkin-checkout'),
             acknowledgments: window.__walkinQa.acknowledgmentAttempts,
             providerQrImage: Boolean(document.querySelector('[data-staff-walkin-qr-image] img[src^="data:image/png;base64,"]')),
+            providerQrDimensions: (() => { const image = document.querySelector('[data-staff-walkin-qr-image] img'); return { width: image?.naturalWidth || 0, height: image?.naturalHeight || 0 }; })(),
         }));
-        assert.equal(qrSetup.create.args.p_payment_method, 'paymongo', 'QR UI maps to the PayMongo payment method for the atomic order RPC');
-        assert.deepEqual(qrSetup.checkout.options.body, {
-            order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', channel: 'qrph',
-        }, 'QR checkout explicitly requests the backend QR Ph channel');
+        assert.equal(qrSetup.orderCreates.length, 0, 'QR UI never creates an online order through the browser RPC');
+        assert.equal(qrSetup.checkout.options.body.channel, 'qrph', 'QR checkout explicitly requests the backend QR Ph channel');
+        assert.equal(qrSetup.checkout.options.body.guest_name, 'QR Guest');
+        assert.equal(qrSetup.checkout.options.body.customer_id, null);
+        assert.equal(qrSetup.checkout.options.body.items.length, 1);
+        assert.ok(qrSetup.checkout.options.body.items[0].quoted_minor > 0, 'the reviewed browser quote travels to the verified checkout service');
         assert.equal(qrSetup.acknowledgments, 0, 'the pending QR is displayed without requesting or fabricating an acknowledgment');
         assert.equal(qrSetup.providerQrImage, true, 'the staff screen renders PayMongo’s actual dynamic QR Ph payload');
+        assert.ok(qrSetup.providerQrDimensions.width > 0 && qrSetup.providerQrDimensions.height > 0, 'live QR fixture decodes to a visible image');
         await qrPage.locator('[data-staff-walkin-qr-check]').click();
         assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1);
         assert.equal(await qrPage.locator('.payment-ack-card').count(), 0, 'a pending status check does not show a paid acknowledgment');
@@ -763,12 +778,114 @@ function occupancyRow(hour, source = 'online') {
         await sandboxQrPage.locator('[data-staff-walkin-save]').click();
         const sandboxPanel = sandboxQrPage.locator('.staff-walkin-qr-card');
         await sandboxPanel.getByRole('link', { name: 'Open PayMongo sandbox simulator' }).waitFor();
-        assert.equal(await sandboxQrPage.locator('[data-staff-walkin-qr-image] img').count(), 0, 'sandbox QR image is never shown or offered for scanning');
-        assert.match(await sandboxPanel.innerText(), /can charge real money if scanned/i, 'sandbox screen warns against scanning');
+        const sandboxImage = sandboxQrPage.locator('[data-staff-walkin-qr-image] img');
+        await sandboxImage.waitFor();
+        await sandboxQrPage.waitForFunction(() => {
+            const image = document.querySelector('[data-staff-walkin-qr-image] img');
+            return image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
+        });
+        assert.equal(await sandboxQrPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/png;base64,"]').count(), 1, 'sandbox screen renders PayMongo’s actual test QR image');
+        const sandboxImageDimensions = await sandboxImage.evaluate(image => ({ width: image.naturalWidth, height: image.naturalHeight }));
+        assert.ok(sandboxImageDimensions.width > 0 && sandboxImageDimensions.height > 0, 'sandbox QR fixture decodes to a visible image');
+        assert.match(await sandboxPanel.innerText(), /Do not scan or pay this test QR/i, 'sandbox screen prominently warns against scanning or paying');
         assert.equal(await sandboxPanel.locator('[data-staff-walkin-qr-simulate]').getAttribute('href'), 'https://test.paymongo.com/qrph/fixture');
         await sandboxQrPage.clock.fastForward(5000);
         assert.equal(await sandboxQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0, 'sandbox does not start payment polling before simulation');
         await sandboxQrContext.context.close();
+
+        const untrustedSimulatorContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { testMode: true, qrTestUrl: 'https://attacker.example/simulator' },
+        });
+        const untrustedSimulatorPage = untrustedSimulatorContext.page;
+        await untrustedSimulatorPage.locator('[data-staff-nav="walkin"]').click();
+        await untrustedSimulatorPage.locator('[data-staff-walkin-name]').fill('Sandbox QR Guest');
+        await untrustedSimulatorPage.locator('[data-staff-walkin-next]').click();
+        await selectWalkinCourt(untrustedSimulatorPage, 'listing-badminton');
+        await untrustedSimulatorPage.locator('[data-staff-walkin-next]').click();
+        await untrustedSimulatorPage.locator('[data-staff-walkin-hour="11"]').click();
+        await untrustedSimulatorPage.locator('[data-staff-walkin-next]').click();
+        await untrustedSimulatorPage.locator('[data-staff-walkin-qr-option]').click();
+        await untrustedSimulatorPage.locator('[data-staff-walkin-next]').click();
+        await untrustedSimulatorPage.locator('[data-staff-walkin-save]').click();
+        const untrustedPanel = untrustedSimulatorPage.locator('.staff-walkin-qr-card');
+        assert.equal(await untrustedSimulatorPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/png;base64,"]').count(), 1, 'an untrusted simulator URL does not hide the provider QR image');
+        assert.equal(await untrustedPanel.locator('[data-staff-walkin-qr-simulate]').count(), 0, 'untrusted simulator URLs are never linked');
+        assert.match(await untrustedPanel.innerText(), /QR is shown for inspection only; do not scan or pay it/i);
+        await untrustedSimulatorContext.context.close();
+
+        const qrPreorderRetryContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { failCheckoutOnce: true, checkoutFailureResponse: { message: 'No order was saved.' } },
+        });
+        const qrPreorderRetryPage = qrPreorderRetryContext.page;
+        await qrPreorderRetryPage.locator('[data-staff-nav="walkin"]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-name]').fill('Retry QR Guest');
+        await qrPreorderRetryPage.locator('[data-staff-walkin-next]').click();
+        await selectWalkinCourt(qrPreorderRetryPage, 'listing-badminton');
+        await qrPreorderRetryPage.locator('[data-staff-walkin-next]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-hour="11"]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-next]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-qr-option]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-next]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-save]').click();
+        const reviewRetry = qrPreorderRetryPage.getByRole('button', { name: 'Review and try again' });
+        await reviewRetry.waitFor();
+        assert.match(await qrPreorderRetryPage.locator('[data-staff-walkin-receipt]').innerText(), /No walk-in order was created/);
+        await reviewRetry.click();
+        assert.equal(await qrPreorderRetryPage.locator('[data-staff-walkin-save]').innerText(), 'Show QR Ph');
+        assert.equal(await qrPreorderRetryPage.locator('[data-staff-walkin-save]').isDisabled(), false);
+        assert.equal(await qrPreorderRetryPage.evaluate(() => window.__walkinQa.checkoutAttempts), 1, 'reviewing the order does not retry automatically');
+        await qrPreorderRetryPage.locator('[data-staff-walkin-save]').click();
+        await qrPreorderRetryPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/"]').waitFor();
+        assert.equal(await qrPreorderRetryPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted').length), 0);
+        await qrPreorderRetryContext.context.close();
+
+        const qrExistingOrderRetryContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { failCheckoutOnce: true, checkoutFailureResponse: { message: 'Checkout setup failed.', order_id: 'existing-order' } },
+        });
+        const qrExistingOrderRetryPage = qrExistingOrderRetryContext.page;
+        await qrExistingOrderRetryPage.locator('[data-staff-nav="walkin"]').click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-name]').fill('Existing Order Guest');
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-next]').click();
+        await selectWalkinCourt(qrExistingOrderRetryPage, 'listing-badminton');
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-next]').click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-hour="11"]').click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-next]').click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-option]').click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-next]').click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-save]').click();
+        const setupRetry = qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-checkout-retry="existing-order"]');
+        await setupRetry.waitFor();
+        await setupRetry.click();
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/"]').waitFor();
+        const retryBodies = await qrExistingOrderRetryPage.evaluate(() => window.__walkinQa.calls
+            .filter(call => call.kind === 'function' && call.name === 'staff-walkin-checkout')
+            .map(call => call.options.body));
+        assert.equal(retryBodies.length, 2);
+        assert.deepEqual(retryBodies[1], { order_id: 'existing-order', channel: 'qrph' }, 'a known pending order retries setup by ID without creating a duplicate');
+        await qrExistingOrderRetryContext.context.close();
+
+        const qrAmbiguousFailureContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { failCheckoutOnce: true },
+        });
+        const qrAmbiguousFailurePage = qrAmbiguousFailureContext.page;
+        await qrAmbiguousFailurePage.locator('[data-staff-nav="walkin"]').click();
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-name]').fill('Ambiguous QR Guest');
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-next]').click();
+        await selectWalkinCourt(qrAmbiguousFailurePage, 'listing-badminton');
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-next]').click();
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-hour="11"]').click();
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-next]').click();
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-qr-option]').click();
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-next]').click();
+        await qrAmbiguousFailurePage.locator('[data-staff-walkin-save]').click();
+        await qrAmbiguousFailurePage.getByText(/verify whether an order was created before retrying/i).waitFor();
+        assert.equal(await qrAmbiguousFailurePage.getByRole('button', { name: 'Review and try again' }).count(), 0);
+        assert.equal(await qrAmbiguousFailurePage.locator('[data-staff-walkin-qr-checkout-retry]').count(), 0);
+        await qrAmbiguousFailureContext.context.close();
 
         const expiredQrContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
@@ -841,6 +958,12 @@ function occupancyRow(hour, source = 'online') {
         assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /Payment status\s+Paid/);
         assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /NOT AN OFFICIAL RECEIPT/);
         await paidReturn.context.close();
+
+        if (process.env.WALKIN_QR_ONLY === '1') {
+            assert.deepEqual(errors, [], 'QR walk-in browser scenarios have no uncaught page errors');
+            console.log('PASS staff walk-in QR UI: test QR display and warning, simulator filtering, pending confirmation, setup recovery, expiry, and return');
+            return;
+        }
 
         const transactionBooking = {
             booking_id: 42, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',

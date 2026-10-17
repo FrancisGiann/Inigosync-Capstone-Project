@@ -14,6 +14,10 @@ const safeQrTestUrl = (value: unknown) => {
       && !url.username && !url.password ? url.toString() : null;
   } catch { return null; }
 };
+const safeQrImageDataUri = (value: unknown) => typeof value === "string"
+  && value.length <= 1_500_000
+  && /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(value)
+  ? value : null;
 const json = (body: unknown, status = 200, origin = "") => new Response(JSON.stringify(body), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store",
     "access-control-allow-origin": origin && origin === allowedOrigin ? origin : "null",
@@ -111,12 +115,18 @@ Deno.serve(async (req: Request) => {
   if (!Number.isFinite(checkoutExpiresAt) || checkoutExpiresAt <= Date.now())
     return json({ message: "This walk-in checkout expired. Create a new walk-in order.", order_id: orderId }, 409, origin);
   if (prepared.status === "ready" && qrPhCheckout
-      && (prepared.checkout_request?.payment_method_allowed?.[0] !== "qrph" || !prepared.qr_image_url))
+      && prepared.checkout_request?.payment_method_allowed?.[0] !== "qrph")
     return json({ message: "This checkout was prepared with a different payment method. Ask staff to review it.", order_id: orderId }, 409, origin);
-  if (qrPhCheckout && prepared.status === "ready" && prepared.qr_image_url)
+  const expectedQrLivemode = secretKey.startsWith("sk_live_");
+  if (qrPhCheckout && prepared.status === "ready" && prepared.qr_livemode !== expectedQrLivemode)
+    return json({ message: "This saved QR Ph checkout was created in a different or unknown PayMongo mode. Ask the owner to reconcile it before retrying.", order_id: orderId }, 409, origin);
+  if (prepared.status === "ready" && qrPhCheckout && !safeQrImageDataUri(prepared.qr_image_url))
+    return json({ message: "The saved QR Ph image is invalid. Ask staff to review this checkout.", order_id: orderId }, 409, origin);
+  if (qrPhCheckout && prepared.status === "ready" && safeQrImageDataUri(prepared.qr_image_url))
     return json({ order_id: orderId, attempt_id: prepared.attempt_id,
-      ...(secretKey.startsWith("sk_test_") ? { test_mode: true, qr_test_url: safeQrTestUrl(prepared.qr_test_url) }
-        : { qr_image_url: prepared.qr_image_url, test_mode: false }), base_minor: prepared.base_minor,
+      qr_image_url: safeQrImageDataUri(prepared.qr_image_url),
+      ...(prepared.qr_livemode === false ? { test_mode: true, qr_test_url: safeQrTestUrl(prepared.qr_test_url) }
+        : { test_mode: false }), base_minor: prepared.base_minor,
       currency: "PHP", expires_at: prepared.expires_at, channel: "qrph" }, 200, origin);
   if (prepared.status === "ready" && prepared.checkout_url)
     return json({ order_id: orderId, attempt_id: prepared.attempt_id,
@@ -178,29 +188,36 @@ Deno.serve(async (req: Request) => {
     // Recover the provider response if QR attach succeeded but the previous
     // Edge invocation timed out before persisting the image.
     if (prepared.paymongo_session_id) {
+      let existingResponse: Response;
       try {
-        const existingResponse = await fetch(`https://orders-api.paymongo.com/v1/payment_intents/${encodeURIComponent(intentId)}`, {
+        existingResponse = await fetch(`https://orders-api.paymongo.com/v1/payment_intents/${encodeURIComponent(intentId)}`, {
           headers: { authorization: `Basic ${btoa(`${secretKey}:`)}` }, signal: AbortSignal.timeout(8000),
         });
-        const existingPayload = existingResponse.ok ? await existingResponse.json() : null;
-        const existingIntent = existingPayload?.data;
-        const existingImage = existingIntent?.attributes?.next_action?.code?.image_url;
-        const existingTestUrl = safeQrTestUrl(existingIntent?.attributes?.next_action?.code?.test_url);
-        if (existingIntent?.id === intentId && existingIntent?.attributes?.amount === amountMinor
-            && existingIntent?.attributes?.livemode === secretKey.startsWith("sk_live_")
-            && typeof existingImage === "string" && /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(existingImage)) {
-          const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_qrph_intent", {
-            p_attempt_id: prepared.attempt_id, p_intent_id: intentId, p_qr_image_url: existingImage,
-            p_qr_test_url: secretKey.startsWith("sk_test_") ? existingTestUrl : null,
-          });
-          if (attachError || attached !== true)
-            return json({ message: "The QR Ph code needs reconciliation. Contact the owner with this order reference.", order_id: orderId }, 503, origin);
-          return json({ order_id: orderId, attempt_id: prepared.attempt_id,
-            ...(secretKey.startsWith("sk_test_") ? { test_mode: true, qr_test_url: existingTestUrl }
-              : { qr_image_url: existingImage, test_mode: false }),
-            base_minor: amountMinor, currency: "PHP", expires_at: prepared.expires_at, channel: "qrph" }, 200, origin);
-        }
-      } catch { /* Fall through to the normal attach attempt. */ }
+      } catch {
+        return json({ message: "The saved PayMongo intent could not be verified. Contact the owner before retrying QR setup.", order_id: orderId }, 503, origin);
+      }
+      const existingPayload = existingResponse.ok ? await existingResponse.json().catch(() => null) : null;
+      const existingIntent = existingPayload?.data;
+      if (!existingResponse.ok || existingIntent?.id !== intentId || existingIntent?.attributes?.amount !== amountMinor
+          || existingIntent?.attributes?.livemode !== expectedQrLivemode) {
+        return json({ message: "The saved PayMongo intent has a different or unknown mode or amount. Contact the owner before retrying QR setup.", order_id: orderId }, 409, origin);
+      }
+      const existingImage = safeQrImageDataUri(existingIntent?.attributes?.next_action?.code?.image_url);
+      const existingTestUrl = safeQrTestUrl(existingIntent?.attributes?.next_action?.code?.test_url);
+      if (typeof existingImage === "string") {
+        const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_qrph_intent", {
+          p_attempt_id: prepared.attempt_id, p_intent_id: intentId, p_qr_image_url: existingImage,
+          p_qr_livemode: existingIntent.attributes.livemode,
+          p_qr_test_url: secretKey.startsWith("sk_test_") ? existingTestUrl : null,
+        });
+        if (attachError || attached !== true)
+          return json({ message: "The QR Ph code needs reconciliation. Contact the owner with this order reference.", order_id: orderId }, 503, origin);
+        return json({ order_id: orderId, attempt_id: prepared.attempt_id,
+          qr_image_url: existingImage,
+          ...(existingIntent.attributes.livemode === false ? { test_mode: true, qr_test_url: existingTestUrl }
+            : { test_mode: false }),
+          base_minor: amountMinor, currency: "PHP", expires_at: prepared.expires_at, channel: "qrph" }, 200, origin);
+      }
     }
 
     let paymentMethodResponse: Response;
@@ -236,25 +253,27 @@ Deno.serve(async (req: Request) => {
     }
     const attachPayload = await attachResponse.json().catch(() => null);
     const attachedIntent = attachPayload?.data;
-    const qrImageUrl = attachedIntent?.attributes?.next_action?.code?.image_url;
+    const qrImageUrl = safeQrImageDataUri(attachedIntent?.attributes?.next_action?.code?.image_url);
     const qrTestUrl = safeQrTestUrl(attachedIntent?.attributes?.next_action?.code?.test_url);
     if (!attachResponse.ok || attachedIntent?.id !== intentId
         || attachedIntent?.attributes?.amount !== amountMinor
         || attachedIntent?.attributes?.livemode !== secretKey.startsWith("sk_live_")
-        || typeof qrImageUrl !== "string" || !/^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(qrImageUrl)) {
+        || typeof qrImageUrl !== "string") {
       console.error("PayMongo QR Ph attach failed", attachResponse.status,
         JSON.stringify(attachPayload?.errors || []).slice(0, 1000));
       return json({ message: "PayMongo did not return a valid dynamic QR code. Retry setup before taking payment.", order_id: orderId }, 502, origin);
     }
     const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_qrph_intent", {
       p_attempt_id: prepared.attempt_id, p_intent_id: intentId, p_qr_image_url: qrImageUrl,
+      p_qr_livemode: attachedIntent.attributes.livemode,
       p_qr_test_url: secretKey.startsWith("sk_test_") ? qrTestUrl : null,
     });
     if (attachError || attached !== true)
       return json({ message: "The QR Ph code was created but needs reconciliation. Contact the owner with this order reference.", order_id: orderId }, 503, origin);
     return json({ order_id: orderId, attempt_id: prepared.attempt_id,
-      ...(secretKey.startsWith("sk_test_") ? { test_mode: true, qr_test_url: qrTestUrl }
-        : { qr_image_url: qrImageUrl, test_mode: false }),
+      qr_image_url: qrImageUrl,
+      ...(attachedIntent.attributes.livemode === false ? { test_mode: true, qr_test_url: qrTestUrl }
+        : { test_mode: false }),
       base_minor: amountMinor, currency: "PHP", expires_at: prepared.expires_at, channel: "qrph" }, 200, origin);
   }
 
