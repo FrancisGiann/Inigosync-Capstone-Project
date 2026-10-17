@@ -81,7 +81,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Only sidebar links get the highlighted state (topbar/profile
             // menu shortcuts to the same panel shouldn't visually toggle).
             if (btn.closest('.dash-nav')) {
-                btn.classList.toggle('is-active', btn.dataset.dashNav === name);
+                const isActive = btn.dataset.dashNav === name;
+                btn.classList.toggle('is-active', isActive);
+                if (isActive) btn.setAttribute('aria-current', 'page');
+                else btn.removeAttribute('aria-current');
             }
         });
 
@@ -113,35 +116,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardShell = document.querySelector('.dash-shell');
     const dashboardSidebar = document.querySelector('[data-dash-sidebar]');
     const sidebarCollapse = document.querySelector('[data-dash-sidebar-collapse]');
-    const sidebarReveal = document.querySelector('[data-dash-sidebar-reveal]');
     const mobileBreakpoint = window.matchMedia('(max-width: 860px)');
 
     function setDesktopSidebarCollapsed(collapsed) {
         if (!dashboardShell || !dashboardSidebar) return;
         dashboardShell.classList.toggle('dash-sidebar-collapsed', collapsed);
-        dashboardSidebar.inert = collapsed;
-        dashboardSidebar.setAttribute('aria-hidden', String(collapsed));
-        [sidebarCollapse, sidebarReveal].forEach((button) => {
-            if (!button) return;
-            button.setAttribute('aria-expanded', String(!collapsed));
-        });
+        if (sidebarCollapse) {
+            const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+            sidebarCollapse.setAttribute('aria-label', label);
+            sidebarCollapse.setAttribute('title', label);
+            sidebarCollapse.setAttribute('aria-expanded', String(!collapsed));
+        }
     }
 
-    if (sidebarCollapse) sidebarCollapse.addEventListener('click', () => {
-        setDesktopSidebarCollapsed(true);
-        sidebarReveal?.focus();
+    document.querySelectorAll('.dash-nav-link').forEach((button) => {
+        const label = button.textContent.trim().replace(/\s+/g, ' ');
+        if (label && !button.hasAttribute('aria-label')) button.setAttribute('aria-label', label);
+        if (label) button.setAttribute('title', label);
     });
-    if (sidebarReveal) sidebarReveal.addEventListener('click', () => {
-        setDesktopSidebarCollapsed(false);
-        sidebarCollapse?.focus();
+    if (sidebarCollapse) sidebarCollapse.addEventListener('click', () => {
+        const collapsed = !dashboardShell?.classList.contains('dash-sidebar-collapsed');
+        setDesktopSidebarCollapsed(collapsed);
+        sidebarCollapse.focus();
     });
 
     function syncSidebarBreakpoint() {
-        if (mobileBreakpoint.matches) {
-            setDesktopSidebarCollapsed(false);
-            if (dashboardSidebar) dashboardSidebar.removeAttribute('aria-hidden');
-            if (dashboardSidebar) dashboardSidebar.inert = false;
-        }
+        if (mobileBreakpoint.matches) setDesktopSidebarCollapsed(false);
     }
     mobileBreakpoint.addEventListener('change', syncSidebarBreakpoint);
     syncSidebarBreakpoint();
@@ -2596,7 +2596,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sourceId = entry.sourceId || acknowledgment.source_id || acknowledgment.items?.[0]?.reservation_id || '';
         const hasWalkinOrderId = entry.source === 'walkin' && Boolean(entry.sourceId || acknowledgment.source_id);
         const sourceLabel = entry.source !== 'walkin' ? 'Booking ID' : hasWalkinOrderId ? 'Walk-in order ID' : 'Walk-in visit ID';
-        const actionsHtml = `<button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button><button type="button" class="dash-btn-ghost" data-dash-receipt-print>Print</button>`;
+        const actionsHtml = `<button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button><button type="button" class="dash-btn-ghost payment-ack-print-button" data-dash-receipt-print>Print</button>`;
         return window.InigoPaymentAcknowledgment.render(acknowledgment, {
             sourceLabel, sourceId, itemReferenceLabel: entry.source === 'walkin' ? 'Visit ID' : '', transactionId: acknowledgment.transaction_id,
             cardAttributes: `data-dash-receipt-card="${safeKey}"`, actionsHtml,
@@ -2624,7 +2624,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hides the Download button itself for the duration of the capture
         // (see .dash-receipt-card.is-capturing in Style/Dashboard.css) so
         // the button doesn't bake itself into its own screenshot.
-        card.classList.add('is-capturing');
+        card.closest('.payment-ack-layout')?.classList.add('is-capturing');
         try {
             const canvas = await window.html2canvas(card, {
                 backgroundColor: null,
@@ -2664,7 +2664,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.InigoToast?.show('Could not generate the receipt image. Please try again.', true);
             return false;
         } finally {
-            card.classList.remove('is-capturing');
+            card.closest('.payment-ack-layout')?.classList.remove('is-capturing');
         }
     }
 
@@ -2676,7 +2676,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (btn.dataset.dashReceiptDownloadBound === 'true') return;
             btn.dataset.dashReceiptDownloadBound = 'true';
             btn.addEventListener('click', async () => {
-                const card = btn.closest('[data-dash-receipt-card]');
+                const card = btn.closest('.payment-ack-layout')?.querySelector('[data-dash-receipt-card]');
                 if (!card) return;
                 const originalLabel = btn.textContent;
                 btn.disabled = true;
@@ -2690,7 +2690,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.dash-receipt-grid [data-dash-receipt-print]').forEach((btn) => {
             if (btn.dataset.dashReceiptPrintBound === 'true') return;
             btn.dataset.dashReceiptPrintBound = 'true';
-            btn.addEventListener('click', () => window.InigoPaymentAcknowledgment.print(btn.closest('[data-dash-receipt-card]')));
+            btn.addEventListener('click', () => window.InigoPaymentAcknowledgment.print(btn.closest('.payment-ack-layout')?.querySelector('[data-dash-receipt-card]')));
         });
     }
 

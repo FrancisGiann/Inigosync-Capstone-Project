@@ -28,7 +28,7 @@ function loadDashboardHelpers() {
         document: { addEventListener() {} },
         console,
     };
-    runInNewContext(`${dashboardScript}\nglobalThis.__helpers = { buildAdminPerfGroups, routeOwnerActivityOpen };`, context);
+    runInNewContext(`${dashboardScript}\nglobalThis.__helpers = { buildAdminPerfGroups };`, context);
     return context.__helpers;
 }
 
@@ -205,14 +205,11 @@ test('website performance renders exactly three honest groups', () => {
     assert.match(unavailable.details, /Page load unavailable · Service response 120 ms/);
 });
 
-test('owner notification selection does not open details; the separate open button does', () => {
-    const { routeOwnerActivityOpen } = loadDashboardHelpers();
-    let opened = 0;
-    const selectionCheckbox = { closest: selector => selector === '[data-owner-activity-open]' ? null : null };
-    assert.equal(routeOwnerActivityOpen(selectionCheckbox, () => { opened++; }), false);
-    assert.equal(opened, 0, 'selection checkbox does not open notification details');
-    const row = { dataset: { ownerActivityId: 'activity-8' } };
-    const openButton = { closest: selector => selector === '[data-owner-activity-id]' ? row : null };
-    assert.equal(routeOwnerActivityOpen({ closest: selector => selector === '[data-owner-activity-open]' ? openButton : null }, id => { opened++; assert.equal(id, 'activity-8'); }), true);
-    assert.equal(opened, 1, 'the separate open button still opens details');
+test('admin dashboard has no notification bell, menu, modal, or activity polling', () => {
+    assert.doesNotMatch(dashboardHtml, /data-admin-notif|data-owner-notification-modal|data-owner-notification-detail/);
+    assert.doesNotMatch(dashboardScript, /refreshOwnerActivityNotifications|data-admin-notif|data-owner-notification-modal/);
+    assert.match(dashboardScript, /window\.InigoOwnerUI\.recordActivity\s*=\s*recordOwnerActivity/,
+        'owner activity recording remains available to existing admin workflows');
+    assert.match(dashboardScript, /owner_audit_trail/,
+        'the separate audit trail remains connected');
 });

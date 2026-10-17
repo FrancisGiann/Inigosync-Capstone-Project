@@ -123,7 +123,8 @@
             acknowledgment.remaining_balance_minor ?? acknowledgment.remaining_minor);
         const fee = money(acknowledgment.fee, acknowledgment.fee_minor);
         const total = money(acknowledgment.total, acknowledgment.gross_minor);
-        return `<article class="payment-ack-card" data-payment-ack-card ${options.cardAttributes || ''}>
+        return `<div class="payment-ack-layout">
+        <article class="payment-ack-card" data-payment-ack-card ${options.cardAttributes || ''}>
             <header class="payment-ack-heading">
                 <strong>InigoSync</strong>
                 <span>(Inigos Sports Center)</span>
@@ -151,8 +152,9 @@
             <div class="payment-ack-rule"></div>
             <p class="payment-ack-thanks">Thank you for visiting Inigos Sports Center!</p>
             <p class="payment-ack-disclaimer">NOT AN OFFICIAL RECEIPT<br><span>Payment acknowledgement only. This document is not a tax invoice or official receipt.</span></p>
-            ${options.actionsHtml ? `<div class="payment-ack-actions">${options.actionsHtml}</div>` : ''}
-        </article>`;
+        </article>
+        ${options.actionsHtml ? `<div class="payment-ack-actions">${options.actionsHtml}</div>` : ''}
+        </div>`;
     }
 
     function print(card) {

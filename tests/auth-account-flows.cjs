@@ -212,11 +212,107 @@ function mockClient(options) {
             page.setDefaultTimeout(10000);
             await page.route(/^https:\/\//, r => r.abort());
             await page.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ dashboard: true, ...options })})` }));
-            await page.goto('http://127.0.0.1:4178/Pages/user_dashboard.html', { waitUntil: 'domcontentloaded' });
+            const dashboardPage = options.role === 'staff' ? 'staff_dashboard.html'
+                : options.role === 'admin' ? 'owner_dashboard.html' : 'user_dashboard.html';
+            await page.goto(`http://127.0.0.1:4178/Pages/${dashboardPage}`, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => window.inigosyncProfile?.id === 'fixture-user');
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        async function runLogoutConfirmationTests() {
+            const signOutDashboard = await setupDashboard();
+            const customerLogoutButton = signOutDashboard.locator('[data-dash-logout]').first();
+            await customerLogoutButton.evaluate(button => button.click());
+            const logoutDialog = signOutDashboard.locator('.inigosync-logout-dialog');
+            await logoutDialog.waitFor({ state: 'visible' });
+            assert.equal(await logoutDialog.getAttribute('role'), 'dialog');
+            assert.equal(await logoutDialog.getAttribute('aria-modal'), 'true');
+            const dialogBounds = await logoutDialog.boundingBox();
+            const viewport = signOutDashboard.viewportSize();
+            assert(Math.abs(dialogBounds.x + dialogBounds.width / 2 - viewport.width / 2) <= 1,
+                'logout card is horizontally centered in the viewport');
+            assert(Math.abs(dialogBounds.y + dialogBounds.height / 2 - viewport.height / 2) <= 1,
+                'logout card is vertically centered in the viewport');
+            assert.equal((await calls(signOutDashboard)).filter(call => call.kind === 'signOut').length, 0,
+                'opening the explicit logout confirmation keeps the current session');
+            await signOutDashboard.locator('.inigosync-logout-cancel').click();
+            assert.equal(await logoutDialog.isVisible(), false, 'Cancel closes the confirmation');
+            assert.equal(await customerLogoutButton.evaluate(button => document.activeElement === button), true,
+                'Cancel restores focus to the logout control that opened the dialog');
+            assert.equal((await calls(signOutDashboard)).filter(call => call.kind === 'accountSessionEvent').length, 0,
+                'Cancel does not record a sign-out event');
+            await customerLogoutButton.evaluate(button => button.click());
+            await logoutDialog.waitFor({ state: 'visible' });
+            await signOutDashboard.locator('.inigosync-logout-cancel').press('Shift+Tab');
+            await signOutDashboard.locator('.inigosync-logout-close').press('Shift+Tab');
+            assert.equal(await signOutDashboard.evaluate(() => document.activeElement.classList.contains('inigosync-logout-confirm')),
+                true, 'Shift+Tab from the first dialog control wraps focus to the last');
+            await signOutDashboard.locator('.inigosync-logout-confirm').press('Tab');
+            assert.equal(await signOutDashboard.evaluate(() => document.activeElement.classList.contains('inigosync-logout-close')),
+                true, 'Tab from the last dialog control wraps focus to the first');
+            await signOutDashboard.locator('.inigosync-logout-close').press('Escape');
+            assert.equal(await logoutDialog.isVisible(), false, 'Escape dismisses the confirmation');
+            assert.equal(await customerLogoutButton.evaluate(button => document.activeElement === button), true,
+                'Escape restores focus to the logout control');
+            await customerLogoutButton.evaluate(button => button.click());
+            await logoutDialog.waitFor({ state: 'visible' });
+            await signOutDashboard.locator('.inigosync-logout-overlay').click({ position: { x: 4, y: 4 } });
+            assert.equal(await logoutDialog.isVisible(), false, 'clicking the backdrop dismisses the confirmation');
+            assert.equal(await customerLogoutButton.evaluate(button => document.activeElement === button), true,
+                'backdrop dismissal restores focus to the logout control');
+            assert.equal((await calls(signOutDashboard)).filter(call => call.kind === 'signOut').length, 0,
+                'Escape and backdrop dismissal keep the session active');
+            await customerLogoutButton.evaluate(button => button.click());
+            await logoutDialog.waitFor({ state: 'visible' });
+            await signOutDashboard.locator('.inigosync-logout-confirm').evaluate(button => {
+                button.click();
+                button.click();
+            });
+            await signOutDashboard.waitForURL('**/index.html');
+            const signOutEvents = (await calls(signOutDashboard)).filter(call => call.kind === 'accountSessionEvent');
+            assert.deepEqual(signOutEvents.map(call => call.data), [{ p_kind: 'sign_out', p_reason: 'app_logout' }],
+                'explicit app sign-out records the expected event');
+            assert.equal((await calls(signOutDashboard)).filter(call => call.kind === 'signOut').length, 1,
+                'confirming even with repeated clicks signs out exactly once');
+            await signOutDashboard.close();
+
+            for (const [roleName, profileTriggerSelector, logoutSelector] of [
+                ['staff', '[data-staff-profile-trigger]', '[data-staff-logout]'],
+                ['admin', '[data-admin-profile-trigger]', '[data-admin-logout]'],
+            ]) {
+                const roleDashboard = await setupDashboard({ role: roleName });
+                const profileSelector = roleName === 'staff' ? '[data-staff-profile]' : '[data-admin-profile]';
+                await roleDashboard.locator(profileTriggerSelector).click();
+                await roleDashboard.waitForFunction(selector => document.querySelector(selector)?.hasAttribute('data-open') === true,
+                    profileSelector);
+                await roleDashboard.locator(logoutSelector).click();
+                await roleDashboard.locator('.inigosync-logout-dialog').waitFor({ state: 'visible' });
+                assert.equal((await calls(roleDashboard)).filter(call => call.kind === 'signOut').length, 0,
+                    `${roleName} profile-menu logout waits for confirmation`);
+                await roleDashboard.locator('.inigosync-logout-close').click();
+                assert.equal((await calls(roleDashboard)).filter(call => call.kind === 'accountSessionEvent').length, 0,
+                    `${roleName} close button cancels without recording a sign-out`);
+                assert.equal(await roleDashboard.locator(profileTriggerSelector).evaluate(trigger =>
+                    !trigger.closest('[data-open]')), true, `${roleName} logout click closes its profile menu`);
+                await roleDashboard.locator(profileTriggerSelector).click();
+                await roleDashboard.waitForFunction(selector => document.querySelector(selector)?.hasAttribute('data-open') === true,
+                    profileSelector);
+                await roleDashboard.locator(logoutSelector).click();
+                await roleDashboard.locator('.inigosync-logout-dialog').waitFor({ state: 'visible' });
+                await roleDashboard.locator('.inigosync-logout-confirm').click();
+                await roleDashboard.waitForURL('**/index.html');
+                assert.deepEqual((await calls(roleDashboard)).filter(call => call.kind === 'accountSessionEvent').map(call => call.data),
+                    [{ p_kind: 'sign_out', p_reason: 'app_logout' }], `${roleName} confirm uses the shared sign-out path once`);
+                assert.equal((await calls(roleDashboard)).filter(call => call.kind === 'signOut').length, 1,
+                    `${roleName} profile-menu confirmation signs out exactly once`);
+                await roleDashboard.close();
+            }
+            console.log('PASS customer, staff, and owner logout confirmation, cancellation, focus handling, centering, and sign-out');
+        }
+        if (process.env.LOGOUT_CONFIRMATION_ONLY === '1') {
+            await runLogoutConfirmationTests();
+            return;
+        }
         if (process.env.ONBOARDING_SCHEMA_FALLBACK_ONLY === '1') {
             for (const role of ['customer', 'staff', 'admin']) {
                 const page = await setup({ role, guardDashboard: true, missingOnboardingColumn: true });
@@ -1554,12 +1650,7 @@ function mockClient(options) {
         assert(!(await calls(rejectedDashboard)).some(c => c.kind === 'profileWrite'));
         await rejectedDashboard.close();
 
-        const signOutDashboard = await setupDashboard();
-        await signOutDashboard.locator('[data-dash-logout]').first().evaluate(button => button.click());
-        await signOutDashboard.waitForURL('**/index.html');
-        const signOutEvents = (await calls(signOutDashboard)).filter(call => call.kind === 'accountSessionEvent');
-        assert.deepEqual(signOutEvents.map(call => call.data), [{ p_kind: 'sign_out', p_reason: 'app_logout' }], 'explicit app sign-out uses the server-derived account session RPC without a client actor ID');
-        await signOutDashboard.close();
+        await runLogoutConfirmationTests();
 
         console.log('PASS signup and customer contact number validation: no unproved signup metadata, format and database availability required, failures do not save, and recent results avoid duplicate checks');
         console.log('PASS early email checks: taken/available, edit recovery, stale responses, network failure, rate limit and final-signup races');

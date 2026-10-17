@@ -49,7 +49,10 @@
     <div class="admin-sidebar-scrim" data-admin-scrim></div>
 
     <!-- ================= SIDEBAR ================= -->
-    <aside class="admin-sidebar" data-admin-sidebar>
+    <aside class="admin-sidebar" data-admin-sidebar id="ownerDashboardSidebar">
+        <button type="button" class="admin-sidebar-collapse" data-admin-sidebar-collapse aria-label="Collapse sidebar" aria-controls="ownerDashboardSidebar" aria-expanded="true" title="Collapse sidebar">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="m14.5 5-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <!-- Revision A1 (implementation_plan.md, decision A1) — the real
              wordmark, same markup/sizing idea as the customer dashboard's
              .dash-sidebar-brand (Pages/user_dashboard.html), replacing the
@@ -66,7 +69,7 @@
 
         <ul class="admin-nav">
             <li>
-                <button type="button" class="admin-nav-link is-active" data-admin-nav="overview">
+                <button type="button" class="admin-nav-link is-active" data-admin-nav="overview" aria-current="page">
                     <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 16l2.5-4 2.5 2.5L18 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     Booking Overview
                 </button>
@@ -175,27 +178,6 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
                     </svg>
                 </button>
-
-                <!-- Owner activity notifications only; bookings and ratings do not appear here. -->
-                <div class="admin-notif" data-admin-notif>
-                    <button type="button" class="admin-icon-btn" data-admin-notif-trigger aria-label="Notifications" aria-expanded="false">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M18 8.5c0-3.5-2.7-6-6-6s-6 2.5-6 6c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.7 19a2.3 2.3 0 0 0 4.6 0" stroke="currentColor" stroke-width="1.7"/></svg>
-                        <span class="admin-badge-dot" data-admin-notif-dot hidden></span>
-                    </button>
-
-                    <div class="admin-notif-menu" data-admin-notif-menu role="region" aria-label="Notifications">
-                        <div class="admin-notif-menu-head"><span>Notifications</span><button type="button" class="admin-notif-mark-all" data-admin-notif-mark-all aria-expanded="false">Mark All</button><button type="button" class="admin-notif-mark-selected" data-admin-notif-mark-selected disabled hidden>Mark All Read</button></div>
-                        <div class="admin-notif-selection" data-admin-notif-selection hidden>
-                            <label><span class="sr-only">Select notifications</span><select data-admin-notif-select aria-label="Select notifications"><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
-                            <span data-admin-notif-selected aria-live="polite">0 selected</span>
-                        </div>
-                        <label class="admin-notif-search"><span class="sr-only">Search owner notifications</span><input type="search" data-admin-notif-search placeholder="Search notifications" autocomplete="off"></label>
-                        <div class="admin-notif-list" data-admin-notif-list>
-                            <p class="admin-notif-empty">Loading…</p>
-                        </div>
-                        <div class="admin-notif-pagination" data-admin-notif-pagination hidden><button type="button" data-admin-notif-prev>Previous</button><span class="admin-notif-pages" data-admin-notif-pages aria-label="Notification pages"></span><button type="button" data-admin-notif-next>Next</button></div>
-                    </div>
-                </div>
 
                 <div class="admin-profile" data-admin-profile>
                     <button type="button" class="admin-profile-trigger" data-admin-profile-trigger>
@@ -943,13 +925,6 @@
             <button type="button" class="admin-btn-save" data-admin-staff-edit-submit>Save Changes</button>
         </div>
     </div>
-</div>
-
-<div class="admin-modal-overlay" data-owner-notification-modal hidden>
-    <article class="admin-modal owner-notification-detail" role="dialog" aria-modal="true" aria-labelledby="ownerNotificationDetailTitle" tabindex="-1" data-owner-notification-detail>
-        <button type="button" class="admin-modal-close" data-owner-notification-close aria-label="Close notification details"><span aria-hidden="true">×</span></button>
-        <div data-owner-notification-detail-body><p>Select a notification to view its details.</p></div>
-    </article>
 </div>
 
 <!-- Sport editor: fields and local file selections stay in a client draft until Save Changes. -->

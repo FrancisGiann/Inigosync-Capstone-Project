@@ -66,7 +66,7 @@ body.staff-body {
 }
 
 .staff-shell.staff-sidebar-collapsed {
-    grid-template-columns: 0 minmax(0, 1fr);
+    grid-template-columns: 82px minmax(0, 1fr);
 }
 
 .staff-sidebar {
@@ -82,8 +82,7 @@ body.staff-body {
     transition: transform 0.28s ease;
 }
 
-.staff-sidebar-collapse,
-.staff-sidebar-reveal {
+.staff-sidebar-collapse {
     width: 36px;
     height: 36px;
     display: flex;
@@ -97,8 +96,7 @@ body.staff-body {
     transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
-.staff-sidebar-collapse:hover,
-.staff-sidebar-reveal:hover {
+.staff-sidebar-collapse:hover {
     background: var(--color-primary);
     border-color: var(--color-primary);
     color: #14110d;
@@ -109,32 +107,51 @@ body.staff-body {
     top: 22px;
     right: 12px;
 }
-
-.staff-sidebar-reveal {
-    display: none;
-    position: fixed;
-    z-index: 10;
-    top: 50%;
-    left: 0;
-    transform: translateY(-50%);
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
-.staff-sidebar-collapse:focus-visible,
-.staff-sidebar-reveal:focus-visible {
+.staff-sidebar-collapse:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
 
 .staff-shell.staff-sidebar-collapsed .staff-sidebar {
-    transform: translateX(-100%);
-    overflow: hidden;
+    padding-right: 10px;
+    padding-left: 10px;
 }
 
-.staff-shell.staff-sidebar-collapsed .staff-sidebar-reveal {
-    display: flex;
+.staff-shell.staff-sidebar-collapsed .staff-sidebar-collapse {
+    position: static;
+    order: -1;
+    align-self: center;
+    margin-bottom: 16px;
+    transform: rotate(180deg);
+}
+
+.staff-shell.staff-sidebar-collapsed .staff-sidebar-brand {
+    justify-content: center;
+    order: -2;
+    padding: 0;
+    margin-bottom: 10px;
+}
+
+.staff-shell.staff-sidebar-collapsed .staff-logo-text,
+.staff-shell.staff-sidebar-collapsed .staff-role-tag {
+    display: none;
+}
+
+.staff-shell.staff-sidebar-collapsed .staff-nav-link {
+    justify-content: center;
+    padding: 12px 0;
+    font-size: 0;
+}
+
+.staff-shell.staff-sidebar-collapsed .staff-nav { order: 0; }
+
+.staff-shell.staff-sidebar-collapsed .staff-nav-link svg {
+    width: 21px;
+    height: 21px;
+}
+
+.staff-shell.staff-sidebar-collapsed .staff-nav-divider {
+    margin: 12px 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -555,7 +572,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-account-photo .staff-avatar-upload-actions { justify-content: center; max-width: 100%; }
 .staff-account-photo .staff-btn-primary,
 .staff-account-photo .staff-btn-ghost { width: auto; max-width: 100%; padding-left: 14px; padding-right: 14px; }
-.staff-account-personal { min-width: 0; }
+.staff-account-personal { display: flex; flex-direction: column; min-width: 0; }
+.staff-profile-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin: 0 0 18px; }
+.staff-profile-summary > div { min-width: 0; }
+.staff-profile-summary dt { color: var(--color-ink-faint); font-size: var(--fs-sm); margin-bottom: 3px; }
+.staff-profile-summary dd { margin: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.staff-account-personal > [data-staff-settings-edit="profile"] { align-self: flex-end; width: auto; min-width: 120px; margin-top: auto; padding-left: 22px; padding-right: 22px; }
+.staff-account-personal > [data-staff-settings-edit="profile"][hidden] { display: none; }
 
 .staff-overview-filters {
     display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin: 0 0 20px;
@@ -808,7 +831,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    .dash-input.dash-textarea). Everything else (background/border/radius/
    padding/font/focus ring) comes free from .staff-input above; this only
    adds what a <textarea> needs that an <input> doesn't. */
-.staff-textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+.staff-textarea {
+    height: 64px; min-height: 64px; max-height: 64px; resize: none;
+    overflow-y: auto; line-height: 1.5;
+}
+.staff-textarea-wrap { position: relative; width: 100%; }
+.staff-textarea-wrap .staff-textarea { display: block; }
+.staff-textarea-ellipsis { margin-left: 4px; color: var(--color-ink-faint); }
 
 .staff-input[data-validation-state="valid"] { border-color: var(--color-court-green); }
 .staff-input[data-validation-state="invalid"] { border-color: var(--color-alert); }
@@ -918,7 +947,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 /* These account controls use .staff-btn-primary/.staff-btn-ghost display
    rules above, which override the browser's default [hidden] styling. */
-.staff-account-photo [data-staff-avatar-remove][hidden],
+.staff-avatar-modal [data-staff-avatar-remove][hidden],
 .staff-form-actions [data-staff-settings-edit="profile"][hidden],
 .staff-form-actions [data-staff-settings-cancel="profile"][hidden],
 .staff-form-actions [data-staff-settings-save="profile"][hidden] {
@@ -1095,6 +1124,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    primary button's author-level display rule overrides the browser's default
    display:none for [hidden], so restate it at matching scope. */
 .staff-wizard-nav [data-staff-settings-save="password"][hidden],
+.staff-wizard-nav [data-staff-settings-cancel="password"][hidden],
 .staff-wizard-nav [data-staff-pw-next][hidden] {
     display: none;
 }
@@ -1464,6 +1494,27 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     padding-right: 34px; /* clears the absolutely-positioned close button */
 }
 
+.staff-avatar-modal { width: min(420px, calc(100vw - 32px)); }
+.staff-profile-modal { box-sizing: border-box; width: min(720px, calc(100vw - 32px)); }
+.staff-profile-modal .staff-form-actions { justify-content: flex-end; }
+.staff-profile-modal .staff-form-actions > button { min-width: 120px; }
+.staff-avatar-modal-preview {
+    width: 104px;
+    height: 104px;
+    margin: 0 auto 20px;
+    font-size: 32px;
+}
+.staff-avatar-modal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.staff-avatar-modal-actions > button { flex: 1 1 150px; }
+.staff-avatar-modal .staff-form-hint { margin: 12px 0 0; }
+
+@media (max-width: 480px) {
+    .staff-profile-summary { grid-template-columns: minmax(0, 1fr); }
+    .staff-avatar-modal { padding: 22px 18px; }
+    .staff-avatar-modal-actions { flex-direction: column; }
+    .staff-avatar-modal-actions > button { width: 100%; }
+}
+
 .staff-modal-close {
     position: absolute;
     top: 16px;
@@ -1594,8 +1645,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
         transform: translateX(-100%); transition: transform 0.28s ease; z-index: 20;
     }
 
-    .staff-sidebar-collapse,
-    .staff-sidebar-reveal { display: none !important; }
+    .staff-sidebar-collapse { display: none !important; }
 
     body.staff-sidebar-open .staff-sidebar { transform: translateX(0); }
 
@@ -1835,9 +1885,9 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-qr-status.is-expired { color: var(--color-alert) !important; }
 .staff-walkin-qr-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .staff-walkin-qr-actions .staff-btn-ghost { flex: 1 1 180px; }
-.staff-receipt-modal .staff-modal { width: min(540px, calc(100vw - 32px)); max-height: min(90vh, 900px); overflow-y: auto; }
+.staff-receipt-modal .staff-modal { box-sizing: border-box; width: min(390px, calc(100vw - 24px)); max-height: min(90vh, 900px); overflow-y: auto; }
 .staff-receipt-modal .staff-modal h3.staff-receipt-modal-title { margin: 0 34px 18px; padding: 0; text-align: center; }
-.staff-receipt-modal .staff-receipt-layout { width: 100%; }
+.staff-receipt-modal .staff-receipt-layout { width: 100%; min-width: 0; }
 .staff-payment-history-list { list-style: none; display: grid; gap: 10px; min-width: 220px; margin: 0; padding: 0; }
 .staff-payment-history-list > li { display: grid; grid-template-columns: minmax(190px, 1fr) auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface-2); }
 .staff-payment-history-details { display: grid; gap: 3px; min-width: 0; }

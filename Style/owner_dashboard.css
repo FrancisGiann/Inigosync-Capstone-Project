@@ -78,8 +78,13 @@ body.admin-body {
    ========================================================================== */
 .admin-shell {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 260px minmax(0, 1fr);
     min-height: 100vh;
+    transition: grid-template-columns 0.28s ease;
+}
+
+.admin-shell.admin-sidebar-collapsed {
+    grid-template-columns: 82px minmax(0, 1fr);
 }
 
 .admin-sidebar {
@@ -91,7 +96,78 @@ body.admin-body {
     position: sticky;
     top: 0;
     height: 100vh;
+    overflow-y: auto;
 }
+
+.admin-sidebar-collapse {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 22px;
+    right: 12px;
+    border: 1px solid var(--color-line);
+    border-radius: 9px;
+    background: var(--color-bg-card);
+    color: var(--color-ink);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.admin-sidebar-collapse:hover {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #14110d;
+}
+
+.admin-sidebar-collapse:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-sidebar {
+    padding-right: 10px;
+    padding-left: 10px;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-sidebar-collapse {
+    position: static;
+    order: -1;
+    align-self: center;
+    margin-bottom: 16px;
+    transform: rotate(180deg);
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-sidebar-brand {
+    justify-content: center;
+    order: -2;
+    padding: 0;
+    margin-bottom: 10px;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-logo-text,
+.admin-shell.admin-sidebar-collapsed .admin-role-tag {
+    display: none;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-nav-link {
+    justify-content: center;
+    padding: 12px 0;
+    font-size: 0;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-nav-link svg {
+    width: 21px;
+    height: 21px;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-nav-divider {
+    margin: 12px 4px;
+}
+
+.admin-shell.admin-sidebar-collapsed .admin-nav { order: 0; }
 
 .admin-sidebar-brand {
     display: flex;
@@ -311,172 +387,6 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 .admin-icon-btn:hover { color: var(--color-ink); border-color: var(--color-primary); }
 .admin-icon-btn svg { width: 17px; height: 17px; }
-
-.admin-badge-dot {
-    position: absolute; top: 6px; right: 7px;
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--color-primary);
-    border: 1.5px solid var(--color-bg-elevated);
-}
-
-/* H1 fix, same reasoning as Style/Dashboard.css's .dash-mobile-verified-badge[hidden]
-   rule — an author rule setting `display` on an element that also carries a
-   plain `[hidden]` boolean attribute beats the UA `[hidden] { display: none }`
-   rule at equal specificity because it comes later in the cascade. Nothing
-   here sets `display` on .admin-badge-dot, so this isn't needed today, but
-   is documented in case a later change adds one (data-admin-notif-dot uses
-   the same class, toggled via the `hidden` IDL property). */
-
-/* Notifications dropdown (Revision A1, decision A7) — ported from the
-   customer dashboard's .dash-notif* and .dash-notif-item* (Style/Dashboard.css)
-   under admin-* names. Same open/close idiom + visual shape as
-   .admin-profile-menu below (toggled via the same [data-open] attribute
-   pattern from includes/owner_dashboard.js). */
-.admin-notif {
-    position: relative;
-}
-
-.admin-notif-menu {
-    position: absolute;
-    top: calc(100% + 10px);
-    right: 0;
-    display: flex;
-    flex-direction: column;
-    width: 340px;
-    max-width: calc(100vw - 32px);
-    max-height: 420px;
-    overflow: hidden;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-line);
-    border-radius: 12px;
-    padding: 8px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transform: translateY(-6px);
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    z-index: 6;
-}
-
-.admin-notif[data-open] .admin-notif-menu {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-
-.admin-notif-menu-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    font-family: var(--font-display);
-    font-weight: 600;
-    font-size: var(--fs-md);
-    padding: 8px 10px 10px;
-    color: var(--color-ink);
-}
-.admin-notif-mark-all { border: 0; background: none; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; }
-.admin-notif-mark-all[aria-expanded="true"] { color: var(--color-ink); }
-.admin-notif-menu-head button[hidden] { display: none; }
-.admin-notif-mark-selected { border: 0; background: none; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
-.admin-notif-mark-selected:disabled { opacity: .5; cursor: default; }
-.admin-notif-selection { display: flex; align-items: center; gap: 7px; padding: 0 10px 8px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.admin-notif-selection[hidden] { display: none; }
-.admin-notif-selection select { max-width: 100px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
-.admin-notif-selection [data-admin-notif-selected] { flex: 1; }
-.admin-notif-selection button { min-height: 30px; padding: 4px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
-.admin-notif-selection button:disabled { opacity: .5; cursor: default; }
-.admin-notif-search { display: block; padding: 0 10px 8px; }
-.admin-notif-search input { width: 100%; min-height: 34px; padding: 6px 9px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
-.admin-notif-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.admin-notif-pagination[hidden] { display: none; }
-.admin-notif-pagination button { min-height: 30px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 7px; background: transparent; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; }
-.admin-notif-pagination button:disabled { opacity: .5; cursor: default; }
-.admin-notif-pages { display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; }
-.admin-notif-pages button { min-width: 28px; padding: 3px 5px; border-color: transparent; }
-.admin-notif-pages button[aria-current="page"] { border-color: var(--color-line); background: var(--color-bg-elevated); color: var(--color-ink); }
-.admin-notif-item.is-unseen .admin-notif-dot { opacity: 1; }
-.admin-notif-item.is-seen .admin-notif-dot { opacity: .22; }
-.admin-notif-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
-
-.admin-notif-item {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    gap: 8px;
-    padding: 10px;
-    border-radius: 8px;
-}
-.admin-notif-item.is-seen .admin-notif-open { opacity: .75; }
-.admin-notif-select-row { flex: 0 0 auto; width: 16px; height: 16px; margin: 15px 0 0 5px; accent-color: var(--color-primary); cursor: pointer; }
-.admin-notif:not([data-selecting]) .admin-notif-select-row { display: none; }
-.admin-notif-open {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    min-width: 0;
-    flex: 1;
-    background: none;
-    border: 0;
-    padding: 0;
-    text-align: left;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
-.admin-notif-item.is-selected { background: rgba(244, 239, 230, 0.06); }
-
-.admin-notif-open:hover,
-.admin-notif-open:focus-visible {
-    background: rgba(244, 239, 230, 0.06);
-}
-
-.admin-notif-open:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: -2px;
-}
-
-.admin-notif-item + .admin-notif-item {
-    border-top: 1px solid var(--color-line);
-}
-.admin-notif-menu .sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-
-.admin-notif-item-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-
-.admin-notif-item-body strong {
-    font-size: var(--fs-md);
-    color: var(--color-ink);
-}
-
-.admin-notif-item-body span {
-    font-size: var(--fs-xs);
-    color: var(--color-ink-faint);
-}
-
-.admin-notif-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-top: 5px;
-    flex-shrink: 0;
-    background: var(--color-ink-faint);
-}
-
-.admin-notif-dot.pending { background: var(--color-primary); }
-.admin-notif-dot.feedback { background: var(--color-court-green); }
-
-.admin-notif-empty {
-    color: var(--color-ink-faint);
-    font-size: var(--fs-md);
-    padding: 16px 10px;
-    text-align: center;
-}
 
 .admin-profile { position: relative; }
 
@@ -800,8 +710,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-perf-chart-status-problem { color: var(--color-alert); }
 .admin-perf-chart-sub { font-size: var(--fs-xs); color: var(--color-ink-faint); }
 
-/* Legend dot — mirrors the notification dropdown's .admin-notif-dot
-   pattern (colored circle + modifier class per status). .admin-perf-item-
+/* Legend dot — colored circle per performance status. .admin-perf-item-
    label itself (display: inline-flex, flex: 0 0 auto) is defined above,
    next to .admin-perf-item-row. */
 .admin-perf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -1814,11 +1723,13 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 
 @media (max-width: 860px) {
-    .admin-shell { grid-template-columns: 1fr; }
+    .admin-shell,
+    .admin-shell.admin-sidebar-collapsed { grid-template-columns: 1fr; transition: none; }
     .admin-sidebar {
         position: fixed; left: 0; top: 0; width: 260px;
         transform: translateX(-100%); transition: transform 0.28s ease; z-index: 20;
     }
+    .admin-sidebar-collapse { display: none; }
     body.admin-sidebar-open .admin-sidebar { transform: translateX(0); }
     body.admin-sidebar-open .admin-sidebar-scrim {
         display: block; position: fixed; inset: 0; background: rgba(10, 8, 6, 0.6); z-index: 15;
@@ -1831,7 +1742,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 
 /* Topbar wrap (decision B5-f) — below this, the title block (mobile
-   toggle + h1/subtitle) and the actions row (clock/theme/notif/profile)
+   toggle + h1/subtitle) and the actions row (clock/theme/profile)
    no longer fit on one line; each becomes its own full-width row instead
    of forcing a horizontal scrollbar. */
 @media (max-width: 768px) {
@@ -1849,7 +1760,6 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     .admin-toggle-pill { width: 100%; }
     .admin-pill-btn { flex: 1; text-align: center; }
     .admin-chart-total { width: 100%; }
-    .admin-notif-menu { position: fixed; top: var(--admin-notif-menu-top, 104px); right: 16px; max-height: min(420px, max(180px, calc(100vh - var(--admin-notif-menu-top, 104px) - 16px))); }
 }
 
 @media (max-width: 520px) {

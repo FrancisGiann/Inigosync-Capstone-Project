@@ -231,14 +231,116 @@ document.addEventListener('DOMContentLoaded', async () => {
         goToLogin(reason);
     }
 
-    async function logout() {
-        await signOutAndGoToLogin();
+    let logoutDialog = null;
+    let logoutDialogOpener = null;
+    let logoutConfirmed = false;
+    let logoutPreviousBodyOverflow = '';
+
+    function closeLogoutDialog() {
+        if (!logoutDialog || logoutConfirmed) return;
+        logoutDialog.hidden = true;
+        logoutDialog.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = logoutPreviousBodyOverflow;
+        document.removeEventListener('keydown', handleLogoutDialogKeydown);
+        logoutDialogOpener?.focus();
+        logoutDialogOpener = null;
+    }
+
+    function handleLogoutDialogKeydown(event) {
+        if (!logoutDialog || logoutDialog.hidden) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeLogoutDialog();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        const focusable = [...logoutDialog.querySelectorAll('button:not([disabled])')];
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!logoutDialog.contains(document.activeElement)) {
+            event.preventDefault();
+            first.focus();
+        } else if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function ensureLogoutDialog() {
+        if (logoutDialog) return logoutDialog;
+        const overlay = document.createElement('div');
+        overlay.className = 'inigosync-logout-overlay';
+        overlay.hidden = true;
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.innerHTML = `
+            <section class="inigosync-logout-dialog" role="dialog" aria-modal="true"
+                aria-labelledby="inigosync-logout-title" aria-describedby="inigosync-logout-message" tabindex="-1">
+                <button type="button" class="inigosync-logout-close" aria-label="Close logout confirmation">&times;</button>
+                <h2 id="inigosync-logout-title">Log out?</h2>
+                <p id="inigosync-logout-message">Are you sure you want to log out of your account?</p>
+                <div class="inigosync-logout-actions">
+                    <button type="button" class="inigosync-logout-cancel">Cancel</button>
+                    <button type="button" class="inigosync-logout-confirm">Log Out</button>
+                </div>
+            </section>`;
+        const style = document.createElement('style');
+        style.textContent = `
+            .inigosync-logout-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 20px; background: rgba(15, 18, 22, .58); }
+            .inigosync-logout-overlay[hidden] { display: none; }
+            .inigosync-logout-dialog { position: relative; box-sizing: border-box; width: min(100%, 420px); padding: 30px; border: 1px solid var(--color-line, #e5e7eb); border-radius: 18px; background: var(--color-bg-card, #fff); color: var(--color-ink, #202124); box-shadow: 0 22px 70px rgba(0, 0, 0, .24); }
+            .inigosync-logout-dialog h2 { margin: 0 34px 10px 0; font: inherit; font-size: 1.35rem; font-weight: 700; }
+            .inigosync-logout-dialog p { margin: 0; line-height: 1.55; color: var(--color-ink-soft, #60646c); }
+            .inigosync-logout-close { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 25px; cursor: pointer; }
+            .inigosync-logout-close:hover, .inigosync-logout-close:focus-visible { background: rgba(127, 127, 127, .14); }
+            .inigosync-logout-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+            .inigosync-logout-actions button { min-height: 42px; padding: 0 18px; border: 1px solid var(--color-line, #d7d9dc); border-radius: 10px; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+            .inigosync-logout-actions .inigosync-logout-confirm { border-color: var(--color-alert, #c24130); background: var(--color-alert, #c24130); color: #fff; }
+            .inigosync-logout-dialog button:focus-visible { outline: 3px solid var(--color-primary, #d5ad55); outline-offset: 2px; }
+            @media (prefers-reduced-motion: no-preference) { .inigosync-logout-dialog { animation: inigosync-logout-enter .16s ease-out; } @keyframes inigosync-logout-enter { from { opacity: 0; transform: translateY(5px) scale(.99); } to { opacity: 1; transform: none; } } }
+        `;
+        document.head.appendChild(style);
+        document.body.appendChild(overlay);
+        logoutDialog = overlay;
+
+        const cancel = overlay.querySelector('.inigosync-logout-cancel');
+        const confirm = overlay.querySelector('.inigosync-logout-confirm');
+        overlay.querySelector('.inigosync-logout-close').addEventListener('click', closeLogoutDialog);
+        cancel.addEventListener('click', closeLogoutDialog);
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) closeLogoutDialog();
+        });
+        confirm.addEventListener('click', async () => {
+            if (logoutConfirmed || signOutInProgress) return;
+            logoutConfirmed = true;
+            confirm.disabled = true;
+            cancel.disabled = true;
+            overlay.querySelector('.inigosync-logout-close').disabled = true;
+            document.removeEventListener('keydown', handleLogoutDialogKeydown);
+            await signOutAndGoToLogin();
+        });
+        return overlay;
+    }
+
+    function openLogoutDialog(opener) {
+        if (signOutInProgress || logoutConfirmed) return;
+        const overlay = ensureLogoutDialog();
+        logoutDialogOpener = opener;
+        overlay.hidden = false;
+        overlay.setAttribute('aria-hidden', 'false');
+        logoutPreviousBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        document.addEventListener('keydown', handleLogoutDialogKeydown);
+        overlay.querySelector('.inigosync-logout-cancel').focus();
     }
 
     document.querySelectorAll('[data-dash-logout], [data-staff-logout], [data-admin-logout]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
-            logout();
+            openLogoutDialog(btn);
         });
     });
 

@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const html = await readFile(new URL('../Pages/staff_dashboard.html', import.meta.url), 'utf8');
 const source = await readFile(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
+const phoneFunction = await readFile(new URL('../supabase/functions/validate-contact-phone/index.ts', import.meta.url), 'utf8');
 const css = await readFile(new URL('../Style/staff_dashboard.css', import.meta.url), 'utf8');
 
 test('staff settings exposes phone fields through the explicit edit/save/cancel flow', () => {
@@ -22,10 +23,49 @@ test('staff settings exposes phone fields through the explicit edit/save/cancel 
     assert.match(html, /data-staff-settings-cancel="profile" hidden/, 'Cancel starts hidden');
     assert.match(source, /if \(!staffSettingsEditing \|\| !window\.sb \|\| !window\.inigosyncProfile \|\| staffPhoneValidationBusy\) return;/,
         'save handler refuses calls unless the account is in edit mode');
+    assert.match(html, /data-staff-settings-profile-modal hidden[\s\S]*?role="dialog" aria-modal="true" aria-labelledby="staffProfileModalTitle"[\s\S]*?data-staff-settings-name[\s\S]*?data-staff-settings-save="profile"/,
+        'personal information fields and save action are inside an accessible dialog');
+    assert.match(html, /<\/main>\s*<\/div>\s*<\/div>\s*<div class="staff-modal-overlay" data-staff-settings-profile-modal/,
+        'the profile overlay is a page-level dialog outside the inert dashboard shell');
+    const profileSummary = html.slice(html.indexOf('class="staff-account-personal"'), html.indexOf('<!-- Change Password'));
+    for (const field of ['name', 'mobile', 'address', 'birthdate', 'gender', 'emergency-name', 'emergency-number']) {
+        assert.match(profileSummary, new RegExp(`data-staff-settings-display-${field}`), `${field} appears in the saved-value summary`);
+    }
+    assert.doesNotMatch(profileSummary, /<input\b|<textarea\b|<select\b/, 'the card summary is read-only and inputs remain in the popup');
+    assert.match(source, /\[data-staff-settings-display-mobile\]'\s*,\s*profile\.contact_num/,
+        'profile rendering refreshes the saved-value summary after updates');
+    assert.match(source, /staffSettingsEditBtn\?\.addEventListener\('click',[\s\S]*?setStaffSettingsEditing\(true\)[\s\S]*?staffSettingsProfileModal\.hidden = false/,
+        'Edit opens the dialog in profile edit mode');
+    const profileSaveHandler = source.slice(source.indexOf("staffSettingsSaveProfileBtn.addEventListener('click'"));
+    assert.match(profileSaveHandler, /if \(!await confirmStaffAction\('Save these personal information changes\?'[\s\S]*?\) return;[\s\S]*?update\(fullPatch\)/,
+        'confirmation cancellation exits before the database update and leaves the dialog open');
+    assert.match(source, /event\.key === 'Escape'[\s\S]*?cancelStaffSettingsProfileEdit\(\)/,
+        'Escape cancels the draft and closes the profile dialog');
+    assert.match(source, /event\.target === staffSettingsProfileModal\) cancelStaffSettingsProfileEdit\(\)/,
+        'clicking the backdrop cancels and closes the profile dialog');
+    assert.match(source, /function updateStaffModalBackground\(\)[\s\S]*?document\.querySelector\('\[data-staff-settings-profile-modal\]'\)[\s\S]*?profileModal && !profileModal\.hidden/,
+        'opening the profile dialog inerts the dashboard shell');
+    assert.match(source, /staffConfirmModal && !staffConfirmModal\.hidden\) containStaffDialogTab\(event, staffConfirmDialog\)[\s\S]*?profileModal && !profileModal\.hidden\) containStaffDialogTab\(event, profileDialog\)/,
+        'focus containment prioritizes a nested confirmation dialog over the profile dialog');
     assert.match(css, /\.staff-form-actions\s+\[data-staff-settings-save="profile"\]\[hidden\][\s\S]*?display:\s*none;/,
         'author-level button styles do not override hidden profile controls');
-    assert.match(css, /\.staff-account-photo\s+\[data-staff-avatar-remove\]\[hidden\][\s\S]*?display:\s*none;/,
+    assert.match(css, /\.staff-account-personal\s*>\s*\[data-staff-settings-edit="profile"\]\[hidden\]\s*\{\s*display:\s*none;/,
+        'the account card Edit action stays hidden while the modal is open');
+    assert.match(css, /\.staff-avatar-modal\s+\[data-staff-avatar-remove\]\[hidden\][\s\S]*?display:\s*none;/,
         'author-level button styles do not expose Remove Photo without an avatar');
+    assert.match(html, /data-staff-avatar-edit[^>]*>Edit<\/button>/, 'the profile photo card has one Edit action');
+    assert.match(html, /data-staff-avatar-modal hidden[\s\S]*?role="dialog" aria-modal="true"[\s\S]*?data-staff-avatar-upload-trigger[\s\S]*?data-staff-avatar-remove hidden[\s\S]*?data-staff-avatar-file/,
+        'the accessible photo dialog owns upload, conditional removal, and file selection');
+    assert.match(html, /class="staff-avatar staff-avatar-modal-preview" data-staff-avatar-modal-preview role="img" aria-live="polite"/,
+        'the dialog shows an announced avatar preview above its actions');
+    assert.match(css, /\.staff-avatar-modal-preview\s*\{[\s\S]*?margin:\s*0 auto/,
+        'the modal avatar preview is sized and centered responsively');
+    assert.match(source, /modalAvatarPreview\.setAttribute\('aria-label', avatarUrl[\s\S]*?No profile photo; initials placeholder:/,
+        'the preview label explains when initials are standing in for a missing photo');
+    assert.match(source, /event\.key === 'Escape'[\s\S]*?closeStaffAvatarModal\(\)/, 'the photo dialog closes on Escape');
+    assert.match(source, /event\.key === 'Tab'[\s\S]*?staffAvatarDialog[\s\S]*?last\?\.focus\(\)/, 'the photo dialog traps keyboard focus');
+    assert.match(source, /if \(staffAvatarRemoveBtn\.hidden \|\| !isRenderableStaffAvatarUrl\(window\.inigosyncProfile\?\.avatar_url\)\) return;/,
+        'removal is unavailable when there is no renderable avatar');
 });
 
 test('staff self-service profile payload only contains mutable fields and is scoped to the current profile', () => {
@@ -66,13 +106,12 @@ test('all staff dashboard confirmations use the accessible in-page alert dialog'
     assert.match(css, /\.staff-confirm-overlay\s*\{\s*z-index:\s*90;/);
     assert.doesNotMatch(source, /window\.confirm\s*\(/, 'staff dashboard has no native confirm prompts');
     for (const message of [
-        'You will be redirected to PayMongo to complete the online payment. Continue?',
         'Save this photo as your profile photo?',
         'Are you sure you want to remove your profile photo?',
         'Save these personal information changes?',
         'Are you sure you want to save this new password?',
     ]) assert.ok(source.includes(message), `confirmation message exists for: ${message}`);
-    assert.equal((source.match(/await confirmStaffAction\(/g) || []).length, 5, 'all five staff confirmation flows await the custom dialog');
+    assert.equal((source.match(/await confirmStaffAction\(/g) || []).length, 4, 'all four staff confirmation flows await the custom dialog');
     assert.match(source, /event\.key === 'Escape'[\s\S]*?closeStaffConfirm\(false\)/);
     assert.match(source, /event\.key === 'Tab'[\s\S]*?last\?\.focus\(\)/);
 });
@@ -98,6 +137,15 @@ test('emergency contact saves require current server format and availability con
         'the client does not query profile phone numbers for availability');
 });
 
+test('staff contact-number checks explain unapplied database setup responses', () => {
+    assert.match(source, /async function staffPhoneFunctionErrorMessage\(error,[\s\S]*?context\.clone\(\)\.json\(\)[\s\S]*?body\?\.message/,
+        'staff settings reads the Edge Function response instead of hiding database setup errors');
+    assert.match(phoneFunction, /Phone availability database setup is incomplete\. Apply the latest Supabase migrations\./,
+        'an unapplied phone availability migration has a clear remediation message');
+    assert.match(source, /No profile changes were saved\./,
+        'an unavailable backend still blocks the profile save');
+});
+
 test('delayed profile renders preserve mutable drafts while editing and repaint them after cancel', () => {
     const helperStart = source.indexOf('    function isRenderableStaffAvatarUrl(value) {');
     const helperEnd = source.indexOf('    async function saveStaffAvatarUrl', helperStart);
@@ -108,14 +156,19 @@ test('delayed profile renders preserve mutable drafts while editing and repaint 
 
     const selectors = [
         '[data-staff-profile-position]', '[data-staff-profile-email]', '[data-staff-profile-mobile]',
+        '[data-staff-settings-display-name]', '[data-staff-settings-display-mobile]',
+        '[data-staff-settings-display-address]', '[data-staff-settings-display-birthdate]',
+        '[data-staff-settings-display-gender]', '[data-staff-settings-display-emergency-name]',
+        '[data-staff-settings-display-emergency-number]',
         '[data-staff-settings-name]', '[data-staff-settings-mobile]', '[data-staff-settings-address]',
         '[data-staff-settings-birthdate]', '[data-staff-settings-gender]',
         '[data-staff-settings-emergency-name]', '[data-staff-settings-emergency-number]',
     ];
     const elements = new Map(selectors.map(selector => [selector, { value: '', textContent: '' }]));
+    const preview = { label: '', setAttribute(name, value) { if (name === 'aria-label') this.label = value; } };
     const document = {
         querySelectorAll(selector) { return selector === '.staff-avatar' || selector === '[data-staff-profile-name]' ? [] : []; },
-        querySelector(selector) { return elements.get(selector) || null; },
+        querySelector(selector) { return selector === '[data-staff-avatar-modal-preview]' ? preview : elements.get(selector) || null; },
     };
     const context = {
         document,
@@ -137,15 +190,29 @@ test('delayed profile renders preserve mutable drafts while editing and repaint 
         emergency_contact_name: 'Saved emergency name', emergency_contact_number: 'saved emergency number',
     };
     context.paint(delayedProfile);
+    assert.equal(preview.label, 'No profile photo; initials placeholder: CN');
     assert.equal(elements.get('[data-staff-settings-mobile]').value, 'draft mobile');
     assert.equal(elements.get('[data-staff-settings-address]').value, 'draft address');
     assert.equal(elements.get('[data-staff-settings-emergency-name]').value, 'draft emergency name');
     assert.equal(elements.get('[data-staff-settings-emergency-number]').value, 'draft emergency number');
+    assert.equal(elements.get('[data-staff-settings-display-name]').textContent, 'Current Name');
+    assert.equal(elements.get('[data-staff-settings-display-address]').textContent, 'saved address');
 
     context.staffSettingsEditing = false;
     context.paint(delayedProfile);
+    delayedProfile.avatar_url = 'https://example.test/avatar.jpg';
+    context.paint(delayedProfile);
+    assert.equal(preview.label, 'Current profile photo');
+    delete delayedProfile.avatar_url;
+    context.paint(delayedProfile);
+    assert.equal(preview.label, 'No profile photo; initials placeholder: CN');
     assert.equal(elements.get('[data-staff-settings-mobile]').value, 'saved mobile');
     assert.equal(elements.get('[data-staff-settings-address]').value, 'saved address');
     assert.equal(elements.get('[data-staff-settings-emergency-name]').value, 'Saved emergency name');
     assert.equal(elements.get('[data-staff-settings-emergency-number]').value, 'saved emergency number');
+    Object.assign(delayedProfile, { contact_num: '+639171234567', address: 'New address', emergency_contact_name: 'New contact' });
+    context.paint(delayedProfile);
+    assert.equal(elements.get('[data-staff-settings-display-mobile]').textContent, '+639171234567');
+    assert.equal(elements.get('[data-staff-settings-display-address]').textContent, 'New address');
+    assert.equal(elements.get('[data-staff-settings-display-emergency-name]').textContent, 'New contact');
 });

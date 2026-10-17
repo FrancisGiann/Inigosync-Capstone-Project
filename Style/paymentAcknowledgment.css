@@ -1,7 +1,7 @@
 /* Shared monochrome receipt used by customer and staff print and PNG flows. */
 .payment-ack-card {
     box-sizing: border-box;
-    width: 74mm;
+    width: min(350px, 100%);
     max-width: 100%;
     margin: 0 auto;
     padding: 4mm;
@@ -40,10 +40,14 @@
 .payment-ack-thanks, .payment-ack-disclaimer { margin: 0; text-align: center; }
 .payment-ack-disclaimer { font-size: 12px; font-weight: 700; letter-spacing: .06em; }
 .payment-ack-disclaimer span { font-size: 9px; font-weight: 400; letter-spacing: 0; }
+.payment-ack-layout { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; min-width: 0; }
 .payment-ack-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2mm; }
-.payment-ack-actions button { flex: 1 1 auto; }
+.payment-ack-actions { width: min(350px, 100%); }
+.payment-ack-actions button { flex: 1 1 120px; }
+.payment-ack-actions .payment-ack-print-button { border: 1px solid #777; background: #fff; color: #171717; }
+.payment-ack-actions .payment-ack-print-button:hover { border-color: #333; background: #f2f2f2; color: #111; }
 .dash-receipt-grid .payment-ack-card { justify-self: center; }
-.payment-ack-card.is-capturing .payment-ack-actions { visibility: hidden; }
+.payment-ack-layout.is-capturing .payment-ack-actions { visibility: hidden; }
 .payment-ack-print-root { display: none; }
 .payment-ack-print-root.payment-ack-measuring {
     position: fixed;
@@ -62,6 +66,11 @@
     padding: 0;
     border: 0;
     border-radius: 0;
+}
+
+@media (max-width: 420px) {
+    .payment-ack-layout { width: 100%; }
+    .payment-ack-actions { justify-content: stretch; }
 }
 
 @media print {

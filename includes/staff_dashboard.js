@@ -82,7 +82,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.querySelectorAll('[data-staff-nav]').forEach((btn) => {
             if (btn.closest('.staff-nav')) {
-                btn.classList.toggle('is-active', btn.dataset.staffNav === name);
+                const isActive = btn.dataset.staffNav === name;
+                btn.classList.toggle('is-active', isActive);
+                if (isActive) btn.setAttribute('aria-current', 'page');
+                else btn.removeAttribute('aria-current');
             }
         });
 
@@ -110,31 +113,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     const desktopSidebarShell = document.querySelector('.staff-shell');
     const staffSidebar = document.querySelector('[data-staff-sidebar]');
     const sidebarCollapse = document.querySelector('[data-staff-sidebar-collapse]');
-    const sidebarReveal = document.querySelector('[data-staff-sidebar-reveal]');
     const mobileBreakpoint = window.matchMedia('(max-width: 860px)');
 
     function setDesktopSidebarCollapsed(collapsed) {
         if (!desktopSidebarShell || !staffSidebar) return;
         desktopSidebarShell.classList.toggle('staff-sidebar-collapsed', collapsed);
-        staffSidebar.inert = collapsed;
-        staffSidebar.setAttribute('aria-hidden', String(collapsed));
-        [sidebarCollapse, sidebarReveal].forEach((button) => {
-            if (button) button.setAttribute('aria-expanded', String(!collapsed));
-        });
+        if (sidebarCollapse) {
+            const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+            sidebarCollapse.setAttribute('aria-label', label);
+            sidebarCollapse.setAttribute('title', label);
+            sidebarCollapse.setAttribute('aria-expanded', String(!collapsed));
+        }
     }
 
-    if (sidebarCollapse) sidebarCollapse.addEventListener('click', () => {
-        setDesktopSidebarCollapsed(true);
-        sidebarReveal?.focus();
+    document.querySelectorAll('.staff-nav-link').forEach((button) => {
+        const label = button.textContent.trim().replace(/\s+/g, ' ');
+        if (label && !button.hasAttribute('aria-label')) button.setAttribute('aria-label', label);
+        if (label) button.setAttribute('title', label);
     });
-    if (sidebarReveal) sidebarReveal.addEventListener('click', () => {
-        setDesktopSidebarCollapsed(false);
-        sidebarCollapse?.focus();
+    if (sidebarCollapse) sidebarCollapse.addEventListener('click', () => {
+        const collapsed = !desktopSidebarShell?.classList.contains('staff-sidebar-collapsed');
+        setDesktopSidebarCollapsed(collapsed);
+        sidebarCollapse.focus();
     });
 
     function syncSidebarBreakpoint() {
-        if (!mobileBreakpoint.matches) return;
-        setDesktopSidebarCollapsed(false);
+        if (mobileBreakpoint.matches) setDesktopSidebarCollapsed(false);
     }
     mobileBreakpoint.addEventListener('change', syncSidebarBreakpoint);
     syncSidebarBreakpoint();
@@ -902,8 +906,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const overviewPagination = document.querySelector('[data-staff-pagination="overview"]');
     const overviewSearchInput = document.querySelector('[data-staff-overview-search]');
     const overviewSportSelect = document.querySelector('[data-staff-overview-sport]');
-    const overviewDateSelect = document.querySelector('[data-staff-overview-date]');
-    const overviewTimeSelect = document.querySelector('[data-staff-overview-time]');
+    const overviewDateInput = document.querySelector('[data-staff-overview-date]');
+    if (overviewDateInput && !overviewDateInput.value) overviewDateInput.value = todayDateInputValue();
     let overviewRows = [];
     let overviewPage = 1;
 
@@ -926,56 +930,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         overviewSportSelect.value = sports.includes(selected) ? selected : '';
     }
 
-    function overviewMatchesDate(row, filter) {
-        if (!filter || filter === 'all') return true;
+    function overviewMatchesDate(row, dateFilter) {
+        if (!dateFilter) return true;
         const instant = new Date(row.time_date);
         if (Number.isNaN(instant.getTime())) return false;
-        const rowDate = manilaDate(instant);
-        const today = todayDateInputValue();
-        if (filter === 'today') return rowDate === today;
-        if (filter === 'tomorrow') {
-            const tomorrow = new Date(manilaDateTime(today, 0).getTime() + 86400000);
-            return rowDate === manilaDate(tomorrow);
-        }
-        if (filter === 'next7') {
-            const start = manilaDateTime(today, 0).getTime();
-            const rowStart = manilaDateTime(rowDate, 0).getTime();
-            return rowStart >= start && rowStart < start + 7 * 86400000;
-        }
-        return true;
-    }
-
-    function overviewHour(row) {
-        const date = new Date(row.time_date);
-        if (Number.isNaN(date.getTime())) return null;
-        return Number(new Intl.DateTimeFormat('en-US', {
-            timeZone: STAFF_TIME_ZONE, hour: '2-digit', hourCycle: 'h23',
-        }).format(date));
-    }
-
-    function overviewMatchesTime(row, filter) {
-        if (!filter || filter === 'all') return true;
-        const hour = overviewHour(row);
-        if (hour === null) return false;
-        if (filter === 'morning') return hour >= 5 && hour < 12;
-        if (filter === 'afternoon') return hour >= 12 && hour < 17;
-        if (filter === 'evening') return hour >= 17 || hour < 5;
-        return true;
+        return manilaDate(instant) === dateFilter;
     }
 
     function renderFilteredOverview(actionEntries = overviewActionEntries()) {
         if (!overviewTableBody) return;
         const query = (overviewSearchInput?.value || '').trim().toLocaleLowerCase();
         const sport = overviewSportSelect?.value || '';
-        const dateFilter = overviewDateSelect?.value || 'all';
-        const timeFilter = overviewTimeSelect?.value || 'all';
+        const dateFilter = overviewDateInput?.value || '';
         const visible = actionEntries.filter(({ row }) => {
             const matchesSearch = !query
                 || String(row.customerName || '').toLocaleLowerCase().includes(query)
                 || staffOverviewIdLabel(row).toLocaleLowerCase().includes(query);
             const matchesSport = !sport || String(row.sports || '').trim() === sport;
-            return matchesSearch && matchesSport
-                && overviewMatchesDate(row, dateFilter) && overviewMatchesTime(row, timeFilter);
+            return matchesSearch && matchesSport && overviewMatchesDate(row, dateFilter);
         });
 
         overviewTableBody.innerHTML = '';
@@ -1146,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderFilteredOverview(actionEntries);
     }
 
-    [overviewSearchInput, overviewSportSelect, overviewDateSelect, overviewTimeSelect].forEach((control) => {
+    [overviewSearchInput, overviewSportSelect, overviewDateInput].forEach((control) => {
         if (!control) return;
         control.addEventListener(control === overviewSearchInput ? 'input' : 'change', () => {
             overviewPage = 1;
@@ -2238,7 +2210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const hasWalkinOrderId = Boolean(receipt.source_id || receipt.order_id || receipt.walkin_order_id);
         const sourceLabel = isBooking ? 'Booking ID' : hasWalkinOrderId ? 'Walk-in order ID' : 'Walk-in visit ID';
         const actionsHtml = `<button type="button" class="staff-btn-primary" data-staff-receipt-download="${idAttr}">Download PNG</button>
-            <button type="button" class="staff-btn-ghost" data-staff-receipt-print>Print</button>
+            <button type="button" class="staff-btn-ghost payment-ack-print-button" data-staff-receipt-print>Print</button>
             ${context === 'walkin' ? '<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>' : ''}`;
         target.innerHTML = `<div class="staff-receipt-layout">${window.InigoPaymentAcknowledgment.render(staffWalkinReceipt, {
             sourceLabel, sourceId, itemReferenceLabel: isBooking ? '' : 'Visit ID', transactionId: receipt.transaction_id,
@@ -2272,7 +2244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show("Download isn't available right now — please refresh and try again.", true);
             return false;
         }
-        card.classList.add('is-capturing');
+        card.closest('.payment-ack-layout')?.classList.add('is-capturing');
         try {
             const canvas = await window.html2canvas(card, {
                 backgroundColor: null,
@@ -2296,7 +2268,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('Could not generate the receipt image. Please try again.', true);
             return false;
         } finally {
-            card.classList.remove('is-capturing');
+            card.closest('.payment-ack-layout')?.classList.remove('is-capturing');
         }
     }
 
@@ -2626,7 +2598,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     let staffReceiptModalLastFocus = null;
 
     function updateStaffModalBackground() {
-        if (staffShell) staffShell.inert = Boolean((staffReceiptModal && !staffReceiptModal.hidden) || (timeInModal && !timeInModal.hidden));
+        const profileModal = document.querySelector('[data-staff-settings-profile-modal]');
+        const timeModal = document.querySelector('[data-staff-timein-modal]');
+        if (staffShell) staffShell.inert = Boolean(
+            (staffReceiptModal && !staffReceiptModal.hidden)
+            || (timeModal && !timeModal.hidden)
+            || (profileModal && !profileModal.hidden)
+        );
     }
 
     function containStaffDialogTab(event, dialog) {
@@ -2652,8 +2630,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Tab') return;
-        if (staffReceiptModal && !staffReceiptModal.hidden) containStaffDialogTab(event, staffReceiptDialog);
-        else if (timeInModal && !timeInModal.hidden) containStaffDialogTab(event, timeInDialog);
+        const profileModal = document.querySelector('[data-staff-settings-profile-modal]');
+        const profileDialog = profileModal?.querySelector('[data-staff-settings-profile-dialog]');
+        const timeModal = document.querySelector('[data-staff-timein-modal]');
+        const timeDialog = timeModal?.querySelector('[data-staff-timein-dialog]');
+        if (staffConfirmModal && !staffConfirmModal.hidden) containStaffDialogTab(event, staffConfirmDialog);
+        else if (staffReceiptModal && !staffReceiptModal.hidden) containStaffDialogTab(event, staffReceiptDialog);
+        else if (timeModal && !timeModal.hidden) containStaffDialogTab(event, timeDialog);
+        else if (profileModal && !profileModal.hidden) containStaffDialogTab(event, profileDialog);
     });
 
     function openTransactionAcknowledgment(payment) {
@@ -3645,8 +3629,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     let staffSettingsEditing = false;
 
     const staffAvatarFileInput = document.querySelector('[data-staff-avatar-file]');
+    const staffAvatarEditBtn = document.querySelector('[data-staff-avatar-edit]');
     const staffAvatarUploadBtn = document.querySelector('[data-staff-avatar-upload-trigger]');
     const staffAvatarRemoveBtn = document.querySelector('[data-staff-avatar-remove]');
+    const staffAvatarModal = document.querySelector('[data-staff-avatar-modal]');
+    const staffAvatarDialog = staffAvatarModal?.querySelector('[data-staff-avatar-dialog]');
+    let staffAvatarModalReturnFocus = null;
+
+    function closeStaffAvatarModal() {
+        if (!staffAvatarModal || staffAvatarModal.hidden) return;
+        staffAvatarModal.hidden = true;
+        staffAvatarModal.removeAttribute('data-open');
+        staffAvatarModalReturnFocus?.focus?.();
+        staffAvatarModalReturnFocus = null;
+    }
+
+    function openStaffAvatarModal() {
+        if (!staffAvatarModal || !staffAvatarDialog) return;
+        staffAvatarModalReturnFocus = document.activeElement;
+        staffAvatarModal.hidden = false;
+        staffAvatarModal.setAttribute('data-open', '');
+        staffAvatarUploadBtn?.focus();
+    }
+
+    staffAvatarEditBtn?.addEventListener('click', openStaffAvatarModal);
+    staffAvatarModal?.querySelectorAll('[data-staff-avatar-close]').forEach(button => button.addEventListener('click', closeStaffAvatarModal));
+    staffAvatarModal?.addEventListener('click', event => {
+        if (event.target === staffAvatarModal) closeStaffAvatarModal();
+    });
+    staffAvatarModal?.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeStaffAvatarModal();
+            return;
+        }
+        if (event.key === 'Tab' && staffAvatarDialog) {
+            const controls = Array.from(staffAvatarDialog.querySelectorAll('button:not(:disabled), input:not(:disabled)'))
+                .filter(control => !control.hidden && control.type !== 'file');
+            const first = controls[0], last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        }
+    });
 
     // Only a data: URL (freshly downscaled) or an https:// URL is ever
     // painted as an <img src> in renderStaffProfile() below — guards
@@ -3654,6 +3678,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // relative/unsafe URL.
     function isRenderableStaffAvatarUrl(value) {
         return typeof value === 'string' && value.length > 0 && (value.startsWith('data:') || value.startsWith('https://'));
+    }
+
+    function updateStaffAddressOverflowCue() {
+        const addressInput = document.querySelector('[data-staff-settings-address]');
+        const overflowCue = document.querySelector('[data-staff-address-overflow]');
+        if (!addressInput || !overflowCue) return;
+        overflowCue.hidden = !(addressInput.clientHeight > 0
+            && addressInput.scrollHeight > addressInput.clientHeight + 1);
     }
 
     async function saveStaffAvatarUrl(avatarUrl, profileId = window.inigosyncProfile?.id) {
@@ -3708,7 +3740,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 if (!await confirmStaffAction('Save this photo as your profile photo?', 'Save profile photo?', 'Save photo')) return;
                 const ok = await saveStaffAvatarUrl(dataUrl, profileId);
-                if (ok) window.InigoToast?.show('Profile photo updated.');
+                if (ok) {
+                    window.InigoToast?.show('Profile photo updated.');
+                    closeStaffAvatarModal();
+                }
             } catch (err) {
                 console.error('[staff] avatar upload failed', err);
                 window.InigoToast?.show((err && err.message) || 'Could not process that image. Please try a different file.', true);
@@ -3724,6 +3759,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (staffAvatarRemoveBtn) {
         staffAvatarRemoveBtn.addEventListener('click', async () => {
+            if (staffAvatarRemoveBtn.hidden || !isRenderableStaffAvatarUrl(window.inigosyncProfile?.avatar_url)) return;
             if (!await confirmStaffAction('Are you sure you want to remove your profile photo?', 'Remove profile photo?', 'Remove photo')) return;
             const profileId = window.inigosyncProfile?.id;
             if (!profileId) return;
@@ -3732,7 +3768,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const ok = await saveStaffAvatarUrl(null, profileId);
             staffAvatarRemoveBtn.disabled = false;
             if (staffAvatarUploadBtn) staffAvatarUploadBtn.disabled = false;
-            if (ok) window.InigoToast?.show('Profile photo removed.');
+            if (ok) {
+                window.InigoToast?.show('Profile photo removed.');
+                closeStaffAvatarModal();
+            }
         });
     }
 
@@ -3757,6 +3796,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 el.textContent = initials;
             }
         });
+        const modalAvatarPreview = document.querySelector('[data-staff-avatar-modal-preview]');
+        if (modalAvatarPreview) {
+            modalAvatarPreview.setAttribute('aria-label', avatarUrl
+                ? 'Current profile photo'
+                : `No profile photo; initials placeholder: ${initials}`);
+        }
         if (staffAvatarRemoveBtn) staffAvatarRemoveBtn.hidden = !avatarUrl;
 
         document.querySelectorAll('[data-staff-profile-name]').forEach((el) => { el.textContent = profile.full_name || 'Staff'; });
@@ -3784,7 +3829,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const genderInput = document.querySelector('[data-staff-settings-gender]');
         const emergencyNameInput = document.querySelector('[data-staff-settings-emergency-name]');
         const emergencyNumberInput = document.querySelector('[data-staff-settings-emergency-number]');
+        const settingsSummary = [
+            ['[data-staff-settings-display-name]', profile.full_name],
+            ['[data-staff-settings-display-mobile]', profile.contact_num],
+            ['[data-staff-settings-display-address]', profile.address],
+            ['[data-staff-settings-display-birthdate]', profile.birthdate],
+            ['[data-staff-settings-display-gender]', profile.gender],
+            ['[data-staff-settings-display-emergency-name]', profile.emergency_contact_name],
+            ['[data-staff-settings-display-emergency-number]', profile.emergency_contact_number],
+        ];
+        settingsSummary.forEach(([selector, value]) => {
+            const display = document.querySelector(selector);
+            if (display) display.textContent = String(value || '').trim() || '—';
+        });
         if (addressInput && !staffSettingsEditing) addressInput.value = profile.address || '';
+        if (addressInput) addressInput.title = staffSettingsEditing ? '' : addressInput.value;
+        updateStaffAddressOverflowCue();
         if (birthdateInput) birthdateInput.value = profile.birthdate || '';
         if (genderInput) genderInput.value = profile.gender || '';
         if (emergencyNameInput && !staffSettingsEditing) emergencyNameInput.value = profile.emergency_contact_name || '';
@@ -3936,6 +3996,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffEmergencyNumberInput = document.querySelector('[data-staff-settings-emergency-number]');
     const staffEmergencyPhoneStatus = document.querySelector('[data-staff-emergency-phone-status]');
     const staffMobileAvailability = { request: 0, timer: null, controller: null };
+    async function staffPhoneFunctionErrorMessage(error, fallback = 'Could not check this number. Try again.') {
+        const context = error?.context;
+        if (context && typeof context.clone === 'function') {
+            try {
+                const body = await context.clone().json();
+                if (typeof body?.message === 'string' && body.message.trim()) return body.message.trim();
+            } catch (_) { /* Fall back to the SDK error message. */ }
+        }
+        return error?.message || fallback;
+    }
     function scheduleStaffMobileAvailability() {
         if (!staffSettingsMobileInput) return;
         clearTimeout(staffMobileAvailability.timer);
@@ -3964,7 +4034,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     body: { phone: parsed.normalized, purpose: 'contact' }, signal: controller.signal,
                 });
                 if (request !== staffMobileAvailability.request || window.validatePhMobile?.(staffSettingsMobileInput.value.trim())?.normalized !== parsed.normalized) return;
-                if (error || data?.valid !== true || data.normalized !== `+63${parsed.normalized.slice(1)}`) {
+                if (error) throw new Error(await staffPhoneFunctionErrorMessage(error));
+                if (data?.valid !== true || data.normalized !== `+63${parsed.normalized.slice(1)}`) {
                     const message = data?.reason === 'in_use' ? 'This number is already linked to another account.' : 'Could not check this number. Try again.';
                     throw new Error(message);
                 }
@@ -3984,12 +4055,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffSettingsEditBtn = document.querySelector('[data-staff-settings-edit="profile"]');
     const staffSettingsCancelBtn = document.querySelector('[data-staff-settings-cancel="profile"]');
     const staffSettingsSaveProfileBtn = document.querySelector('[data-staff-settings-save="profile"]');
+    const staffSettingsProfileModal = document.querySelector('[data-staff-settings-profile-modal]');
+    const staffSettingsProfileDialog = staffSettingsProfileModal?.querySelector('[data-staff-settings-profile-dialog]');
+    let staffSettingsProfileReturnFocus = null;
     const staffSettingsMutableInputs = [
         staffSettingsMobileInput,
         document.querySelector('[data-staff-settings-address]'),
         document.querySelector('[data-staff-settings-emergency-name]'),
         staffEmergencyNumberInput,
     ].filter(Boolean);
+    const staffSettingsAddressInput = document.querySelector('[data-staff-settings-address]');
+    staffSettingsAddressInput?.addEventListener('input', updateStaffAddressOverflowCue);
+    window.addEventListener('resize', updateStaffAddressOverflowCue);
     let staffPhoneValidationBusy = false;
     const staffEmergencyPhoneValidation = {
         timer: null,
@@ -4155,6 +4232,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             input.readOnly = !staffSettingsEditing;
             input.setAttribute('aria-readonly', String(!staffSettingsEditing));
         });
+        const addressInput = document.querySelector('[data-staff-settings-address]');
+        if (addressInput) addressInput.title = staffSettingsEditing ? '' : addressInput.value;
+        updateStaffAddressOverflowCue();
         if (staffSettingsEditBtn) staffSettingsEditBtn.hidden = staffSettingsEditing;
         if (staffSettingsCancelBtn) staffSettingsCancelBtn.hidden = !staffSettingsEditing;
         if (staffSettingsSaveProfileBtn) staffSettingsSaveProfileBtn.hidden = !staffSettingsEditing;
@@ -4166,7 +4246,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     setStaffSettingsEditing(false);
-    staffSettingsEditBtn?.addEventListener('click', () => setStaffSettingsEditing(true));
+    function closeStaffSettingsProfileModal() {
+        if (!staffSettingsProfileModal || staffSettingsProfileModal.hidden) return;
+        staffSettingsProfileModal.hidden = true;
+        staffSettingsProfileModal.removeAttribute('data-open');
+        updateStaffModalBackground();
+        staffSettingsProfileReturnFocus?.focus?.();
+        staffSettingsProfileReturnFocus = null;
+    }
+    function cancelStaffSettingsProfileEdit() {
+        setStaffSettingsEditing(false);
+        if (window.inigosyncProfile) renderStaffProfile(window.inigosyncProfile);
+        closeStaffSettingsProfileModal();
+    }
+    staffSettingsEditBtn?.addEventListener('click', () => {
+        if (!staffSettingsProfileModal || !staffSettingsProfileDialog) return;
+        staffSettingsProfileReturnFocus = document.activeElement;
+        setStaffSettingsEditing(true);
+        staffSettingsProfileModal.hidden = false;
+        staffSettingsProfileModal.setAttribute('data-open', '');
+        updateStaffModalBackground();
+        updateStaffAddressOverflowCue();
+        staffSettingsMobileInput?.focus();
+    });
+    staffSettingsProfileModal?.querySelector('[data-staff-settings-profile-close]')?.addEventListener('click', cancelStaffSettingsProfileEdit);
+    staffSettingsProfileModal?.addEventListener('click', event => {
+        if (event.target === staffSettingsProfileModal) cancelStaffSettingsProfileEdit();
+    });
+    staffSettingsProfileModal?.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            cancelStaffSettingsProfileEdit();
+        }
+    });
 
     function currentStaffMobileNormalized() {
         const current = window.inigosyncProfile?.contact_num || '';
@@ -4292,7 +4404,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
 
                 if (validationResult?.error) {
-                    const message = 'Phone validation is unavailable. No profile changes were saved; try again later.';
+                    const detail = await staffPhoneFunctionErrorMessage(validationResult.error, 'Phone validation is unavailable. Try again later.');
+                    const message = `${detail} No profile changes were saved.`;
                     restoreSaveButton();
                     if (staffPhoneStatus) staffPhoneStatus.textContent = message;
                     window.InigoToast?.show(message, true);
@@ -4402,6 +4515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadStaffProfileDetails();
             setStaffSettingsEditing(false);
             renderStaffProfile(window.inigosyncProfile);
+            closeStaffSettingsProfileModal();
             window.InigoToast?.show(usedReducedPayload
                 ? 'Profile updated — address/birthdate/gender/emergency contact need a database update (ask the owner to run 018).'
                 : 'Profile updated.');
@@ -4409,8 +4523,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     staffSettingsCancelBtn?.addEventListener('click', () => {
-        setStaffSettingsEditing(false);
-        if (window.inigosyncProfile) renderStaffProfile(window.inigosyncProfile);
+        cancelStaffSettingsProfileEdit();
     });
 
     // ---- Password visibility toggles ----
@@ -4431,6 +4544,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pwStepIndicators = document.querySelectorAll('[data-staff-pw-step-indicator]');
     const pwBackBtn = document.querySelector('[data-staff-pw-back]');
     const pwNextBtn = document.querySelector('[data-staff-pw-next]');
+    const pwCancelBtn = document.querySelector('[data-staff-settings-cancel="password"]');
     const staffPasswordSaveBtn = document.querySelector('[data-staff-settings-save="password"]');
     const pwCurrentInput = document.querySelector('[data-staff-pw-current]');
     const pwNewInput = document.querySelector('[data-staff-pw-new]');
@@ -4438,6 +4552,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pwRules = document.querySelector('[data-staff-pw-rules]');
     let staffPwVerificationInProgress = false;
     let staffPwSaveInProgress = false;
+    let staffPwUpdateInProgress = false;
     let staffPwVerificationGeneration = 0;
 
     function checkStaffPasswordPolicy(value) {
@@ -4495,6 +4610,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             el.setAttribute('aria-current', n === staffPwWizardStep ? 'step' : 'false');
         });
         if (pwBackBtn) pwBackBtn.hidden = staffPwWizardStep !== 2;
+        if (pwCancelBtn) pwCancelBtn.hidden = staffPwWizardStep !== 2;
+        if (pwCancelBtn) pwCancelBtn.disabled = staffPwUpdateInProgress;
         if (staffPasswordSaveBtn) staffPasswordSaveBtn.hidden = staffPwWizardStep !== 2;
         if (pwNextBtn) {
             pwNextBtn.hidden = staffPwWizardStep !== 1;
@@ -4514,6 +4631,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     function resetStaffPwWizard() {
         invalidateStaffPwVerification();
         [pwCurrentInput, pwNewInput, pwConfirmInput].forEach((input) => { if (input) input.value = ''; });
+        document.querySelectorAll('[data-staff-pw-current], [data-staff-pw-new], [data-staff-pw-confirm]').forEach((input) => {
+            const toggle = input.nextElementSibling;
+            if (toggle?.matches('[data-staff-toggle-password]')) {
+                input.type = 'password';
+                toggle.setAttribute('aria-label', 'Show password');
+            }
+        });
         goToStaffPwStep(1);
     }
 
@@ -4596,15 +4720,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             try {
+                staffPwUpdateInProgress = true;
+                renderStaffPwWizard();
                 const { error } = await window.sb.auth.updateUser({ password: newPassword });
                 if (error) throw error;
             } catch (error) {
                 window.InigoToast?.show(error.message || 'Could not update your password.', true);
+                staffPwUpdateInProgress = false;
                 staffPwSaveInProgress = false;
                 renderStaffPwWizard();
                 return;
             }
 
+            staffPwUpdateInProgress = false;
             resetStaffPwWizard();
             staffPwSaveInProgress = false;
             renderStaffPwWizard();

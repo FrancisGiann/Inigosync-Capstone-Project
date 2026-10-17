@@ -68,7 +68,7 @@ function deferred() {
     return { promise, resolve };
 }
 
-function makeWizard(role, { signIn, confirm = true, staffConfirm = confirm } = {}) {
+function makeWizard(role, { signIn, updateUser, confirm = true, staffConfirm = confirm } = {}) {
     const prefix = { customer: 'dash', owner: 'admin', staff: 'staff' }[role];
     const saveSelector = `[data-${prefix}-settings-save="password"]`;
     const current = new FakeElement();
@@ -91,6 +91,7 @@ function makeWizard(role, { signIn, confirm = true, staffConfirm = confirm } = {
         [`[data-${prefix}-pw-back]`, back],
         [saveSelector, save],
         [`[data-${prefix}-pw-rules]`, rules],
+        ...(role === 'staff' ? [['[data-staff-settings-cancel="password"]', cancel]] : []),
     ]);
     const lists = new Map([
         [`[data-${prefix}-pw-step]`, panels],
@@ -113,7 +114,10 @@ function makeWizard(role, { signIn, confirm = true, staffConfirm = confirm } = {
                     assert.equal(credentials.email, session.user.email);
                     return signIn ? signIn(credentials, authCalls.signIn) : { data: { user: session.user }, error: null };
                 },
-                async updateUser() { authCalls.update += 1; return { error: null }; },
+                async updateUser() {
+                    authCalls.update += 1;
+                    return updateUser ? updateUser() : { error: null };
+                },
                 async signOut() { return { error: null }; },
             },
         },
@@ -248,8 +252,65 @@ for (const role of ['customer', 'owner', 'staff']) {
         assert.equal(wizard.panels[1].classList.contains('is-active'), false);
         assert.equal(wizard.save.disabled, true, 'hidden save control must be returned to its non-saving state');
         assert.equal(wizard.next.textContent, 'Next');
+        if (role === 'staff') {
+            assert.equal(wizard.current.value, '', 'Cancel clears the current password');
+            assert.equal(wizard.fresh.value, '', 'Cancel clears the new password');
+            assert.equal(wizard.confirmation.value, '', 'Cancel clears the confirmation password');
+        }
     });
 }
+
+test('staff Cancel is shown only on step 2 and abandons the password change without saving', async () => {
+    const wizard = makeWizard('staff');
+    assert.equal(wizard.cancel.hidden, true, 'Cancel is hidden on Verify');
+    wizard.current.value = 'Correct123!';
+    await wizard.current.dispatch('input');
+    await wizard.next.dispatch('click');
+    assert.equal(wizard.cancel.hidden, false, 'Cancel is visible on New password');
+
+    wizard.fresh.value = 'Strong1!';
+    wizard.confirmation.value = 'Strong1!';
+    await wizard.fresh.dispatch('input');
+    await wizard.confirmation.dispatch('input');
+    await wizard.cancel.dispatch('click');
+
+    assert.equal(wizard.panels[0].classList.contains('is-active'), true);
+    assert.equal(wizard.panels[1].classList.contains('is-active'), false);
+    assert.equal(wizard.cancel.hidden, true, 'Cancel is hidden again on Verify');
+    assert.equal(wizard.current.value, '');
+    assert.equal(wizard.fresh.value, '');
+    assert.equal(wizard.confirmation.value, '');
+    assert.equal(wizard.authCalls.update, 0, 'Cancel never updates the password');
+});
+
+test('staff Cancel stays disabled during updateUser and success returns to Verify after resolution', async () => {
+    const pendingUpdate = deferred();
+    const wizard = makeWizard('staff', { updateUser: () => pendingUpdate.promise });
+    wizard.current.value = 'Correct123!';
+    await wizard.current.dispatch('input');
+    await wizard.next.dispatch('click');
+    wizard.fresh.value = 'Strong1!';
+    wizard.confirmation.value = 'Strong1!';
+    await wizard.fresh.dispatch('input');
+    await wizard.confirmation.dispatch('input');
+
+    const saveOperation = wizard.save.dispatch('click');
+    for (let attempt = 0; attempt < 20 && wizard.authCalls.update === 0; attempt += 1) await Promise.resolve();
+    assert.equal(wizard.authCalls.update, 1, 'the password update request has started');
+    assert.equal(wizard.cancel.disabled, true, 'Cancel is disabled while the server mutation is pending');
+    assert.equal(wizard.panels[1].classList.contains('is-active'), true, 'the wizard stays on New password until the request resolves');
+    assert.equal(wizard.fresh.value, 'Strong1!');
+    assert.equal(wizard.confirmation.value, 'Strong1!');
+
+    pendingUpdate.resolve({ error: null });
+    await saveOperation;
+    assert.equal(wizard.panels[0].classList.contains('is-active'), true, 'successful update returns the wizard to Verify');
+    assert.equal(wizard.panels[1].classList.contains('is-active'), false);
+    assert.equal(wizard.current.value, '');
+    assert.equal(wizard.fresh.value, '');
+    assert.equal(wizard.confirmation.value, '');
+    assert.equal(wizard.cancel.disabled, false, 'reset restores Cancel for a later attempt');
+});
 
 for (const role of ['customer', 'owner', 'staff']) {
     test(`${role} wizard ignores a verification after the current password is edited`, async () => {

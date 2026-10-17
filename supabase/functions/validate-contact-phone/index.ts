@@ -7,6 +7,14 @@ import {
   phoneValidationPreflight,
 } from "./_shared/http.ts";
 
+function isPhoneAvailabilitySetupError(error: { code?: string; message?: string } | null) {
+  const message = (error?.message || "").toLowerCase();
+  return error?.code === "PGRST202" || error?.code === "42883"
+    || message.includes("could not find the function")
+    || message.includes("function public.reserve_contact_phone_check")
+    || message.includes("function public.contact_phone_");
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("origin") || "";
   if (req.method === "OPTIONS") return phoneValidationPreflight();
@@ -49,6 +57,8 @@ Deno.serve(async (req: Request) => {
     p_user_id: authData.user.id,
   });
   if (rateLimitError) {
+    if (isPhoneAvailabilitySetupError(rateLimitError))
+      return json({ message: "Phone availability database setup is incomplete. Apply the latest Supabase migrations." }, 503, origin);
     const detail = (rateLimitError.message || "").toLowerCase();
     if (detail.includes("rate limit"))
       return json({ message: "Too many number checks. Wait a moment and try again." }, 429, origin);
@@ -62,6 +72,8 @@ Deno.serve(async (req: Request) => {
     p_user_id: authData.user.id,
     p_phone_e164: normalized,
   });
+  if (availabilityError && isPhoneAvailabilitySetupError(availabilityError))
+    return json({ message: "Phone availability database setup is incomplete. Apply the latest Supabase migrations." }, 503, origin);
   if (availabilityError || typeof phoneInUse !== "boolean")
     return json({ message: "Phone availability is temporarily unavailable." }, 503, origin);
   if (phoneInUse && purpose === "contact")

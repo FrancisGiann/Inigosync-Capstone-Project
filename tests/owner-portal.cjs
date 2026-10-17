@@ -224,117 +224,11 @@ function fixture() {
                     assert.match(await page.locator('[data-admin-perf-list]').innerText(), /Storage/i);
                     assert.doesNotMatch(await page.locator('[data-admin-perf-list]').innerText(), /015_media_bucket\.sql/i);
 
-                    await page.locator('[data-admin-notif-trigger]').click();
-                    const selectionBox = page.locator('[data-admin-notif-list] [data-owner-notif-select-row]').first();
-                    await selectionBox.waitFor({ state: 'attached' });
-                    assert.equal(await selectionBox.isVisible(), false, 'checkboxes stay hidden until selection mode is opened');
-                    if (width === 360) {
-                        const popup = await page.locator('[data-admin-notif-menu]').boundingBox();
-                        const viewport = page.viewportSize();
-                        assert.ok(popup.x >= 0 && popup.x + popup.width <= viewport.width, 'mobile notification popup stays within the viewport width');
-                        assert.ok(popup.y >= 0 && popup.y + popup.height <= viewport.height, 'mobile notification popup stays within the viewport height');
-                    }
-                    await page.locator('[data-admin-notif-mark-all]').click();
-                    assert.equal(await selectionBox.isVisible(), true, 'Mark All opens selection mode');
-                    await page.locator('[data-admin-notif-select]').selectOption('unread');
-                    assert.equal(await selectionBox.isChecked(), true, 'Unread selects visible unread notifications');
-                    await page.locator('[data-admin-notif-select]').selectOption('none');
-                    await page.evaluate(() => { window.__ownerQa.failSeen = true; });
-                    await selectionBox.evaluate(element => element.click());
-                    assert.equal(await selectionBox.isChecked(), true, 'selection works the same for an unread owner activity');
-                    assert.equal(await selectionBox.isDisabled(), false, 'read status does not disable selection');
-                    assert.equal(await page.locator('[data-admin-notif-mark-selected]').isEnabled(), true);
-                    assert.equal(await page.locator('[data-owner-notification-modal]').isVisible(), false, 'selecting a notification does not open details');
-                    await page.locator('[data-admin-notif-mark-selected]').click();
-                    await page.waitForFunction(() => {
-                        const checkbox = document.querySelector('[data-admin-notif-list] [data-owner-notif-select-row]');
-                        return checkbox && !checkbox.checked && document.querySelector('[data-admin-notif-mark-selected]')?.disabled;
-                    });
-                    assert.equal(await page.evaluate(() => window.__ownerQa.tables.owner_activity[0].seen_at), null, 'failed selected-read preserves unread state');
-                    assert.equal(await page.locator('[data-admin-notif-mark-selected]').isDisabled(), true, 'failed update clears transient selection on refresh');
-                    await page.evaluate(() => { window.__ownerQa.failSeen = false; });
-                    const refreshedSelection = page.locator('[data-admin-notif-list] [data-owner-notif-select-row]').first();
-                    await refreshedSelection.evaluate(element => element.click());
-                    await page.locator('[data-admin-notif-mark-selected]').click();
-                    await page.waitForFunction(() => Boolean(window.__ownerQa.tables.owner_activity[0].seen_at)
-                        && !document.querySelector('[data-admin-notif-list] [data-owner-notif-select-row]')?.checked);
-                    assert.ok(await page.evaluate(() => Boolean(window.__ownerQa.tables.owner_activity[0].seen_at)));
-                    assert.equal(await refreshedSelection.isChecked(), false, 'refresh clears selection after a successful read');
-                    assert.match(await page.locator('[data-admin-notif-list]').innerText(), /Read/);
-                    assert.equal(await page.locator('[data-owner-notification-modal]').isVisible(), false, 'marking selected read does not open details');
-                    await page.locator('[data-admin-notif-mark-all]').click();
-                    await page.evaluate(() => {
-                        for (let index = 1; index <= 10; index += 1) window.__ownerQa.tables.owner_activity.push({
-                            id: `historical-${index}`, owner_id: 'qa-owner', title: `Historical owner notice ${index}`, detail: 'Older owner notification',
-                            target_section: 'courts', created_at: `2026-08-${String(index).padStart(2, '0')}T00:00:00Z`, seen_at: null,
-                        });
-                    });
-                    const specialSearch = 'Signal, (quoted "text") \\\\ 100%_ready';
-                    await page.evaluate(value => {
-                        window.__ownerQa.tables.owner_activity.push(
-                            { id: 'special-title', owner_id: 'qa-owner', title: value, detail: 'A title with reserved filter characters', target_section: 'courts', created_at: '2026-08-12T00:00:00Z', seen_at: null },
-                            { id: 'special-detail', owner_id: 'qa-owner', title: 'Detail-only owner notice', detail: `Contains ${value}`, target_section: 'courts', created_at: '2026-08-11T00:00:00Z', seen_at: null },
-                        );
-                    }, specialSearch);
-                    await page.locator('[data-admin-notif-trigger]').click();
-                    await page.locator('[data-admin-notif-trigger]').click();
-                    await page.locator('[data-admin-notif-pagination]').waitFor({ state: 'visible' });
-                    assert.equal(await page.locator('[data-admin-notif-list] [data-owner-activity-id]').count(), 8, 'popup shows at most eight rows per page');
-                    if (width === 360) {
-                        for (const selector of ['[data-admin-notif-prev]', '[data-admin-notif-next]', '[data-owner-notif-page="0"]']) {
-                            const control = await page.locator(selector).boundingBox();
-                            const viewport = page.viewportSize();
-                            assert.ok(control && control.x >= 0 && control.x + control.width <= viewport.width
-                                && control.y >= 0 && control.y + control.height <= viewport.height, `${selector} stays inside the mobile viewport`);
-                        }
-                    }
-                    await page.locator('[data-owner-notif-page="1"]').click();
-                    assert.equal(await page.locator('[data-admin-notif-list] [data-owner-activity-id]').count(), 5, 'numbered pages navigate older notifications');
-                    await page.locator('[data-admin-notif-search]').fill(specialSearch);
-                    await page.waitForFunction(() => document.querySelectorAll('[data-admin-notif-list] [data-owner-activity-id]').length === 2);
-                    assert.equal(await page.locator('[data-admin-notif-list]').getByText(specialSearch).count(), 1, 'search matches escaped special characters in titles');
-                    assert.equal(await page.locator('[data-admin-notif-list]').getByText('Detail-only owner notice').count(), 1, 'search includes notification details');
-                    const generatedFilter = await page.evaluate(() => window.__ownerQa.ownerActivityOrQueries.at(-1));
-                    assert.match(generatedFilter, /^title\.ilike\."%(?:\\.|[^"\\])*%",detail\.ilike\."%(?:\\.|[^"\\])*%"$/,
-                        'search filter keeps both terms inside escaped PostgREST quoted values');
-                    assert.ok(generatedFilter.includes('\\"') && generatedFilter.includes('\\\\')
-                        && generatedFilter.includes('\\%') && generatedFilter.includes('\\_'), 'quotes, backslashes, percent, and underscore are escaped');
-                    assert.ok(generatedFilter.includes(', (quoted'), 'commas and parentheses remain inside the quoted search value');
-                    assert.equal(await page.locator('[data-admin-notif-pagination]').isHidden(), true, 'special-character search results fit on one page');
-                    await page.locator('[data-admin-notif-search]').fill('Historical owner notice 10');
-                    await page.locator('[data-admin-notif-list]').getByText('Historical owner notice 10').waitFor();
-                    assert.equal(await page.locator('[data-admin-notif-pagination]').isHidden(), true, 'search covers historical owner notifications and paginates matching results');
-                    assert.equal(await page.locator('[data-admin-notif-list] [data-owner-activity-id]').count(), 1);
-                    await page.locator('[data-admin-notif-search]').fill('Older owner notification');
-                    await page.waitForFunction(() => document.querySelector('[data-admin-notif-pagination]')?.hidden === false);
-                    await page.locator('[data-admin-notif-next]').click();
-                    assert.equal(await page.locator('[data-admin-notif-list] [data-owner-activity-id]').count(), 2, 'detail search results stay paginated at eight rows');
-                    await page.locator('[data-admin-notif-search]').fill('');
-                    await page.waitForFunction(() => document.querySelector('[data-admin-notif-list] [data-owner-activity-id]')?.dataset.ownerActivityId === 'activity-1');
-                    await page.locator('[data-admin-notif-menu]').evaluate(element => { element.scrollTop = 0; });
-                    await page.locator('[data-admin-notif-list] [data-owner-activity-open]').first().click();
-                    await page.locator('[data-owner-notification-modal]').waitFor({ state: 'visible' });
-                    assert.equal(await page.locator('[data-admin-panel="audit"]').isVisible(), true, 'header notification details open over the Audit Trail');
-                    await page.locator('[data-owner-notification-close]').click();
-
-                    await page.evaluate(() => { window.__ownerQa.tables.owner_activity = window.__ownerQa.tables.owner_activity.filter(item => item.id === 'activity-1'); });
-                    await page.evaluate(() => window.__ownerQa.tables.owner_activity.push({
-                        id: 'activity-2', owner_id: 'qa-owner', title: 'Second update', detail: 'Older owner activity',
-                        target_section: 'courts', created_at: '2026-09-02T00:00:00Z', seen_at: null,
-                    }));
-                    if (await page.locator('[data-admin-notif]').getAttribute('data-open')) await page.locator('[data-admin-notif-trigger]').click();
-                    await page.locator('[data-admin-notif-trigger]').click();
-                    await page.locator('[data-admin-notif-mark-all]').click();
-                    await page.locator('[data-admin-notif-select]').selectOption('unread');
-                    assert.equal(await page.locator('[data-admin-notif-list] [data-owner-notif-select-row]').first().isVisible(), true);
-                    assert.equal(await page.locator('[data-admin-notif-mark-selected]').innerText(), 'Mark All Read');
-                    await page.locator('[data-admin-notif-mark-selected]').click();
-                    await page.waitForFunction(() => Boolean(window.__ownerQa.tables.owner_activity[1].seen_at));
-                    const selectedReadWrite = await page.evaluate(() => window.__ownerQa.calls.findLast(call => call.table === 'owner_activity' && call.write === 'update' && call.payload.seen_at));
-                    assert.deepEqual(selectedReadWrite.filters.owner_id, 'qa-owner', 'selected read stays owner scoped');
-                    assert.deepEqual(selectedReadWrite.inFilters.id, ['activity-2'], 'Mark All Read updates only selected rows');
-                    await page.evaluate(() => { window.__ownerQa.tables.owner_activity = window.__ownerQa.tables.owner_activity.filter(item => item.id === 'activity-1'); });
-                    assert.equal(await page.locator('[data-admin-nav="notifications"]').count(), 0, 'Notifications page is replaced by Audit Trail and Announcement');
+                    assert.equal(await page.locator('[data-admin-notif-trigger]').count(), 0, 'admin dashboard has no notification bell');
+                    assert.equal(await page.locator('[data-admin-notif-menu]').count(), 0, 'admin dashboard has no notification menu');
+                    assert.equal(await page.locator('[data-owner-notification-modal]').count(), 0, 'admin dashboard has no notification detail modal');
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'owner_activity' && call.read).length), 0,
+                        'admin dashboard does not load owner activity as notifications');
                     await page.locator('[data-admin-nav="announcement"]').evaluate(el => el.click());
                     assert.equal(await page.locator('[data-admin-panel="announcement"]').isVisible(), true);
                     assert.equal(await page.locator('[data-admin-title]').innerText(), 'Announcement');
@@ -605,16 +499,6 @@ function fixture() {
                     assert.equal(paymentSave.payload.card_enabled, true);
                     assert.equal(paymentSave.payload.gcash_enabled, false);
                     assert.doesNotMatch(await page.locator('[data-admin-panel="payments"]').innerText(), /secret|sk_test/i);
-
-                    // Notification details link to their section and never interpret HTML.
-                    await page.locator('[data-admin-notif-trigger]').click();
-                    await page.locator('[data-admin-notif-list] [data-owner-activity-id]').first().click();
-                    await page.locator('[data-owner-notification-detail]').getByText('Basketball Court 1 rates changed').waitFor();
-                    assert.equal(await page.locator('[data-owner-notification-modal]').getAttribute('data-open'), '');
-                    assert.equal(await page.locator('[data-admin-panel="audit"].is-active').count(), 1);
-                    await page.locator('[data-notification-go]').click();
-                    await page.locator('[data-owner-notification-modal]').waitFor({ state: 'hidden' });
-                    assert.equal(await page.locator('[data-admin-panel="courts"].is-active').count(), 1);
 
                     // Long listing cards and Add Sport editor remain usable at narrow widths.
                     await page.locator('[data-admin-nav="courts"]').first().evaluate(el => el.click());

@@ -1292,6 +1292,9 @@ function occupancyRow(hour, source = 'online') {
         const canceledAvatarContext = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });
         const canceledAvatarPage = canceledAvatarContext.page;
         await canceledAvatarPage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
+        await canceledAvatarPage.locator('[data-staff-avatar-edit]').click();
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-modal]').isVisible(), true, 'Edit opens the profile photo dialog');
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-remove]').isVisible(), false, 'Remove photo stays hidden before an avatar is saved');
         await canceledAvatarPage.locator('[data-staff-avatar-file]').setInputFiles({
             name: 'avatar.png', mimeType: 'image/png',
             buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p7sAAAAASUVORK5CYII=', 'base64'),
@@ -1312,7 +1315,10 @@ function occupancyRow(hour, source = 'online') {
         const uploadedAvatar = await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.find(call => call.kind === 'update' && call.table === 'profiles'));
         assert.match(uploadedAvatar.payload.avatar_url, /^data:image\/jpeg;base64,/i, 'confirmed crop persists as a JPEG data URL');
         assert.deepEqual(uploadedAvatar.filters, [['id', 'eq', 'qa-staff']], 'avatar upload is scoped to the signed-in staff account');
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-modal]').isVisible(), false, 'successful upload closes the photo dialog');
 
+        await canceledAvatarPage.locator('[data-staff-avatar-edit]').click();
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-remove]').isVisible(), true, 'Remove photo appears for a saved avatar');
         await canceledAvatarPage.locator('[data-staff-avatar-remove]').click();
         await resolveStaffConfirm(canceledAvatarPage, { title: 'Remove profile photo?', message: 'Are you sure you want to remove your profile photo?' });
         await canceledAvatarPage.waitForTimeout(50);
@@ -1324,6 +1330,9 @@ function occupancyRow(hour, source = 'online') {
         const removedAvatar = await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles')[1]);
         assert.equal(removedAvatar.payload.avatar_url, null, 'confirmed removal clears the saved avatar');
         assert.deepEqual(removedAvatar.filters, [['id', 'eq', 'qa-staff']], 'avatar removal is scoped to the signed-in staff account');
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-modal]').isVisible(), false, 'successful removal closes the photo dialog');
+        await canceledAvatarPage.locator('[data-staff-avatar-edit]').click();
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-remove]').isVisible(), false, 'Remove photo is hidden after the avatar is removed');
         await canceledAvatarContext.context.close();
 
         const phoneUnavailableContext = await openStaffPage(browser, {
