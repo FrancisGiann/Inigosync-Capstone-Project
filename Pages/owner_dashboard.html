@@ -269,41 +269,43 @@
                     </div>
                 </div>
 
-                <div class="admin-booking-toolbar">
-                    <div class="admin-booking-toolbar-controls">
-                        <div class="admin-toggle-pill" role="group" aria-label="Booking report period">
-                            <button type="button" class="admin-pill-btn is-active" data-admin-chart-range="week" aria-pressed="true">Weekly</button>
-                            <button type="button" class="admin-pill-btn" data-admin-chart-range="month" aria-pressed="false">Monthly</button>
-                            <button type="button" class="admin-pill-btn" data-admin-chart-range="year" aria-pressed="false">Yearly</button>
-                        </div>
-                        <div class="admin-chart-exports" data-admin-chart-export-wrap>
-                            <button type="button" class="admin-btn-chip-secondary admin-chart-export-toggle" data-admin-chart-export-toggle aria-haspopup="menu" aria-expanded="false" aria-controls="adminChartExportMenu" disabled>Export</button>
-                            <div class="admin-chart-export-menu" id="adminChartExportMenu" data-admin-chart-export-menu role="menu" aria-label="Export booking report" hidden>
-                                <button type="button" role="menuitem" data-admin-chart-export="pdf" disabled>Download PDF</button>
-                                <button type="button" role="menuitem" data-admin-chart-export="xlsx" disabled>Download Excel</button>
+                <div class="admin-card admin-booking-report-shell">
+                    <div class="admin-booking-toolbar">
+                        <h2 class="admin-booking-report-title">Booking report</h2>
+                        <div class="admin-booking-toolbar-controls">
+                            <div class="admin-toggle-pill" role="group" aria-label="Booking report period">
+                                <button type="button" class="admin-pill-btn is-active" data-admin-chart-range="week" aria-pressed="true">Weekly</button>
+                                <button type="button" class="admin-pill-btn" data-admin-chart-range="month" aria-pressed="false">Monthly</button>
+                                <button type="button" class="admin-pill-btn" data-admin-chart-range="year" aria-pressed="false">Yearly</button>
                             </div>
-                            <span class="admin-chart-export-status" data-admin-chart-export-status aria-live="polite"></span>
+                            <div class="admin-chart-exports" data-admin-chart-export-wrap>
+                                <button type="button" class="admin-btn-chip-secondary admin-chart-export-toggle" data-admin-chart-export-toggle aria-haspopup="menu" aria-expanded="false" aria-controls="adminChartExportMenu" disabled>Export</button>
+                                <div class="admin-chart-export-menu" id="adminChartExportMenu" data-admin-chart-export-menu role="menu" aria-label="Export booking report" hidden>
+                                    <button type="button" role="menuitem" data-admin-chart-export="pdf" disabled>Download PDF</button>
+                                    <button type="button" role="menuitem" data-admin-chart-export="xlsx" disabled>Download Excel</button>
+                                </div>
+                                <span class="admin-chart-export-status" data-admin-chart-export-status aria-live="polite"></span>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div class="admin-booking-report-grid">
-                    <div class="admin-card admin-booking-report-card">
-                        <div class="admin-card-head admin-chart-head">
-                            <div>
-                                <h3>Booking Trends</h3>
-                                <p class="admin-card-sub" data-admin-chart-unit>bookings per day · this calendar week</p>
+                    <div class="admin-booking-report-grid">
+                        <div class="admin-card admin-booking-report-card">
+                            <div class="admin-card-head admin-chart-head">
+                                <div>
+                                    <h3>Booking Trends</h3>
+                                    <p class="admin-card-sub" data-admin-chart-unit>bookings per day · this calendar week</p>
+                                </div>
+                                <span class="admin-chart-total">Total <span data-admin-chart-total>—</span></span>
                             </div>
-                            <span class="admin-chart-total">Total <span data-admin-chart-total>—</span></span>
+                            <div class="admin-chart-wrap"><canvas id="adminBookingChart" role="img" aria-label="Booking trends; booking data is loading."></canvas></div>
+                            <p class="admin-chart-takeaway" data-admin-chart-takeaway aria-live="polite">Booking data is loading…</p>
                         </div>
-                        <div class="admin-chart-wrap"><canvas id="adminBookingChart" role="img" aria-label="Booking trends; booking data is loading."></canvas></div>
-                        <p class="admin-chart-takeaway" data-admin-chart-takeaway aria-live="polite">Booking data is loading…</p>
-                    </div>
-                    <div class="admin-card admin-booking-report-card">
-                        <div class="admin-card-head"><div><h3>Booking Status</h3><p class="admin-card-sub">Bookings by status this period</p></div></div>
-                        <div class="admin-status-report" data-admin-status-breakdown aria-live="polite">
-                            <p style="color: var(--color-ink-faint);">Loading…</p>
+                        <div class="admin-card admin-booking-report-card">
+                            <div class="admin-card-head"><div><h3>Booking Status</h3><p class="admin-card-sub">Bookings by status this period</p></div></div>
+                            <div class="admin-status-report" data-admin-status-breakdown aria-live="polite">
+                                <p style="color: var(--color-ink-faint);">Loading…</p>
+                            </div>
                         </div>
-                        <p class="admin-chart-definition">Counts include paid confirmed, completed, and no-show bookings. Pending and canceled bookings are excluded.</p>
                     </div>
                 </div>
             </section>
@@ -323,36 +325,28 @@
 
                 <div class="admin-card">
                     <div class="admin-card-head">
-                        <h3>All Staff Accounts</h3>
+                        <div class="admin-staff-filters" aria-label="Filter staff accounts">
+                            <label class="admin-staff-filter">
+                                <span>Status</span>
+                                <select class="admin-select" data-admin-staff-status-filter aria-label="Filter staff by status">
+                                    <option value="all">All statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="pending">Invited</option>
+                                    <option value="disabled">Deactivated</option>
+                                </select>
+                            </label>
+                            <label class="admin-staff-filter">
+                                <span>Position</span>
+                                <select class="admin-select" data-admin-staff-position-filter aria-label="Filter staff by position">
+                                    <option value="all">All positions</option>
+                                </select>
+                            </label>
+                        </div>
                         <div class="admin-search-wrap">
                             <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                             <input type="text" class="admin-search" placeholder="Search staff by name, email, or position…" data-admin-staff-search>
                         </div>
                     </div>
-
-                    <div class="admin-staff-filters" aria-label="Filter staff accounts">
-                        <label class="admin-staff-filter">
-                            <span>Status</span>
-                            <select class="admin-select" data-admin-staff-status-filter aria-label="Filter staff by status">
-                                <option value="all">All statuses</option>
-                                <option value="active">Active</option>
-                                <option value="pending">Invited</option>
-                                <option value="disabled">Deactivated</option>
-                            </select>
-                        </label>
-                        <label class="admin-staff-filter">
-                            <span>Position</span>
-                            <select class="admin-select" data-admin-staff-position-filter aria-label="Filter staff by position">
-                                <option value="all">All positions</option>
-                            </select>
-                        </label>
-                    </div>
-
-                    <!-- Reset Password now sets the account's password to a
-                         fixed default immediately (Revision A1, decision A4)
-                         instead of emailing a reset link — see
-                         includes/owner_dashboard.js's wireStaffRowActions(). -->
-                    <p class="admin-form-hint" style="margin: -6px 0 4px;">Reset Password emails the staff member a secure link to choose a new password.</p>
 
                     <!-- Revision A3, decision C2 — this table (and its
                          "Active staff accounts" stat, and the profile-panel
@@ -446,9 +440,18 @@
 
             <section class="admin-panel" data-admin-panel="booking-rules">
                 <div class="admin-card owner-booking-rules-card">
-                    <div class="admin-card-head owner-booking-rules-head">
-                        <button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Working Time Schedule</button>
+                    <div class="owner-booking-rules-summary">
+                        <dl class="owner-rules-saved-meta"><div><dt>Effective from</dt><dd data-owner-rules-saved-effective>Loading…</dd></div><div><dt>No-show grace period</dt><dd data-owner-rules-saved-grace>Loading…</dd></div></dl>
+                        <ul class="owner-rules-saved-week" data-owner-rules-saved-week aria-label="Current saved weekly hours"></ul>
+                        <div class="owner-rules-upcoming" data-owner-rules-upcoming hidden><h4>Scheduled changes</h4><p>Effective from <strong data-owner-rules-upcoming-effective></strong> · <span data-owner-rules-upcoming-grace></span>-minute no-show grace period</p><ul class="owner-rules-saved-week" data-owner-rules-upcoming-week aria-label="Scheduled weekly hours"></ul></div>
                     </div>
+                    <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Working Time Schedule</button></div>
+                </div>
+                <div class="admin-modal-overlay owner-rules-modal-overlay" data-owner-rules-modal hidden>
+                    <div class="admin-modal owner-rules-modal" role="dialog" aria-modal="true" aria-labelledby="ownerRulesModalTitle" tabindex="-1" data-owner-rules-dialog>
+                        <button type="button" class="admin-modal-close" data-owner-rules-modal-close aria-label="Close Working Time Schedule editor">×</button>
+                        <h3 id="ownerRulesModalTitle">Edit Working Time Schedule</h3>
+                        <p class="admin-card-sub">Changes apply to shared availability from the effective date.</p>
                     <div class="owner-booking-rules-meta">
                         <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
                         <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required disabled><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
@@ -470,6 +473,7 @@
                     </div>
                     <p class="owner-rules-message" data-owner-rules-message role="status" aria-live="polite"></p>
                     <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Working Time Schedule</button></div>
+                    </div>
                 </div>
             </section>
 

@@ -503,10 +503,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-card-head p.admin-card-sub { font-size: var(--fs-sm); color: var(--color-ink-faint); margin-top: 2px; }
 
 /* Generic small-print hint under a form group/card (mirrors Style/
-   Dashboard.css's .dash-form-hint) — used by the staff Reset Password note,
-   the court modal's image status line, and the Personal Information email
-   note. Existed as a class name in the markup with no rule at all before
-   this revision. */
+   Dashboard.css's .dash-form-hint). */
 .admin-form-hint {
     font-size: var(--fs-sm);
     color: var(--color-ink-faint);
@@ -527,13 +524,14 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 .admin-link-btn:hover { color: var(--color-primary-dim); text-decoration: underline; }
 
-/* Booking report toolbar and the two aligned cards below it. */
-.admin-booking-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 0 0 12px; }
+/* Booking report outer card, toolbar, and full-width stacked chart cards. */
+.admin-booking-report-shell { min-width: 0; }
+.admin-booking-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 0 0 16px; }
+.admin-booking-report-title { color: var(--color-ink); font: 600 var(--fs-xl) var(--font-display); }
 .admin-booking-toolbar-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.admin-booking-report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 16px; align-items: stretch; }
+.admin-booking-report-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .admin-booking-report-card { min-width: 0; }
 .admin-chart-wrap { position: relative; height: 250px; }
-.admin-chart-definition { margin: 16px 0 0; color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.45; }
 
 /* Booking Trends card header — title/caption left, total right */
 .admin-chart-head { align-items: flex-start; }
@@ -556,7 +554,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-chart-export-menu button:hover, .admin-chart-export-menu button:focus-visible { background: var(--color-bg-elevated); outline: none; }
 .admin-chart-export-menu button:disabled { color: var(--color-ink-faint); cursor: not-allowed; }
 .admin-chart-export-status { position: absolute; top: calc(100% + 5px); right: 0; z-index: 21; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
-.admin-chart-takeaway { margin: 12px 0 0; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.45; }
+.admin-chart-takeaway { margin: 12px 0 0; color: var(--color-primary); font-size: var(--fs-sm); font-weight: 700; line-height: 1.45; text-align: center; }
 .admin-chart-total {
     /* Revision A2 (implementation_plan.md) — a booking count, so it takes
        --font-numeric (tabular-nums) instead of the removed --font-mono. */
@@ -585,6 +583,15 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     margin: 0; border: 4px solid var(--color-bg-card); border-radius: 50%; background: var(--color-bg-elevated);
     box-shadow: 0 0 0 1px var(--color-line);
 }
+.admin-status-pie:not(.is-empty) { cursor: crosshair; }
+.admin-status-pie-tooltip {
+    position: fixed; z-index: 100; max-width: 220px; padding: 8px 11px;
+    border: 1px solid var(--color-line); border-radius: 8px;
+    background: var(--color-bg-card); color: var(--color-ink);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, .25); font-size: var(--fs-xs); font-weight: 600;
+    line-height: 1.35; pointer-events: none; white-space: nowrap;
+}
+.admin-status-pie-tooltip[hidden] { display: none; }
 .admin-status-pie.is-empty { color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: center; }
 .admin-status-pie-share {
     position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%);
@@ -600,7 +607,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-status-total { display: flex; align-items: baseline; gap: 8px; flex: 0 0 auto; }
 .admin-status-total strong { font-family: var(--font-numeric); font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1; font-variant-numeric: tabular-nums; }
 .admin-status-total span { color: var(--color-ink-faint); font-size: var(--fs-sm); }
-.admin-status-summary p { margin: 0; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.45; }
+.admin-status-takeaway { grid-column: 1 / -1; justify-self: center; margin: 0; color: var(--color-primary); font-size: var(--fs-sm); font-weight: 700; line-height: 1.45; text-align: center; }
 .admin-status-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .admin-status-count {
     display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
@@ -620,7 +627,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     .admin-status-details { width: 100%; }
 }
 @media (max-width: 620px) {
-    .admin-booking-toolbar { align-items: flex-start; }
+    .admin-booking-toolbar { align-items: flex-start; flex-direction: column; }
     .admin-booking-toolbar-controls { width: auto; justify-content: flex-end; margin-left: auto; }
     .admin-booking-toolbar .admin-toggle-pill { width: auto; }
 }
@@ -779,7 +786,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    margin: -4px 0 18px;
+    margin: 0;
 }
 .admin-staff-filter { display: grid; gap: 6px; min-width: 190px; color: var(--color-ink-faint); font-size: var(--fs-xs); font-weight: 600; }
 .admin-staff-filter .admin-select { width: 100%; }
@@ -800,6 +807,9 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-staff-action-select { min-width: 126px; max-width: 190px; }
 
 @media (max-width: 600px) {
+    .admin-panel[data-admin-panel="staff"] .admin-card-head { align-items: stretch; }
+    .admin-panel[data-admin-panel="staff"] .admin-card-head .admin-staff-filters { width: 100%; }
+    .admin-panel[data-admin-panel="staff"] .admin-card-head .admin-search-wrap { width: 100%; max-width: none; min-width: 0; margin-left: 0; }
     .admin-staff-filter { flex: 1 1 100%; min-width: 0; }
     .admin-staff-pagination { justify-content: space-between; gap: 8px; }
     .admin-staff-pagination button { padding-inline: 12px; }
@@ -1703,10 +1713,23 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     align-items: start;
     margin: 4px 0 20px;
 }
-.owner-booking-rules-head { align-items: flex-start; margin-bottom: 0; }
+.owner-rules-saved-meta { display: flex; flex-wrap: wrap; gap: 12px 28px; }
+.owner-rules-saved-meta > div { display: grid; gap: 4px; }
+.owner-rules-saved-meta dt { color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.owner-rules-saved-meta dd { color: var(--color-ink); font-size: var(--fs-sm); font-weight: 600; }
+.owner-rules-saved-week { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.owner-rules-saved-week li { display: flex; justify-content: space-between; gap: 8px; min-width: 0; padding: 9px 11px; border: 1px solid var(--color-line); border-radius: 9px; font-size: var(--fs-xs); }
+.owner-rules-saved-week li strong { color: var(--color-ink); }
+.owner-rules-saved-week li span { color: var(--color-ink-dim); text-align: right; }
+.owner-rules-upcoming { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-line); }
+.owner-rules-upcoming[hidden] { display: none; }
+.owner-rules-upcoming h4 { font: 600 var(--fs-sm) var(--font-display); }
+.owner-rules-upcoming > p { margin-top: 5px; color: var(--color-ink-dim); font-size: var(--fs-xs); }
+.owner-rules-launch { justify-content: flex-end; margin-top: 22px; }
+.owner-rules-modal { width: min(900px, 100% - 24px); }
+.owner-rules-modal > .admin-card-sub { margin: -8px 0 18px; }
 .owner-rules-edit {
     flex: 0 0 auto;
-    margin-left: auto;
     padding: 8px 14px;
     font-size: var(--fs-sm);
     white-space: nowrap;
@@ -1715,6 +1738,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-rules-grace-input .admin-input { max-width: 150px; }
 .owner-rules-grace-input > span { color: var(--color-ink-dim); font-size: var(--fs-sm); }
 .owner-rules-timezone { grid-column: 1 / -1; margin-top: -9px; }
+.owner-rules-actions { justify-content: flex-end; }
 .owner-rules-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--color-line); border-radius: 12px; }
 .owner-rules-table { width: 100%; min-width: 580px; border-collapse: collapse; }
 .owner-rules-table th,.owner-rules-table td { padding: 11px 13px; border-bottom: 1px solid var(--color-line); text-align: left; }
@@ -1763,6 +1787,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 
 @media (max-width: 640px) {
     .owner-booking-rules-meta,.owner-announcement-options { grid-template-columns: minmax(0,1fr); }
+    .owner-rules-saved-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .owner-mobile-edit-row { align-items: stretch; flex-direction: column; }
     .owner-mobile-edit-row .admin-btn-secondary { align-self: flex-start; }
     .owner-rules-timezone { grid-column: auto; margin-top: 0; }

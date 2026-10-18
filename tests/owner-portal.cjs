@@ -144,7 +144,7 @@ function fixture() {
             if (name === 'owner_get_booking_rules') return { data: ownerRules, error: null };
             if (name === 'owner_save_booking_rules') {
                 state.savedBookingRules = args;
-                ownerRules.rules = [{ effective_from: args.p_effective_from, grace_minutes: args.p_grace_minutes, weekly_hours: args.p_weekly_hours }];
+                ownerRules.rules = [...ownerRules.rules, { effective_from: args.p_effective_from, grace_minutes: args.p_grace_minutes, weekly_hours: args.p_weekly_hours }];
                 return { data: null, error: null };
             }
             if (name === 'owner_income_period') return { data: [{ income: { day: 100, month: 200, year: 300 }[args.p_period] }], error: null };
@@ -173,17 +173,67 @@ function fixture() {
             getUser: async () => ({ data: { user: { id: 'qa-owner', email: 'owner@example.test', identities: [] } } }),
             onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
             signOut: async () => ({}),
-            resetPasswordForEmail: async email => { state.calls.push({ auth: 'resetPasswordForEmail', email }); return { error: null }; },
         },
     };
     window.SUPABASE_URL = 'https://example.test';
+}
+
+async function verifyOwnerScheduleFlow(page, width) {
+    await page.locator('[data-admin-nav="booking-rules"]').evaluate(el => el.click());
+    await page.locator('[data-owner-rules-edit]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'current effective date is shown');
+    assert.equal(await page.locator('[data-owner-rules-saved-grace]').innerText(), '30 minutes', 'current grace period is shown');
+    assert.match(await page.locator('[data-owner-rules-saved-week]').innerText(), /Monday\s+08:00–22:00/, 'current weekly hours are shown');
+    const buttonPlacement = await page.locator('[data-owner-rules-edit]').evaluate(button => {
+        const buttonBox = button.getBoundingClientRect();
+        const cardBox = button.closest('.owner-booking-rules-card').getBoundingClientRect();
+        return { right: cardBox.right - buttonBox.right, bottom: cardBox.bottom - buttonBox.bottom };
+    });
+    assert.ok(buttonPlacement.right >= 0 && buttonPlacement.right < 32, `${width}px Edit button is at the card's lower-right`);
+    assert.ok(buttonPlacement.bottom >= 0 && buttonPlacement.bottom < 32, `${width}px Edit button is near the card bottom`);
+
+    const date = await page.evaluate(() => {
+        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+        const day = new Date(`${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}-${parts.find(part => part.type === 'day').value}T00:00:00Z`);
+        day.setUTCDate(day.getUTCDate() + 7);
+        return day.toISOString().slice(0, 10);
+    });
+    await page.locator('[data-owner-rules-edit]').click();
+    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), true, 'Edit opens the schedule dialog');
+    assert.equal(await page.locator('[data-owner-rules-dialog]').getAttribute('aria-modal'), 'true');
+    assert.equal(await page.locator('[data-owner-rules-effective]').isDisabled(), false, 'date is editable in dialog');
+    assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'weekly hours are editable in dialog');
+    await page.locator('[data-owner-rules-effective]').fill(date);
+    await page.locator('[data-owner-rules-grace]').fill('40');
+    await page.locator('[data-owner-rules-cancel]').click();
+    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'Cancel closes the dialog');
+    assert.equal(await page.locator('[data-owner-rules-effective]').inputValue(), await page.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())), 'Cancel reloads the saved editor fields');
+    assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), false, 'Cancel does not expose its draft as scheduled');
+
+    await page.locator('[data-owner-rules-edit]').click();
+    await page.locator('[data-owner-rules-effective]').fill(date);
+    await page.locator('[data-owner-rules-grace]').fill('45');
+    for (let weekday = 1; weekday <= 7; weekday += 1) {
+        const row = page.locator(`[data-owner-rules-day="${weekday}"]`);
+        await row.locator('[data-owner-rules-open]').fill(`${String(weekday + 8).padStart(2, '0')}:00`);
+        await row.locator('[data-owner-rules-close]').fill('22:00');
+    }
+    await page.locator('[data-owner-rules-save]').click();
+    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+    await page.waitForFunction(() => Boolean(window.__ownerQa.savedBookingRules));
+    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'successful save closes the dialog');
+    assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'current effective schedule remains visible');
+    assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), true, 'saved future schedule appears in the summary');
+    assert.equal(await page.locator('[data-owner-rules-upcoming-effective]').innerText(), date);
+    assert.equal(await page.locator('[data-owner-rules-upcoming-grace]').innerText(), '45');
+    assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–22:00/);
 }
 
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     const failures = [];
     try {
-        for (const width of process.env.OWNER_QA_QUICK === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
+        for (const width of process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_QUICK === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
             for (const theme of process.env.OWNER_QA_QUICK === '1' ? ['light'] : ['light', 'dark']) {
                 const context = await browser.newContext({ viewport: { width, height: 900 }, timezoneId: 'Asia/Manila', reducedMotion: 'reduce' });
                 const page = await context.newPage();
@@ -195,12 +245,78 @@ function fixture() {
                 await page.route(/^https:\/\//, route => route.abort());
                 await page.route('**/chart.umd.min.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.Chart=class{static defaults={font:{},color:''};constructor(_canvas,config){this.data=config.data;this.options=config.options;}update(){}};` }));
                 await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})();` }));
+                await page.route('**/functions/v1/invite-staff', async route => {
+                    const request = route.request();
+                    await page.evaluate(({ url, body }) => window.__ownerQa.calls.push({ request: 'invite-staff', url, body: JSON.parse(body) }), {
+                        url: request.url(), body: request.postData(),
+                    });
+                    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+                });
                 await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.inigosyncProfile={id:'qa-owner',role:'admin',status:'active',full_name:'QA Owner',email:'owner@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
                 await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoLoading={show(){},hide(){}};window.InigoToast={show(){}};` }));
                 await page.route('**/includes/courtsData.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoCourtsData={getCourts:async()=>[],getSports:async()=>[],invalidateCourts(){},monogramFor:()=>'',slugify:s=>s,rateHint:()=>null};` }));
                 await page.route('**/includes/courts-data.js', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
                 await page.goto('http://127.0.0.1:4178/Pages/owner_dashboard.html', { waitUntil: 'domcontentloaded' });
                 try {
+                    if (process.env.OWNER_QA_STAFF_ONLY === '1') {
+                        await page.locator('[data-admin-nav="staff"]').first().evaluate(el => el.click());
+                        assert.equal(await page.locator('[data-admin-panel="staff"]').getByRole('heading', { name: 'All Staff Accounts' }).count(), 0);
+                        const staffRow = page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'QA Staff' });
+                        await staffRow.waitFor();
+                        const trigger = staffRow.locator('[data-admin-staff-actions-trigger]');
+                        const alignment = await trigger.evaluate(button => {
+                            const buttonBox = button.getBoundingClientRect();
+                            const wrapBox = button.parentElement.getBoundingClientRect();
+                            return Math.abs((buttonBox.left + buttonBox.right) / 2 - (wrapBox.left + wrapBox.right) / 2);
+                        });
+                        assert.ok(alignment <= 1, `${width}px staff Actions button is centered in its column`);
+                        await trigger.click();
+                        const commands = await page.locator('[data-admin-staff-action-card] [data-admin-staff-command]').evaluateAll(items => items.map(item => item.dataset.adminStaffCommand));
+                        assert.deepEqual(commands, ['view', 'edit', 'toggle'], 'staff menu contains only the remaining actions');
+                        assert.equal(await page.locator('[data-admin-panel="staff"]').getByText('Reset Password emails').count(), 0);
+
+                        // Position changes stay in the editable modal after Cancel and write only after confirmation.
+                        await page.locator('[data-admin-staff-command="edit"]').click();
+                        await page.locator('[data-admin-staff-edit-position]').selectOption({ label: 'Secretary' });
+                        await page.locator('[data-admin-staff-edit-submit]').click();
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        assert.match(await page.locator('.owner-confirm-overlay').innerText(), /Change QA Staff's position to Secretary/);
+                        const positionWritesBeforeCancel = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.position).length);
+                        await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                        assert.equal(await page.locator('[data-admin-staff-edit-modal]').isVisible(), true, 'cancelling position confirmation keeps the edit context open');
+                        assert.equal(await page.locator('[data-admin-staff-edit-position]').inputValue(), 'Secretary', 'cancel preserves the selected position');
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.position).length), positionWritesBeforeCancel, 'cancel does not update the profile');
+                        await page.locator('[data-admin-staff-edit-submit]').click();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.position === 'Secretary'));
+                        await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
+
+                        // Staff creation likewise keeps the filled form open on Cancel and sends no invite.
+                        await page.locator('[data-admin-staff-add]').first().click();
+                        await page.locator('[data-admin-staff-email]').fill('new-staff@example.test');
+                        await page.locator('[data-admin-staff-role]').selectOption({ label: 'Secretary' });
+                        await page.locator('[data-admin-staff-submit]').click();
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        assert.match(await page.locator('.owner-confirm-overlay').innerText(), /Invite new-staff@example\.test as Secretary/);
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.request === 'invite-staff').length), 0, 'invite request waits for confirmation');
+                        await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                        assert.equal(await page.locator('[data-admin-staff-modal]').isVisible(), true, 'cancelling invite confirmation keeps the form open');
+                        assert.equal(await page.locator('[data-admin-staff-email]').inputValue(), 'new-staff@example.test', 'cancel preserves the email');
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.request === 'invite-staff').length), 0, 'cancel sends no invite');
+                        await page.locator('[data-admin-staff-submit]').click();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.request === 'invite-staff'));
+                        const invite = await page.evaluate(() => window.__ownerQa.calls.find(call => call.request === 'invite-staff'));
+                        assert.deepEqual(invite.body, { email: 'new-staff@example.test', position: 'Secretary' }, 'accepted confirmation sends the intended invite');
+                        console.log(`PASS staff Actions ${width}px ${theme}`);
+                        continue;
+                    }
+                    if (process.env.OWNER_QA_SCHEDULE_ONLY === '1') {
+                        await verifyOwnerScheduleFlow(page, width);
+                        assert.deepEqual(errors, [], `${width}px schedule flow has no uncaught page errors`);
+                        console.log(`PASS owner schedule ${width}px ${theme}`);
+                        continue;
+                    }
                     assert.equal(await page.locator('[data-admin-slides] [data-media-card]').count(), 2);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}/${theme} horizontal overflow on overview`);
                     await page.locator('[data-admin-stat="customer-accounts"]').getByText('1').waitFor();
@@ -223,7 +339,7 @@ function fixture() {
                         assert.equal(await count.locator('.admin-status-count-label').innerText(), label);
                         assert.equal(await count.locator('strong').innerText(), '1');
                     }
-                    assert.match(await statusReport.locator('.admin-status-summary').innerText(), /Even split across the top statuses/);
+                    assert.match(await statusReport.locator('.admin-status-takeaway').innerText(), /Even split across the top statuses/);
                     assert.match(await statusReport.locator('.admin-status-pie').getAttribute('aria-label'), /Booked 1, Completed 1, No-show 1/);
                     assert.doesNotMatch(await statusReport.innerText(), /Awaiting payment/i);
                     assert.equal(await page.locator('[data-admin-chart-range]').count(), 3);
@@ -270,15 +386,30 @@ function fixture() {
                     await page.locator('[data-admin-nav="booking-rules"]').evaluate(el => el.click());
                     assert.equal(await page.locator('[data-admin-title]').innerText(), 'Working Time Schedule');
                     await page.locator('[data-owner-rules-edit]').waitFor({ state: 'visible' });
+                    assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'main card shows the current effective date');
+                    assert.equal(await page.locator('[data-owner-rules-saved-grace]').innerText(), '30 minutes', 'main card shows the current grace period');
+                    assert.match(await page.locator('[data-owner-rules-saved-week]').innerText(), /Monday\s+08:00–22:00/, 'main card shows the saved weekly hours');
+                    assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), false, 'upcoming summary is hidden when no future schedule exists');
                     assert.equal(await page.locator('[data-owner-rules-effective]').isDisabled(), true, 'effective date starts read-only');
                     assert.equal(await page.locator('[data-owner-rules-grace]').isDisabled(), true, 'grace period starts read-only');
                     assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), true, 'weekly hours start read-only');
+                    const scheduleEditButton = page.locator('[data-owner-rules-edit]');
+                    const scheduleButtonPlacement = await scheduleEditButton.evaluate(button => {
+                        const buttonBox = button.getBoundingClientRect();
+                        const cardBox = button.closest('.owner-booking-rules-card').getBoundingClientRect();
+                        return { buttonRight: buttonBox.right, cardRight: cardBox.right, buttonBottom: buttonBox.bottom, cardBottom: cardBox.bottom };
+                    });
+                    assert.ok(scheduleButtonPlacement.cardRight - scheduleButtonPlacement.buttonRight < 32, `${width}px schedule edit button sits at card's lower right edge`);
+                    assert.ok(scheduleButtonPlacement.cardBottom - scheduleButtonPlacement.buttonBottom < 32, `${width}px schedule edit button sits near card bottom`);
                     const futureScheduleDate = await page.evaluate(() => {
                         const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
                         const date = new Date(`${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}-${parts.find(part => part.type === 'day').value}T00:00:00Z`);
                         date.setUTCDate(date.getUTCDate() + 7);
                         return date.toISOString().slice(0, 10);
                     });
+                    await scheduleEditButton.click();
+                    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), true, 'Edit opens schedule editor modal');
+                    assert.equal(await page.locator('[data-owner-rules-dialog]').getAttribute('aria-modal'), 'true');
                     const scheduleFields = await page.locator('.owner-booking-rules-meta > .admin-form-group').evaluateAll(groups => groups.slice(0, 2).map(group => {
                         const input = group.querySelector('input');
                         const groupBox = group.getBoundingClientRect();
@@ -290,7 +421,6 @@ function fixture() {
                     } else {
                         assert.ok(scheduleFields[0].bottom <= scheduleFields[1].top + 1, `${width}px schedule fields stack without overlap`);
                     }
-                    await page.locator('[data-owner-rules-edit]').click();
                     assert.equal(await page.locator('[data-owner-rules-effective]').isDisabled(), false, 'Edit enables effective date');
                     assert.equal(await page.locator('[data-owner-rules-grace]').isDisabled(), false, 'Edit enables grace period');
                     assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'Edit enables weekly hours');
@@ -304,9 +434,12 @@ function fixture() {
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.rpc === 'owner_save_booking_rules')), false, 'minute values never reach the save RPC');
                     await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').fill('09:00');
                     await page.locator('[data-owner-rules-cancel]').click();
+                    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'Cancel closes schedule editor modal');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_get_booking_rules').length >= 2);
                     assert.equal(await page.locator('[data-owner-rules-effective]').inputValue(), await page.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())), 'Cancel reloads and discards draft values');
                     assert.equal(await page.locator('[data-owner-rules-grace]').inputValue(), '30');
+                    assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'Cancel leaves the main saved summary unchanged');
+                    assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), false, 'Cancel does not expose draft values as a scheduled summary');
                     await page.locator('[data-owner-rules-edit]').click();
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('45');
@@ -338,6 +471,12 @@ function fixture() {
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'booking_rules_for_date').length),
                         ruleReadCountBeforeSave + 1, 'saving the schedule invalidates same-tab cached hours');
                     assert.equal(await page.locator('[data-owner-rules-save]').isVisible(), false, 'save returns to read-only mode');
+                    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'save closes schedule editor modal');
+                    assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'main card continues to show the current effective schedule');
+                    assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), true, 'main card shows a future-dated saved schedule');
+                    assert.equal(await page.locator('[data-owner-rules-upcoming-effective]').innerText(), futureScheduleDate, 'scheduled summary refreshes its effective date');
+                    assert.equal(await page.locator('[data-owner-rules-upcoming-grace]').innerText(), '45', 'scheduled summary refreshes its grace period');
+                    assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–22:00/, 'scheduled summary refreshes its weekly hours');
 
                     // Profile modal must be visible, focusable, close, and restore focus.
                     await page.locator('[data-admin-nav="settings"]').first().evaluate(el => el.click());
@@ -432,6 +571,7 @@ function fixture() {
                     await page.locator('[data-admin-panel="staff"] .admin-card-head').click();
                     assert.equal(await staffCard.isVisible(), false, 'outside click closes staff actions');
                     assert.equal(await staffCard.locator('[data-admin-staff-command="activity"]').count(), 0, 'staff Actions menu has no View activity command');
+                    assert.equal(await staffCard.locator('[data-admin-staff-command="reset"]').count(), 0, 'staff Actions menu has no password reset command');
 
                     // Audit Trail aggregates activity with bounded search, filter and pagination.
                     await page.locator('[data-admin-nav="audit"]').evaluate(el => el.click());
@@ -505,26 +645,13 @@ function fixture() {
                     assert.deepEqual(await page.locator('[data-admin-staff-edit-position] option').allTextContents(), ['Secretary', 'Court Attendant']);
                     await page.locator('[data-admin-staff-edit-position]').selectOption({ label: 'Secretary' });
                     await page.locator('[data-admin-staff-edit-submit]').click();
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.position === 'Secretary'));
                     const positionWrite = await page.evaluate(() => window.__ownerQa.calls.findLast(call => call.table === 'profiles' && call.write === 'update' && call.payload.position === 'Secretary'));
                     assert.deepEqual(positionWrite.payload, { position: 'Secretary' }, 'position change sends no personal fields to the profile update path');
                     await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
 
-                    // Staff confirmations use the accessible shared dialog, with cancel/Escape and return focus.
-                    await staffTrigger.click();
-                    await page.locator('[data-admin-staff-command="reset"]').click();
-                    const confirmDialog = page.locator('.owner-confirm-overlay');
-                    await confirmDialog.waitFor({ state: 'visible' });
-                    assert.match(await confirmDialog.innerText(), /Email a password recovery link to QA Staff at staff@example\.test/);
-                    await page.keyboard.press('Escape');
-                    await confirmDialog.waitFor({ state: 'detached' });
-                    assert.equal(await staffTrigger.evaluate(el => document.activeElement === el), true, 'Escape restores focus to staff Actions');
-                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.auth === 'resetPasswordForEmail').length), 0, 'cancelled reset does not send email');
-                    await staffTrigger.click();
-                    await page.locator('[data-admin-staff-command="reset"]').click();
-                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
-                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.auth === 'resetPasswordForEmail'));
-
+                    // Staff deactivation uses the accessible shared confirmation dialog.
                     await staffTrigger.click();
                     await page.locator('[data-admin-staff-command="toggle"]').click();
                     await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });

@@ -45,29 +45,37 @@ test('booking trends and status share Manila calendar periods and count future e
     assert.equal(data.week.total, 2);
     assert.deepEqual(JSON.parse(JSON.stringify(data.week.status)), { booked: 2, completed: 0, no_show: 0 });
     assert.equal(data.week.unit, 'bookings per day · this calendar week');
-    assert.equal(data.month.labels.length, 31);
-    assert.deepEqual(Array.from(data.month.values.slice(0, 1)), [0]);
-    assert.equal(data.month.values[3], 1);
-    assert.equal(data.month.total, 1);
-    assert.deepEqual(JSON.parse(JSON.stringify(data.month.status)), { booked: 1, completed: 0, no_show: 0 });
+    assert.equal(data.month.labels.length, 12);
+    assert.deepEqual(Array.from(data.month.values.slice(0, 8)), Array(8).fill(0));
+    assert.equal(data.month.values[8], 2);
+    assert.equal(data.month.values[9], 1);
+    assert.equal(data.month.total, 3);
+    assert.deepEqual(JSON.parse(JSON.stringify(data.month.status)), { booked: 3, completed: 0, no_show: 0 });
+    assert.equal(data.month.labels[0], 'Jan');
+    assert.equal(data.month.labels[11], 'Dec');
+    assert.equal(data.month.periods[0], 'January 2026');
+    assert.equal(data.month.periods[11], 'December 2026');
+    assert.equal(data.month.unit, 'bookings per month · this calendar year');
 });
 
-test('booking trends use the selected calendar year and include future eligible reservations', () => {
+test('booking trends use the current calendar decade and include all its years', () => {
     const data = aggregateAt('2026-10-01T02:00:00Z', [
         { time_date: '2026-01-01T00:00:00Z', status: 'completed' },
         { time_date: '2026-10-01T00:00:00Z', status: 'confirmed', amount_paid: 40 },
         { time_date: '2026-11-01T00:00:00Z', status: 'confirmed', amount_paid: 50 },
     ]);
-    assert.equal(data.year.labels.length, 12);
-    assert.equal(data.year.values[0], 1);
-    assert.equal(data.year.values[9], 1);
-    assert.equal(data.year.values[10], 1, 'future scheduled bookings in the selected calendar year remain included');
-    assert.equal(data.year.values[11], 0);
+    assert.equal(data.year.labels.length, 10);
+    assert.equal(data.year.labels[0], '2020');
+    assert.equal(data.year.labels[9], '2029');
+    assert.equal(data.year.values[0], 0);
+    assert.equal(data.year.values[6], 3, 'current and future scheduled bookings in the current decade remain included');
+    assert.equal(data.year.values[7], 0);
+    assert.equal(data.year.values[9], 0);
     assert.equal(data.year.total, 3);
     assert.deepEqual(JSON.parse(JSON.stringify(data.year.status)), { booked: 2, completed: 1, no_show: 0 });
-    assert.equal(data.year.unit, 'bookings per month · this year');
-    assert.equal(data.year.periods[0], 'January 2026');
-    assert.equal(data.year.periods[9], 'October 2026');
+    assert.equal(data.year.unit, 'bookings per year · this calendar decade');
+    assert.equal(data.year.periods[0], '2020');
+    assert.equal(data.year.periods[6], '2026');
 });
 
 test('booking trend report includes selected range, explicit periods, and only loaded chart data', () => {
@@ -94,6 +102,22 @@ test('booking trend report includes selected range, explicit periods, and only l
     assert.equal(report.rows.length, 7);
     assert.equal(report.rows[0].period, 'September 28, 2026');
     assert.equal(report.rows[0].bookings, 1);
+
+    const monthly = context.__report('month', new Date('2026-10-01T02:00:00Z'));
+    assert.equal(monthly.periodLabel, 'Calendar year 2026');
+    assert.equal(monthly.rows.length, 12);
+    assert.equal(monthly.rows[0].period, 'January 2026');
+    assert.equal(monthly.rows[11].period, 'December 2026');
+    assert.equal(monthly.takeaway, 'Busiest month: Sep · 1 booking.');
+    assert.equal(monthly.barMeaning, 'Each bar shows bookings in one month.');
+
+    const yearly = context.__report('year', new Date('2026-10-01T02:00:00Z'));
+    assert.equal(yearly.periodLabel, 'Calendar decade 2020–2029');
+    assert.equal(yearly.rows.length, 10);
+    assert.equal(yearly.rows[0].period, '2020');
+    assert.equal(yearly.rows[9].period, '2029');
+    assert.equal(yearly.takeaway, 'Busiest year: 2026 · 1 booking.');
+    assert.equal(yearly.barMeaning, 'Each bar shows bookings in one year.');
 });
 
 test('booking trend takeaway explains a zero-booking range', () => {
@@ -109,7 +133,7 @@ test('booking trend takeaway explains a zero-booking range', () => {
     assert.deepEqual(JSON.parse(JSON.stringify(report.status.counts)), { booked: 0, completed: 0, no_show: 0 });
     assert.equal(report.status.summary, 'No bookings this period.');
     assert.equal(report.takeaway, 'No bookings this period.');
-    assert.equal(report.barMeaning, 'Each bar shows bookings on one day.');
+    assert.equal(report.barMeaning, 'Each bar shows bookings in one month.');
 });
 
 test('single-status booking summaries spell out the full share', () => {
@@ -119,7 +143,7 @@ test('single-status booking summaries spell out the full share', () => {
     assert.equal(report.summary, 'All 3 bookings were no-shows.');
 });
 
-test('booking status pie shows its leading share and separates nonzero slices', () => {
+test('booking status pie leaves percentages to hover and separates nonzero slices', () => {
     const pieRoot = { innerHTML: '' };
     const context = {
         Object, Math, Number, String, Array,
@@ -127,17 +151,21 @@ test('booking status pie shows its leading share and separates nonzero slices', 
     };
     runInNewContext(`${chartSource}\nglobalThis.__renderStatus = renderStatusReport;`, context);
     context.__renderStatus({ status: { booked: 1, completed: 0, no_show: 2 } });
-    assert.match(pieRoot.innerHTML, /admin-status-pie-share">67% No-show</);
+    assert.doesNotMatch(pieRoot.innerHTML, /67% No-show|admin-status-pie-share/);
+    assert.match(pieRoot.innerHTML, /<p class="admin-status-takeaway" aria-live="polite">Most: No-show\.<\/p>/,
+        'the status takeaway renders in its own full-width summary row');
+    assert.doesNotMatch(pieRoot.innerHTML, /admin-status-summary[^<]*<p/,
+        'the status takeaway is not duplicated beside the total');
     assert.match(pieRoot.innerHTML, /var\(--color-bg-card\) [\d.]+deg [\d.]+deg/,
         'card-colored separators distinguish adjacent pie slices');
     assert.match(pieRoot.innerHTML, /Booking status distribution: Booked 1, Completed 0, No-show 2\./);
 
     context.__renderStatus({ status: { booked: 0, completed: 0, no_show: 3 } });
-    assert.match(pieRoot.innerHTML, /admin-status-pie-share">100% No-show</,
-        'a single-color pie still states its full share on the chart');
+    assert.doesNotMatch(pieRoot.innerHTML, /100% No-show|admin-status-pie-share/,
+        'a single-color pie does not display a persistent percentage');
     context.__renderStatus({ status: { booked: 2, completed: 2, no_show: 0 } });
-    assert.match(pieRoot.innerHTML, /admin-status-pie-share">Tie · 50% each</,
-        'tied statuses are labeled without implying a single leader');
+    assert.doesNotMatch(pieRoot.innerHTML, /Tie · 50% each|admin-status-pie-share/,
+        'tied statuses do not display a persistent percentage');
     context.__renderStatus({ status: { booked: 500, completed: 1, no_show: 499 } });
     const tinySlice = pieRoot.innerHTML.match(/var\(--color-ink-faint\) ([\d.]+)deg ([\d.]+)deg/);
     assert.ok(tinySlice, 'the one-in-a-thousand status keeps a pie slice');
@@ -146,29 +174,50 @@ test('booking status pie shows its leading share and separates nonzero slices', 
         'the tiny category retains its proportional 0.36 degree arc without separators');
 });
 
-test('bar count labels show on weekly and yearly charts, and hide on the crowded monthly chart', () => {
-    const labels = [];
+test('booking status pie hover shows matching status, count, and percentage beside the pointer', () => {
+    const listeners = {};
+    const tooltip = { hidden: true, textContent: '', style: {}, offsetWidth: 120, offsetHeight: 30 };
+    const pie = {
+        dataset: { statusCounts: '1,0,2' },
+        closest: () => pie,
+        getBoundingClientRect: () => ({ left: 10, top: 20, width: 120, height: 120 }),
+        querySelector: () => tooltip,
+        addEventListener: (name, callback) => { listeners[name] = callback; },
+    };
+    let markup = '';
+    const root = {
+        set innerHTML(value) { markup = value; },
+        get innerHTML() { return markup; },
+        querySelector: () => pie,
+    };
     const context = {
         Object, Math, Number, String, Array,
-        document: { documentElement: {}, addEventListener() {} },
-        getComputedStyle: () => ({ getPropertyValue: () => '#222222' }),
+        document: { addEventListener() {}, querySelector: () => root },
+        window: { innerWidth: 500, innerHeight: 500 },
     };
-    runInNewContext(`${chartSource}\nglobalThis.__drawLabels = bookingValueLabelsPlugin.afterDatasetsDraw; globalThis.__range = range => { currentChartRange = range; };`, context);
-    const fakeChart = {
-        data: { datasets: [{ data: [0, 1] }] },
-        chartArea: { top: 0, bottom: 100 },
-        ctx: { save() {}, restore() {}, fillText: value => labels.push(value) },
-        getDatasetMeta: () => ({ data: [{ x: 10, y: 100 }, { x: 30, y: 30 }] }),
+    runInNewContext(`${chartSource}\nglobalThis.__renderStatus = renderStatusReport;`, context);
+    context.__renderStatus({ status: { booked: 1, completed: 0, no_show: 2 } });
+    const pointerAt = angle => {
+        const radians = (angle - 90) * Math.PI / 180;
+        return { target: pie, clientX: 70 + Math.cos(radians) * 50, clientY: 80 + Math.sin(radians) * 50 };
     };
-    context.__range('week');
-    context.__drawLabels(fakeChart);
-    assert.deepEqual(labels, ['0', '1']);
-    context.__range('year');
-    context.__drawLabels(fakeChart);
-    assert.equal(labels.length, 4);
-    context.__range('month');
-    context.__drawLabels(fakeChart);
-    assert.equal(labels.length, 4, 'monthly labels stay hidden to avoid crowding 31 bars');
+    listeners.pointermove({ target: pie, clientX: 70, clientY: 140 });
+    assert.equal(tooltip.textContent, 'No-show: 2 bookings (67%)');
+    assert.equal(tooltip.hidden, false);
+    assert.equal(tooltip.style.left, '84px');
+    assert.equal(tooltip.style.top, '154px');
+    listeners.pointerleave({ target: pie });
+    assert.equal(tooltip.hidden, true);
+
+    pie.dataset.statusCounts = '1,1,0';
+    listeners.pointermove(pointerAt(178));
+    assert.equal(tooltip.textContent, 'Booked: 1 booking (50%)');
+    assert.equal(tooltip.hidden, false);
+    listeners.pointermove(pointerAt(180));
+    assert.equal(tooltip.hidden, true, 'the visible separator has no status tooltip');
+    listeners.pointermove(pointerAt(182));
+    assert.equal(tooltip.textContent, 'Completed: 1 booking (50%)');
+    assert.equal(tooltip.hidden, false);
 });
 
 test('booking report exporters pass chart totals and period rows to both file formats', () => {
@@ -202,7 +251,9 @@ test('booking report exporters pass chart totals and period rows to both file fo
     assert.match(workbookFilename, /booking-report-year-\d{4}-\d{2}-\d{2}\.xlsx/);
     assert.ok(workbookRows.some(row => row[0] === 'Booking Report'));
     assert.ok(workbookRows.some(row => row[0] === 'Range' && row[1] === 'Yearly'));
-    assert.ok(workbookRows.some(row => row[0] === 'Period' && /^Calendar year \d{4}$/.test(row[1])));
+    assert.ok(workbookRows.some(row => row[0] === 'Period' && /^Calendar decade \d{4}–\d{4}$/.test(row[1])));
+    assert.equal(workbookRows.filter(row => /^20\d{2}$/.test(row[0])).length, 10,
+        'the yearly export includes all ten calendar years');
     assert.ok(workbookRows.some(row => row[0] === 'Total eligible bookings' && row[1] === 1));
     assert.ok(workbookRows.some(row => row[0] === 'Takeaway' && /Busiest/.test(row[1])));
     assert.ok(workbookRows.some(row => row[0] === 'Included reservations' && /Future paid confirmed reservations/.test(row[1])));
@@ -216,17 +267,17 @@ test('booking report exporters pass chart totals and period rows to both file fo
     assert.ok(pdfCalls.some(call => call[0] === 'Booking Report'));
     assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && /Future paid confirmed reservations/.test(call[0][0])));
     assert.ok(pdfCalls.some(call => call[0] === 'Total eligible bookings: 1'));
-    assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && call[0][0].startsWith('Busiest month:')));
+    assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && call[0][0].startsWith('Busiest year:')));
     assert.ok(pdfCalls.some(call => call[0] === 'Booking status'));
     assert.ok(pdfCalls.some(call => call[0] === 'Booked'));
     assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && /This booking is confirmed/.test(call[0][0])));
     assert.ok(pdfCalls.some(call => call[0] === 'save' && call[1].endsWith('.pdf')));
 });
 
-test('New Year booking trend fetch splits at year start and keeps both requests within 366 days', async () => {
+test('New Year booking trend fetch covers the decade in bounded segments and completes the cross-year week', async () => {
     class FixedDate extends Date {
-        constructor(...args) { super(...(args.length ? args : ['2027-01-01T03:00:00Z'])); }
-        static now() { return new Date('2027-01-01T03:00:00Z').getTime(); }
+        constructor(...args) { super(...(args.length ? args : ['2020-01-01T03:00:00Z'])); }
+        static now() { return new Date('2020-01-01T03:00:00Z').getTime(); }
     }
     const requests = [];
     const context = {
@@ -237,47 +288,81 @@ test('New Year booking trend fetch splits at year start and keeps both requests 
     runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__isChartAvailable = () => chartDataAvailable;`, context);
     await context.__loadChartData();
     assert.equal(context.__isChartAvailable(), true, 'a successful empty result is valid loaded data');
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 11);
     assert.ok(requests.every(request => request.name === 'admin_booking_overview'));
-    assert.deepEqual(requests.map(request => [request.p_from_at, request.p_to_at]), [
-        ['2026-12-27T16:00:00.000Z', '2026-12-31T16:00:00.000Z'],
-        ['2026-12-31T16:00:00.000Z', '2027-12-31T16:00:00.000Z'],
-    ]);
+    const ranges = requests.map(request => [request.p_from_at, request.p_to_at]);
+    assert.deepEqual(ranges[0], ['2019-12-29T16:00:00.000Z', '2019-12-31T16:00:00.000Z']);
+    assert.deepEqual(ranges.slice(1), Array.from({ length: 10 }, (_, i) => [
+        `${2020 + i - 1}-12-31T16:00:00.000Z`, `${2020 + i}-12-31T16:00:00.000Z`,
+    ]));
     assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
 });
 
-test('December calendar week fetch includes the next-year fragment and merges all week rows', async () => {
+test('weekly chart retains all days and status across a calendar year boundary', async () => {
     class FixedDate extends Date {
         constructor(...args) { super(...(args.length ? args : ['2026-12-30T02:00:00Z'])); }
         static now() { return new Date('2026-12-30T02:00:00Z').getTime(); }
     }
     const requests = [];
-    const results = [
-        { data: [
+    const rows = [
             { time_date: '2026-12-27T16:30:00Z', status: 'confirmed', amount_paid: 10 },
             { time_date: '2026-12-30T16:00:00Z', status: 'completed', amount_paid: 10 },
-        ] },
-        { data: [
             { time_date: '2026-12-31T16:00:00Z', status: 'no_show', amount_paid: 0 },
             { time_date: '2027-01-03T15:00:00Z', status: 'confirmed', amount_paid: 20 },
-        ] },
     ];
     const context = {
         Date: FixedDate, Intl, Number, String, Object, Array, Math, console,
         document: { addEventListener() {} },
-        window: { sb: { rpc: async (name, args) => { requests.push({ name, ...args }); return results[requests.length - 1]; } } },
+        window: { sb: { rpc: async (name, args) => {
+            requests.push({ name, ...args });
+            const from = Date.parse(args.p_from_at); const to = Date.parse(args.p_to_at);
+            return { data: rows.filter(row => Date.parse(row.time_date) >= from && Date.parse(row.time_date) < to) };
+        } } },
     };
     runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__data = () => CHART_DATA;`, context);
     assert.equal(await context.__loadChartData(), true);
-    assert.deepEqual(requests.map(({ p_from_at, p_to_at }) => [p_from_at, p_to_at]), [
-        ['2025-12-31T16:00:00.000Z', '2026-12-31T16:00:00.000Z'],
-        ['2026-12-31T16:00:00.000Z', '2027-01-03T16:00:00.000Z'],
-    ]);
+    assert.equal(requests.length, 10);
     assert.ok(requests.every(request => request.name === 'admin_booking_overview'));
     assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
     assert.equal(context.__data().week.total, 4);
     assert.deepEqual(Array.from(context.__data().week.values), [1, 0, 0, 1, 1, 0, 1]);
     assert.deepEqual(JSON.parse(JSON.stringify(context.__data().week.status)), { booked: 2, completed: 1, no_show: 1 });
+});
+
+test('last decade week fetches its 2030 tail and keeps yearly data within 2020–2029', async () => {
+    class FixedDate extends Date {
+        constructor(...args) { super(...(args.length ? args : ['2029-12-31T03:00:00Z'])); }
+        static now() { return new Date('2029-12-31T03:00:00Z').getTime(); }
+    }
+    const requests = [];
+    const rows = [
+        { source: 'online', id: 'last-day', time_date: '2029-12-31T02:00:00Z', status: 'confirmed', amount_paid: 10 },
+        { source: 'online', id: 'next-year-complete', time_date: '2030-01-01T02:00:00Z', status: 'completed', amount_paid: 0 },
+        { source: 'walkin', id: 'next-year-no-show', time_date: '2030-01-05T02:00:00Z', status: 'no_show', amount_paid: 0 },
+    ];
+    const context = {
+        Date: FixedDate, Intl, Number, String, Object, Array, Math, console,
+        document: { addEventListener() {} },
+        window: { sb: { rpc: async (name, args) => {
+            requests.push({ name, ...args });
+            const from = Date.parse(args.p_from_at); const to = Date.parse(args.p_to_at);
+            return { data: rows.filter(row => Date.parse(row.time_date) >= from && Date.parse(row.time_date) < to) };
+        } } },
+    };
+    runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__data = () => CHART_DATA;`, context);
+    assert.equal(await context.__loadChartData(), true);
+    assert.equal(requests.length, 11);
+    assert.deepEqual(
+        [requests.at(-1).p_from_at, requests.at(-1).p_to_at],
+        ['2029-12-31T16:00:00.000Z', '2030-01-06T16:00:00.000Z'],
+    );
+    assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
+    assert.equal(context.__data().week.total, 3);
+    assert.deepEqual(Array.from(context.__data().week.values), [1, 1, 0, 0, 0, 1, 0]);
+    assert.deepEqual(JSON.parse(JSON.stringify(context.__data().week.status)), { booked: 1, completed: 1, no_show: 1 });
+    assert.deepEqual(Array.from(context.__data().year.labels), ['2020', '2021', '2022', '2023', '2024', '2025', '2026', '2027', '2028', '2029']);
+    assert.equal(context.__data().year.total, 1, 'the 2030 tail is excluded from decade totals');
+    assert.deepEqual(JSON.parse(JSON.stringify(context.__data().year.status)), { booked: 1, completed: 0, no_show: 0 });
 });
 
 test('booking trend RPC failure keeps exports unavailable', async () => {
@@ -307,9 +392,9 @@ test('stale booking report responses cannot replace the newest request', async (
     runInNewContext(`${chartSource}\nglobalThis.__load = loadChartData; globalThis.__data = () => CHART_DATA;`, context);
     const oldRequest = context.__load();
     const currentRequest = context.__load();
-    pending[1]({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'completed' }], error: null });
+    for (const resolve of pending.slice(10, 20)) resolve({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'completed' }], error: null });
     assert.equal(await currentRequest, true);
-    pending[0]({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'confirmed', amount_paid: 80 }], error: null });
+    for (const resolve of pending.slice(0, 10)) resolve({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'confirmed', amount_paid: 80 }], error: null });
     assert.equal(await oldRequest, false);
     assert.deepEqual(JSON.parse(JSON.stringify(context.__data().month.status)), { booked: 0, completed: 1, no_show: 0 });
 });
@@ -342,10 +427,10 @@ test('owner income defaults to Month and replaces the bookings stat', () => {
     assert.doesNotMatch(dashboardHtml, /data-admin-status-range=/);
     assert.match(dashboardHtml, /data-admin-status-breakdown/);
     assert.match(dashboardHtml, /data-admin-chart-export-toggle/);
-    assert.match(dashboardHtml, /Pending and canceled bookings are excluded/);
+    assert.doesNotMatch(dashboardHtml, /Pending and canceled bookings are excluded/);
     assert.equal((dashboardHtml.match(/class="admin-card admin-booking-report-card"/g) || []).length, 2);
     assert.ok(dashboardHtml.indexOf('admin-booking-toolbar') < dashboardHtml.indexOf('admin-booking-report-grid'));
-    assert.match(dashboardCss, /\.admin-booking-report-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*540px\),\s*1fr\)\)/s);
+    assert.match(dashboardCss, /\.admin-booking-report-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
     assert.doesNotMatch(dashboardCss, /\.admin-status-report\s*\{[^}]*max-width:/s);
     assert.match(dashboardHtml, /admin-chart-export-toggle/);
     assert.match(dashboardCss, /\.admin-chart-exports\s*\{[^}]*position:\s*relative/s);
@@ -356,15 +441,17 @@ test('owner income defaults to Month and replaces the bookings stat', () => {
     assert.doesNotMatch(dashboardScript, /run 015_media_bucket\.sql/i);
 });
 
-test('booking report uses one compact toolbar above two responsive cards', () => {
+test('booking report stacks two full-width chart cards inside an outer card', () => {
     assert.equal((dashboardHtml.match(/class="admin-card admin-booking-report-card"/g) || []).length, 2);
-    assert.ok(dashboardHtml.indexOf('admin-booking-toolbar') < dashboardHtml.indexOf('admin-booking-report-grid'));
-    assert.match(dashboardHtml, /admin-booking-toolbar">\s*<div class="admin-booking-toolbar-controls">/);
-    assert.doesNotMatch(dashboardHtml, /admin-booking-toolbar">\s*<h[1-6]/);
+    assert.match(dashboardHtml, /<div class="admin-card admin-booking-report-shell">\s*<div class="admin-booking-toolbar">\s*<h2 class="admin-booking-report-title">Booking report<\/h2>\s*<div class="admin-booking-toolbar-controls">[\s\S]*?<\/div>\s*<\/div>\s*<div class="admin-booking-report-grid">[\s\S]*?<h3>Booking Trends<\/h3>[\s\S]*?<h3>Booking Status<\/h3>[\s\S]*?<\/div>\s*<\/div>/);
     assert.match(dashboardHtml, /admin-booking-report-grid[\s\S]*<h3>Booking Trends<\/h3>[\s\S]*<h3>Booking Status<\/h3>/);
     assert.equal((dashboardHtml.match(/data-admin-chart-range=/g) || []).length, 3);
     assert.equal((dashboardHtml.match(/data-admin-chart-export-toggle/g) || []).length, 1);
-    assert.match(dashboardCss, /\.admin-booking-report-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*540px\),\s*1fr\)\)/s);
+    assert.match(dashboardCss, /\.admin-booking-report-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+    assert.match(dashboardCss, /\.admin-booking-report-shell\s*\{[^}]*min-width:\s*0/s);
+    assert.match(dashboardCss, /\.admin-booking-report-title\s*\{[^}]*color:\s*var\(--color-ink\)/s);
+    assert.match(dashboardCss, /\.admin-chart-takeaway\s*\{[^}]*color:\s*var\(--color-primary\)[^}]*font-size:\s*var\(--fs-sm\)[^}]*font-weight:\s*700[^}]*text-align:\s*center/s);
+    assert.match(dashboardCss, /\.admin-status-takeaway\s*\{[^}]*grid-column:\s*1\s*\/\s*-1[^}]*color:\s*var\(--color-primary\)[^}]*font-size:\s*var\(--fs-sm\)[^}]*font-weight:\s*700[^}]*text-align:\s*center/s);
     assert.doesNotMatch(dashboardCss, /\.admin-status-report\s*\{[^}]*max-width:/s);
     assert.match(dashboardCss, /\.admin-btn-chip-secondary\.admin-chart-export-toggle\s*\{[^}]*background:\s*var\(--color-primary\)/s);
     assert.match(dashboardCss, /\.admin-status-pie-share\s*\{[^}]*background:\s*var\(--color-bg-card\)/s);

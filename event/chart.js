@@ -9,8 +9,8 @@ let chartRequestId = 0;
 const ADMIN_STATUS_LABELS = { booked: 'Booked', completed: 'Completed', no_show: 'No-show' };
 let CHART_DATA = {
     week: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per day · this calendar week' },
-    month: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per day · this month' },
-    year: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per month · this year' },
+    month: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per month · this calendar year' },
+    year: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per year · this calendar decade' },
 };
 const chartRangeNames = { week: 'Weekly', month: 'Monthly', year: 'Yearly' };
 
@@ -18,7 +18,7 @@ function bookingTakeaway(source, range) {
     if (!source || source.total === 0) return 'No bookings this period.';
     const busiest = Math.max(...source.values);
     const periods = source.labels.filter((_, index) => source.values[index] === busiest);
-    const unit = range === 'year' ? 'month' : 'day';
+    const unit = range === 'month' ? 'month' : range === 'year' ? 'year' : 'day';
     const label = periods.length > 3
         ? `${periods.length} ${unit}s tied`
         : periods.length === 2
@@ -30,7 +30,7 @@ function bookingTakeaway(source, range) {
 }
 
 function bookingChartAccessibleLabel(source, range) {
-    const period = { week: 'this week', month: 'this month', year: 'this year' }[range];
+    const period = { week: 'this week', month: 'this calendar year', year: 'this calendar decade' }[range];
     return `Booking trends for ${period}: ${source.total} booking${source.total === 1 ? '' : 's'}. ${bookingTakeaway(source, range)}`;
 }
 
@@ -50,8 +50,8 @@ const rowManilaDate = row => {
 };
 const rangeCaption = range => ({
     week: 'bookings per day · this calendar week',
-    month: 'bookings per day · this month',
-    year: 'bookings per month · this year',
+    month: 'bookings per month · this calendar year',
+    year: 'bookings per year · this calendar decade',
 })[range];
 
 function bookingStatus(row) {
@@ -67,26 +67,28 @@ function aggregateBookingRows(rows) {
     const mondayUtc = todayUtc - ((new Date(todayUtc).getUTCDay() + 6) % 7) * 86400000;
     const week = Array.from({ length: 7 }, (_, i) => new Date(mondayUtc + i * 86400000))
         .map(d => ({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() }));
-    const monthDays = new Date(Date.UTC(today.year, today.month, 0)).getUTCDate();
-    const month = Array.from({ length: monthDays }, (_, i) => ({ year: today.year, month: today.month, day: i + 1 }));
+    const currentYearMonths = Array.from({ length: 12 }, (_, i) => ({ year: today.year, month: i + 1 }));
+    const decadeStart = Math.floor(today.year / 10) * 10;
+    const decadeYears = Array.from({ length: 10 }, (_, i) => decadeStart + i);
     const weekLabels = week.map(d => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short' }).format(new Date(Date.UTC(d.year, d.month - 1, d.day))));
-    const monthLabels = month.map(d => String(d.day));
-    const yearLabels = Array.from({ length: 12 }, (_, i) => new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(today.year, i, 1))));
+    const monthLabels = currentYearMonths.map(d => new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(d.year, d.month - 1, 1))));
+    const yearLabels = decadeYears.map(String);
     const weekKeys = week.map(d => dateKey(d.year, d.month, d.day));
-    const monthKeys = month.map(d => dateKey(d.year, d.month, d.day));
     const dateFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' });
-    const monthFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long' });
     const weekPeriods = week.map(d => dateFormatter.format(new Date(Date.UTC(d.year, d.month - 1, d.day))));
-    const monthPeriods = month.map(d => dateFormatter.format(new Date(Date.UTC(d.year, d.month - 1, d.day))));
-    const yearPeriods = Array.from({ length: 12 }, (_, i) => monthFormatter.format(new Date(Date.UTC(today.year, i, 1))));
+    const monthPeriods = currentYearMonths.map(d => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long' }).format(new Date(Date.UTC(d.year, d.month - 1, 1))));
+    const yearPeriods = decadeYears.map(String);
     const eligibleRows = rows.filter(row => bookingStatus(row));
     const weekValues = weekKeys.map(key => eligibleRows.filter(row => rowManilaDate(row) === key).length);
-    const monthValues = monthKeys.map(key => eligibleRows.filter(row => rowManilaDate(row) === key).length);
-    const yearValues = Array.from({ length: 12 }, (_, i) => eligibleRows.filter(row => {
+    const monthValues = currentYearMonths.map(({ year, month }) => eligibleRows.filter(row => {
         const parsed = new Date(row.time_date);
         if (Number.isNaN(parsed.getTime())) return false;
         const parts = manilaParts(parsed);
-        return parts.year === today.year && parts.month === i + 1;
+        return parts.year === year && parts.month === month;
+    }).length);
+    const yearValues = decadeYears.map(year => eligibleRows.filter(row => {
+        const parsed = new Date(row.time_date);
+        return !Number.isNaN(parsed.getTime()) && manilaParts(parsed).year === year;
     }).length);
     const total = values => values.reduce((sum, value) => sum + value, 0);
     const status = rows => {
@@ -96,10 +98,14 @@ function aggregateBookingRows(rows) {
     };
     CHART_DATA = {
         week: { labels: weekLabels, periods: weekPeriods, values: weekValues, total: total(weekValues), status: status(eligibleRows.filter(row => weekKeys.includes(rowManilaDate(row)))), unit: rangeCaption('week') },
-        month: { labels: monthLabels, periods: monthPeriods, values: monthValues, total: total(monthValues), status: status(eligibleRows.filter(row => monthKeys.includes(rowManilaDate(row)))), unit: rangeCaption('month') },
-        year: { labels: yearLabels, periods: yearPeriods, values: yearValues, total: total(yearValues), status: status(eligibleRows.filter(row => {
+        month: { labels: monthLabels, periods: monthPeriods, values: monthValues, total: total(monthValues), status: status(eligibleRows.filter(row => {
             const parsed = new Date(row.time_date); if (Number.isNaN(parsed.getTime())) return false;
             return manilaParts(parsed).year === today.year;
+        })), unit: rangeCaption('month') },
+        year: { labels: yearLabels, periods: yearPeriods, values: yearValues, total: total(yearValues), status: status(eligibleRows.filter(row => {
+            const parsed = new Date(row.time_date); if (Number.isNaN(parsed.getTime())) return false;
+            const rowYear = manilaParts(parsed).year;
+            return rowYear >= decadeStart && rowYear < decadeStart + 10;
         })), unit: rangeCaption('year') },
     };
 }
@@ -111,10 +117,6 @@ function buildStatusReport(source) {
     if (!total) return { counts, total, summary: 'No bookings this period.' };
     const highest = Math.max(...keys.map(key => counts[key]));
     const leaders = keys.filter(key => counts[key] === highest);
-    const sharePercent = Math.round(highest / total * 100);
-    const shareLabel = leaders.length === 1
-        ? `${sharePercent}% ${ADMIN_STATUS_LABELS[leaders[0]]}`
-        : `Tie · ${sharePercent}% each`;
     const onlyStatus = leaders.length === 1 && counts[leaders[0]] === total ? leaders[0] : null;
     const allStatusText = {
         booked: total === 1 ? 'This booking is confirmed.' : `All ${total} bookings are confirmed.`,
@@ -126,14 +128,14 @@ function buildStatusReport(source) {
         : leaders.length > 1
             ? 'Even split across the top statuses.'
             : `Most: ${ADMIN_STATUS_LABELS[leaders[0]]}.`;
-    return { counts, total, summary, shareLabel };
+    return { counts, total, summary };
 }
 
 function renderStatusReport(source) {
     const root = document.querySelector('[data-admin-status-breakdown]');
     if (!root) return;
     const report = buildStatusReport(source);
-    const { counts, total, summary, shareLabel } = report;
+    const { counts, total, summary } = report;
     let angle = 0;
     let previousGap = 0;
     const pieColors = { booked: 'var(--color-court-green)', completed: 'var(--color-ink-faint)', no_show: 'var(--color-primary)' };
@@ -155,13 +157,68 @@ function renderStatusReport(source) {
     });
     const label = total ? `Booking status distribution: ${Object.keys(ADMIN_STATUS_LABELS).map(key => `${ADMIN_STATUS_LABELS[key]} ${counts[key]}`).join(', ')}.` : 'No bookings this period.';
     root.innerHTML = `
-        <div class="admin-status-pie${total ? '' : ' is-empty'}" role="img" aria-label="${label}"${total ? ` style="background: conic-gradient(${pieSlices.join(', ')});"` : ''}>${total ? `<span class="admin-status-pie-share">${shareLabel}</span>` : '<span>No bookings</span>'}</div>
+        <div class="admin-status-pie${total ? '' : ' is-empty'}" role="img" aria-label="${label}"${total ? ` data-status-counts="${Object.keys(ADMIN_STATUS_LABELS).map(key => counts[key]).join(',')}" style="background: conic-gradient(${pieSlices.join(', ')});"` : ''}>${total ? '<span class="admin-status-pie-tooltip" data-pie-tooltip role="tooltip" hidden></span>' : '<span>No bookings</span>'}</div>
         <div class="admin-status-details">
-            <div class="admin-status-summary"><div class="admin-status-total"><strong>${total}</strong><span>booking${total === 1 ? '' : 's'}</span></div><p>${summary}</p></div>
+            <div class="admin-status-summary"><div class="admin-status-total"><strong>${total}</strong><span>booking${total === 1 ? '' : 's'}</span></div></div>
             <div class="admin-status-counts" aria-label="Booking counts by status">
                 ${Object.keys(ADMIN_STATUS_LABELS).map(key => `<div class="admin-status-count admin-status-count-${key.replace('_', '-')}"><span class="admin-status-dot admin-status-dot-${key.replace('_', '-')}" aria-hidden="true"></span><span class="admin-status-count-label">${ADMIN_STATUS_LABELS[key]}</span><strong>${counts[key]}</strong></div>`).join('')}
             </div>
-        </div>`;
+        </div>
+        <p class="admin-status-takeaway" aria-live="polite">${summary}</p>`;
+    const pie = root.querySelector?.('.admin-status-pie[data-status-counts]');
+    pie?.addEventListener('pointermove', updatePieHover);
+    pie?.addEventListener('pointerleave', hidePieHover);
+}
+
+function updatePieHover(event) {
+    const pie = event.target.closest?.('.admin-status-pie[data-status-counts]');
+    if (!pie) return;
+    const tooltip = pie.querySelector('[data-pie-tooltip]');
+    const bounds = pie.getBoundingClientRect();
+    const x = event.clientX - (bounds.left + bounds.width / 2);
+    const y = event.clientY - (bounds.top + bounds.height / 2);
+    const angle = (Math.atan2(y, x) * 180 / Math.PI + 450) % 360;
+    const counts = pie.dataset.statusCounts.split(',').map(Number);
+    const keys = Object.keys(ADMIN_STATUS_LABELS);
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    let cursor = 0;
+    let previousGap = 0;
+    let index = -1;
+    const activeKeys = keys.filter((_, keyIndex) => counts[keyIndex] > 0);
+    counts.forEach((count, countIndex) => {
+        if (!count || index >= 0) return;
+        const start = cursor;
+        const extent = count / total * 360;
+        const end = start + extent;
+        const fillStart = start + previousGap / 2;
+        const activePosition = activeKeys.indexOf(keys[countIndex]);
+        const nextKey = activeKeys[activePosition + 1];
+        const nextExtent = nextKey ? counts[keys.indexOf(nextKey)] / total * 360 : 0;
+        // Match the 2° conic-gradient separator used between sufficiently
+        // wide slices; the card-colored seam has no status to report.
+        const gap = nextExtent && extent >= 4 && nextExtent >= 4 ? 2 : 0;
+        const fillEnd = end - gap / 2;
+        if (angle >= fillStart && angle < fillEnd) index = countIndex;
+        cursor = end;
+        previousGap = gap;
+    });
+    if (!tooltip) return;
+    if (index < 0) {
+        tooltip.hidden = true;
+        return;
+    }
+    const sharePercent = Math.round(counts[index] / total * 100);
+    tooltip.textContent = `${ADMIN_STATUS_LABELS[keys[index]]}: ${counts[index]} booking${counts[index] === 1 ? '' : 's'} (${sharePercent}%)`;
+    tooltip.hidden = false;
+    const offset = 14;
+    tooltip.style.left = `${Math.max(8, Math.min(event.clientX + offset, window.innerWidth - tooltip.offsetWidth - 8))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(event.clientY + offset, window.innerHeight - tooltip.offsetHeight - 8))}px`;
+}
+
+function hidePieHover(event) {
+    const pie = event.target.closest?.('.admin-status-pie');
+    const tooltip = pie?.querySelector('[data-pie-tooltip]');
+    if (tooltip) tooltip.hidden = true;
 }
 
 function buildBookingReport(range, now = new Date()) {
@@ -172,9 +229,9 @@ function buildBookingReport(range, now = new Date()) {
     if (range === 'week') {
         periodLabel = `${source.periods[0]} – ${source.periods[6]}`;
     } else if (range === 'month') {
-        periodLabel = `${source.periods[0]} – ${source.periods[source.periods.length - 1]}`;
-    } else {
         periodLabel = `Calendar year ${today.year}`;
+    } else {
+        periodLabel = `Calendar decade ${source.periods[0]}–${source.periods[source.periods.length - 1]}`;
     }
     return {
         title: 'Booking Report',
@@ -186,7 +243,7 @@ function buildBookingReport(range, now = new Date()) {
         status: buildStatusReport(source),
         takeaway: bookingTakeaway(source, range),
         scopeNote: 'Includes paid confirmed, completed, and no-show reservations (including automatically canceled no-shows). Pending and canceled reservations are excluded. Future paid confirmed reservations count in their scheduled calendar period.',
-        barMeaning: range === 'year' ? 'Each bar shows bookings in one month.' : 'Each bar shows bookings on one day.',
+        barMeaning: range === 'week' ? 'Each bar shows bookings on one day.' : range === 'month' ? 'Each bar shows bookings in one month.' : 'Each bar shows bookings in one year.',
         rows: source.periods.map((period, index) => ({
             period,
             bookings: source.values[index],
@@ -341,6 +398,10 @@ function manilaYearStartIso(year) {
     return new Date(Date.UTC(year, 0, 1) - 8 * 60 * 60 * 1000).toISOString();
 }
 
+function manilaYearEndIso(year) {
+    return manilaYearStartIso(year + 1);
+}
+
 function manilaCalendarWeekStartIso(date = new Date()) {
     const parts = manilaParts(date);
     const todayUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
@@ -353,17 +414,21 @@ async function loadChartData() {
     if (!window.sb) { setChartDataState('error'); return false; }
     setChartDataState('loading');
     const year = manilaParts(new Date()).year;
-    const yearStart = manilaYearStartIso(year);
+    const decadeStart = Math.floor(year / 10) * 10;
+    const decadeEnd = decadeStart + 10;
+    const decadeStartIso = manilaYearStartIso(decadeStart);
+    const decadeEndIso = manilaYearStartIso(decadeEnd);
     const weekStart = manilaCalendarWeekStartIso();
-    const yearEnd = manilaYearStartIso(year + 1);
     const weekEnd = new Date(Date.parse(weekStart) + 7 * 86400000).toISOString();
-    // Fetch the full selected calendar year plus any adjacent-year fragments
-    // needed to complete the current Manila calendar week. Each RPC segment
-    // stays within admin_booking_overview's 366-day limit.
+    // Fetch ten calendar years in bounded annual segments, plus any adjacent
+    // fragment needed to complete the current Manila calendar week. Exact,
+    // abutting endpoints match the RPC's [from, to) filters.
     const segments = [];
-    if (weekStart < yearStart) segments.push([weekStart, yearStart]);
-    segments.push([yearStart, yearEnd]);
-    if (weekEnd > yearEnd) segments.push([yearEnd, weekEnd]);
+    if (weekStart < decadeStartIso) segments.push([weekStart, decadeStartIso]);
+    for (let segmentYear = decadeStart; segmentYear < decadeEnd; segmentYear++) {
+        segments.push([manilaYearStartIso(segmentYear), manilaYearEndIso(segmentYear)]);
+    }
+    if (weekEnd > decadeEndIso) segments.push([decadeEndIso, weekEnd]);
     let results;
     try {
         results = await Promise.all(segments.map(([from, to]) => window.sb.rpc('admin_booking_overview', {
@@ -382,7 +447,17 @@ async function loadChartData() {
         setChartDataState('error');
         return false;
     }
-    const rows = results.flatMap(result => result.data);
+    const seenRows = new Set();
+    const rows = results.flatMap(result => result.data).filter(row => {
+        // The RPC returns source + id; use both so online and walk-in IDs do
+        // not collide. The fallback keeps malformed duplicate rows harmless.
+        const key = row?.source != null && row?.id != null
+            ? `${row.source}:${row.id}`
+            : JSON.stringify(row);
+        if (seenRows.has(key)) return false;
+        seenRows.add(key);
+        return true;
+    });
     if (request !== chartRequestId) return false;
     if (!Array.isArray(rows)) {
         console.error('[admin-chart] failed to load reservations');
@@ -419,31 +494,6 @@ function baseOptions(colors) {
         },
     };
 }
-
-const bookingValueLabelsPlugin = {
-    id: 'booking-value-labels',
-    afterDatasetsDraw(chart) {
-        // Monthly daily bars are too close together for labels to stay legible.
-        if (currentChartRange === 'month') return;
-        const dataset = chart.data.datasets[0];
-        const bars = chart.getDatasetMeta(0).data;
-        if (!dataset || !bars.length) return;
-        const colors = getThemeColors();
-        const context = chart.ctx;
-        const baseline = chart.chartArea.bottom - 5;
-        context.save();
-        context.fillStyle = colors.ink;
-        context.font = "600 11px 'Inter', 'Segoe UI', sans-serif";
-        context.textAlign = 'center';
-        context.textBaseline = 'bottom';
-        bars.forEach((bar, index) => {
-            const value = dataset.data[index];
-            const y = value === 0 ? baseline : Math.max(chart.chartArea.top + 12, bar.y - 6);
-            context.fillText(String(value), bar.x, y);
-        });
-        context.restore();
-    },
-};
 
 function renderChartMeta() {
     document.querySelectorAll('[data-admin-chart-range]').forEach(button => {
@@ -498,7 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingCanvas = document.getElementById('adminBookingChart');
     if (bookingCanvas) {
         const source = CHART_DATA[currentChartRange];
-        bookingChart = new Chart(bookingCanvas, { type: 'bar', data: { labels: source.labels, datasets: [{ label: 'Bookings', data: source.values, backgroundColor: colors.primary, hoverBackgroundColor: colors.primaryDim, borderRadius: 6, maxBarThickness: 42 }] }, options: baseOptions(colors), plugins: [bookingValueLabelsPlugin] });
+        bookingChart = new Chart(bookingCanvas, { type: 'bar', data: { labels: source.labels, datasets: [{ label: 'Bookings', data: source.values, backgroundColor: colors.primary, hoverBackgroundColor: colors.primaryDim, borderRadius: 6, maxBarThickness: 42 }] }, options: baseOptions(colors) });
     }
     renderChartMeta();
     document.querySelectorAll('[data-admin-chart-range]').forEach(button => button.addEventListener('click', () => setChartRange(button.dataset.adminChartRange)));

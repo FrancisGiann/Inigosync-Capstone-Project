@@ -7,8 +7,7 @@
 // Revision A1 (implementation_plan.md) brought this page up to the same
 // standard as the customer dashboard: a real logo (A1), live Recent
 // bookings + Booking status this month replacing two hardcoded fake cards
-// (A3), an instant default-password Reset Password RPC + Activate for
-// disabled staff (A4), a real Media Manager against `public.event` + a
+// (A3), Activate for disabled staff (A4), a real Media Manager against `public.event` + a
 // Storage bucket (A5), an Add/Edit court modal (A6), a topbar/settings avatar that renders profiles.avatar_url
 // (A8), and a Profile Photo card + editable email + a 2-step Change
 // Password wizard in Account Settings (A9). See that section of
@@ -670,6 +669,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            const accepted = await window.InigoOwnerUI?.confirm({
+                title: 'Create staff account?',
+                message: `Invite ${email} as ${position}?`,
+                confirmLabel: 'Create account',
+            });
+            if (!accepted) return;
+
             staffSubmitBtn.disabled = true;
             staffSubmitBtn.textContent = 'Creating account…';
 
@@ -834,6 +840,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            const staffName = staffEditModalProfileName;
+            const accepted = await window.InigoOwnerUI?.confirm({
+                title: 'Change staff position?',
+                message: `Change ${staffName}'s position to ${position}?`,
+                confirmLabel: 'Save position',
+            });
+            if (!accepted) return;
+
             staffEditSubmitBtn.disabled = true;
             const { error } = await window.sb.from('profiles')
                 .update({ position })
@@ -845,7 +859,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const staffName = staffEditModalProfileName;
             closeStaffEditModal();
             refreshStaffList();
             recordOwnerActivity(`Staff position changed: ${staffName}`, 'staff');
@@ -934,7 +947,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // <span> (was the whole <td>) so a second <span class="admin-staff-meta">
         // ("24 yrs · Male", Style/owner_dashboard.css) can sit under the name
         // without corrupting the name-only .textContent every confirm()
-        // message below (Reset Password/Deactivate/Activate) reads from
+        // message below (Deactivate/Activate) reads from
         // that same hook.
         const metaLine = formatAdminStaffRowMeta(profile);
         row.innerHTML = `
@@ -949,7 +962,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="admin-table-actions admin-staff-action-wrap">
                     <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="adminStaffActionCard" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
                     <button type="button" hidden data-admin-view-staff>View</button>
-                    <button type="button" hidden data-admin-reset-password>Reset Password</button>
                     <button type="button" hidden data-admin-edit-staff>Change position</button>
                     ${profile.status === 'disabled'
                         ? '<button type="button" hidden data-admin-activate-staff>Activate</button>'
@@ -1069,42 +1081,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 openStaffActionCard(trigger);
             });
         });
-        // Never set a shared default password. The staff member receives a
-        // short-lived recovery link and chooses their own replacement.
-        scope.querySelectorAll('[data-admin-reset-password]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                const row = btn.closest('tr');
-                if (!row || !window.sb) return;
-                const name = row.querySelector('[data-admin-staff-name-cell]')?.textContent || 'this account';
-                const email = row.__staffProfile?.email || row.cells[1]?.textContent?.trim();
-                if (!email) {
-                    window.InigoToast?.show('This staff account has no email address.', true);
-                    return;
-                }
-
-                const accepted = await window.InigoOwnerUI?.confirm({
-                    title: 'Send password reset link?',
-                    message: `Email a password recovery link to ${name} at ${email}?`,
-                    confirmLabel: 'Send reset link',
-                });
-                if (!accepted) return;
-
-                btn.disabled = true;
-                try {
-                    const { error } = await window.sb.auth.resetPasswordForEmail(email, {
-                        redirectTo: new URL('../index.html', window.location.href).href,
-                    });
-                    if (error) throw error;
-                    window.InigoToast?.show(`Recovery email requested for ${name}. Ask them to check their inbox.`);
-                    recordOwnerActivity(`Staff password recovery requested: ${name}`, 'staff');
-                } catch (error) {
-                    window.InigoToast?.show(error.message || 'Could not send the recovery email.', true);
-                } finally {
-                    btn.disabled = false;
-                }
-            });
-        });
-
         // Revision S3 — View/Edit both open the same modal
         // (openStaffEditModal() above), read-only or editable. row.__staffProfile
         // (set by renderStaffRow() above) is the real profile object,
@@ -1197,7 +1173,6 @@ document.addEventListener('DOMContentLoaded', () => {
     staffActionCard.innerHTML = `
         <button type="button" data-admin-staff-command="view">View staff details</button>
         <button type="button" data-admin-staff-command="edit">Change position</button>
-        <button type="button" data-admin-staff-command="reset">Send password reset</button>
         <button type="button" data-admin-staff-command="toggle">Deactivate account</button>
     `;
     document.body.appendChild(staffActionCard);
@@ -1257,7 +1232,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = {
             view: '[data-admin-view-staff]',
             edit: '[data-admin-edit-staff]',
-            reset: '[data-admin-reset-password]',
             toggle: row.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
         }[command];
         if (target) row.querySelector(target)?.click();
@@ -1481,6 +1455,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingRulesSave = document.querySelector('[data-owner-rules-save]');
     const bookingRulesEdit = document.querySelector('[data-owner-rules-edit]');
     const bookingRulesCancel = document.querySelector('[data-owner-rules-cancel]');
+    const bookingRulesModal = document.querySelector('[data-owner-rules-modal]');
+    const bookingRulesDialog = document.querySelector('[data-owner-rules-dialog]');
+    const bookingRulesSavedEffective = document.querySelector('[data-owner-rules-saved-effective]');
+    const bookingRulesSavedGrace = document.querySelector('[data-owner-rules-saved-grace]');
+    const bookingRulesSavedWeek = document.querySelector('[data-owner-rules-saved-week]');
+    const bookingRulesUpcoming = document.querySelector('[data-owner-rules-upcoming]');
+    const bookingRulesUpcomingEffective = document.querySelector('[data-owner-rules-upcoming-effective]');
+    const bookingRulesUpcomingGrace = document.querySelector('[data-owner-rules-upcoming-grace]');
+    const bookingRulesUpcomingWeek = document.querySelector('[data-owner-rules-upcoming-week]');
+    let bookingRulesModalLastFocused = null;
     let bookingRulesLoading = false;
     let bookingRulesEditing = false;
     let bookingRulesLoaded = false;
@@ -1489,6 +1473,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!bookingRulesMessage) return;
         bookingRulesMessage.textContent = message;
         bookingRulesMessage.classList.toggle('is-error', isError);
+    }
+
+    function renderSavedBookingWeek(rules, list) {
+        if (!list) return;
+        const byDay = new Map((rules.weekly_hours || []).map(item => [Number(item.weekday), item]));
+        const labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        list.replaceChildren(...labels.map((label, index) => {
+            const day = byDay.get(index + 1);
+            const item = document.createElement('li');
+            const dayLabel = document.createElement('strong');
+            const hours = document.createElement('span');
+            dayLabel.textContent = label;
+            hours.textContent = !day ? 'Unavailable' : day.is_closed ? 'Closed' : `${String(day.opens_at || '').slice(0, 5)}–${String(day.closes_at || '').slice(0, 5)}`;
+            item.append(dayLabel, hours);
+            return item;
+        }));
+    }
+
+    function renderSavedBookingRules(rules, upcoming = null) {
+        if (bookingRulesSavedEffective) bookingRulesSavedEffective.textContent = String(rules.effective_from || '').slice(0, 10) || '—';
+        if (bookingRulesSavedGrace) bookingRulesSavedGrace.textContent = `${Number(rules.grace_minutes) || 0} minutes`;
+        renderSavedBookingWeek(rules, bookingRulesSavedWeek);
+        if (bookingRulesUpcoming) bookingRulesUpcoming.hidden = !upcoming;
+        if (!upcoming) return;
+        if (bookingRulesUpcomingEffective) bookingRulesUpcomingEffective.textContent = String(upcoming.effective_from || '').slice(0, 10) || '—';
+        if (bookingRulesUpcomingGrace) bookingRulesUpcomingGrace.textContent = String(Number(upcoming.grace_minutes) || 0);
+        renderSavedBookingWeek(upcoming, bookingRulesUpcomingWeek);
     }
 
     function todayBookingRulesDate() {
@@ -1542,8 +1553,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const todayManila = todayBookingRulesDate();
             const effectiveRules = rulesList.filter(item => String(item.effective_from || '') <= todayManila)
                 .sort((a, b) => String(b.effective_from || '').localeCompare(String(a.effective_from || '')));
-            const rules = effectiveRules[0] || rulesList.slice().sort((a, b) => String(a.effective_from || '').localeCompare(String(b.effective_from || '')))[0];
+            const upcomingRules = rulesList.filter(item => String(item.effective_from || '') > todayManila)
+                .sort((a, b) => String(a.effective_from || '').localeCompare(String(b.effective_from || '')));
+            const rules = effectiveRules[0] || upcomingRules[0];
             if (!rules || !Array.isArray(rules.weekly_hours)) throw new Error('The booking rules response is incomplete.');
+            renderSavedBookingRules(rules, effectiveRules.length ? upcomingRules[0] || null : null);
             bookingRulesEffective.min = todayManila;
             const loadedEffectiveDate = String(rules.effective_from || '').slice(0, 10);
             bookingRulesEffective.value = loadedEffectiveDate >= todayManila ? loadedEffectiveDate : todayManila;
@@ -1576,9 +1590,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bookingRulesEdit?.addEventListener('click', () => {
         if (!bookingRulesLoaded || bookingRulesLoading) return;
+        bookingRulesModalLastFocused = document.activeElement;
+        if (bookingRulesModal) {
+            bookingRulesModal.hidden = false;
+            void bookingRulesModal.offsetWidth;
+            bookingRulesModal.setAttribute('data-open', '');
+        }
         setBookingRulesEditing(true);
         setBookingRulesMessage('Edit the weekly hours, effective date, or no-show grace period, then save the Working Time Schedule.');
         bookingRulesEffective?.focus();
+    });
+
+    function closeBookingRulesModal() {
+        if (!bookingRulesModal) return;
+        bookingRulesModal.removeAttribute('data-open');
+        bookingRulesModal.hidden = true;
+        bookingRulesModalLastFocused?.focus();
+    }
+
+    bookingRulesModal?.querySelector('[data-owner-rules-modal-close]')?.addEventListener('click', () => bookingRulesCancel?.click());
+    bookingRulesModal?.addEventListener('click', event => {
+        if (event.target === bookingRulesModal) bookingRulesCancel?.click();
+    });
+    bookingRulesDialog?.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            bookingRulesCancel?.click();
+            return;
+        }
+        if (event.key === 'Tab') {
+            const focusable = [...bookingRulesDialog.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])')]
+                .filter(element => element.offsetParent !== null);
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (!first || !last) return;
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        }
     });
 
     bookingRulesCancel?.addEventListener('click', async () => {
@@ -1590,7 +1643,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setBookingRulesMessage('Discarding unsaved schedule changes…');
         await loadBookingRules();
         bookingRulesCancel.disabled = false;
-        bookingRulesEdit?.focus();
+        closeBookingRulesModal();
     });
 
     bookingRulesSave?.addEventListener('click', async () => {
@@ -1639,10 +1692,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (error) throw error;
             window.InigoBusinessHours?.notifyRulesUpdated?.();
+            await loadBookingRules();
             setBookingRulesMessage('Working Time Schedule saved. The shared availability schedule will use it from the effective date.');
             window.InigoToast?.show('Working Time Schedule saved.');
             setBookingRulesEditing(false);
-            bookingRulesEdit?.focus();
+            closeBookingRulesModal();
         } catch (error) {
             console.error('[admin] booking rules could not be saved', error);
             setBookingRulesMessage(error.message || 'Booking rules could not be saved. Check for conflicts with existing reservations.', true);
