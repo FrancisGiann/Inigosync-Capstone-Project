@@ -520,6 +520,34 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Bowling — Ten-Pin · Lane 12', 'Ten-Pin lane selection resolves to the Ten-Pin listing');
         await customerStepContext.context.close();
 
+        // Crossing Manila midnight clears only the in-progress time range. A
+        // previously added walk-in order line keeps its original date/time.
+        const midnightContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T01:00:00Z', pauseClock: true,
+        });
+        const midnightPage = midnightContext.page;
+        await openWalkinTimeStep(midnightPage);
+        await midnightPage.locator('[data-staff-walkin-hour="9"]').click();
+        await midnightPage.locator('[data-staff-walkin-add-line]').click();
+        await midnightPage.locator('.staff-walkin-line').waitFor();
+        const savedLineBeforeMidnight = await midnightPage.locator('.staff-walkin-line').innerText();
+        await selectWalkinCourt(midnightPage, 'listing-basketball');
+        await midnightPage.locator('[data-staff-walkin-next]').click();
+        await midnightPage.locator('[data-staff-walkin-hour="10"]').waitFor();
+        await midnightPage.locator('[data-staff-walkin-hour="10"]').click();
+        assert.equal(await midnightPage.locator('[data-staff-walkin-hour="10"]').getAttribute('aria-pressed'), 'true');
+        await midnightPage.clock.setFixedTime(new Date('2026-09-27T16:00:00Z'));
+        await midnightPage.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await midnightPage.waitForFunction(() => document.querySelector('[data-staff-walkin-open-windows]').textContent.includes('date changed to 2026-09-28'));
+        const dateChangeNotice = midnightPage.locator('[data-staff-walkin-open-windows]');
+        assert.equal(await dateChangeNotice.isVisible(), true, 'the date-change notice remains visible after availability rendering');
+        assert.match(await dateChangeNotice.innerText(), /date changed to 2026-09-28; select a time for the new date/i);
+        assert.equal(await midnightPage.locator('[data-staff-walkin-hour][aria-pressed="true"]').count(), 0, 'old-day time selection is cleared');
+        assert.equal(await midnightPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'checkout cannot use the cleared old-day selection');
+        assert.equal(await midnightPage.locator('.staff-walkin-line').count(), 1, 'the previously added booking line is preserved');
+        assert.equal(await midnightPage.locator('.staff-walkin-line').innerText(), savedLineBeforeMidnight, 'the saved line is not restamped with the new date');
+        await midnightContext.context.close();
+
         const inUsePhoneContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', config: { phoneRegistered: true },
         });

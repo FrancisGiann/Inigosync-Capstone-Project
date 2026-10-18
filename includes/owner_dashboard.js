@@ -1,6 +1,6 @@
 // IñigoSync — Owner Dashboard controller
 // Staff Management, Account Settings, Court Listings, the Booking Overview
-// stat tiles/Website performance/Booking status breakdown, Media Manager,
+// stat tiles/Booking status breakdown, Media Manager,
 // and Feedbacks & Reviews all talk to the real Supabase database.
 // (Booking trend chart setup lives in event/chart.js, loaded below.)
 //
@@ -28,59 +28,9 @@
 // placeholders read as instructions, not fake passwords (C1); Staff
 // Management/the "Active staff accounts" stat are staff-only, no more owner
 // row (C2); Booking status this month drops Confirmed/Cancelled (C3);
-// Recent bookings was replaced by a Website performance card with three
-// grouped, client-measurable checks (C4, refreshWebsitePerformance()); and a new
+// Recent bookings was removed (C4); and a new
 // Feedbacks & Reviews tab renders a Google-Play-style ratings summary +
 // sortable/filterable list over the `feedback` table (C5).
-
-// Revision A3, decision C4 — "Errors this session" counter for the Website
-// performance card. Registered here, at the very top of this file (before
-// the DOMContentLoaded listener below, and before every other <script> this
-// file could theoretically outlive), so an error thrown at any point during
-// this page's lifetime — including before DOMContentLoaded fires — is
-// counted the first time refreshWebsitePerformance() reads
-// inigosyncSessionErrorCount. Never reset for the life of this tab: "this
-// session" means "since this page was loaded", not "since the last check".
-let inigosyncSessionErrorCount = 0;
-window.addEventListener('error', () => { inigosyncSessionErrorCount += 1; });
-window.addEventListener('unhandledrejection', () => { inigosyncSessionErrorCount += 1; });
-
-function worstAdminPerfStatus(rows) {
-    const rank = { good: 0, warn: 1, problem: 2 };
-    let worst = null;
-    rows.forEach(row => {
-        if (!row || row.status === 'neutral' || !(row.status in rank)) return;
-        worst = worst === null ? rank[row.status] : Math.max(worst, rank[row.status]);
-    });
-    return worst === null ? 'good' : worst === 0 ? 'good' : worst === 1 ? 'warn' : 'problem';
-}
-
-function buildAdminPerfGroups({ storage, pageLoad, serverResponse, errorCount, connection }) {
-    const pageParts = [
-        pageLoad.status === 'neutral' ? 'Page load unavailable' : `Page load ${pageLoad.value}`,
-        serverResponse.status === 'neutral' ? 'Service response unavailable' : `Service response ${serverResponse.value}`,
-    ];
-    const pageUnavailable = pageLoad.status === 'neutral' || serverResponse.status === 'neutral';
-    const pageStatus = pageUnavailable ? 'neutral' : worstAdminPerfStatus([pageLoad, serverResponse]);
-    const problemsStatus = worstAdminPerfStatus([{
-        status: errorCount === 0 ? 'good' : errorCount < 5 ? 'warn' : 'problem',
-    }, connection]);
-    return [
-        storage,
-        {
-            label: 'Page speed',
-            value: pageUnavailable ? 'Unavailable' : `${pageLoad.value} · ${serverResponse.value}`,
-            details: pageParts.join(' · '), status: pageStatus,
-            pillText: pageUnavailable ? 'Unavailable' : pageStatus === 'good' ? 'Good' : pageStatus === 'warn' ? 'Slow' : 'Problem',
-        },
-        {
-            label: 'Problems / errors', value: `${errorCount} · ${connection.value}`,
-            details: `${errorCount === 0 ? 'No browser errors recorded this visit' : `${errorCount} browser error${errorCount === 1 ? '' : 's'} recorded this visit`} · Internet ${connection.value.toLowerCase()}`,
-            status: problemsStatus,
-            pillText: errorCount > 0 ? (errorCount < 5 ? 'Review' : 'Problem') : connection.status === 'problem' ? 'Check connection' : 'Clear',
-        },
-    ];
-}
 
 document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
@@ -426,12 +376,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ADMIN_STAT_KEYS.forEach((key) => setAdminStat(key, '—'));
     }
 
-    function monthRange(date = new Date()) {
-        const start = new Date(date.getFullYear(), date.getMonth(), 1);
-        const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
-        return { start, end };
-    }
-
     async function refreshOverviewStats() {
         // window.sb missing leaves the tiles on Pages/owner_dashboard.html's
         // own markup default, which is "—" for exactly this reason (see
@@ -494,490 +438,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setAdminStat('sports-listed', sportsIsFallback ? '—' : (sports || []).length);
         setAdminStat('active-staff', staffRes.error ? '—' : (staffRes.count || 0));
 
-        // Revision A1, decision A3 — the Booking status breakdown refreshes
-        // alongside the account/catalog stat tiles, from this SAME entry point (also
-        // triggered on 'inigosync:profile-ready' below), rather than a
-        // second listener elsewhere. Revision A3, decision C4 — the old
-        // Recent bookings table (which used to also refresh from here) is
-        // gone; Website performance replaced it and runs on its own
-        // schedule — see refreshWebsitePerformance()'s own comment for why
-        // it isn't wired to this same entry point.
-        refreshStatusBreakdown();
     }
 
-    // ------------------------------------------------------------------
-    // Overview — Booking status this month (Revision A1, decision A3).
-    // Replaces the old hardcoded "Staff on shift" card: real counts,
-    // rendered as the SAME label + count + proportional-bar rows
-    // (.admin-progress-*) the old fake card used.
-    //
-    // Checkout attempts are never bookings in this flow. The chart shows
-    // only reservation statuses, so pending/unpaid rows are omitted.
-    const ADMIN_STATUS_LABELS = { booked: 'Booked', completed: 'Completed', no_show: 'No-show' };
-    let statusRange = 'month';
-
-    function statusDateRange(range) {
-        const now = new Date();
-        if (range === 'week') {
-            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-            return { start, end: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) };
-        }
-        if (range === 'year') {
-            return { start: new Date(now.getFullYear(), 0, 1), end: new Date(now.getFullYear() + 1, 0, 1) };
-        }
-        return monthRange(now);
-    }
-
-    document.querySelectorAll('[data-admin-status-range]').forEach((button) => {
-        button.addEventListener('click', () => {
-            statusRange = button.dataset.adminStatusRange;
-            document.querySelectorAll('[data-admin-status-range]').forEach((item) => {
-                item.classList.toggle('is-active', item === button);
-            });
-            refreshStatusBreakdown();
-        });
-    });
-
-    async function refreshStatusBreakdown() {
-        const listRoot = document.querySelector('[data-admin-status-breakdown]');
-        if (!listRoot || !window.sb) return;
-
-        const { start, end } = statusDateRange(statusRange);
-
-        const { data: rows, error } = await window.sb.rpc('admin_booking_overview', { p_from_at: start.toISOString(), p_to_at: end.toISOString() });
-        if (error) { listRoot.innerHTML = '<p class="admin-form-hint">Could not load booking status.</p>'; return; }
-        const counts = { booked: 0, completed: 0, no_show: 0 };
-        (rows || []).forEach(row => {
-            const key = row.auto_cancelled_at || ['no_show', 'unattended'].includes(row.status) ? 'no_show'
-                : row.status === 'completed' ? 'completed'
-                : row.status === 'confirmed' && Number(row.amount_paid) > 0 ? 'booked'
-                : null;
-            if (key) counts[key]++;
-        });
-
-        const maxCount = Math.max(1, ...Object.values(counts));
-
-        listRoot.innerHTML = Object.keys(ADMIN_STATUS_LABELS).map((key) => {
-            const count = counts[key];
-            const pct = Math.round((count / maxCount) * 100);
-            return `
-                <div class="admin-progress-item">
-                    <div class="admin-progress-row">
-                        <span>${ADMIN_STATUS_LABELS[key]}</span>
-                        <span class="admin-progress-count">${count} booking${count === 1 ? '' : 's'}</span>
-                    </div>
-                    <div class="admin-progress-track"><div class="admin-progress-fill" style="width: ${pct}%;"></div></div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    // ------------------------------------------------------------------
-    // Overview — Website performance (Revision A3, implementation_plan.md,
-    // decision C4). Replaces the old Recent bookings card with 3 grouped,
-    // client-measurable health checks. Every check either returns a REAL
-    // measured value or, if it genuinely can't run right now, an explicit
-    // "—" value with a neutral "Unavailable" pill and a tooltip reason
-    // (adminPerfUnavailableRow) — never a fabricated number. Each check
-    // function is written to never reject (its own try/catch always
-    // resolves to a row), so Promise.all below can't itself fail.
-    // ------------------------------------------------------------------
-
-    // Safety cap on checkAdminPerfMediaStorage()'s recursive descent into
-    // Storage "folders" (list() entries with no `metadata`) — a media
-    // library this deeply nested is not expected, and this bounds how many
-    // list() round trips a single Run check can ever make.
-    const ADMIN_PERF_MAX_STORAGE_FOLDERS = 20;
-    const ADMIN_PERF_REFRESH_MS = 5 * 60 * 1000;
-
-    function adminPerfUnavailableRow(label, reason) {
-        return { label, value: '—', status: 'neutral', pillText: 'Unavailable', title: reason || 'This check could not run.' };
-    }
-
-    // Decimal byte units match the 1 GB reference used by the percentage.
-    function formatAdminPerfBytes(bytes) {
-        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        let value = Math.max(0, Number(bytes) || 0);
-        let unitIndex = 0;
-        while (value >= 1000 && unitIndex < units.length - 1) {
-            value /= 1000;
-            unitIndex += 1;
-        }
-        const rounded = (unitIndex === 0 || value >= 100) ? Math.round(value) : Math.round(value * 10) / 10;
-        return `${rounded} ${units[unitIndex]}`;
-    }
-
-    // (1) Website loading — Navigation Timing. loadEventEnd (and its domComplete
-    // fallback) both read 0/undefined until the browser's own 'load' event
-    // has actually finished dispatching, so this can legitimately be
-    // "not ready yet" for a little while after DOMContentLoaded — handled
-    // as an honest Unavailable row rather than a fabricated/negative
-    // duration (see refreshWebsitePerformance's own initial-run comment
-    // below for how the FIRST run avoids this case entirely).
-    function getAdminPerfPageLoadMs() {
-        const [nav] = performance.getEntriesByType('navigation');
-        if (!nav) return null;
-        const raw = nav.loadEventEnd > 0 ? (nav.loadEventEnd - nav.startTime) : (nav.domComplete > 0 ? (nav.domComplete - nav.startTime) : null);
-        return (typeof raw === 'number' && raw > 0) ? raw : null;
-    }
-
-    function checkAdminPerfPageLoad() {
-        const LABEL = 'Page loading time';
-        const ms = getAdminPerfPageLoadMs();
-        if (ms === null) return adminPerfUnavailableRow(LABEL, 'The page is still finishing loading — try Run check again in a moment.');
-        const status = ms < 2500 ? 'good' : ms < 5000 ? 'warn' : 'problem';
-        const pillText = status === 'good' ? 'Good' : status === 'warn' ? 'Slow' : 'Problem';
-        return { label: LABEL, value: `${(ms / 1000).toFixed(1)} s`, status, pillText };
-    }
-
-    // (2) Photo and media space — recursive, best-effort walk of the `media`
-    // bucket. list() entries with a `metadata` object are files (summed by
-    // metadata.size); entries with no `metadata` are "folders" and are
-    // descended into, up to ADMIN_PERF_MAX_STORAGE_FOLDERS list() calls
-    // total. Reuses isMediaBucketMissingError() (defined above, shared with
-    // uploadToMedia()) so a not-yet-provisioned bucket reads as "Not set up"
-    // rather than an error.
-    async function checkAdminPerfMediaStorage() {
-        const LABEL = 'Storage';
-        if (!window.sb) return adminPerfUnavailableRow(LABEL, 'Not connected to the server yet.');
-
-        let totalBytes = 0;
-        let foldersVisited = 0;
-        let bucketMissing = false;
-        let hardError = null;
-
-        async function walk(prefix) {
-            if (hardError || bucketMissing) return;
-            if (foldersVisited >= ADMIN_PERF_MAX_STORAGE_FOLDERS) {
-                hardError = new Error('The photo library is too large for this check.');
-                return;
-            }
-            foldersVisited += 1;
-            const { data, error } = await window.sb.storage.from('media').list(prefix, { limit: 1000 });
-            if (error) {
-                if (isMediaBucketMissingError(error)) bucketMissing = true;
-                else hardError = error;
-                return;
-            }
-            if ((data || []).length === 1000) {
-                hardError = new Error('The photo library is too large for this check.');
-                return;
-            }
-            for (const entry of (data || [])) {
-                if (hardError || bucketMissing) return;
-                if (entry.metadata && typeof entry.metadata.size === 'number') {
-                    if (!Number.isFinite(entry.metadata.size) || entry.metadata.size < 0) {
-                        hardError = new Error('Storage returned an invalid photo size.');
-                        return;
-                    }
-                    totalBytes += entry.metadata.size;
-                } else if (!entry.metadata) {
-                    await walk(prefix ? `${prefix}/${entry.name}` : entry.name);
-                }
-            }
-        }
-
-        try {
-            await walk('');
-        } catch (err) {
-            hardError = err;
-        }
-
-        if (bucketMissing) {
-            return { label: LABEL, value: 'Not set up', status: 'neutral', pillText: 'Unavailable', title: 'Photo storage has not been configured.' };
-        }
-        if (hardError) {
-            return adminPerfUnavailableRow(LABEL, hardError.message || 'Could not read Storage.');
-        }
-
-        const referenceBytes = 1_000_000_000;
-        const usagePct = (totalBytes / referenceBytes) * 100;
-        const status = usagePct < 25 ? 'good'
-            : usagePct < 50 ? 'neutral'
-                : usagePct < 70 ? 'warn'
-                    : 'problem';
-        const pillText = usagePct < 25 ? 'Low use'
-            : usagePct < 50 ? 'Moderate'
-                : usagePct < 70 ? 'High use'
-                    : 'Very high';
-
-        return {
-            label: LABEL,
-            value: `${formatAdminPerfBytes(totalBytes)} of 1 GB reference · ${usagePct.toFixed(1)}%`,
-            status,
-            pillText,
-            storageUsage: true,
-            barPct: Math.min(100, Math.max(0, usagePct)),
-            barValueText: `${usagePct.toFixed(1)}% of the 1 GB reference`,
-        };
-    }
-
-    // Measure a lightweight authenticated request to the service so the
-    // owner sees a simple server response time rather than database internals.
-    async function checkAdminPerfServerResponse() {
-        const LABEL = 'Server response';
-        if (!window.sb) return adminPerfUnavailableRow(LABEL, 'Not connected to the server yet.');
-        try {
-            const startedAt = performance.now();
-            const { error } = await window.sb.from('profiles').select('id', { head: true }).limit(1);
-            if (error) return adminPerfUnavailableRow(LABEL, error.message || 'Could not contact the service.');
-            const ms = Math.max(0, Math.round(performance.now() - startedAt));
-            const status = ms < 500 ? 'good' : ms < 1500 ? 'warn' : 'problem';
-            const pillText = status === 'good' ? 'Fast' : status === 'warn' ? 'Taking longer' : 'Slow';
-            return { label: LABEL, value: `${ms} ms`, status, pillText };
-        } catch (err) {
-            return adminPerfUnavailableRow(LABEL, (err && err.message) || 'Could not reach the database.');
-        }
-    }
-
-    // (4) Website issues this visit — show the count without technical detail.
-    // inigosyncSessionErrorCount is a module-level
-    // counter incremented by the window 'error'/'unhandledrejection'
-    // listeners registered at the very top of this file (before this
-    // DOMContentLoaded block even runs), so it also counts anything thrown
-    // during this file's own startup.
-    function checkAdminPerfSessionErrors() {
-        const count = inigosyncSessionErrorCount;
-        const status = count === 0 ? 'good' : count < 5 ? 'warn' : 'problem';
-        const pillText = status === 'good' ? 'Good' : status === 'warn' ? 'Warn' : 'Problem';
-        return { label: 'Website issues this visit', value: String(count), status, pillText };
-    }
-
-    // (5) Internet connection — keep the owner-facing state simple.
-    function checkAdminPerfConnection() {
-        const online = navigator.onLine;
-        const value = online ? 'Connected' : 'Not connected';
-        return { label: 'Internet connection', value, status: online ? 'good' : 'problem', pillText: online ? 'Good' : 'Check connection' };
-    }
-
-    const ADMIN_PERF_OVERALL_LABELS = { good: 'Good', warn: 'Slow', problem: 'Problem' };
-
-    // A 'neutral' row (media storage's "Not set up",
-    // or any check's own "Unavailable") never counts toward it: a bucket
-    // the owner hasn't provisioned yet, or a check that simply couldn't run
-    // this time, isn't a website PERFORMANCE problem, so neither should
-    // drag the overall badge down. If every row is neutral (practically
-    // unreachable — Connection/Errors this session/Page load are almost
-    // always computable), default to Good rather than alarming the owner
-    // over nothing measured.
-    function adminPerfPillHtml(row, extraClass) {
-        const status = row.status || 'neutral';
-        const text = row.pillText || 'Info';
-        const cls = `admin-perf-pill${extraClass ? ` ${extraClass}` : ''} admin-perf-pill-${window.escapeHtml(status)}`;
-        return `<span class="${cls}">${window.escapeHtml(text)}</span>`;
-    }
-
-    // Legend swatch — same "which of the 4 statuses" branch the chart slice
-    // colors below use, just as a tiny CSS-colored dot (.admin-perf-dot-*,
-    // Style/owner_dashboard.css) instead of a canvas fill.
-    function adminPerfDotHtml(status) {
-        return `<span class="admin-perf-dot admin-perf-dot-${window.escapeHtml(status || 'neutral')}" aria-hidden="true"></span>`;
-    }
-
-    function adminPerfRowHtml(row) {
-        // Media storage's usage bar renders as a second, full-width line
-        // under the label/value/pill row (see .admin-perf-bar's own comment
-        // in Style/owner_dashboard.css) rather than squeezed into that row.
-        const barHtml = (typeof row.barPct === 'number')
-            ? `<div class="admin-progress-track admin-perf-bar" role="progressbar" aria-label="${window.escapeHtml(row.label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.max(0, row.barPct))}" aria-valuetext="${window.escapeHtml(row.barValueText || `${row.barPct}%`)}"><div class="admin-progress-fill admin-perf-bar-fill-${window.escapeHtml(row.status || 'neutral')}" style="width: ${Math.min(100, Math.max(0, row.barPct))}%;"></div></div>`
-            : '';
-        const detailHtml = row.details ? `<span class="admin-perf-item-detail">${window.escapeHtml(row.details)}</span>` : '';
-        return `
-            <div class="admin-perf-item"${row.storageUsage ? ' data-admin-perf-storage' : ''}>
-                <div class="admin-perf-item-row">
-                    <span class="admin-perf-item-label">${adminPerfDotHtml(row.status)}${window.escapeHtml(row.label)}</span>
-                    <span class="admin-perf-item-value">${window.escapeHtml(row.value)}</span>
-                    ${adminPerfPillHtml(row)}
-                </div>
-                ${detailHtml}
-                ${barHtml}
-            </div>
-        `;
-    }
-
-    // ------------------------------------------------------------------
-    // Website performance — doughnut chart ("like a pie graph"). Chart.js
-    // is loaded from the CDN in Pages/owner_dashboard.html's <head>, ahead
-    // of this file, so window.Chart is already defined here unless that
-    // CDN request itself failed (checked once below, mirroring how
-    // event/chart.js guards the SAME global for the booking trend chart).
-    // One instance, created once and updated in place on every refresh —
-    // never destroyed/recreated — exactly like event/chart.js's
-    // bookingChart/updateCharts() do for that other chart on this page.
-    // ------------------------------------------------------------------
-    let adminPerfChart = null;
-    // The tooltip label callback below is defined once, at chart creation,
-    // but needs each refresh's live values/pillText — it reads them off
-    // this module-level array (kept in sync by renderAdminPerfChart())
-    // rather than closing over a single refresh's now-stale `rows` param.
-    let adminPerfLatestRows = [];
-
-    function getAdminPerfThemeColors() {
-        const style = getComputedStyle(document.documentElement);
-        return {
-            ink: style.getPropertyValue('--color-ink').trim(),
-            line: style.getPropertyValue('--color-line').trim(),
-            bgCard: style.getPropertyValue('--color-bg-card').trim(),
-        };
-    }
-
-    // The 4 slice/dot colors — good/problem/neutral reuse the same design
-    // tokens as .admin-perf-pill-good/-problem/-neutral; warn uses the
-    // dedicated --color-perf-warn amber (see that variable's own comment in
-    // Style/owner_dashboard.css for why it isn't --color-primary here).
-    function adminPerfSliceColor(status) {
-        const style = getComputedStyle(document.documentElement);
-        if (status === 'good') return style.getPropertyValue('--color-court-green').trim();
-        if (status === 'warn') return style.getPropertyValue('--color-perf-warn').trim();
-        if (status === 'problem') return style.getPropertyValue('--color-alert').trim();
-        return style.getPropertyValue('--color-ink-faint').trim(); // neutral / unavailable / anything else
-    }
-
-    // Re-applies current theme colors to the existing chart instance —
-    // called after every refresh AND on 'themechange', same split
-    // event/chart.js's updateCharts() does for the booking trend chart.
-    function paintAdminPerfChart() {
-        if (!adminPerfChart) return;
-        const theme = getAdminPerfThemeColors();
-        adminPerfChart.data.datasets[0].backgroundColor = adminPerfLatestRows.map((row) => adminPerfSliceColor(row.status));
-        adminPerfChart.data.datasets[0].borderColor = theme.bgCard;
-        adminPerfChart.options.plugins.tooltip.backgroundColor = theme.bgCard;
-        adminPerfChart.options.plugins.tooltip.borderColor = theme.line;
-        adminPerfChart.options.plugins.tooltip.titleColor = theme.ink;
-        adminPerfChart.options.plugins.tooltip.bodyColor = theme.ink;
-        adminPerfChart.update();
-    }
-
-    // Builds the doughnut the first time, then just updates its data/colors
-    // in place on every subsequent call (see this section's own comment
-    // above for why). window.Chart missing (CDN failed) or the canvas not
-    // being in the DOM both no-op here — Style/owner_dashboard.css's
-    // .admin-perf-no-chart (set once, below) hides the now-empty chart
-    // column so the legend list alone fills the card.
-    function renderAdminPerfChart(rows) {
-        adminPerfLatestRows = rows;
-        const canvas = document.querySelector('[data-admin-perf-chart]');
-        if (!canvas || typeof window.Chart === 'undefined') return;
-
-        if (!adminPerfChart) {
-            const theme = getAdminPerfThemeColors();
-            adminPerfChart = new Chart(canvas, {
-                type: 'doughnut',
-                data: {
-                    labels: rows.map((row) => row.label),
-                    datasets: [{
-                        // Three EQUAL slices — status (color), not magnitude,
-                        // is what this ring encodes; a real check value
-                        // (e.g. milliseconds vs. a booking count) has no
-                        // shared unit to size slices by anyway.
-                        data: rows.map(() => 1),
-                        backgroundColor: rows.map((row) => adminPerfSliceColor(row.status)),
-                        borderColor: theme.bgCard,
-                        borderWidth: 2,
-                    }],
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '68%',
-                    animation: { duration: 400 },
-                    plugins: {
-                        legend: { display: false }, // the legend list beside it IS the legend
-                        tooltip: {
-                            backgroundColor: theme.bgCard,
-                            borderColor: theme.line,
-                            borderWidth: 1,
-                            titleColor: theme.ink,
-                            bodyColor: theme.ink,
-                            padding: 10,
-                            displayColors: false,
-                            callbacks: {
-                                title: () => '',
-                                label: (ctx) => {
-                                    const row = adminPerfLatestRows[ctx.dataIndex];
-                                    if (!row) return '';
-                                    return `${row.label}: ${row.value} · ${row.pillText || 'Info'}`;
-                                },
-                            },
-                        },
-                    },
-                },
-            });
-            return;
-        }
-
-        adminPerfChart.data.labels = rows.map((row) => row.label);
-        adminPerfChart.data.datasets[0].data = rows.map(() => 1);
-        paintAdminPerfChart();
-    }
-
-    // Center-of-the-ring overlay — the overall word (never 'neutral', see
-    // worstAdminPerfStatus()) plus the static "3 checks" already in the
-    // markup. Pure CSS class swap, so it stays correct across theme changes
-    // on its own (no JS re-render needed, unlike the canvas ring itself).
-    function updateAdminPerfChartCenter(overall) {
-        const statusEl = document.querySelector('[data-admin-perf-chart-status]');
-        if (!statusEl) return;
-        statusEl.textContent = ADMIN_PERF_OVERALL_LABELS[overall] || '—';
-        statusEl.className = `admin-perf-chart-status admin-perf-chart-status-${overall}`;
-    }
-
-    let adminPerfIsRunning = false;
-
-    async function refreshWebsitePerformance() {
-        const listRoot = document.querySelector('[data-admin-perf-list]');
-        if (!listRoot) return;
-        if (adminPerfIsRunning) return; // ignore an overlapping Run check click / interval tick
-        adminPerfIsRunning = true;
-
-        const overallEl = document.querySelector('[data-admin-perf-overall]');
-        const lastCheckedEl = document.querySelector('[data-admin-perf-last-checked]');
-        const runBtn = document.querySelector('[data-admin-perf-run]');
-        const runBtnOriginalLabel = runBtn ? runBtn.textContent : null;
-        if (runBtn) {
-            runBtn.disabled = true;
-            runBtn.textContent = 'Checking…';
-        }
-
-        try {
-            const [storage, pageLoad, serverResponse] = await Promise.all([
-                checkAdminPerfMediaStorage(),
-                Promise.resolve(checkAdminPerfPageLoad()),
-                checkAdminPerfServerResponse(),
-            ]);
-            const connection = checkAdminPerfConnection();
-            const rows = buildAdminPerfGroups({
-                storage, pageLoad, serverResponse,
-                errorCount: inigosyncSessionErrorCount, connection,
-            });
-
-            listRoot.innerHTML = rows.map(adminPerfRowHtml).join('');
-            renderAdminPerfChart(rows);
-
-            const overall = worstAdminPerfStatus(rows);
-            if (overallEl) {
-                overallEl.textContent = ADMIN_PERF_OVERALL_LABELS[overall];
-                overallEl.className = `admin-perf-pill admin-perf-overall admin-perf-pill-${overall}`;
-            }
-            updateAdminPerfChartCenter(overall);
-            if (lastCheckedEl) {
-                const checkedAt = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                lastCheckedEl.textContent = `Last checked ${checkedAt}`;
-            }
-        } catch (err) {
-            // Should be unreachable (every check* function catches its own
-            // errors), but a card stuck on "Running checks…" forever would
-            // be worse than an honest failure message.
-            console.error('[admin] failed to run the website performance checks', err);
-            listRoot.innerHTML = '<p style="color: var(--color-ink-faint);">Could not run the performance checks. Please try again.</p>';
-        } finally {
-            adminPerfIsRunning = false;
-            if (runBtn) {
-                runBtn.disabled = false;
-                runBtn.textContent = runBtnOriginalLabel || 'Run check';
-            }
-        }
-    }
+    // The combined booking report is managed by event/chart.js.
 
     let ownerIncomeRange = 'month';
     let ownerIncomeRequest = 0;
@@ -1015,43 +478,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     document.addEventListener('inigosync:profile-ready', refreshOwnerIncome);
     if (window.inigosyncProfile) refreshOwnerIncome();
-
-    const adminPerfRunBtn = document.querySelector('[data-admin-perf-run]');
-    if (adminPerfRunBtn) adminPerfRunBtn.addEventListener('click', refreshWebsitePerformance);
-
-    // Chart.js availability is fixed for the life of the page (either the
-    // <head> CDN <script> tag succeeded before this file ever ran, or it
-    // didn't) — checked once, matching event/chart.js's own one-time
-    // `typeof Chart === 'undefined'` guard for the booking trend chart.
-    const adminPerfBodyEl = document.querySelector('[data-admin-perf-body]');
-    if (adminPerfBodyEl && typeof window.Chart === 'undefined') {
-        console.warn('[admin] Chart.js failed to load from the CDN — Website performance will show the legend list only.');
-        adminPerfBodyEl.classList.add('admin-perf-no-chart');
-    }
-
-    // Re-color (not rebuild) the doughnut on theme changes — same approach
-    // event/chart.js's updateCharts() takes for the booking trend chart.
-    document.addEventListener('themechange', paintAdminPerfChart);
-
-    document.addEventListener('inigosync:profile-ready', refreshWebsitePerformance);
-    window.setInterval(refreshWebsitePerformance, ADMIN_PERF_REFRESH_MS);
-
-    // First run deliberately keyed to the window 'load' event (deferred one
-    // more tick via setTimeout) rather than called plainly here alongside
-    // this file's other "on load" refreshers: Page load (check #2) reads
-    // Navigation Timing fields that are only populated once 'load' finishes
-    // DISPATCHING — reading them from directly inside a 'load' listener
-    // itself can still observe 0 on some browsers, hence the setTimeout(…,
-    // 0) to hop past that same event loop turn. Falls back to running
-    // immediately if 'load' has, unusually, already fired by the time this
-    // line runs (e.g. a very slow parse of everything before this script
-    // tag) — DOMContentLoaded (which this whole block already runs inside
-    // of) always fires before 'load', so that's the only case this guards.
-    if (document.readyState === 'complete') {
-        refreshWebsitePerformance();
-    } else {
-        window.addEventListener('load', () => window.setTimeout(refreshWebsitePerformance, 0), { once: true });
-    }
 
     refreshOverviewStats();
     document.addEventListener('inigosync:profile-ready', refreshOverviewStats);
@@ -1279,51 +705,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ------------------------------------------------------------------
-    // Staff Management — Edit/View staff modal (Revision S3). Replaces the
-    // old inline Edit, which toggled the Name/Position cells into <input>s
-    // in place — there was no room in a table cell for five more fields
-    // (database/schema/018_staff_details.sql). One dialog now serves BOTH
-    // actions: data-admin-view-staff and data-admin-edit-staff (wired in
-    // wireStaffRowActions() below) both call openStaffEditModal(profile,
-    // mode) — 'view' disables every field, hides Save, and relabels Cancel
-    // to Close, purely in JS, so there is exactly one form to keep in sync
-    // rather than two near-identical dialogs. Same
+    // Staff Management — read-only details and position change modal. Both
+    // actions use one dialog: View shows profile details, while Change
+    // position adds only the position selector and save action. Same
     // .admin-modal-overlay/.admin-modal shell + open/close idiom (Esc/
     // backdrop mousedown+click/×, focus-first-field) as the Add New Staff
     // modal above.
     // ------------------------------------------------------------------
     const staffEditModal = document.querySelector('[data-admin-staff-edit-modal]');
     const staffEditDialog = document.querySelector('[data-admin-staff-edit-dialog]');
-    const staffEditBirthdateInput = document.querySelector('[data-admin-staff-edit-birthdate]');
-    if (staffEditBirthdateInput) staffEditBirthdateInput.max = todayDateInputValue();
-
-    [[staffEditBirthdateInput, '[data-admin-staff-edit-age]']].forEach(([input, selector]) => {
-        input?.addEventListener('input', () => { document.querySelector(selector).value = computeAdminStaffAge(input.value) ?? ''; });
-    });
-
     const STAFF_EDIT_MODAL_CLOSE_DELAY_MS = 250;
     let staffEditModalHideTimer = null;
     let staffEditModalIsOpen = false;
     let staffEditModalLastFocused = null;
     let staffEditModalProfileId = null;
+    let staffEditModalProfileName = '';
 
     function fillStaffEditForm(profile) {
         if (!staffEditDialog) return;
-        const set = (sel, val) => {
-            const el = staffEditDialog.querySelector(sel);
-            if (el) el.value = val;
-        };
-        set('[data-admin-staff-edit-name]', profile.full_name || '');
-        set('[data-admin-staff-edit-position]', profile.position || '');
-        set('[data-admin-staff-edit-mobile]', profile.contact_num || '');
-        set('[data-admin-staff-edit-address]', profile.address || '');
-        set('[data-admin-staff-edit-birthdate]', profile.birthdate || '');
-        set('[data-admin-staff-edit-age]', computeAdminStaffAge(profile.birthdate) ?? '');
-        set('[data-admin-staff-edit-gender]', profile.gender || '');
-        set('[data-admin-staff-edit-emergency-name]', profile.emergency_contact_name || '');
-        set('[data-admin-staff-edit-emergency-number]', profile.emergency_contact_number || '');
-        staffEditDialog.querySelector('[data-admin-staff-edit-emergency-number]')
-            ?.dispatchEvent(new Event('input', { bubbles: true }));
+        const positionInput = staffEditDialog.querySelector('[data-admin-staff-edit-position]');
+        if (positionInput) positionInput.value = profile.position || '';
 
         const age = computeAdminStaffAge(profile.birthdate);
         const details = [
@@ -1346,30 +747,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (metaEl) metaEl.textContent = formatAdminStaffEditMeta(profile);
     }
 
-    function setStaffEditFieldsDisabled(disabled) {
-        if (!staffEditDialog) return;
-        staffEditDialog.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = disabled; });
-    }
-
     function openStaffEditModal(profile, mode) {
         if (!staffEditModal || !staffEditDialog) return;
         staffEditModalLastFocused = document.activeElement;
         staffEditModalProfileId = profile.id;
+        staffEditModalProfileName = profile.full_name || 'Staff member';
         fillStaffEditForm(profile);
-        setStaffEditFieldsDisabled(mode === 'view');
 
         const viewingDetails = mode === 'view';
         const detailsView = staffEditDialog.querySelector('[data-admin-staff-details-view]');
         const detailsEdit = staffEditDialog.querySelector('[data-admin-staff-details-edit]');
-        if (detailsView) detailsView.hidden = !viewingDetails;
+        if (detailsView) detailsView.hidden = false;
         if (detailsEdit) detailsEdit.hidden = viewingDetails;
 
         const titleEl = staffEditDialog.querySelector('[data-admin-staff-edit-modal-title]');
-        if (titleEl) titleEl.textContent = mode === 'view' ? 'Staff Details' : 'Edit Staff';
+        if (titleEl) titleEl.textContent = mode === 'view' ? 'Staff Details' : 'Change Staff Position';
         const saveBtn = staffEditDialog.querySelector('[data-admin-staff-edit-submit]');
         if (saveBtn) saveBtn.hidden = mode === 'view';
         const cancelBtn = staffEditDialog.querySelector('.admin-btn-ghost[data-admin-staff-edit-modal-close]');
-        if (cancelBtn) cancelBtn.textContent = mode === 'view' ? 'Close' : 'Cancel';
+        if (cancelBtn) cancelBtn.textContent = 'Close';
 
         if (staffEditModalHideTimer) {
             window.clearTimeout(staffEditModalHideTimer);
@@ -1383,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
         staffEditModal.setAttribute('data-open', '');
         staffEditModalIsOpen = true;
 
-        const firstField = mode === 'view' ? cancelBtn : staffEditDialog.querySelector('input, select, textarea');
+        const firstField = mode === 'view' ? cancelBtn : staffEditDialog.querySelector('[data-admin-staff-edit-position]');
         if (firstField) firstField.focus();
     }
 
@@ -1403,6 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         staffEditModalLastFocused = null;
         staffEditModalProfileId = null;
+        staffEditModalProfileName = '';
     }
 
     document.querySelectorAll('[data-admin-staff-edit-modal-close]').forEach((btn) => {
@@ -1431,76 +828,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (staffEditSubmitBtn) {
         staffEditSubmitBtn.addEventListener('click', async () => {
             if (!window.sb || !staffEditModalProfileId || !staffEditDialog) return;
-            const get = (sel) => staffEditDialog.querySelector(sel)?.value.trim() || '';
-
-            const full_name = get('[data-admin-staff-edit-name]');
-            if (!full_name) {
-                window.InigoToast?.show("Enter the staff member's full name.", true);
+            const position = staffEditDialog.querySelector('[data-admin-staff-edit-position]')?.value || '';
+            if (!['Secretary', 'Court Attendant'].includes(position)) {
+                window.InigoToast?.show('Choose a valid staff position.', true);
                 return;
             }
-            const position = get('[data-admin-staff-edit-position]');
-            const birthdate = get('[data-admin-staff-edit-birthdate]');
-            if (!['Secretary', 'Court Attendant'].includes(position) || (birthdate && (birthdate > todayDateInputValue() || computeAdminStaffAge(birthdate) === null))) {
-                window.InigoToast?.show('Choose a valid position and birthdate.', true); return;
-            }
-
-            const emergencyNumberRaw = get('[data-admin-staff-edit-emergency-number]');
-            let emergency_contact_number = '';
-            if (emergencyNumberRaw) {
-                const check = window.validatePhMobile ? window.validatePhMobile(emergencyNumberRaw) : { valid: false, message: 'Mobile validation is unavailable right now.' };
-                if (!check.valid) {
-                    window.InigoToast?.show(`Emergency contact number: ${check.message}`, true);
-                    return;
-                }
-                emergency_contact_number = check.normalized;
-                const emergencyInput = staffEditDialog.querySelector('[data-admin-staff-edit-emergency-number]');
-                if (emergencyInput?.dataset.checkedPhone !== check.normalized) {
-                    window.InigoToast?.show('Wait for the emergency-number availability check to finish.', true);
-                    emergencyInput?.focus();
-                    return;
-                }
-            }
-
-            const fullPatch = {
-                full_name,
-                position,
-                address: get('[data-admin-staff-edit-address]'),
-                birthdate: staffEditDialog.querySelector('[data-admin-staff-edit-birthdate]')?.value || null,
-                gender: staffEditDialog.querySelector('[data-admin-staff-edit-gender]')?.value || '',
-                emergency_contact_name: get('[data-admin-staff-edit-emergency-name]'),
-                emergency_contact_number,
-            };
 
             staffEditSubmitBtn.disabled = true;
-            let { error } = await window.sb.from('profiles').update(fullPatch).eq('id', staffEditModalProfileId);
-
-            // Revision S3 — database/schema/018_staff_details.sql not
-            // applied yet: retry with just the three columns the old
-            // inline Edit already relied on, same schema-mismatch-retry
-            // idiom as every other write in this file
-            // (isSchemaMismatchError's own comment above).
-            let usedReducedPayload = false;
-            if (error && isSchemaMismatchError(error)) {
-                ({ error } = await window.sb.from('profiles').update({ full_name, position }).eq('id', staffEditModalProfileId));
-                usedReducedPayload = true;
-            }
-
+            const { error } = await window.sb.from('profiles')
+                .update({ position })
+                .eq('id', staffEditModalProfileId);
             staffEditSubmitBtn.disabled = false;
 
             if (error) {
-                window.InigoToast?.show(error.message || 'Could not save changes.', true);
+                window.InigoToast?.show(error.message || 'Could not update staff position.', true);
                 return;
             }
 
+            const staffName = staffEditModalProfileName;
             closeStaffEditModal();
             refreshStaffList();
-            recordOwnerActivity(`Staff account updated: ${full_name}`, 'staff');
-            window.InigoToast?.show(usedReducedPayload
-                ? 'Staff updated — address/birthdate/gender/emergency contact need a database update (see database/schema/018_staff_details.sql).'
-                : 'Staff updated.');
+            recordOwnerActivity(`Staff position changed: ${staffName}`, 'staff');
+            window.InigoToast?.show('Staff position updated.');
         });
     }
-
     // Revision S3 — age is always DERIVED from birthdate, never stored,
     // duplicated from includes/staff_dashboard.js's own computeStaffAge()
     // rather than shared — see isSchemaMismatchError's own comment above
@@ -1599,7 +950,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="adminStaffActionCard" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
                     <button type="button" hidden data-admin-view-staff>View</button>
                     <button type="button" hidden data-admin-reset-password>Reset Password</button>
-                    <button type="button" hidden data-admin-edit-staff>Edit</button>
+                    <button type="button" hidden data-admin-edit-staff>Change position</button>
                     ${profile.status === 'disabled'
                         ? '<button type="button" hidden data-admin-activate-staff>Activate</button>'
                         : '<button type="button" hidden data-admin-delete-staff>Deactivate</button>'}
@@ -1845,7 +1196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     staffActionCard.hidden = true;
     staffActionCard.innerHTML = `
         <button type="button" data-admin-staff-command="view">View staff details</button>
-        <button type="button" data-admin-staff-command="edit">Edit staff</button>
+        <button type="button" data-admin-staff-command="edit">Change position</button>
         <button type="button" data-admin-staff-command="reset">Send password reset</button>
         <button type="button" data-admin-staff-command="toggle">Deactivate account</button>
     `;
@@ -2257,7 +1608,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const isClosed = row.querySelector('[data-owner-rules-closed]')?.checked === true;
             const opensAt = row.querySelector('[data-owner-rules-open]')?.value || '';
             const closesAt = row.querySelector('[data-owner-rules-close]')?.value || '';
-            if (!isClosed && (!opensAt || !closesAt || opensAt >= closesAt)) {
+            if (!isClosed && (!/^\d{2}:00$/.test(opensAt) || !/^\d{2}:00$/.test(closesAt))) {
+                setBookingRulesMessage(`Choose whole-hour opening and closing times (:00) for ${row.querySelector('th')?.textContent || 'each open day'}.`, true);
+                row.querySelector('[data-owner-rules-open]')?.focus();
+                return;
+            }
+            if (!isClosed && opensAt >= closesAt) {
                 setBookingRulesMessage(`Set a closing time after the opening time for ${row.querySelector('th')?.textContent || 'each open day'}.`, true);
                 row.querySelector('[data-owner-rules-open]')?.focus();
                 return;
@@ -2282,6 +1638,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_effective_from: effectiveFrom,
             });
             if (error) throw error;
+            window.InigoBusinessHours?.notifyRulesUpdated?.();
             setBookingRulesMessage('Working Time Schedule saved. The shared availability schedule will use it from the effective date.');
             window.InigoToast?.show('Working Time Schedule saved.');
             setBookingRulesEditing(false);

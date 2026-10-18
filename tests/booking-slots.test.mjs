@@ -50,3 +50,39 @@ test('booking picker is wired to authoritative availability and keeps checkout s
     assert.match(dashboard, /functions\.invoke\('paymongo-checkout'/);
     assert.doesNotMatch(dashboard, /\.from\(['"]booking['"]\)\s*\.insert/);
 });
+
+test('working-time changes refresh visible customer and staff availability views', () => {
+    const dashboard = readFileSync(new URL('../includes/Dashboard.js', import.meta.url), 'utf8');
+    const staff = readFileSync(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
+    const owner = readFileSync(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8');
+    const businessHours = readFileSync(new URL('../includes/businessHours.js', import.meta.url), 'utf8');
+    assert.match(owner, /notifyRulesUpdated\?\.\(\)/, 'successful owner saves publish a rules update');
+    assert.match(businessHours, /addEventListener\('storage'/, 'other tabs receive the local-storage update');
+    assert.match(dashboard, /addEventListener\('inigosync:booking-rules-updated'/);
+    assert.match(dashboard, /addEventListener\('visibilitychange', refreshVisibleBookingAvailability\)/);
+    assert.match(dashboard, /refreshTimePickers\(true\)/, 'the customer forces a date-rule refresh');
+    assert.match(dashboard, /setInterval\(refreshVisibleBookingAvailability, 60000\)/, 'active customer booking availability polls once a minute');
+    assert.match(dashboard, /bookDate\.min = today;[\s\S]*?if \(bookingState\.date < today\)[\s\S]*?bookingState\.date = today/, 'the customer date minimum and selection roll forward after Manila midnight');
+    assert.match(staff, /addEventListener\('inigosync:booking-rules-updated', refreshVisibleWalkinSlots\)/);
+    assert.match(staff, /addEventListener\('visibilitychange', refreshVisibleWalkinSlots\)/);
+    assert.match(staff, /getForDate\(rulesDate, \{ force: forceRules \}\)/);
+    assert.match(staff, /setInterval\(refreshVisibleWalkinSlots, 60000\)/, 'active walk-in availability polls once a minute');
+    assert.match(staff, /addEventListener\('inigosync:booking-rules-updated', refreshVisibleCourtSchedule\)/);
+    assert.match(staff, /setInterval\(refreshVisibleCourtSchedule, 60000\)/, 'the active staff schedule refreshes once a minute');
+    assert.match(staff, /scheduleDateInput\.min = today;[\s\S]*?if \(scheduleDate < today\)[\s\S]*?scheduleDate = today/, 'the schedule minimum and selection roll forward after Manila midnight');
+
+    const walkinRefresh = staff.match(/async function refreshWalkinTimeSlots\(forceRules = false\) \{([\s\S]*?)function refreshVisibleWalkinSlots/);
+    assert.ok(walkinRefresh, 'walk-in refresh function is present');
+    assert.match(walkinRefresh[1], /const businessRules = window\.InigoBusinessHours[\s\S]*?await window\.InigoBusinessHours\.getForDate\(rulesDate, \{ force: forceRules \}\)[\s\S]*?if \(mySeq !== walkinRequestSeq\) return;/,
+        'stale rules responses are discarded before shared state is updated');
+    assert.match(walkinRefresh[1], /const occupancyRes = await fetchWalkinOccupancyForCourt\(courtName\);\s*if \(mySeq !== walkinRequestSeq\) return;/,
+        'stale occupancy responses are discarded before shared state is updated');
+    assert.match(walkinRefresh[1], /const hoursForDay =/,
+        'hours are calculated locally until the request is current');
+    assert.match(walkinRefresh[1], /renderWalkinTimeSlots\(\);\s*if \(dateChangeMessage && occupancyRes\.ok && !businessRules\.isClosed && walkinOpenWindowsEl\) walkinOpenWindowsEl\.textContent = dateChangeMessage/,
+        'the date-change notice is applied after verified slots render');
+    assert.match(walkinRefresh[1], /if \(walkinSelectionDate !== rulesDate\)[\s\S]*?walkinState\.selectedHours = \[\][\s\S]*?walkinState\.startHour = null[\s\S]*?walkinState\.endHour = null/,
+        'the midnight date change clears the current time selection');
+    assert.match(staff, /walkinSelectionDate !== todayDateInputValue\(\) \|\| !walkinState\.court[\s\S]*?return null;/,
+        'a stale date selection cannot be turned into a new-date order line');
+});

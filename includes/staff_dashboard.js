@@ -80,6 +80,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             panel.classList.toggle('is-active', panel.dataset.staffPanel === name);
         });
 
+        if (name === 'schedule') refreshCourtSchedule();
+        if (name === 'walkin' && walkinWizardWrap && !walkinWizardWrap.hidden && walkinState.court) refreshWalkinTimeSlots(true);
+
         document.querySelectorAll('[data-staff-nav]').forEach((btn) => {
             if (btn.closest('.staff-nav')) {
                 const isActive = btn.dataset.staffNav === name;
@@ -1293,7 +1296,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (step === 2) {
             return Boolean(walkinState.court && walkinState.unit && window.InigoCourtsData);
         }
-        if (step === 3) return Boolean(walkinBusinessRules?.authoritative && walkinBookings.ok && walkinWalkins.ok)
+        if (step === 3) return walkinSelectionDate === todayDateInputValue()
+            && Boolean(walkinBusinessRules?.authoritative && walkinBookings.ok && walkinWalkins.ok)
             && (walkinState.selectedHours?.length > 0
                 || (!walkinState.court && walkinState.items.length > 0));
         if (step === 4) return Boolean(walkinState.payment)
@@ -1831,6 +1835,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Staff chooses a contiguous run of available hourly slots; both duration
     // and the backend quantity for per-slot pricing derive from this selection.
     let walkinHoursForDay = [];
+    let walkinSelectionDate = todayDateInputValue();
     function walkinSlotStatus(hour) {
         if (isWalkinHourPast(hour)) return 'past';
         const { start, end } = hourWindow(hour, todayDateInputValue());
@@ -1892,6 +1897,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             </button>`;
         }).join('') || '<p class="staff-form-hint">No opening hours are configured for this date.</p>';
         walkinHourGrid.querySelectorAll('[data-staff-walkin-hour]').forEach((button) => button.addEventListener('click', () => {
+            if (walkinSelectionDate !== todayDateInputValue()) {
+                if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'The date changed. Checking today’s availability…';
+                refreshWalkinTimeSlots(true);
+                return;
+            }
             const hour = Number(button.dataset.staffWalkinHour);
             const selection = [...walkinState.selectedHours];
             const selectedIndex = selection.indexOf(hour);
@@ -1931,32 +1941,69 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    async function refreshWalkinTimeSlots() {
+    async function refreshWalkinTimeSlots(forceRules = false) {
         if (!walkinHourGrid) return;
         const mySeq = ++walkinRequestSeq;
-        walkinBusinessRules = window.InigoBusinessHours?.getForDate
-            ? await window.InigoBusinessHours.getForDate(todayDateInputValue()).catch(() => null)
+        const rulesDate = todayDateInputValue();
+        const courtName = walkinState.court?.name || '';
+        let dateChangeMessage = '';
+        const businessRules = window.InigoBusinessHours?.getForDate
+            ? await window.InigoBusinessHours.getForDate(rulesDate, { force: forceRules }).catch(() => null)
             : null;
-        if (!walkinBusinessRules?.authoritative) {
+        if (mySeq !== walkinRequestSeq) return;
+        if (walkinSelectionDate !== rulesDate) {
+            const hadSelection = walkinState.selectedHours.length > 0
+                || walkinState.startHour !== null || walkinState.endHour !== null;
+            walkinSelectionDate = rulesDate;
+            walkinState.selectedHours = [];
+            walkinState.startHour = null;
+            walkinState.endHour = null;
+            if (hadSelection) dateChangeMessage = `Availability changed. The date changed to ${rulesDate}; select a time for the new date.`;
+        }
+        if (!businessRules?.authoritative) {
+            walkinBusinessRules = businessRules;
             walkinHoursForDay = [];
             walkinBookings = { ok: false, rows: [] };
             walkinWalkins = { ok: false, rows: [] };
             renderWalkinTimeSlots();
             renderWalkinWizard();
+            if (dateChangeMessage && walkinOpenWindowsEl) {
+                walkinOpenWindowsEl.textContent = `Availability changed. The date changed to ${rulesDate}, but hours could not be verified. Refresh before continuing.`;
+            }
             return;
         }
-        const open = Number(walkinBusinessRules?.openHour ?? window.InigoBusinessHours?.OPEN_HOUR ?? 8);
-        const close = Number(walkinBusinessRules?.closeHour ?? window.InigoBusinessHours?.CLOSE_HOUR ?? 20);
-        walkinHoursForDay = walkinBusinessRules?.isClosed || close <= open ? [] : Array.from({ length: close - open }, (_, index) => open + index);
-        if (!walkinState.court) { renderWalkinTimeSlots(); return; }
+        const open = Number(businessRules.openHour ?? window.InigoBusinessHours?.OPEN_HOUR ?? 8);
+        const close = Number(businessRules.closeHour ?? window.InigoBusinessHours?.CLOSE_HOUR ?? 20);
+        const hoursForDay = businessRules.isClosed || close <= open ? [] : Array.from({ length: close - open }, (_, index) => open + index);
+        if (!courtName) {
+            walkinBusinessRules = businessRules;
+            walkinHoursForDay = hoursForDay;
+            renderWalkinTimeSlots();
+            if (dateChangeMessage && walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = dateChangeMessage;
+            return;
+        }
         walkinHourGrid.innerHTML = '<p class="staff-form-hint">Checking live availability…</p>';
         if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Checking live availability…';
-        const occupancyRes = await fetchWalkinOccupancyForCourt(walkinState.court.name);
+        const occupancyRes = await fetchWalkinOccupancyForCourt(courtName);
         if (mySeq !== walkinRequestSeq) return;
+        walkinBusinessRules = businessRules;
+        walkinHoursForDay = hoursForDay;
         walkinBookings = { ok: occupancyRes.ok, rows: occupancyRes.rows.filter((row) => row.source === 'online') };
         walkinWalkins = { ok: occupancyRes.ok, rows: occupancyRes.rows.filter((row) => row.source !== 'online') };
         renderWalkinTimeSlots();
+        if (dateChangeMessage && occupancyRes.ok && !businessRules.isClosed && walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = dateChangeMessage;
+        renderWalkinWizard();
     }
+
+    function refreshVisibleWalkinSlots() {
+        const walkinPanel = document.querySelector('[data-staff-panel="walkin"]');
+        if (document.visibilityState !== 'visible' || !walkinPanel?.classList.contains('is-active')
+            || walkinWizardWrap?.hidden || !walkinState.court) return;
+        refreshWalkinTimeSlots(true);
+    }
+    document.addEventListener('inigosync:booking-rules-updated', refreshVisibleWalkinSlots);
+    document.addEventListener('visibilitychange', refreshVisibleWalkinSlots);
+    window.setInterval(refreshVisibleWalkinSlots, 60000);
 
     function resetWalkinTimeSelectionAndRefresh() {
         walkinState.selectedHours = [];
@@ -1976,10 +2023,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function buildWalkinLine() {
-        if (!walkinState.court || !walkinBookings.ok || !walkinWalkins.ok || !walkinState.selectedHours.length || walkinState.startHour === null || walkinState.endHour === null) return null;
+        if (walkinSelectionDate !== todayDateInputValue() || !walkinState.court || !walkinBookings.ok || !walkinWalkins.ok
+            || !walkinState.selectedHours.length || walkinState.startHour === null || walkinState.endHour === null) return null;
         if (walkinState.selectedHours.some((hour, index) => walkinSlotStatus(hour) !== 'open'
             || (index > 0 && hour !== walkinState.selectedHours[index - 1] + 1))) return null;
-        const date = todayDateInputValue();
+        const date = walkinSelectionDate;
         const startsAt = manilaDateTime(date, walkinState.startHour).toISOString();
         const endsAt = manilaDateTime(date, walkinState.endHour + 1).toISOString();
         return {
@@ -1998,6 +2046,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function clearWalkinCurrentLine() {
+        walkinSelectionDate = todayDateInputValue();
         walkinState.court = null;
         walkinState.unit = null;
         walkinState.unitId = null;
@@ -2288,6 +2337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sports = walkinState.sports || [];
         const courts = walkinState.courts;
         const nightRateStartsAt = walkinState.nightRateStartsAt || null;
+        walkinSelectionDate = todayDateInputValue();
         walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, mobileAvailability: '', sports, sport: null, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', nightRateStartsAt, startHour: null, endHour: null, selectedHours: [], items: [], payment: staffCashEnabled ? 'cash' : (staffQrphEnabled ? 'paymongo_qr' : null) };
         if (walkinNameInput) walkinNameInput.value = '';
         if (walkinMobileInput) walkinMobileInput.value = '';
@@ -3613,6 +3663,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     refreshCourtSchedule();
     document.addEventListener('inigosync:profile-ready', refreshCourtSchedule);
+    function refreshVisibleCourtSchedule() {
+        const schedulePanel = document.querySelector('[data-staff-panel="schedule"]');
+        if (document.visibilityState !== 'visible' || !schedulePanel?.classList.contains('is-active')) return;
+        const today = todayDateInputValue();
+        if (scheduleDateInput) scheduleDateInput.min = today;
+        if (scheduleDate < today) {
+            scheduleDate = today;
+            if (scheduleDateInput) scheduleDateInput.value = today;
+        }
+        refreshCourtSchedule();
+    }
+    document.addEventListener('inigosync:booking-rules-updated', refreshVisibleCourtSchedule);
+    document.addEventListener('visibilitychange', refreshVisibleCourtSchedule);
+    window.setInterval(refreshVisibleCourtSchedule, 60000);
 
     // ------------------------------------------------------------------
     // Transaction Records — one row per payment attributed to this staff

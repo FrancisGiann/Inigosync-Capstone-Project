@@ -21,16 +21,6 @@
     --color-alert: #d6482f;
     --color-line: rgba(244, 239, 230, 0.12);
 
-    /* Website performance doughnut chart's "warn" slice/legend-dot only —
-       deliberately its own token rather than --color-primary: the ring
-       encodes status by hue alone (no labels on the slices themselves), so
-       warn needs to read distinctly from the "Run check" button/links that
-       already use --color-primary nearby. One value for both themes (not
-       redefined in the light block below), same as --admin-card-radius/
-       --admin-card-pad just under it; text usages (the pill, the center
-       overlay word) keep using --color-primary as before. */
-    --color-perf-warn: #e0a100;
-
     /* Revision A2 (implementation_plan.md, decision B5) — one card system:
        every card-like surface (stat cards, the chart/recent-bookings/
        status-breakdown/staff/settings/profile .admin-card, plus the
@@ -537,34 +527,44 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 .admin-link-btn:hover { color: var(--color-primary-dim); text-decoration: underline; }
 
-/* Charts */
-.admin-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
-/* Revision A2, decision B5 — a grid item's automatic min-width is its
-   content's min-content size, and Recent bookings/Booking status this
-   month nest a table with min-width: 680px (.admin-table). Without this,
-   even the single ~340px-wide column at narrow widths still tried to grow
-   to fit that table, forcing the WHOLE PAGE to scroll horizontally
-   instead of just the table (verified: this alone caused
-   document.documentElement.scrollWidth to blow out to ~748px at a 360px
-   viewport). min-width: 0 lets the card shrink to its actual grid-track
-   width, so .admin-table-wrap's own overflow-x: auto scrolls the table
-   internally as intended. */
-.admin-grid-2 > .admin-card { min-width: 0; }
+/* Booking report toolbar and the two aligned cards below it. */
+.admin-booking-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 0 0 12px; }
+.admin-booking-toolbar-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-booking-report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 16px; align-items: stretch; }
+.admin-booking-report-card { min-width: 0; }
 .admin-chart-wrap { position: relative; height: 250px; }
+.admin-chart-definition { margin: 16px 0 0; color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.45; }
 
-/* Booking Trends card header — title/caption left, total + range toggle right */
+/* Booking Trends card header — title/caption left, total right */
 .admin-chart-head { align-items: flex-start; }
-.admin-chart-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.admin-chart-exports { display: flex; align-items: center; gap: 8px; }
-.admin-chart-exports button { white-space: nowrap; }
+.admin-chart-exports { position: relative; display: flex; align-items: center; }
+.admin-chart-exports > button { white-space: nowrap; }
+.admin-btn-chip-secondary.admin-chart-export-toggle { background: var(--color-primary); border-color: var(--color-primary); color: #14110d; }
+.admin-btn-chip-secondary.admin-chart-export-toggle:hover { background: var(--color-primary-dim); border-color: var(--color-primary-dim); color: #14110d; }
+.admin-btn-chip-secondary.admin-chart-export-toggle:disabled { opacity: .55; }
 .admin-chart-exports button:disabled { opacity: .55; cursor: not-allowed; }
-.admin-chart-export-status { flex-basis: 100%; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: right; }
+.admin-chart-export-menu {
+    position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; min-width: 150px;
+    padding: 5px; background: var(--color-bg-card); border: 1px solid var(--color-line);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+.admin-chart-export-menu[hidden] { display: none; }
+.admin-chart-export-menu button {
+    display: block; width: 100%; padding: 9px 11px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--color-ink); font: inherit; text-align: left; cursor: pointer;
+}
+.admin-chart-export-menu button:hover, .admin-chart-export-menu button:focus-visible { background: var(--color-bg-elevated); outline: none; }
+.admin-chart-export-menu button:disabled { color: var(--color-ink-faint); cursor: not-allowed; }
+.admin-chart-export-status { position: absolute; top: calc(100% + 5px); right: 0; z-index: 21; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
+.admin-chart-takeaway { margin: 12px 0 0; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.45; }
 .admin-chart-total {
     /* Revision A2 (implementation_plan.md) — a booking count, so it takes
        --font-numeric (tabular-nums) instead of the removed --font-mono. */
     font-family: var(--font-numeric); font-variant-numeric: tabular-nums; font-size: var(--fs-xs); color: var(--color-ink-faint); white-space: nowrap;
 }
 
+.admin-booking-toolbar .admin-toggle-pill { padding: 2px; }
+.admin-booking-toolbar .admin-pill-btn { padding: 6px 12px; font-size: var(--fs-xs); }
 .admin-toggle-pill {
     display: flex; background: var(--color-bg-elevated); border: 1px solid var(--color-line);
     border-radius: 999px; padding: 3px; flex-shrink: 0;
@@ -577,152 +577,61 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-pill-btn.is-active { background: var(--color-primary); color: #14110d; }
 .admin-pill-btn:not(.is-active):hover { color: var(--color-ink); }
 
-/* Booking status this month (Revision A1, decision A3; trimmed to 3 rows by
-   Revision A3, decision C3) — horizontal progress-bar rows (label + count +
-   proportional bar) the old "Busiest courts this week" fake card
-   originated, now fed by includes/owner_dashboard.js's
-   refreshStatusBreakdown() instead of a hardcoded width. Also reused as-is
-   (same .admin-progress-track/.admin-progress-fill classes, just with an
-   .admin-feedback-dist-track sizing modifier) by the Feedbacks & Reviews
-   star-distribution rows below (decision C5), instead of duplicating the
-   track/fill look a second time. */
-.admin-progress-list { display: flex; flex-direction: column; gap: 14px; }
-.admin-progress-item { display: flex; flex-direction: column; gap: 6px; }
-.admin-progress-row {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-    font-size: var(--fs-md); font-weight: 600;
+/* Booking status report: one clear period total and three compact,
+   self-contained status counts. */
+.admin-status-report { display: grid; grid-template-columns: minmax(120px, 150px) minmax(0, 1fr); align-items: center; gap: 20px; width: 100%; min-width: 0; padding: 8px 0 0; }
+.admin-status-pie {
+    position: relative; display: grid; place-items: center; width: min(100%, 136px); aspect-ratio: 1;
+    margin: 0; border: 4px solid var(--color-bg-card); border-radius: 50%; background: var(--color-bg-elevated);
+    box-shadow: 0 0 0 1px var(--color-line);
 }
-/* Revision A2 (implementation_plan.md) — a count ("12/20"), so it takes
-   --font-numeric (tabular-nums) instead of the removed --font-mono. */
-.admin-progress-count { font-family: var(--font-numeric); font-variant-numeric: tabular-nums; font-weight: 400; color: var(--color-ink-faint); white-space: nowrap; }
+.admin-status-pie.is-empty { color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: center; }
+.admin-status-pie-share {
+    position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%);
+    max-width: calc(100% - 12px); padding: 5px 8px; overflow: hidden;
+    border: 1px solid var(--color-line); border-radius: 999px;
+    background: var(--color-bg-card); color: var(--color-ink);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+    font-size: var(--fs-xs); font-weight: 700; line-height: 1.2; text-align: center;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.admin-status-details { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.admin-status-summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.admin-status-total { display: flex; align-items: baseline; gap: 8px; flex: 0 0 auto; }
+.admin-status-total strong { font-family: var(--font-numeric); font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1; font-variant-numeric: tabular-nums; }
+.admin-status-total span { color: var(--color-ink-faint); font-size: var(--fs-sm); }
+.admin-status-summary p { margin: 0; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.45; }
+.admin-status-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.admin-status-count {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
+    column-gap: 7px; row-gap: 7px; min-width: 0; padding: 12px;
+    background: var(--color-bg-elevated); border: 1px solid var(--color-line);
+    border-radius: var(--admin-card-radius);
+}
+.admin-status-dot { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%; }
+.admin-status-dot-booked { background: var(--color-court-green); }
+.admin-status-dot-completed { background: var(--color-ink-faint); }
+.admin-status-dot-no-show { background: var(--color-primary); }
+.admin-status-count-label { min-width: 0; font-size: var(--fs-sm); font-weight: 600; }
+.admin-status-count strong { grid-column: 2; font-family: var(--font-numeric); font-size: 1.5rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+@media (max-width: 680px) {
+    .admin-status-report { grid-template-columns: 1fr; justify-items: center; gap: 18px; }
+    .admin-status-pie { width: 128px; }
+    .admin-status-details { width: 100%; }
+}
+@media (max-width: 620px) {
+    .admin-booking-toolbar { align-items: flex-start; }
+    .admin-booking-toolbar-controls { width: auto; justify-content: flex-end; margin-left: auto; }
+    .admin-booking-toolbar .admin-toggle-pill { width: auto; }
+}
+@media (max-width: 520px) {
+    .admin-status-counts { grid-template-columns: 1fr; gap: 8px; }
+    .admin-status-count { grid-template-columns: auto minmax(0, 1fr) auto; padding: 12px 14px; }
+    .admin-status-count strong { grid-column: 3; grid-row: 1; }
+}
+
 .admin-progress-track { height: 8px; border-radius: 999px; background: var(--color-bg-elevated); overflow: hidden; }
 .admin-progress-fill { height: 100%; border-radius: 999px; background: var(--color-primary); }
-
-/* ==========================================================================
-   Website performance (Revision A3, implementation_plan.md, decision C4) —
-   replaces the old Recent bookings card in the same .admin-grid-2 slot.
-   Six label/value/status-pill rows rendered by
-   includes/owner_dashboard.js's refreshWebsitePerformance(); the Media
-   storage row additionally gets a small usage bar, reusing
-   .admin-progress-track/.admin-progress-fill from just above rather than a
-   second set of bar classes.
-   ========================================================================== */
-.admin-perf-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-
-.admin-perf-list { display: flex; flex-direction: column; }
-
-/* One line per check: dot+label, value and status pill share a row
-   (.admin-perf-item-row) that never wraps the pill below the value — label
-   and pill are flex: 0 0 auto (fixed size), so only the value (flex: 1 1
-   auto + min-width: 0, below) shrinks and wraps its own text when it's
-   long. .admin-perf-item itself stays flex-column so the Media storage
-   row's usage bar (.admin-perf-bar, below) can sit as a second, full-width
-   line under the row instead of being squeezed into it. */
-.admin-perf-item {
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 10px 0; border-bottom: 1px solid var(--color-line);
-}
-.admin-perf-item:last-child { border-bottom: none; padding-bottom: 0; }
-.admin-perf-item:first-child { padding-top: 0; }
-
-.admin-perf-item-row { display: flex; align-items: center; gap: 10px; }
-.admin-perf-item-detail { display: block; margin: 4px 0 0 18px; color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.45; }
-.admin-perf-item-label {
-    display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
-    font-size: var(--fs-sm); color: var(--color-ink-faint);
-}
-/* A value is sometimes a timing/count ("128 ms", "142 bookings · 37
-   customers · 9 feedback") and sometimes a sentence ("Not set up — run
-   015_media_bucket.sql") — --font-numeric's tabular-nums only helps the
-   former, but doesn't hurt the latter, so one rule covers both rather than
-   branching per row. flex + min-width: 0 + overflow-wrap let a long value
-   shrink and wrap within its own box instead of pushing the status pill
-   onto a second line or overflowing this card at 360px. */
-.admin-perf-item-value {
-    font-family: var(--font-numeric); font-variant-numeric: tabular-nums; font-size: var(--fs-md);
-    font-weight: 600; color: var(--color-ink);
-    flex: 1 1 auto; min-width: 0; text-align: right; overflow-wrap: anywhere;
-}
-/* Second, full-width line under the row (.admin-perf-item's column
-   direction stretches it edge to edge) instead of the old side-by-side
-   layout's inline, capped-width bar. */
-.admin-perf-bar { width: 100%; }
-
-.admin-perf-pill {
-    font-family: var(--font-display); font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.04em;
-    text-transform: uppercase; padding: 5px 11px; border-radius: 999px; white-space: nowrap; flex: 0 0 auto;
-}
-/* Bigger variant for the card-head's overall badge — same 4 status colors,
-   just roomier since it stands alone next to Run check rather than beside
-   a label+value column. */
-.admin-perf-overall { padding: 7px 15px; font-size: var(--fs-sm); }
-
-.admin-perf-pill-good { background: color-mix(in srgb, var(--color-court-green) 20%, transparent); color: var(--color-court-green); }
-.admin-perf-pill-warn { background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: var(--color-primary); }
-.admin-perf-pill-problem { background: color-mix(in srgb, var(--color-alert) 18%, transparent); color: var(--color-alert); }
-/* Neutral — "Not set up" (Storage bucket not provisioned) and "Unavailable"
-   (a check honestly couldn't run) — deliberately NOT red/yellow: neither is
-   a performance problem, so this shouldn't visually alarm the owner or drag
-   the overall badge down (see worstAdminPerfStatus()'s own comment). */
-.admin-perf-pill-neutral { background: color-mix(in srgb, var(--color-ink-faint) 20%, transparent); color: var(--color-ink-faint); }
-
-/* Photo storage's neutral band (25–<50%) is gray and its warning band
-   (50–<70%) is yellow, matching the storage dot/chart slice and bar. */
-.admin-perf-item[data-admin-perf-storage] .admin-perf-pill-warn {
-    background: color-mix(in srgb, var(--color-perf-warn) 18%, transparent);
-    color: var(--color-perf-warn);
-}
-.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-good { background: var(--color-court-green); }
-.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-neutral { background: var(--color-ink-faint); }
-.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-warn { background: var(--color-perf-warn); }
-.admin-perf-item[data-admin-perf-storage] .admin-perf-bar-fill-problem { background: var(--color-alert); }
-
-/* "Like a pie graph" layout — a Chart.js doughnut on top, centered, plus
-   the same 3 rows as a full-width legend below it (unchanged
-   .admin-perf-list/-item rules above besides the added .admin-perf-dot).
-   Built in includes/owner_dashboard.js's renderAdminPerfChart(). Stacked
-   at every width — a side-by-side chart|legend grid (this section's
-   original layout) put the legend in a ~200px column too narrow for one
-   line per check, wrapping every row's status pill below its value. */
-.admin-perf-body { display: flex; flex-direction: column; gap: 18px; }
-/* Set once at startup (typeof window.Chart === 'undefined') if the Chart.js
-   CDN failed to load — hides the now-empty chart so the legend list alone
-   fills the card. */
-.admin-perf-body.admin-perf-no-chart .admin-perf-chart-wrap { display: none; }
-
-/* Fixed height, capped width, centered — Chart.js's responsive: true /
-   maintainAspectRatio: false fills this box; the width cap + auto margins
-   keep the doughnut from stretching across the card now that the legend
-   sits below it instead of beside it. */
-.admin-perf-chart-wrap { position: relative; height: 200px; max-width: 220px; margin: 0 auto; }
-.admin-perf-chart-center {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 2px; text-align: center;
-    /* Let hover/click pass through to the canvas underneath for tooltips —
-       this div's box covers the whole chart, not just the drawn text. */
-    pointer-events: none;
-}
-.admin-perf-chart-status {
-    font-family: var(--font-display); font-size: var(--fs-md); font-weight: var(--fw-semibold);
-    letter-spacing: 0.02em; text-transform: uppercase; color: var(--color-ink-faint);
-}
-/* Same 3 colors as .admin-perf-pill-good/-warn/-problem just above (the
-   overall badge in the card head uses those pill classes already) so the
-   center word always matches that badge — the ring's own warn slice uses
-   --color-perf-warn instead, see .admin-perf-dot-warn below. */
-.admin-perf-chart-status-good { color: var(--color-court-green); }
-.admin-perf-chart-status-warn { color: var(--color-primary); }
-.admin-perf-chart-status-problem { color: var(--color-alert); }
-.admin-perf-chart-sub { font-size: var(--fs-xs); color: var(--color-ink-faint); }
-
-/* Legend dot — colored circle per performance status. .admin-perf-item-
-   label itself (display: inline-flex, flex: 0 0 auto) is defined above,
-   next to .admin-perf-item-row. */
-.admin-perf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.admin-perf-dot-good { background: var(--color-court-green); }
-.admin-perf-dot-warn { background: var(--color-perf-warn); }
-.admin-perf-dot-problem { background: var(--color-alert); }
-.admin-perf-dot-neutral { background: var(--color-ink-faint); }
 
 /* Toolbar / filters / search */
 .admin-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -904,14 +813,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-mini-btn:hover { border-color: var(--color-primary); color: var(--color-ink); }
 .admin-mini-btn.is-danger:hover { border-color: var(--color-alert); color: var(--color-alert); }
 
-/* Status badges — .active/.inactive back Court statuses; .active/.inactive/
-   .pending back Staff statuses (Staff's own "Invited" state).
-   Revision A3, decision C4 — .confirmed/.completed/.cancelled/.unattended
-   (added in Revision A1 decision A3 for Recent bookings' derived booking
-   status) are removed: Recent bookings itself is gone (replaced by Website
-   performance), and Booking status this month never rendered these as
-   badges — it always used the separate .admin-progress-* label/bar rows
-   (below), so nothing on this page emits those 4 classes any more. */
+/* Status badges for court and staff records. */
 .admin-status {
     /* Revision A2 (implementation_plan.md) — label role (status badge), so
        it moves to --font-display, not --font-numeric; Oswald 700 steps down
@@ -1059,12 +961,28 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-review-item p { margin: 10px 0 6px; color: var(--color-ink-dim); overflow-wrap: anywhere; }
 .admin-review-item time { color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .admin-review-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; }
-.admin-settings-readonly { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
-.admin-settings-readonly > div { min-width: 0; padding: 12px; border: 1px solid var(--color-line); border-radius: 10px; }
-.admin-settings-readonly dt { color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.admin-settings-readonly dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.owner-account-card { display: grid; grid-template-columns: minmax(150px, .65fr) minmax(0, 2fr); gap: 28px; }
+.owner-photo-section { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 12px; border-right: 1px solid var(--color-line); }
+.owner-photo-section .admin-card-head { margin: 0; }
+.owner-photo-section .admin-avatar-upload-row { flex-direction: column; justify-content: center; gap: 18px; }
+.owner-photo-section .admin-avatar-upload-controls { align-items: center; max-width: 100%; text-align: center; }
+.owner-photo-section .admin-avatar-upload-actions { justify-content: center; max-width: 100%; }
+.owner-photo-section .admin-btn-primary,
+.owner-photo-section .admin-btn-ghost { width: auto; max-width: 100%; padding-left: 14px; padding-right: 14px; }
+.owner-personal-section { display: flex; flex-direction: column; min-width: 0; }
+.owner-profile-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin: 0 0 18px; }
+.owner-profile-summary > div { min-width: 0; }
+.owner-profile-summary dt { margin-bottom: 3px; color: var(--color-ink-faint); font-size: var(--fs-sm); }
+.owner-profile-summary dd { margin: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.owner-personal-section > [data-admin-profile-edit] { align-self: flex-end; width: auto; min-width: 120px; margin-top: auto; padding-left: 22px; padding-right: 22px; }
+.owner-personal-section > [data-admin-profile-edit][hidden] { display: none; }
 .admin-modal-google-accounts { margin: 16px 0; }
-@media (max-width: 640px) { .admin-settings-readonly { grid-template-columns: 1fr; } .admin-court-media { min-height: 150px; } }
+@media (max-width: 680px) {
+    .owner-account-card { grid-template-columns: minmax(0, 1fr); }
+    .owner-photo-section { border-right: 0; border-bottom: 1px solid var(--color-line); padding-bottom: 24px; }
+}
+@media (max-width: 480px) { .owner-profile-summary { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .admin-court-media { min-height: 150px; } }
 .admin-btn-secondary {
     flex: 1; padding: 10px 0; border-radius: 999px; border: 1px solid var(--color-line);
     background: transparent; color: var(--color-ink-dim); font-family: var(--font-body); font-weight: 700;
@@ -1720,7 +1638,6 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
    ========================================================================== */
 @media (max-width: 1080px) {
     .admin-stat-grid { grid-template-columns: repeat(2, 1fr); }
-    .admin-grid-2 { grid-template-columns: 1fr; }
     .admin-settings-grid { grid-template-columns: 1fr; }
     /* .admin-court-grid/.admin-slide-grid no longer need a breakpoint here
        — both are repeat(auto-fill, minmax(260px,1fr)) now, so they adapt
@@ -1785,6 +1702,14 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     gap: 16px 22px;
     align-items: start;
     margin: 4px 0 20px;
+}
+.owner-booking-rules-head { align-items: flex-start; margin-bottom: 0; }
+.owner-rules-edit {
+    flex: 0 0 auto;
+    margin-left: auto;
+    padding: 8px 14px;
+    font-size: var(--fs-sm);
+    white-space: nowrap;
 }
 .owner-rules-grace-input { display: flex; align-items: center; gap: 10px; }
 .owner-rules-grace-input .admin-input { max-width: 150px; }

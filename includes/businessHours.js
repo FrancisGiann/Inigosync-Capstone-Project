@@ -48,6 +48,7 @@
     const TIMEZONE = 'Asia/Manila';
     const DEFAULT_GRACE_MINUTES = 30;
     const CACHE_MS = 60 * 1000;
+    const RULES_UPDATED_STORAGE_KEY = 'inigosync:booking-rules-updated';
     const rulesByDate = new Map();
 
     function dateInManila(value = new Date()) {
@@ -100,6 +101,28 @@
     }
 
     function invalidateRules() { rulesByDate.clear(); }
+
+    function emitRulesUpdated() {
+        if (typeof window.document?.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.document.dispatchEvent(new CustomEvent('inigosync:booking-rules-updated'));
+        }
+    }
+
+    function notifyRulesUpdated() {
+        invalidateRules();
+        emitRulesUpdated();
+        try {
+            window.localStorage?.setItem(RULES_UPDATED_STORAGE_KEY, `${Date.now()}-${Math.random()}`);
+        } catch (_) { /* Storage can be disabled; local-tab refresh still works. */ }
+    }
+
+    if (typeof window.addEventListener === 'function') {
+        window.addEventListener('storage', event => {
+            if (event.key !== RULES_UPDATED_STORAGE_KEY) return;
+            invalidateRules();
+            emitRulesUpdated();
+        });
+    }
 
     // "8:00 AM" / "6:00 PM" — the long form used by the customer dashboard
     // (Booking Step 2's From/To time pickers, the Overview peek widget).
@@ -172,6 +195,7 @@
         dateInManila,
         getForDate,
         invalidateRules,
+        notifyRulesUpdated,
         formatHourLabel,
         formatHourLabelShort,
         formatHourRangeLabel,

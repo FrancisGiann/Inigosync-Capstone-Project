@@ -74,7 +74,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Entering the Book a Court panel always starts the guided flow at
         // Step 1 so a prior partial visit is never resumed unexpectedly.
-        if (name === 'booking') goToBookStep(1);
+        if (name === 'booking') {
+            goToBookStep(1);
+            if (bookingState.court && bookingState.date) refreshTimePickers(true);
+        }
         if (typeof renderBookingCart === 'function') renderBookingCart();
 
         document.querySelectorAll('[data-dash-nav]').forEach((btn) => {
@@ -1905,6 +1908,25 @@ document.addEventListener('DOMContentLoaded', () => {
     paintBookPreview(null);
     refreshTimePickers();
     updateSummary();
+
+    function refreshVisibleBookingAvailability() {
+        const bookingPanel = document.querySelector('[data-dash-panel="booking"]');
+        if (document.visibilityState !== 'visible' || !bookingPanel?.classList.contains('is-active')
+            || !bookingState.court || !bookingState.date) return;
+        const today = todayDateInputValue();
+        if (bookDate) bookDate.min = today;
+        if (bookingState.date < today) {
+            bookingState.date = today;
+            if (bookDate) bookDate.value = today;
+            bookingState.selectedHours = [];
+            bookingState.startHour = null;
+            bookingState.endHour = null;
+        }
+        refreshTimePickers(true);
+    }
+    document.addEventListener('inigosync:booking-rules-updated', refreshVisibleBookingAvailability);
+    document.addEventListener('visibilitychange', refreshVisibleBookingAvailability);
+    window.setInterval(refreshVisibleBookingAvailability, 60000);
 
     // Real downpayment percentage (E2, implementation_plan.md) — read once
     // from `app_settings` via window.InigoAppSettings (includes/appSettings.js),

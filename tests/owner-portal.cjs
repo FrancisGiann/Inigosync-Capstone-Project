@@ -150,8 +150,9 @@ function fixture() {
             if (name === 'owner_income_period') return { data: [{ income: { day: 100, month: 200, year: 300 }[args.p_period] }], error: null };
             if (name === 'admin_booking_overview') return { data: [
                 { status: 'pending', amount_paid: 0 }, { status: 'confirmed', amount_paid: 0 },
-                { status: 'confirmed', amount_paid: 250 }, { status: 'completed', amount_paid: 500 },
-                { status: 'no_show', amount_paid: 0 },
+                { status: 'confirmed', amount_paid: 250, time_date: new Date().toISOString() },
+                { status: 'completed', amount_paid: 500, time_date: new Date().toISOString() },
+                { status: 'no_show', amount_paid: 0, time_date: new Date().toISOString() },
             ], error: null };
             if (name === 'court_occupancy') return { data: [], error: null };
             if (name === 'admin_get_sport_editor') return { data: { version: 0, listing: null, units: [], resources: [], cutoff: '18:00:00' }, error: null };
@@ -192,6 +193,7 @@ function fixture() {
                 page.on('pageerror', error => errors.push(error.message));
                 await page.addInitScript(theme => localStorage.setItem('inigosync-theme', theme), theme);
                 await page.route(/^https:\/\//, route => route.abort());
+                await page.route('**/chart.umd.min.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.Chart=class{static defaults={font:{},color:''};constructor(_canvas,config){this.data=config.data;this.options=config.options;}update(){}};` }));
                 await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})();` }));
                 await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.inigosyncProfile={id:'qa-owner',role:'admin',status:'active',full_name:'QA Owner',email:'owner@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
                 await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoLoading={show(){},hide(){}};window.InigoToast={show(){}};` }));
@@ -213,9 +215,42 @@ function fixture() {
                     assert.equal(await page.locator('[data-owner-income-range="year"]').getAttribute('class'), 'admin-pill-btn is-active');
                     await page.locator('[data-owner-income-range="month"]').click();
                     await page.locator('[data-owner-income-total]').getByText(/200\.00/).waitFor();
-                    await page.locator('[data-admin-status-breakdown] .admin-progress-item').nth(2).waitFor();
-                    assert.equal(await page.locator('[data-admin-status-breakdown] .admin-progress-item').count(), 3);
-                    assert.doesNotMatch(await page.locator('[data-admin-status-breakdown]').innerText(), /Awaiting payment/i);
+                    const statusReport = page.locator('[data-admin-status-breakdown]');
+                    await statusReport.locator('.admin-status-total strong').getByText('3', { exact: true }).waitFor();
+                    assert.equal(await statusReport.locator('.admin-status-count').count(), 3);
+                    for (const [key, label] of [['booked', 'Booked'], ['completed', 'Completed'], ['no-show', 'No-show']]) {
+                        const count = statusReport.locator(`.admin-status-count-${key}`);
+                        assert.equal(await count.locator('.admin-status-count-label').innerText(), label);
+                        assert.equal(await count.locator('strong').innerText(), '1');
+                    }
+                    assert.match(await statusReport.locator('.admin-status-summary').innerText(), /Even split across the top statuses/);
+                    assert.match(await statusReport.locator('.admin-status-pie').getAttribute('aria-label'), /Booked 1, Completed 1, No-show 1/);
+                    assert.doesNotMatch(await statusReport.innerText(), /Awaiting payment/i);
+                    assert.equal(await page.locator('[data-admin-chart-range]').count(), 3);
+                    assert.equal(await page.locator('[data-admin-status-range]').count(), 0);
+                    assert.equal(await page.locator('[data-admin-panel="overview"] .admin-booking-toolbar').count(), 1);
+                    assert.equal(await page.locator('[data-admin-panel="overview"] .admin-booking-report-grid > .admin-card').count(), 2);
+                    assert.equal(await page.locator('[data-admin-chart-export-wrap]').count(), 1);
+                    assert.equal(await page.locator('[data-admin-chart-export-toggle]').isDisabled(), false);
+                    const exportToggle = page.locator('[data-admin-chart-export-toggle]');
+                    const exportMenu = page.locator('[data-admin-chart-export-menu]');
+                    assert.equal(await page.locator('[data-admin-chart-export-wrap] [data-admin-chart-export-status]').count(), 1);
+                    await exportToggle.click();
+                    assert.equal(await exportToggle.getAttribute('aria-expanded'), 'true');
+                    assert.equal(await exportMenu.isVisible(), true);
+                    await page.keyboard.press('Escape');
+                    assert.equal(await exportMenu.isVisible(), false);
+                    assert.equal(await exportToggle.getAttribute('aria-expanded'), 'false');
+                    await exportToggle.click();
+                    await page.locator('[data-admin-panel="overview"] .admin-booking-report-card').first().click();
+                    assert.equal(await exportMenu.isVisible(), false);
+                    for (const range of ['month', 'year', 'week']) {
+                        await page.locator(`[data-admin-chart-range="${range}"]`).click();
+                        assert.equal(await page.locator(`[data-admin-chart-range="${range}"]`).getAttribute('class'), 'admin-pill-btn is-active');
+                        assert.equal(await page.locator(`[data-admin-chart-range="${range}"]`).getAttribute('aria-pressed'), 'true');
+                        assert.equal(await statusReport.locator('.admin-status-total strong').innerText(), '3');
+                        assert.equal(await page.locator('[data-admin-chart-total]').innerText(), '3');
+                    }
                     const pageSpeedRow = page.locator('[data-admin-perf-list] .admin-perf-item').filter({ hasText: 'Page speed' });
                     await pageSpeedRow.waitFor();
                     assert.match(await pageSpeedRow.innerText(), /Service response/);
@@ -261,6 +296,12 @@ function fixture() {
                     assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'Edit enables weekly hours');
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('40');
+                    assert.deepEqual(await page.locator('[data-owner-rules-open], [data-owner-rules-close]').evaluateAll(inputs => inputs.map(input => input.step)),
+                        Array(14).fill('3600'), 'every weekday time input accepts whole-hour values only');
+                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').fill('09:30');
+                    await page.locator('[data-owner-rules-save]').click();
+                    assert.match(await page.locator('[data-owner-rules-message]').innerText(), /whole-hour.*:00/i, 'minute values are rejected before save');
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.rpc === 'owner_save_booking_rules')), false, 'minute values never reach the save RPC');
                     await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').fill('09:00');
                     await page.locator('[data-owner-rules-cancel]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_get_booking_rules').length >= 2);
@@ -269,6 +310,13 @@ function fixture() {
                     await page.locator('[data-owner-rules-edit]').click();
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('45');
+                    for (let weekday = 1; weekday <= 7; weekday += 1) {
+                        const dayRow = page.locator(`[data-owner-rules-day="${weekday}"]`);
+                        await dayRow.locator('[data-owner-rules-open]').fill(`${String(weekday + 8).padStart(2, '0')}:00`);
+                        await dayRow.locator('[data-owner-rules-close]').fill('22:00');
+                    }
+                    await page.evaluate(date => window.InigoBusinessHours.getForDate(date), futureScheduleDate);
+                    const ruleReadCountBeforeSave = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'booking_rules_for_date').length);
                     await page.locator('[data-owner-rules-save]').click();
                     const scheduleConfirm = page.locator('.owner-confirm-overlay');
                     await scheduleConfirm.waitFor({ state: 'visible' });
@@ -283,10 +331,28 @@ function fixture() {
                     assert.equal(savedSchedule.p_effective_from, futureScheduleDate);
                     assert.equal(savedSchedule.p_grace_minutes, 45);
                     assert.equal(savedSchedule.p_weekly_hours.length, 7);
+                    assert.deepEqual(savedSchedule.p_weekly_hours.map(day => [day.weekday, day.opens_at, day.closes_at]),
+                        Array.from({ length: 7 }, (_, index) => [index + 1, `${String(index + 9).padStart(2, '0')}:00`, '22:00']),
+                        'each weekday submits its own opening and closing hours');
+                    await page.evaluate(date => window.InigoBusinessHours.getForDate(date), futureScheduleDate);
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'booking_rules_for_date').length),
+                        ruleReadCountBeforeSave + 1, 'saving the schedule invalidates same-tab cached hours');
                     assert.equal(await page.locator('[data-owner-rules-save]').isVisible(), false, 'save returns to read-only mode');
 
                     // Profile modal must be visible, focusable, close, and restore focus.
                     await page.locator('[data-admin-nav="settings"]').first().evaluate(el => el.click());
+                    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true,
+                        `${width}px Account Settings has no horizontal overflow`);
+                    assert.equal(await page.locator('[data-admin-panel="settings"] .admin-panel-head').count(), 0,
+                        'settings content has no duplicate panel heading or subtitle');
+                    assert.equal(await page.locator('[data-admin-panel="settings"] > .admin-card').count(), 2,
+                        'profile details and password each have their own settings card');
+                    assert.equal(await page.locator('.owner-account-card .owner-photo-section [data-admin-avatar-upload-trigger]').count(), 1);
+                    assert.equal(await page.locator('.owner-account-card .owner-profile-summary [data-admin-profile-full-name], .owner-account-card .owner-profile-summary [data-admin-profile-email], .owner-account-card .owner-profile-summary [data-admin-profile-mobile], .owner-account-card .owner-profile-summary [data-admin-profile-address], .owner-account-card .owner-profile-summary [data-admin-profile-birthdate], .owner-account-card .owner-profile-summary [data-admin-profile-gender]').count(), 6,
+                        'the combined owner account card keeps all owner profile fields');
+                    assert.equal(await page.locator('[data-admin-profile-edit]').evaluate(el => el.parentElement.lastElementChild === el), true,
+                        'Edit stays at the lower edge of the personal information section');
+                    assert.equal(await page.locator('[data-admin-profile-edit]').getAttribute('aria-controls'), 'adminProfileEditDialog');
                     await page.locator('[data-admin-profile-edit]').click();
                     assert.equal(await page.locator('[data-admin-settings-profile-modal]').getAttribute('data-open'), '');
                     assert.equal(await page.locator('[data-admin-settings-profile-modal]').isVisible(), true);
@@ -415,7 +481,7 @@ function fixture() {
                     assert.equal(await page.locator('[data-owner-audit-rows]').getByText('audit-31').count(), 1);
                     await page.locator('[data-admin-nav="staff"]').evaluate(el => el.click());
 
-                    // Staff details are rendered as read-only information, while Edit retains its form controls.
+                    // Staff details stay read-only; the owner action changes position only.
                     await staffTrigger.click();
                     await page.locator('[data-admin-staff-command="view"]').click();
                     const staffDetails = page.locator('[data-admin-staff-details-view]');
@@ -433,10 +499,15 @@ function fixture() {
                     await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
                     await staffTrigger.click();
                     await page.locator('[data-admin-staff-command="edit"]').click();
-                    assert.equal(await staffDetails.isVisible(), false);
+                    assert.equal(await staffDetails.isVisible(), true, 'position change keeps staff details read-only');
                     assert.equal(await page.locator('[data-admin-staff-details-edit]').isVisible(), true);
-                    assert.equal(await page.locator('[data-admin-staff-edit-name]').isVisible(), true, 'edit mode retains its editable fields');
-                    await page.locator('[data-admin-staff-edit-modal-close]').last().click();
+                    assert.equal(await page.locator('[data-admin-staff-details-edit] input, [data-admin-staff-details-edit] textarea').count(), 0, 'owner cannot edit personal information');
+                    assert.deepEqual(await page.locator('[data-admin-staff-edit-position] option').allTextContents(), ['Secretary', 'Court Attendant']);
+                    await page.locator('[data-admin-staff-edit-position]').selectOption({ label: 'Secretary' });
+                    await page.locator('[data-admin-staff-edit-submit]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.position === 'Secretary'));
+                    const positionWrite = await page.evaluate(() => window.__ownerQa.calls.findLast(call => call.table === 'profiles' && call.write === 'update' && call.payload.position === 'Secretary'));
+                    assert.deepEqual(positionWrite.payload, { position: 'Secretary' }, 'position change sends no personal fields to the profile update path');
                     await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
 
                     // Staff confirmations use the accessible shared dialog, with cancel/Escape and return focus.

@@ -269,94 +269,41 @@
                     </div>
                 </div>
 
-                <div class="admin-card">
-                    <div class="admin-card-head admin-chart-head">
-                        <div>
-                            <h3>Booking Trends</h3>
-                            <p class="admin-card-sub" data-admin-chart-unit>bookings per day · this week</p>
+                <div class="admin-booking-toolbar">
+                    <div class="admin-booking-toolbar-controls">
+                        <div class="admin-toggle-pill" role="group" aria-label="Booking report period">
+                            <button type="button" class="admin-pill-btn is-active" data-admin-chart-range="week" aria-pressed="true">Weekly</button>
+                            <button type="button" class="admin-pill-btn" data-admin-chart-range="month" aria-pressed="false">Monthly</button>
+                            <button type="button" class="admin-pill-btn" data-admin-chart-range="year" aria-pressed="false">Yearly</button>
                         </div>
-                        <div class="admin-chart-controls">
-                            <span class="admin-chart-total">Total <span data-admin-chart-total>—</span></span>
-                            <div class="admin-toggle-pill">
-                                <button type="button" class="admin-pill-btn is-active" data-admin-chart-range="week">Weekly</button>
-                                <button type="button" class="admin-pill-btn" data-admin-chart-range="month">Monthly</button>
-                                <button type="button" class="admin-pill-btn" data-admin-chart-range="year">Yearly</button>
-                            </div>
-                            <div class="admin-chart-exports" role="group" aria-label="Export booking trends report">
-                                <button type="button" class="admin-btn-chip-secondary" data-admin-chart-export="pdf" disabled>Export PDF</button>
-                                <button type="button" class="admin-btn-chip-secondary" data-admin-chart-export="xlsx" disabled>Export Excel</button>
+                        <div class="admin-chart-exports" data-admin-chart-export-wrap>
+                            <button type="button" class="admin-btn-chip-secondary admin-chart-export-toggle" data-admin-chart-export-toggle aria-haspopup="menu" aria-expanded="false" aria-controls="adminChartExportMenu" disabled>Export</button>
+                            <div class="admin-chart-export-menu" id="adminChartExportMenu" data-admin-chart-export-menu role="menu" aria-label="Export booking report" hidden>
+                                <button type="button" role="menuitem" data-admin-chart-export="pdf" disabled>Download PDF</button>
+                                <button type="button" role="menuitem" data-admin-chart-export="xlsx" disabled>Download Excel</button>
                             </div>
                             <span class="admin-chart-export-status" data-admin-chart-export-status aria-live="polite"></span>
                         </div>
                     </div>
-                    <div class="admin-chart-wrap">
-                        <canvas id="adminBookingChart"></canvas>
-                    </div>
                 </div>
-
-                <!-- Revision A1 (implementation_plan.md, decision A3) —
-                     replaced the two hardcoded fake cards that used to live
-                     here ("Busiest courts this week", "Staff on shift") with
-                     live data. Revision A3 (decision C4) then replaced
-                     Recent bookings itself with Website performance (below)
-                     — an honest, client-measurable health check rather than
-                     a table that only duplicated what Staff/Court/Media
-                     panels already show. Booking status this month keeps
-                     the same client-derived "Unattended" rule the customer
-                     dashboard uses (see includes/owner_dashboard.js's
-                     adminDisplayStatusFor()), now trimmed to 3 rows
-                     (decision C3). Both cards are refreshed independently —
-                     refreshOverviewStats() → refreshStatusBreakdown();
-                     Website performance runs on its own schedule, see
-                     refreshWebsitePerformance()'s own comment. -->
-                <div class="admin-grid-2">
-                    <!-- Plain-language checks for the owner; technical diagnostics stay in logs. -->
-                    <div class="admin-card">
-                        <div class="admin-card-head admin-perf-head">
+                <div class="admin-booking-report-grid">
+                    <div class="admin-card admin-booking-report-card">
+                        <div class="admin-card-head admin-chart-head">
                             <div>
-                                <h3>Website performance</h3>
-                                <p class="admin-card-sub" data-admin-perf-last-checked>Checking…</p>
+                                <h3>Booking Trends</h3>
+                                <p class="admin-card-sub" data-admin-chart-unit>bookings per day · this calendar week</p>
                             </div>
-                            <div class="admin-perf-head-actions">
-                                <span class="admin-perf-pill admin-perf-overall admin-perf-pill-neutral" data-admin-perf-overall>Checking…</span>
-                                <button type="button" class="admin-btn-chip-secondary" data-admin-perf-run>Run check</button>
-                            </div>
+                            <span class="admin-chart-total">Total <span data-admin-chart-total>—</span></span>
                         </div>
-                        <!-- Plain-language measures from this owner's current browser and connection. -->
-                        <div class="admin-perf-body" data-admin-perf-body>
-                            <div class="admin-perf-chart-wrap" data-admin-perf-chart-wrap>
-                                <canvas data-admin-perf-chart role="img" aria-label="Website performance status breakdown, 3 checks"></canvas>
-                                <div class="admin-perf-chart-center">
-                                    <span class="admin-perf-chart-status" data-admin-perf-chart-status>—</span>
-                                    <span class="admin-perf-chart-sub">3 checks</span>
-                                </div>
-                            </div>
-                            <div class="admin-perf-list" data-admin-perf-list>
-                                <p style="color: var(--color-ink-faint);">Running checks…</p>
-                            </div>
-                        </div>
+                        <div class="admin-chart-wrap"><canvas id="adminBookingChart" role="img" aria-label="Booking trends; booking data is loading."></canvas></div>
+                        <p class="admin-chart-takeaway" data-admin-chart-takeaway aria-live="polite">Booking data is loading…</p>
                     </div>
-
-                    <div class="admin-card">
-                        <div class="admin-card-head">
-                            <h3>Booking status</h3>
-                            <div class="admin-toggle-pill" aria-label="Booking status period">
-                                <button type="button" class="admin-pill-btn" data-admin-status-range="week">Weekly</button>
-                                <button type="button" class="admin-pill-btn is-active" data-admin-status-range="month">Monthly</button>
-                                <button type="button" class="admin-pill-btn" data-admin-status-range="year">Yearly</button>
-                            </div>
-                        </div>
-                        <!-- Reuses .admin-progress-* (label + count + bar) —
-                             the exact same classes the old "Busiest courts"
-                             fake card used, now driven by real counts
-                             instead of hardcoded widths. Revision A3,
-                             decision C3 — only pending/completed/unattended
-                             render now (confirmed/cancelled dropped from
-                             ADMIN_STATUS_LABELS' render order); bars stay
-                             proportional to the max of these 3 shown counts. -->
-                        <div class="admin-progress-list" data-admin-status-breakdown>
+                    <div class="admin-card admin-booking-report-card">
+                        <div class="admin-card-head"><div><h3>Booking Status</h3><p class="admin-card-sub">Bookings by status this period</p></div></div>
+                        <div class="admin-status-report" data-admin-status-breakdown aria-live="polite">
                             <p style="color: var(--color-ink-faint);">Loading…</p>
                         </div>
+                        <p class="admin-chart-definition">Counts include paid confirmed, completed, and no-show bookings. Pending and canceled bookings are excluded.</p>
                     </div>
                 </div>
             </section>
@@ -499,8 +446,8 @@
 
             <section class="admin-panel" data-admin-panel="booking-rules">
                 <div class="admin-card owner-booking-rules-card">
-                    <div class="admin-card-head">
-                        <div><h3>Working Time Schedule</h3><p class="admin-card-sub">These hours control customer booking, staff walk-ins, and the shared availability schedule. Changes take effect from the selected date.</p></div>
+                    <div class="admin-card-head owner-booking-rules-head">
+                        <button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Working Time Schedule</button>
                     </div>
                     <div class="owner-booking-rules-meta">
                         <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
@@ -511,18 +458,18 @@
                         <table class="owner-rules-table">
                             <thead><tr><th scope="col">Day</th><th scope="col">Opening time</th><th scope="col">Closing time</th><th scope="col">Closed</th></tr></thead>
                             <tbody data-owner-rules-weekdays>
-                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><input type="time" class="admin-input" aria-label="Monday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Monday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><input type="time" class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><input type="time" class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><input type="time" class="admin-input" aria-label="Thursday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Thursday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><input type="time" class="admin-input" aria-label="Friday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Friday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><input type="time" class="admin-input" aria-label="Saturday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Saturday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><input type="time" class="admin-input" aria-label="Sunday opening time" data-owner-rules-open disabled></td><td><input type="time" class="admin-input" aria-label="Sunday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><input type="time" step="3600" class="admin-input" aria-label="Monday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Monday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><input type="time" step="3600" class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><input type="time" step="3600" class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><input type="time" step="3600" class="admin-input" aria-label="Thursday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Thursday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><input type="time" step="3600" class="admin-input" aria-label="Friday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Friday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><input type="time" step="3600" class="admin-input" aria-label="Saturday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Saturday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><input type="time" step="3600" class="admin-input" aria-label="Sunday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Sunday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed disabled></td></tr>
                             </tbody>
                         </table>
                     </div>
                     <p class="owner-rules-message" data-owner-rules-message role="status" aria-live="polite"></p>
-                    <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-secondary" data-owner-rules-edit hidden>Edit Working Time Schedule</button><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Working Time Schedule</button></div>
+                    <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Working Time Schedule</button></div>
                 </div>
             </section>
 
@@ -629,29 +576,24 @@
                 </div>
             </section>
             <section class="admin-panel" data-admin-panel="settings">
-                <div class="admin-panel-head">
-                    <div>
-                        <h2>Account Settings</h2>
-                        <p>Manage your profile details and account security.</p>
-                    </div>
-                </div>
                 <div class="admin-card owner-account-card">
                     <section class="owner-photo-section" aria-label="Profile photo">
-                        <h3>Profile Photo</h3>
+                        <div class="admin-card-head"><h3>Profile Photo</h3></div>
                         <div class="admin-avatar-upload-row">
                             <div class="admin-avatar admin-avatar-upload-preview">RD</div>
                             <div class="admin-avatar-upload-controls">
                                 <div class="admin-avatar-upload-actions">
                                     <button type="button" class="admin-btn-primary" data-admin-avatar-upload-trigger>Choose Photo</button>
+                                    <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove Photo</button>
                                     <input type="file" accept="image/*" class="admin-visually-hidden" data-admin-avatar-file>
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove Photo</button>
                     </section>
+
                     <section class="owner-personal-section" aria-label="Personal information">
-                        <div class="admin-card-head"><h3>Personal Information</h3><button type="button" class="admin-btn-secondary" data-admin-profile-edit>Edit</button></div>
-                        <dl class="admin-settings-readonly">
+                        <div class="admin-card-head"><h3>Personal Information</h3></div>
+                        <dl class="owner-profile-summary">
                             <div><dt>Full name</dt><dd data-admin-profile-full-name>—</dd></div>
                             <div><dt>Email address</dt><dd data-admin-profile-email>—</dd></div>
                             <div><dt>Mobile number</dt><dd data-admin-profile-mobile>—</dd></div>
@@ -659,6 +601,7 @@
                             <div><dt>Date of birth</dt><dd data-admin-profile-birthdate>—</dd></div>
                             <div><dt>Gender</dt><dd data-admin-profile-gender>—</dd></div>
                         </dl>
+                        <button type="button" class="admin-btn-primary" data-admin-profile-edit aria-haspopup="dialog" aria-controls="adminProfileEditDialog">Edit</button>
                     </section>
                 </div>
 
@@ -869,8 +812,8 @@
             <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
 
-        <h3 id="adminStaffEditModalTitle" data-admin-staff-edit-modal-title>Edit Staff</h3>
-        <!-- Edit-only context. Age is derived from birthdate and never stored. -->
+        <h3 id="adminStaffEditModalTitle" data-admin-staff-edit-modal-title>Staff Details</h3>
+        <!-- Age is derived from birthdate and never stored. -->
         <p class="admin-form-hint" data-admin-staff-edit-meta>—</p>
 
         <dl class="admin-profile-dl owner-staff-details-view" data-admin-staff-details-view hidden>
@@ -885,58 +828,19 @@
             <div class="admin-profile-dl-row"><dt>Emergency contact number</dt><dd data-admin-staff-detail-emergency-number>—</dd></div>
         </dl>
 
-        <div class="owner-staff-details-edit" data-admin-staff-details-edit>
-            <div class="admin-form-row">
-                <div class="admin-form-group">
-                    <span class="admin-form-label">Full name</span>
-                    <input type="text" class="admin-input" data-admin-staff-edit-name>
-                </div>
-                <div class="admin-form-group">
-                    <span class="admin-form-label">Position</span>
-                    <select class="admin-select" data-admin-staff-edit-position><option>Secretary</option><option>Court Attendant</option></select>
-                </div>
-            </div>
+        <div class="owner-staff-details-edit" data-admin-staff-details-edit hidden>
             <div class="admin-form-group">
-                <span class="admin-form-label">Mobile number · staff verified</span>
-                <input type="tel" class="admin-input" placeholder="Not provided" data-admin-staff-edit-mobile readonly aria-describedby="adminStaffMobileReadOnlyHint">
-                <span class="admin-form-hint" id="adminStaffMobileReadOnlyHint">Staff manage and verify their own mobile number in Account Settings.</span>
-            </div>
-            <div class="admin-form-group">
-                <span class="admin-form-label">Address</span>
-                <textarea class="admin-input admin-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-admin-staff-edit-address></textarea>
-            </div>
-            <div class="admin-form-row">
-                <div class="admin-form-group">
-                    <span class="admin-form-label">Birthdate</span>
-                    <input type="date" class="admin-input" data-admin-staff-edit-birthdate aria-label="Birthdate">
-                    <label class="admin-form-label">Age<input class="admin-input" data-admin-staff-edit-age readonly aria-label="Age" placeholder="Not provided"></label>
-                </div>
-                <div class="admin-form-group">
-                    <span class="admin-form-label">Gender</span>
-                    <select class="admin-select" data-admin-staff-edit-gender>
-                        <option value="">Select…</option>
-                        <option>Male</option>
-                        <option>Female</option>
-                        <option>Prefer not to say</option>
-                    </select>
-                </div>
-            </div>
-            <div class="admin-form-row">
-                <div class="admin-form-group">
-                    <span class="admin-form-label">Emergency contact name</span>
-                    <input type="text" class="admin-input" placeholder="Maria Cruz" data-admin-staff-edit-emergency-name>
-                </div>
-                <div class="admin-form-group">
-                    <span class="admin-form-label">Emergency contact number</span>
-                    <input type="tel" class="admin-input" placeholder="09XX XXX XXXX" data-admin-staff-edit-emergency-number aria-describedby="adminStaffEditEmergencyStatus">
-                    <span class="admin-form-hint" id="adminStaffEditEmergencyStatus" data-admin-staff-edit-emergency-status role="status" aria-live="polite"></span>
-                </div>
+                <label class="admin-form-label" for="adminStaffPositionSelect">Position</label>
+                <select id="adminStaffPositionSelect" class="admin-select" data-admin-staff-edit-position>
+                    <option>Secretary</option>
+                    <option>Court Attendant</option>
+                </select>
             </div>
         </div>
 
         <div class="admin-form-actions">
-            <button type="button" class="admin-btn-ghost" data-admin-staff-edit-modal-close>Cancel</button>
-            <button type="button" class="admin-btn-save" data-admin-staff-edit-submit>Save Changes</button>
+            <button type="button" class="admin-btn-ghost" data-admin-staff-edit-modal-close>Close</button>
+            <button type="button" class="admin-btn-save" data-admin-staff-edit-submit hidden>Save Position</button>
         </div>
     </div>
 </div>
@@ -1001,9 +905,7 @@
      which uses window.escapeHtml on every staff/court name it renders. -->
 <script src="../includes/escape.js"></script>
 
-<!-- Revision S3 — Philippine mobile-number validation, needed by the Add
-     New Staff and Edit staff modals' Emergency contact number field (same
-     window.validatePhMobile Pages/staff_dashboard.html already loads). Must
+<!-- Philippine mobile-number validation for owner account settings. Must
      load before owner_dashboard.js. -->
 <script src="../includes/phoneValidation.js"></script>
 
@@ -1036,7 +938,7 @@
 </div>
 
 <div class="admin-modal-overlay" data-admin-settings-profile-modal hidden>
-    <div class="admin-modal admin-account-modal" role="dialog" aria-modal="true" aria-labelledby="adminPersonalInfoTitle" tabindex="-1">
+    <div class="admin-modal admin-account-modal" id="adminProfileEditDialog" role="dialog" aria-modal="true" aria-labelledby="adminPersonalInfoTitle" tabindex="-1">
         <button type="button" class="admin-modal-close" data-admin-settings-cancel="profile" aria-label="Close personal information editor">×</button>
         <h3 id="adminPersonalInfoTitle">Edit Personal Information</h3>
         <div class="admin-settings-grid">

@@ -5,12 +5,34 @@ let bookingChart = null;
 let currentChartRange = 'week';
 let chartDataAvailable = false;
 let chartDataState = 'idle';
+let chartRequestId = 0;
+const ADMIN_STATUS_LABELS = { booked: 'Booked', completed: 'Completed', no_show: 'No-show' };
 let CHART_DATA = {
     week: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per day · this calendar week' },
     month: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per day · this month' },
     year: { labels: [], periods: [], values: [], total: 0, unit: 'bookings per month · this year' },
 };
 const chartRangeNames = { week: 'Weekly', month: 'Monthly', year: 'Yearly' };
+
+function bookingTakeaway(source, range) {
+    if (!source || source.total === 0) return 'No bookings this period.';
+    const busiest = Math.max(...source.values);
+    const periods = source.labels.filter((_, index) => source.values[index] === busiest);
+    const unit = range === 'year' ? 'month' : 'day';
+    const label = periods.length > 3
+        ? `${periods.length} ${unit}s tied`
+        : periods.length === 2
+            ? periods.join(' and ')
+            : periods.length === 3
+                ? `${periods[0]}, ${periods[1]} + ${periods[2]}`
+                : periods[0];
+    return `Busiest ${unit}${periods.length === 1 ? '' : 's'}: ${label} · ${periods.length === 1 ? `${busiest} booking${busiest === 1 ? '' : 's'}` : `${busiest} each`}.`;
+}
+
+function bookingChartAccessibleLabel(source, range) {
+    const period = { week: 'this week', month: 'this month', year: 'this year' }[range];
+    return `Booking trends for ${period}: ${source.total} booking${source.total === 1 ? '' : 's'}. ${bookingTakeaway(source, range)}`;
+}
 
 const manilaParts = (date) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -32,6 +54,13 @@ const rangeCaption = range => ({
     year: 'bookings per month · this year',
 })[range];
 
+function bookingStatus(row) {
+    if (row.auto_cancelled_at || ['no_show', 'unattended'].includes(row.status)) return 'no_show';
+    if (row.status === 'completed') return 'completed';
+    if (row.status === 'confirmed' && Number(row.amount_paid) > 0) return 'booked';
+    return null;
+}
+
 function aggregateBookingRows(rows) {
     const today = manilaParts(new Date());
     const todayUtc = Date.UTC(today.year, today.month - 1, today.day);
@@ -50,25 +79,89 @@ function aggregateBookingRows(rows) {
     const weekPeriods = week.map(d => dateFormatter.format(new Date(Date.UTC(d.year, d.month - 1, d.day))));
     const monthPeriods = month.map(d => dateFormatter.format(new Date(Date.UTC(d.year, d.month - 1, d.day))));
     const yearPeriods = Array.from({ length: 12 }, (_, i) => monthFormatter.format(new Date(Date.UTC(today.year, i, 1))));
-    const weekFuture = week.map(d => Date.UTC(d.year, d.month - 1, d.day) > todayUtc);
-    const monthFuture = month.map(d => d.day > today.day);
-    const yearFuture = Array.from({ length: 12 }, (_, i) => i > today.month - 1);
-    const weekValues = weekKeys.map((key, index) => {
-        return weekFuture[index] ? 0 : rows.filter(row => rowManilaDate(row) === key).length;
-    });
-    const monthValues = monthKeys.map((key, index) => monthFuture[index] ? 0 : rows.filter(row => rowManilaDate(row) === key).length);
-    const yearValues = Array.from({ length: 12 }, (_, i) => yearFuture[i] ? 0 : rows.filter(row => {
+    const eligibleRows = rows.filter(row => bookingStatus(row));
+    const weekValues = weekKeys.map(key => eligibleRows.filter(row => rowManilaDate(row) === key).length);
+    const monthValues = monthKeys.map(key => eligibleRows.filter(row => rowManilaDate(row) === key).length);
+    const yearValues = Array.from({ length: 12 }, (_, i) => eligibleRows.filter(row => {
         const parsed = new Date(row.time_date);
         if (Number.isNaN(parsed.getTime())) return false;
         const parts = manilaParts(parsed);
         return parts.year === today.year && parts.month === i + 1;
     }).length);
     const total = values => values.reduce((sum, value) => sum + value, 0);
-    CHART_DATA = {
-        week: { labels: weekLabels, periods: weekPeriods, future: weekFuture, values: weekValues, total: total(weekValues), unit: rangeCaption('week') },
-        month: { labels: monthLabels, periods: monthPeriods, future: monthFuture, values: monthValues, total: total(monthValues), unit: rangeCaption('month') },
-        year: { labels: yearLabels, periods: yearPeriods, future: yearFuture, values: yearValues, total: total(yearValues), unit: rangeCaption('year') },
+    const status = rows => {
+        const counts = { booked: 0, completed: 0, no_show: 0 };
+        rows.forEach(row => { const key = bookingStatus(row); if (key) counts[key]++; });
+        return counts;
     };
+    CHART_DATA = {
+        week: { labels: weekLabels, periods: weekPeriods, values: weekValues, total: total(weekValues), status: status(eligibleRows.filter(row => weekKeys.includes(rowManilaDate(row)))), unit: rangeCaption('week') },
+        month: { labels: monthLabels, periods: monthPeriods, values: monthValues, total: total(monthValues), status: status(eligibleRows.filter(row => monthKeys.includes(rowManilaDate(row)))), unit: rangeCaption('month') },
+        year: { labels: yearLabels, periods: yearPeriods, values: yearValues, total: total(yearValues), status: status(eligibleRows.filter(row => {
+            const parsed = new Date(row.time_date); if (Number.isNaN(parsed.getTime())) return false;
+            return manilaParts(parsed).year === today.year;
+        })), unit: rangeCaption('year') },
+    };
+}
+
+function buildStatusReport(source) {
+    const counts = source.status;
+    const keys = Object.keys(ADMIN_STATUS_LABELS);
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    if (!total) return { counts, total, summary: 'No bookings this period.' };
+    const highest = Math.max(...keys.map(key => counts[key]));
+    const leaders = keys.filter(key => counts[key] === highest);
+    const sharePercent = Math.round(highest / total * 100);
+    const shareLabel = leaders.length === 1
+        ? `${sharePercent}% ${ADMIN_STATUS_LABELS[leaders[0]]}`
+        : `Tie · ${sharePercent}% each`;
+    const onlyStatus = leaders.length === 1 && counts[leaders[0]] === total ? leaders[0] : null;
+    const allStatusText = {
+        booked: total === 1 ? 'This booking is confirmed.' : `All ${total} bookings are confirmed.`,
+        completed: total === 1 ? 'This booking is complete.' : `All ${total} bookings are complete.`,
+        no_show: total === 1 ? 'This booking was a no-show.' : `All ${total} bookings were no-shows.`,
+    };
+    const summary = onlyStatus
+        ? allStatusText[onlyStatus]
+        : leaders.length > 1
+            ? 'Even split across the top statuses.'
+            : `Most: ${ADMIN_STATUS_LABELS[leaders[0]]}.`;
+    return { counts, total, summary, shareLabel };
+}
+
+function renderStatusReport(source) {
+    const root = document.querySelector('[data-admin-status-breakdown]');
+    if (!root) return;
+    const report = buildStatusReport(source);
+    const { counts, total, summary, shareLabel } = report;
+    let angle = 0;
+    let previousGap = 0;
+    const pieColors = { booked: 'var(--color-court-green)', completed: 'var(--color-ink-faint)', no_show: 'var(--color-primary)' };
+    const pieSlices = Object.keys(ADMIN_STATUS_LABELS).filter(key => counts[key] > 0).flatMap((key, index, activeKeys) => {
+        const start = angle;
+        const extent = counts[key] / total * 360;
+        angle += extent;
+        const fillStart = start + previousGap / 2;
+        const nextKey = activeKeys[index + 1];
+        const nextExtent = nextKey ? counts[nextKey] / total * 360 : 0;
+        // Skip a seam when either side is too small, preserving narrow but
+        // nonzero categories instead of stealing most of their pie area.
+        const gap = nextKey && extent >= 4 && nextExtent >= 4 ? 2 : 0;
+        const fillEnd = angle - gap / 2;
+        const slices = [`${pieColors[key]} ${fillStart}deg ${fillEnd}deg`];
+        if (gap) slices.push(`var(--color-bg-card) ${fillEnd}deg ${angle + gap / 2}deg`);
+        previousGap = gap;
+        return slices;
+    });
+    const label = total ? `Booking status distribution: ${Object.keys(ADMIN_STATUS_LABELS).map(key => `${ADMIN_STATUS_LABELS[key]} ${counts[key]}`).join(', ')}.` : 'No bookings this period.';
+    root.innerHTML = `
+        <div class="admin-status-pie${total ? '' : ' is-empty'}" role="img" aria-label="${label}"${total ? ` style="background: conic-gradient(${pieSlices.join(', ')});"` : ''}>${total ? `<span class="admin-status-pie-share">${shareLabel}</span>` : '<span>No bookings</span>'}</div>
+        <div class="admin-status-details">
+            <div class="admin-status-summary"><div class="admin-status-total"><strong>${total}</strong><span>booking${total === 1 ? '' : 's'}</span></div><p>${summary}</p></div>
+            <div class="admin-status-counts" aria-label="Booking counts by status">
+                ${Object.keys(ADMIN_STATUS_LABELS).map(key => `<div class="admin-status-count admin-status-count-${key.replace('_', '-')}"><span class="admin-status-dot admin-status-dot-${key.replace('_', '-')}" aria-hidden="true"></span><span class="admin-status-count-label">${ADMIN_STATUS_LABELS[key]}</span><strong>${counts[key]}</strong></div>`).join('')}
+            </div>
+        </div>`;
 }
 
 function buildBookingReport(range, now = new Date()) {
@@ -81,18 +174,21 @@ function buildBookingReport(range, now = new Date()) {
     } else if (range === 'month') {
         periodLabel = `${source.periods[0]} – ${source.periods[source.periods.length - 1]}`;
     } else {
-        const currentMonth = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'long' }).format(new Date(Date.UTC(today.year, today.month - 1, 1)));
-        periodLabel = `January ${today.year} – ${currentMonth} ${today.year}`;
+        periodLabel = `Calendar year ${today.year}`;
     }
     return {
-        title: 'Booking Trends Report',
+        title: 'Booking Report',
         rangeName: chartRangeNames[range],
         periodLabel,
-        asOfDate: new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' })
+        generatedDate: new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' })
             .format(new Date(Date.UTC(today.year, today.month - 1, today.day))),
         total: source.total,
+        status: buildStatusReport(source),
+        takeaway: bookingTakeaway(source, range),
+        scopeNote: 'Includes paid confirmed, completed, and no-show reservations (including automatically canceled no-shows). Pending and canceled reservations are excluded. Future paid confirmed reservations count in their scheduled calendar period.',
+        barMeaning: range === 'year' ? 'Each bar shows bookings in one month.' : 'Each bar shows bookings on one day.',
         rows: source.periods.map((period, index) => ({
-            period: `${period}${source.future[index] ? ' (future)' : ''}`,
+            period,
             bookings: source.values[index],
         })),
     };
@@ -101,13 +197,25 @@ function buildBookingReport(range, now = new Date()) {
 function setChartDataState(state) {
     chartDataState = state;
     chartDataAvailable = state === 'ready';
-    const exportButtons = typeof document !== 'undefined' ? document.querySelectorAll?.('[data-admin-chart-export]') : null;
-    exportButtons?.forEach(button => { button.disabled = !chartDataAvailable; });
+    updateExportControls();
     const unit = typeof document !== 'undefined' ? document.querySelector?.('[data-admin-chart-unit]') : null;
     const total = typeof document !== 'undefined' ? document.querySelector?.('[data-admin-chart-total]') : null;
     if (!chartDataAvailable) {
         if (unit) unit.textContent = state === 'loading' ? 'Loading booking data…' : state === 'error' ? 'Booking data is unavailable right now.' : 'Booking data has not loaded.';
         if (total) total.textContent = '—';
+        const takeaway = typeof document !== 'undefined' ? document.querySelector?.('[data-admin-chart-takeaway]') : null;
+        if (takeaway) takeaway.textContent = state === 'loading'
+            ? 'Loading booking data…'
+            : state === 'error'
+                ? 'Booking data is unavailable.'
+                : 'Booking data has not loaded.';
+        const status = typeof document !== 'undefined' ? document.querySelector?.('[data-admin-status-breakdown]') : null;
+        if (status) status.innerHTML = `<p class="admin-form-hint">${state === 'error' ? 'Booking data is unavailable right now.' : 'Loading booking data…'}</p>`;
+        const canvas = typeof document !== 'undefined' ? document.getElementById?.('adminBookingChart') : null;
+        if (canvas) {
+            canvas.setAttribute('role', 'img');
+            canvas.setAttribute('aria-label', state === 'loading' ? 'Booking trends; loading booking data.' : state === 'error' ? 'Booking trends; booking data is unavailable.' : 'Booking trends; booking data has not loaded.');
+        }
         if (bookingChart) {
             bookingChart.data.labels = [];
             bookingChart.data.datasets[0].data = [];
@@ -116,13 +224,37 @@ function setChartDataState(state) {
     }
 }
 
+function updateExportControls() {
+    if (typeof document === 'undefined') return;
+    const button = document.querySelector?.('[data-admin-chart-export-toggle]');
+    if (button) button.disabled = !chartDataAvailable || chartExportBusy;
+    document.querySelectorAll?.('[data-admin-chart-export]').forEach(choice => { choice.disabled = !chartDataAvailable || chartExportBusy; });
+}
+
+let chartExportBusy = false;
+
 function exportBookingReport(format) {
+    chartExportBusy = true;
+    const toggle = document.querySelector?.('[data-admin-chart-export-toggle]');
+    if (toggle) {
+        toggle.dataset.originalLabel = toggle.dataset.originalLabel || toggle.textContent;
+        toggle.textContent = 'Exporting…';
+        toggle.setAttribute('aria-busy', 'true');
+    }
+    updateExportControls();
     try {
         return performBookingReportExport(format);
     } catch (error) {
         console.error('[admin-chart] failed to export booking report', error);
         showExportError(`${format === 'xlsx' ? 'Excel' : 'PDF'} export failed. Please try again.`);
         return false;
+    } finally {
+        chartExportBusy = false;
+        if (toggle) {
+            toggle.textContent = toggle.dataset.originalLabel || 'Export';
+            toggle.removeAttribute('aria-busy');
+        }
+        updateExportControls();
     }
 }
 
@@ -131,17 +263,20 @@ function performBookingReportExport(format) {
     const report = buildBookingReport(currentChartRange);
     if (!report) return false;
     const today = manilaParts(new Date());
-    const filename = `booking-trends-${currentChartRange}-${dateKey(today.year, today.month, today.day)}`;
+    const filename = `booking-report-${currentChartRange}-${dateKey(today.year, today.month, today.day)}`;
     if (format === 'xlsx') {
         if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
             showExportError('Excel export is unavailable because its report library did not load.');
             return false;
         }
         const sheet = window.XLSX.utils.aoa_to_sheet([
-            [report.title], ['Range', report.rangeName], ['Period', report.periodLabel], ['As of (Manila)', report.asOfDate], [],
+            [report.title], ['Range', report.rangeName], ['Period', report.periodLabel], ['Total eligible bookings', report.total],
+            ['Takeaway', report.takeaway], [report.barMeaning], ['Included reservations', report.scopeNote], ['Generated (Manila)', report.generatedDate], [],
             ['Period', 'Bookings'], ...report.rows.map(row => [row.period, row.bookings]),
-            [], ['Total bookings', report.total],
+            [], ['Booking status', 'Count'], ...Object.keys(ADMIN_STATUS_LABELS).map(key => [ADMIN_STATUS_LABELS[key], report.status.counts[key]]),
+            ['Total eligible bookings', report.status.total], ['Status takeaway', report.status.summary],
         ]);
+        sheet['!cols'] = [{ wch: 28 }, { wch: 16 }];
         const book = window.XLSX.utils.book_new();
         window.XLSX.utils.book_append_sheet(book, sheet, 'Booking Trends');
         window.XLSX.writeFile(book, `${filename}.xlsx`);
@@ -156,19 +291,40 @@ function performBookingReportExport(format) {
         const pdf = new JsPDF({ unit: 'mm', format: 'a4' });
         pdf.setFontSize(16); pdf.text(report.title, 16, 18);
         pdf.setFontSize(10); pdf.text(`${report.rangeName} - ${report.periodLabel.replace(/–/g, '-')}`, 16, 26);
-        pdf.text(`As of ${report.asOfDate} (Asia/Manila)`, 16, 31);
+        pdf.text(`Total eligible bookings: ${report.total}`, 16, 32);
+        const takeawayLines = pdf.splitTextToSize(report.takeaway, 176);
+        pdf.text(takeawayLines, 16, 39);
+        const meaningLines = pdf.splitTextToSize(report.barMeaning, 176);
+        pdf.text(meaningLines, 16, 39 + takeawayLines.length * 5 + 2);
+        const generatedY = 39 + (takeawayLines.length + meaningLines.length) * 5 + 4;
+        pdf.text(`Generated ${report.generatedDate} (Asia/Manila)`, 16, generatedY);
+        const scopeLines = pdf.splitTextToSize(report.scopeNote, 176);
+        pdf.text(scopeLines, 16, generatedY + 6);
+        let y = generatedY + 6 + scopeLines.length * 5 + 9;
         pdf.setFontSize(10); pdf.setFont(undefined, 'bold');
-        pdf.text('Period', 16, 41); pdf.text('Bookings', 170, 41, { align: 'right' });
+        pdf.text('Period', 16, y); pdf.text('Bookings', 170, y, { align: 'right' });
         pdf.setFont(undefined, 'normal');
-        let y = 48;
+        y += 7;
         report.rows.forEach(row => {
-            if (y > 275) { pdf.addPage(); y = 18; }
+            if (y > 275) {
+                pdf.addPage(); y = 18;
+                pdf.setFont(undefined, 'bold');
+                pdf.text('Period', 16, y); pdf.text('Bookings', 170, y, { align: 'right' });
+                pdf.setFont(undefined, 'normal'); y += 7;
+            }
             pdf.text(row.period, 16, y); pdf.text(String(row.bookings), 170, y, { align: 'right' });
             y += 7;
         });
-        if (y > 275) { pdf.addPage(); y = 18; }
-        pdf.setFont(undefined, 'bold');
-        pdf.text(`Total bookings: ${report.total}`, 16, y + 3);
+        y += 5;
+        if (y > 270) { pdf.addPage(); y = 18; }
+        pdf.setFont(undefined, 'bold'); pdf.text('Booking status', 16, y); pdf.text('Count', 170, y, { align: 'right' });
+        pdf.setFont(undefined, 'normal'); y += 7;
+        Object.keys(ADMIN_STATUS_LABELS).forEach(key => { pdf.text(ADMIN_STATUS_LABELS[key], 16, y); pdf.text(String(report.status.counts[key]), 170, y, { align: 'right' }); y += 7; });
+        pdf.setFont(undefined, 'bold'); pdf.text(`Total eligible bookings: ${report.status.total}`, 16, y); y += 7;
+        pdf.setFont(undefined, 'normal');
+        const statusLines = pdf.splitTextToSize(report.status.summary, 176);
+        if (y + statusLines.length * 5 > 285) { pdf.addPage(); y = 18; }
+        pdf.text(statusLines, 16, y);
         pdf.save(`${filename}.pdf`);
         return true;
     }
@@ -193,51 +349,41 @@ function manilaCalendarWeekStartIso(date = new Date()) {
 }
 
 async function loadChartData() {
+    const request = ++chartRequestId;
     if (!window.sb) { setChartDataState('error'); return false; }
     setChartDataState('loading');
     const year = manilaParts(new Date()).year;
     const yearStart = manilaYearStartIso(year);
     const weekStart = manilaCalendarWeekStartIso();
     const yearEnd = manilaYearStartIso(year + 1);
-    let rows;
-    if (weekStart < yearStart) {
-        // Keep each call within admin_booking_overview's 366-day limit:
-        // fetch only the prior-year fragment plus the current calendar year.
-        let priorWeek; let currentYear;
-        try {
-            [priorWeek, currentYear] = await Promise.all([
-                window.sb.rpc('admin_booking_overview', { p_from_at: weekStart, p_to_at: yearStart }),
-                window.sb.rpc('admin_booking_overview', { p_from_at: yearStart, p_to_at: yearEnd }),
-            ]);
-        } catch (error) {
-            console.error('[admin-chart] failed to load reservations', error);
-            setChartDataState('error');
-            return false;
-        }
-        if (!priorWeek || !currentYear || priorWeek.error || currentYear.error || !Array.isArray(priorWeek.data) || !Array.isArray(currentYear.data)) {
-            console.error('[admin-chart] failed to load reservations', priorWeek?.error || currentYear?.error);
-            setChartDataState('error');
-            return false;
-        }
-        rows = [...priorWeek.data, ...currentYear.data];
-    } else {
-        let data; let error;
-        try {
-            ({ data, error } = await window.sb.rpc('admin_booking_overview', {
-                p_from_at: yearStart, p_to_at: yearEnd,
-            }));
-        } catch (failure) {
-            console.error('[admin-chart] failed to load reservations', failure);
-            setChartDataState('error');
-            return false;
-        }
-        if (error || !Array.isArray(data)) {
-            console.error('[admin-chart] failed to load reservations', error);
-            setChartDataState('error');
-            return false;
-        }
-        rows = data;
+    const weekEnd = new Date(Date.parse(weekStart) + 7 * 86400000).toISOString();
+    // Fetch the full selected calendar year plus any adjacent-year fragments
+    // needed to complete the current Manila calendar week. Each RPC segment
+    // stays within admin_booking_overview's 366-day limit.
+    const segments = [];
+    if (weekStart < yearStart) segments.push([weekStart, yearStart]);
+    segments.push([yearStart, yearEnd]);
+    if (weekEnd > yearEnd) segments.push([yearEnd, weekEnd]);
+    let results;
+    try {
+        results = await Promise.all(segments.map(([from, to]) => window.sb.rpc('admin_booking_overview', {
+            p_from_at: from, p_to_at: to,
+        })));
+    } catch (error) {
+        console.error('[admin-chart] failed to load reservations', error);
+        if (request !== chartRequestId) return false;
+        setChartDataState('error');
+        return false;
     }
+    if (request !== chartRequestId) return false;
+    const failedResult = results.find(result => !result || result.error || !Array.isArray(result.data));
+    if (failedResult) {
+        console.error('[admin-chart] failed to load reservations', failedResult?.error);
+        setChartDataState('error');
+        return false;
+    }
+    const rows = results.flatMap(result => result.data);
+    if (request !== chartRequestId) return false;
     if (!Array.isArray(rows)) {
         console.error('[admin-chart] failed to load reservations');
         setChartDataState('error');
@@ -265,20 +411,49 @@ function baseOptions(colors) {
         responsive: true, maintainAspectRatio: false,
         plugins: {
             legend: { display: false },
-            tooltip: { backgroundColor: colors.bgCard, borderColor: colors.line, borderWidth: 1, titleColor: colors.ink, bodyColor: colors.ink, padding: 10, displayColors: false },
+            tooltip: { backgroundColor: colors.bgCard, borderColor: colors.line, borderWidth: 1, titleColor: colors.ink, bodyColor: colors.ink, padding: 10, cornerRadius: 8, caretSize: 4, displayColors: false },
         },
         scales: {
-            x: { grid: { display: false }, ticks: { color: colors.inkFaint, font: { size: 11 }, maxRotation: 0, autoSkip: true } },
-            y: { beginAtZero: true, grid: { color: colors.line }, ticks: { color: colors.inkFaint, font: { size: 11 }, precision: 0 } },
+            x: { grid: { display: false }, border: { display: false }, ticks: { color: colors.inkFaint, font: { size: 11 }, maxRotation: 0, autoSkip: true } },
+            y: { beginAtZero: true, border: { display: false }, grid: { color: colors.line, drawTicks: false }, ticks: { color: colors.inkFaint, font: { size: 11 }, precision: 0 } },
         },
     };
 }
 
+const bookingValueLabelsPlugin = {
+    id: 'booking-value-labels',
+    afterDatasetsDraw(chart) {
+        // Monthly daily bars are too close together for labels to stay legible.
+        if (currentChartRange === 'month') return;
+        const dataset = chart.data.datasets[0];
+        const bars = chart.getDatasetMeta(0).data;
+        if (!dataset || !bars.length) return;
+        const colors = getThemeColors();
+        const context = chart.ctx;
+        const baseline = chart.chartArea.bottom - 5;
+        context.save();
+        context.fillStyle = colors.ink;
+        context.font = "600 11px 'Inter', 'Segoe UI', sans-serif";
+        context.textAlign = 'center';
+        context.textBaseline = 'bottom';
+        bars.forEach((bar, index) => {
+            const value = dataset.data[index];
+            const y = value === 0 ? baseline : Math.max(chart.chartArea.top + 12, bar.y - 6);
+            context.fillText(String(value), bar.x, y);
+        });
+        context.restore();
+    },
+};
+
 function renderChartMeta() {
+    document.querySelectorAll('[data-admin-chart-range]').forEach(button => {
+        const active = button.dataset.adminChartRange === currentChartRange;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+    });
     if (!chartDataAvailable) {
         const unit = document.querySelector('[data-admin-chart-unit]');
         if (unit && chartDataState === 'idle') unit.textContent = 'Booking data has not loaded.';
-        document.querySelectorAll('[data-admin-chart-range]').forEach(button => button.classList.toggle('is-active', button.dataset.adminChartRange === currentChartRange));
         return;
     }
     const source = CHART_DATA[currentChartRange];
@@ -286,8 +461,16 @@ function renderChartMeta() {
     const total = document.querySelector('[data-admin-chart-total]');
     if (unit) unit.textContent = source.unit;
     if (total) total.textContent = source.total;
-    document.querySelectorAll('[data-admin-chart-range]').forEach(button => button.classList.toggle('is-active', button.dataset.adminChartRange === currentChartRange));
-    document.querySelectorAll('[data-admin-chart-export]').forEach(button => button.disabled = !chartDataAvailable);
+    const takeaway = document.querySelector('[data-admin-chart-takeaway]');
+    const chartSummary = bookingTakeaway(source, currentChartRange);
+    if (takeaway) takeaway.textContent = chartSummary;
+    const canvas = document.getElementById('adminBookingChart');
+    if (canvas) {
+        canvas.setAttribute('role', 'img');
+        canvas.setAttribute('aria-label', bookingChartAccessibleLabel(source, currentChartRange));
+    }
+    renderStatusReport(source);
+    updateExportControls();
 }
 
 function setChartRange(range) {
@@ -315,11 +498,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingCanvas = document.getElementById('adminBookingChart');
     if (bookingCanvas) {
         const source = CHART_DATA[currentChartRange];
-        bookingChart = new Chart(bookingCanvas, { type: 'bar', data: { labels: source.labels, datasets: [{ label: 'Bookings', data: source.values, backgroundColor: colors.primary, hoverBackgroundColor: colors.primaryDim, borderRadius: 6, maxBarThickness: 42 }] }, options: baseOptions(colors) });
+        bookingChart = new Chart(bookingCanvas, { type: 'bar', data: { labels: source.labels, datasets: [{ label: 'Bookings', data: source.values, backgroundColor: colors.primary, hoverBackgroundColor: colors.primaryDim, borderRadius: 6, maxBarThickness: 42 }] }, options: baseOptions(colors), plugins: [bookingValueLabelsPlugin] });
     }
     renderChartMeta();
     document.querySelectorAll('[data-admin-chart-range]').forEach(button => button.addEventListener('click', () => setChartRange(button.dataset.adminChartRange)));
-    document.querySelectorAll('[data-admin-chart-export]').forEach(button => button.addEventListener('click', () => exportBookingReport(button.dataset.adminChartExport)));
+    const exportToggle = document.querySelector('[data-admin-chart-export-toggle]');
+    const exportMenu = document.querySelector('[data-admin-chart-export-menu]');
+    const closeExportMenu = ({ restoreFocus = false } = {}) => {
+        if (!exportMenu || !exportToggle) return;
+        exportMenu.hidden = true;
+        exportToggle.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) exportToggle.focus();
+    };
+    if (exportToggle && exportMenu) {
+        exportToggle.addEventListener('click', () => {
+            const open = exportMenu.hidden;
+            exportMenu.hidden = !open;
+            exportToggle.setAttribute('aria-expanded', String(open));
+            if (open) exportMenu.querySelector('[data-admin-chart-export]:not(:disabled)')?.focus();
+        });
+        exportMenu.addEventListener('click', event => {
+            const choice = event.target.closest('[data-admin-chart-export]');
+            if (!choice || choice.disabled) return;
+            closeExportMenu({ restoreFocus: true });
+            showExportError('');
+            exportBookingReport(choice.dataset.adminChartExport);
+        });
+        exportMenu.addEventListener('keydown', event => {
+            const choices = [...exportMenu.querySelectorAll('[data-admin-chart-export]:not(:disabled)')];
+            const index = choices.indexOf(document.activeElement);
+            let next = null;
+            if (event.key === 'Escape') { event.preventDefault(); closeExportMenu({ restoreFocus: true }); }
+            else if (event.key === 'ArrowDown') next = choices[(index + 1) % choices.length];
+            else if (event.key === 'ArrowUp') next = choices[(index - 1 + choices.length) % choices.length];
+            else if (event.key === 'Home') next = choices[0];
+            else if (event.key === 'End') next = choices.at(-1);
+            if (next) { event.preventDefault(); next.focus(); }
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!exportMenu.hidden && !event.target.closest('[data-admin-chart-export-wrap]')) closeExportMenu();
+        });
+        document.addEventListener('focusin', event => {
+            if (!exportMenu.hidden && !event.target.closest('[data-admin-chart-export-wrap]')) closeExportMenu();
+        });
+    }
 
     function paintTheme() {
         const theme = getThemeColors();
