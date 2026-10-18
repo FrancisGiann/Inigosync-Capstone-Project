@@ -384,17 +384,19 @@ straight in the customer dashboard.
 
 ---
 
-## E5. Deploy database-only phone validation
+## E5. Database-only phone validation — deployed
 
 Phone entry checks Philippine mobile format and whether a contact number is
 already in use. Contact numbers must be unique. Emergency contacts may be
 shared; an existing number shows a warning but remains saveable. No SMS
 ownership check or paid active-line provider is used.
 
-Apply the current timestamped migration in `supabase/migrations` and deploy
-the `validate-contact-phone` Edge Function. Confirm signup availability uses
-its existing rate-limited RPC. The Edge Function and database guards enforce
-format, contact uniqueness, and short-lived one-use proofs for account writes.
+The staff emergency proof guard and database-only contact checks were applied
+to the connected Inigosync Supabase project on 2026-10-17. The
+`validate-contact-phone` Edge Function is deployed as version 12. Signup
+availability retains its existing rate-limited RPC. The Edge Function and
+database guards enforce format, contact uniqueness, and short-lived one-use
+proofs for account writes. No Abstract API key is needed.
 
 See [phone validation setup](phone-validation-setup.md) for the current
 contract and deployment verification steps. Historical SMS badge columns and
@@ -466,7 +468,7 @@ Get the real answers and I'll drop them in, or edit the file directly.
 | **E2** (Magic Link template) | **Required** — first-login OTP is unusable without it, for all three roles |
 | **E3** (Reset Password template) | **Required** — "Forgot password?" cannot be completed without the code |
 | **E4** (Confirm signup template) | **Required** — new sign-ups cannot get past the verify screen without it |
-| **E5** (Abstract API key in Edge Function secrets) | **Required** — changed optional contact numbers cannot be validated and saved without it |
+| **E5** (database-only phone checks) | Deployed 2026-10-17; no external phone-validation API key is required |
 | **E6** (Invite user template) | Recommended, not required — branded staff-invite email instead of Supabase's generic default, and makes explicit that the invite (and every future notice) goes to the account's own **personal** email |
 | **F** (court rates) | Replaces every "Rate TBA" with real pricing |
 | **G** (T&C values) | Completes the Terms & Conditions page |
@@ -476,8 +478,8 @@ templates, not two. That's roughly fifteen minutes of copy-paste in the Supabase
 dashboard and it activates most of what's already built and sitting dormant —
 including log-in, sign-up and password reset, all three of which are *currently
 broken* on a default Supabase project because none of the default templates
-contain `{{ .Token }}`. Complete **E5** separately to validate and save changed
-optional contact numbers through Abstract; it requires no SMS provider.
+contain `{{ .Token }}`. **E5** is already deployed and checks format plus
+database availability without an external phone provider.
 If you're about to onboard real staff, add **E6** as well — not required
 (Supabase's default Invite user template already has a working link), but it's
 another five minutes, and — because it's the one auth email in this project

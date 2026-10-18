@@ -132,11 +132,16 @@ body.admin-body {
     padding-left: 10px;
 }
 
+@media (min-width: 861px) {
+    .admin-shell.admin-sidebar-collapsed .admin-sidebar { z-index: 15; }
+}
+
 .admin-shell.admin-sidebar-collapsed .admin-sidebar-collapse {
-    position: static;
-    order: -1;
-    align-self: center;
-    margin-bottom: 16px;
+    /* Straddle the 82px sidebar edge beside the 30px logo. */
+    position: fixed;
+    top: 23px;
+    left: 64px;
+    z-index: 2;
     transform: rotate(180deg);
 }
 

@@ -2545,9 +2545,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Account Settings — avatar upload/remove (Revision A1, decision A9).
-    // The owner gets a crop preview before a square JPEG data URL is staged
-    // in profiles.avatar_url. Cancelling the crop leaves the current draft
-    // untouched; only Save writes the resulting image.
+    // The owner chooses a square crop before the resulting JPEG data URL is
+    // written to profiles.avatar_url.
     // ------------------------------------------------------------------
     const AVATAR_OUTPUT_SIZE = 256;
     const AVATAR_JPEG_QUALITY = 0.82;
@@ -2555,9 +2554,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminAvatarFileInput = document.querySelector('[data-admin-avatar-file]');
     const adminAvatarUploadBtn = document.querySelector('[data-admin-avatar-upload-trigger]');
     const adminAvatarRemoveBtn = document.querySelector('[data-admin-avatar-remove]');
-    const adminAvatarSaveBtn = document.querySelector('[data-admin-avatar-save]');
-    const adminAvatarModal = document.querySelector('[data-admin-avatar-modal]');
-    let stagedAvatarUrl;
 
     document.querySelector('[data-admin-profile-edit]')?.addEventListener('click', () => {
         paintOwnerDetails(window.inigosyncProfile || {});
@@ -2565,28 +2561,21 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InigoOwnerUI.open(modal);
         refreshLinkedGoogleEmails();
     });
-    document.querySelector('[data-admin-avatar-edit]')?.addEventListener('click', () => {
-        stagedAvatarUrl = window.inigosyncProfile?.avatar_url || null;
-        renderAdminProfile(window.inigosyncProfile || {});
-        if (adminAvatarRemoveBtn) adminAvatarRemoveBtn.hidden = !stagedAvatarUrl;
-        window.InigoOwnerUI.open(adminAvatarModal);
-    });
-    document.querySelectorAll('[data-admin-settings-cancel="profile"], [data-admin-avatar-cancel]').forEach((button) => {
+    document.querySelectorAll('[data-admin-settings-cancel="profile"]').forEach((button) => {
         button.addEventListener('click', () => {
             const modal = button.closest('.admin-modal-overlay');
             window.InigoOwnerUI.close(modal);
-            if (button.hasAttribute('data-admin-avatar-cancel')) renderAdminProfile(window.inigosyncProfile || {});
         });
     });
 
-    const accountModals = [adminAvatarModal, document.querySelector('[data-admin-settings-profile-modal]')].filter(Boolean);
+    const accountModals = [document.querySelector('[data-admin-settings-profile-modal]')].filter(Boolean);
     accountModals.forEach(modal => {
         let backdropStart = false;
         modal.addEventListener('pointerdown', event => { backdropStart = event.target === modal; });
-        modal.addEventListener('click', event => { if (backdropStart && event.target === modal) modal.querySelector('[data-admin-avatar-cancel], [data-admin-settings-cancel="profile"]')?.click(); backdropStart = false; });
+        modal.addEventListener('click', event => { if (backdropStart && event.target === modal) modal.querySelector('[data-admin-settings-cancel="profile"]')?.click(); backdropStart = false; });
     });
     document.addEventListener('keydown', event => {
-        if (event.key === 'Escape') accountModals.find(modal => !modal.hidden)?.querySelector('[data-admin-avatar-cancel], [data-admin-settings-cancel="profile"]')?.click();
+        if (event.key === 'Escape') accountModals.find(modal => !modal.hidden)?.querySelector('[data-admin-settings-cancel="profile"]')?.click();
     });
 
     async function saveAdminAvatarUrl(avatarUrl) {
@@ -2640,10 +2629,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     reader.onerror = () => reject(new Error('Could not finish processing the cropped photo.'));
                     reader.readAsDataURL(croppedBlob);
                 });
-                stagedAvatarUrl = dataUrl;
-                const preview = adminAvatarModal?.querySelector('.admin-avatar-upload-preview');
-                if (preview) preview.innerHTML = `<img class="admin-avatar-img" src="${window.escapeHtml(dataUrl)}" alt="Profile photo preview">`;
-                if (adminAvatarRemoveBtn) adminAvatarRemoveBtn.hidden = false;
+                if (await saveAdminAvatarUrl(dataUrl)) window.InigoToast?.show('Profile photo updated.');
             } catch (err) {
                 console.error('[admin] avatar crop failed', err);
                 window.InigoToast?.show('Could not process that image. Please try a different file.', true);
@@ -2654,20 +2640,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    adminAvatarRemoveBtn?.addEventListener('click', () => {
-        stagedAvatarUrl = null;
-        const preview = adminAvatarModal?.querySelector('.admin-avatar-upload-preview');
-        if (preview) preview.textContent = (window.inigosyncProfile?.full_name || 'Owner').split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
-        adminAvatarRemoveBtn.hidden = true;
-    });
-    adminAvatarSaveBtn?.addEventListener('click', async () => {
-        adminAvatarSaveBtn.disabled = true;
-        const ok = await saveAdminAvatarUrl(stagedAvatarUrl);
-        adminAvatarSaveBtn.disabled = false;
-        if (ok) {
-            window.InigoOwnerUI.close(adminAvatarModal);
-            window.InigoToast?.show(stagedAvatarUrl ? 'Profile photo updated.' : 'Profile photo removed.');
-        }
+    adminAvatarRemoveBtn?.addEventListener('click', async () => {
+        adminAvatarRemoveBtn.disabled = true;
+        const ok = await saveAdminAvatarUrl(null);
+        adminAvatarRemoveBtn.disabled = false;
+        if (ok) window.InigoToast?.show('Profile photo removed.');
     });
 
     // Owner Profile — prefill from the real signed-in profile. Revision A1,

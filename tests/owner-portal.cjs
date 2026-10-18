@@ -295,25 +295,34 @@ function fixture() {
                     await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
                     assert.equal(await page.evaluate(() => document.activeElement.hasAttribute('data-admin-profile-edit')), true);
 
-                    // Owner avatar crop is square, cancellation keeps the current photo, and applying a crop only stages it until Save.
-                    await page.locator('[data-admin-avatar-edit]').click();
+                    // Owner avatar controls are inline; crop cancellation leaves the saved photo unchanged and a completed crop saves immediately.
+                    assert.equal(await page.locator('[data-admin-avatar-edit]').count(), 0, 'profile photo has no Edit action');
+                    assert.equal(await page.locator('[data-admin-avatar-modal]').count(), 0, 'profile photo editor modal is removed');
+                    const chooseAvatarButton = page.locator('[data-admin-avatar-upload-trigger]');
+                    assert.equal(await chooseAvatarButton.isVisible(), true, 'Choose Photo is visible');
+                    assert.equal((await chooseAvatarButton.innerText()).trim(), 'Choose Photo');
+                    assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), false, 'Remove Photo is hidden without a saved avatar');
                     await page.evaluate(() => {
                         window.__avatarCropOptions = [];
                         window.InigoImageTools.openCropEditor = async (_file, options) => { window.__avatarCropOptions.push(options); return null; };
                     });
                     const avatarFile = { name: 'avatar.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('qa image') };
-                    await page.locator('[data-admin-avatar-file]').setInputFiles(avatarFile);
+                    const canceledAvatarChooser = page.waitForEvent('filechooser');
+                    await chooseAvatarButton.click();
+                    await (await canceledAvatarChooser).setFiles(avatarFile);
                     await page.waitForFunction(() => window.__avatarCropOptions.length === 1);
-                    assert.equal(await page.locator('[data-admin-avatar-modal] .admin-avatar-upload-preview img').count(), 0, 'cancelled crop must leave the avatar unchanged');
+                    assert.equal(await page.locator('.admin-avatar-upload-preview img').count(), 0, 'cancelled crop must leave the avatar unchanged');
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update').length), 0);
                     await page.evaluate(() => { window.InigoImageTools.openCropEditor = async (_file, options) => { window.__avatarCropOptions.push(options); return new Blob([new Uint8Array([255, 216, 255, 217])], { type: 'image/jpeg' }); }; });
-                    await page.locator('[data-admin-avatar-file]').setInputFiles(avatarFile);
-                    await page.locator('[data-admin-avatar-modal] .admin-avatar-upload-preview img').waitFor();
-                    assert.equal(await page.evaluate(() => window.__avatarCropOptions.at(-1).aspect), 1);
-                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update').length), 0, 'cropped avatar must remain a draft until Save');
-                    await page.locator('[data-admin-avatar-save]').click();
+                    const savedAvatarChooser = page.waitForEvent('filechooser');
+                    await chooseAvatarButton.click();
+                    await (await savedAvatarChooser).setFiles(avatarFile);
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update'));
-                    await page.locator('[data-admin-avatar-modal]').waitFor({ state: 'hidden' });
+                    assert.equal(await page.evaluate(() => window.__avatarCropOptions.at(-1).aspect), 1);
+                    assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), true, 'Remove Photo appears after an avatar is saved');
+                    await page.locator('[data-admin-avatar-remove]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.avatar_url === null));
+                    assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), false, 'Remove Photo hides after the avatar is removed');
 
                     // Owner mobile status is checked automatically after a complete PH number is entered, then saved explicitly.
                     await page.locator('[data-admin-profile-edit]').click();

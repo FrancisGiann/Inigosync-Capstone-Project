@@ -8,4 +8,4 @@ Contact numbers already linked to another account are blocked in the UI and by t
 
 These checks establish only format and database availability. They do not prove ownership, reachability, or delivery. Do not describe a number as verified or active based on these checks.
 
-Deploy the timestamped migrations in `supabase/migrations` and the `validate-contact-phone` Edge Function together. Supabase CLI was unavailable during implementation, so the migration and function deployment remain operator steps.
+The staff emergency proof guard and database-only contact-check migrations were applied to the connected Inigosync Supabase project on 2026-10-17, followed by `validate-contact-phone` version 12. For another environment, apply the timestamped migrations in `supabase/migrations` in order before deploying the Edge Function.

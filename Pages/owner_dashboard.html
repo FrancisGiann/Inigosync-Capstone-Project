@@ -629,11 +629,25 @@
                 </div>
             </section>
             <section class="admin-panel" data-admin-panel="settings">
+                <div class="admin-panel-head">
+                    <div>
+                        <h2>Account Settings</h2>
+                        <p>Manage your profile details and account security.</p>
+                    </div>
+                </div>
                 <div class="admin-card owner-account-card">
                     <section class="owner-photo-section" aria-label="Profile photo">
                         <h3>Profile Photo</h3>
-                        <div class="admin-avatar admin-avatar-upload-preview">RD</div>
-                        <button type="button" class="admin-btn-primary" data-admin-avatar-edit>Edit</button>
+                        <div class="admin-avatar-upload-row">
+                            <div class="admin-avatar admin-avatar-upload-preview">RD</div>
+                            <div class="admin-avatar-upload-controls">
+                                <div class="admin-avatar-upload-actions">
+                                    <button type="button" class="admin-btn-primary" data-admin-avatar-upload-trigger>Choose Photo</button>
+                                    <input type="file" accept="image/*" class="admin-visually-hidden" data-admin-avatar-file>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove Photo</button>
                     </section>
                     <section class="owner-personal-section" aria-label="Personal information">
                         <div class="admin-card-head"><h3>Personal Information</h3><button type="button" class="admin-btn-secondary" data-admin-profile-edit>Edit</button></div>
@@ -1040,26 +1054,6 @@
         <div class="admin-form-actions">
             <button type="button" class="admin-btn-ghost" data-admin-settings-cancel="profile">Cancel</button>
             <button type="button" class="admin-btn-save" data-admin-settings-save="profile">Save Changes</button>
-        </div>
-    </div>
-</div>
-
-<div class="admin-modal-overlay" data-admin-avatar-modal hidden>
-    <div class="admin-modal admin-account-modal admin-avatar-modal" role="dialog" aria-modal="true" aria-labelledby="adminAvatarModalTitle" tabindex="-1">
-        <button type="button" class="admin-modal-close" data-admin-avatar-cancel aria-label="Close profile photo editor">×</button>
-        <h3 id="adminAvatarModalTitle">Edit Profile Photo</h3>
-        <div class="admin-avatar-upload-row"><div class="admin-avatar admin-avatar-upload-preview">RD</div></div>
-        <div class="admin-avatar-upload-controls">
-            <div class="admin-avatar-upload-actions">
-                <button type="button" class="owner-photo-choice" data-admin-avatar-upload-trigger>Choose new photo</button>
-                <button type="button" class="admin-btn-ghost" data-admin-avatar-remove hidden>Remove photo</button>
-                <input type="file" accept="image/*" class="admin-visually-hidden" data-admin-avatar-file>
-            </div>
-            <p class="admin-form-hint">Choose any image. Adjust the square crop preview before saving.</p>
-        </div>
-        <div class="admin-form-actions">
-            <button type="button" class="admin-btn-ghost" data-admin-avatar-cancel>Cancel</button>
-            <button type="button" class="admin-btn-save" data-admin-avatar-save>Save photo</button>
         </div>
     </div>
 </div>

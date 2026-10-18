@@ -293,13 +293,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             .inigosync-logout-overlay[hidden] { display: none; }
             .inigosync-logout-dialog { position: relative; box-sizing: border-box; width: min(100%, 420px); padding: 30px; border: 1px solid var(--color-line, #e5e7eb); border-radius: 18px; background: var(--color-bg-card, #fff); color: var(--color-ink, #202124); box-shadow: 0 22px 70px rgba(0, 0, 0, .24); }
             .inigosync-logout-dialog h2 { margin: 0 34px 10px 0; font: inherit; font-size: 1.35rem; font-weight: 700; }
-            .inigosync-logout-dialog p { margin: 0; line-height: 1.55; color: var(--color-ink-soft, #60646c); }
+            .inigosync-logout-dialog p { margin: 0; line-height: 1.55; color: var(--color-ink-dim, #60646c); }
             .inigosync-logout-close { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 25px; cursor: pointer; }
             .inigosync-logout-close:hover, .inigosync-logout-close:focus-visible { background: rgba(127, 127, 127, .14); }
             .inigosync-logout-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
             .inigosync-logout-actions button { min-height: 42px; padding: 0 18px; border: 1px solid var(--color-line, #d7d9dc); border-radius: 10px; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
-            .inigosync-logout-actions .inigosync-logout-confirm { border-color: var(--color-alert, #c24130); background: var(--color-alert, #c24130); color: #fff; }
-            .inigosync-logout-dialog button:focus-visible { outline: 3px solid var(--color-primary, #d5ad55); outline-offset: 2px; }
+            .inigosync-logout-actions .inigosync-logout-confirm { border-color: var(--color-primary, #FF6115); background: var(--color-primary, #FF6115); color: #14110d; }
+            .inigosync-logout-actions .inigosync-logout-confirm:hover { border-color: var(--color-primary-dim, #D4410A); background: var(--color-primary-dim, #D4410A); color: #fff; }
+            .inigosync-logout-dialog button:focus-visible { outline: 3px solid var(--color-primary, #FF6115); outline-offset: 2px; }
             @media (prefers-reduced-motion: no-preference) { .inigosync-logout-dialog { animation: inigosync-logout-enter .16s ease-out; } @keyframes inigosync-logout-enter { from { opacity: 0; transform: translateY(5px) scale(.99); } to { opacity: 1; transform: none; } } }
         `;
         document.head.appendChild(style);
