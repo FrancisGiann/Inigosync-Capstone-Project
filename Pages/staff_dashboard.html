@@ -839,7 +839,7 @@
             <p class="staff-form-hint" data-staff-timein-note hidden></p>
 
             <!-- Balance > 0 only — no manual amount entry, just a required
-                 Cash / PayMongo payment choice.
+                 Cash / QR Payment choice.
                  Neither radio is preselected (unlike the walk-in wizard's
                  own Step 4, which defaults to Cash). -->
             <div class="staff-payment-options" data-staff-timein-payment-wrap hidden>
@@ -849,14 +849,15 @@
                         Cash
                     </span>
                 </label>
-                <label class="staff-payment-option" data-staff-payment-option data-staff-timein-online-option>
+                <label class="staff-payment-option" data-staff-payment-option data-staff-timein-qr-option>
                     <span class="staff-payment-option-head">
-                        <input type="radio" name="staff-timein-payment" data-staff-timein-method="PayMongo">
-                        PayMongo
+                        <input type="radio" name="staff-timein-payment" data-staff-timein-method="QR Payment">
+                        QR Payment
                     </span>
-                    <p>Pay the remaining balance securely with PayMongo.</p>
+                    <p>Scan a PayMongo QR Ph code. A PayMongo transaction fee may apply and is shown before you authorize payment.</p>
                 </label>
             </div>
+            <div class="staff-timein-qr-panel" data-staff-timein-qr-panel hidden></div>
         </div>
 
         <div class="staff-form-actions">

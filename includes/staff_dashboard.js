@@ -1259,6 +1259,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         const qrOption = document.querySelector('[data-staff-walkin-qr-option]');
         if (qrOption) qrOption.hidden = !staffQrphEnabled;
+        const timeInQrOption = document.querySelector('[data-staff-timein-qr-option]');
+        if (timeInQrOption) timeInQrOption.hidden = !staffQrphEnabled;
         if (walkinQrUnavailableEl) walkinQrUnavailableEl.hidden = staffQrphEnabled;
         if (walkinCashUnavailableEl) walkinCashUnavailableEl.hidden = staffCashEnabled;
         if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = staffQrphEnabled ? 'paymongo_qr' : null;
@@ -1272,6 +1274,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (radio) radio.checked = radio.dataset.staffPayment === walkinState.payment;
         });
         if (!staffCashEnabled && timeInSelectedMethod === 'Cash') {
+            timeInSelectedMethod = null;
+            if (timeInModalRow && timeInModalIsOpen) renderTimeInModal(timeInModalRow);
+        }
+        if (!staffQrphEnabled && timeInSelectedMethod === 'QR Payment') {
             timeInSelectedMethod = null;
             if (timeInModalRow && timeInModalIsOpen) renderTimeInModal(timeInModalRow);
         }
@@ -2451,13 +2457,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="staff-walkin-qr-copy">
                     <span class="staff-form-label">PayMongo · QR Ph${testMode ? ' · SANDBOX' : ''}</span>
                     <h3 id="staffWalkinQrTitle">${testMode ? 'Simulate sandbox payment' : expired ? 'Checkout expired' : 'Scan to pay'}</h3>
-                    <p>${testMode
-                        ? 'This is PayMongo’s actual test QR image. Do not scan or pay this test QR; use the simulator for test confirmation.'
-                        : 'Ask the customer to scan this amount-specific QR code with a participating bank or e-wallet app. PayMongo confirms payment before an acknowledgment is issued.'}</p>
-                    ${testMode ? '<p class="staff-walkin-qr-warning" role="alert">Do not scan or pay this test QR. Scanning it can process a real transaction.</p>' : ''}
+                    ${testMode ? '' : '<p>Ask the customer to scan this amount-specific QR code with a participating bank or e-wallet app. PayMongo confirms payment before an acknowledgment is issued.</p>'}
+                    ${testMode ? `<p class="staff-walkin-qr-warning" role="alert">Test QR: Do not scan or pay.${safeTestUrl ? ' Use the simulator.' : ' Simulator unavailable.'}</p>` : ''}
                     ${testMode ? (safeTestUrl
                         ? `<a class="staff-btn-primary" data-staff-walkin-qr-simulate href="${window.escapeHtml(safeTestUrl)}" target="_blank" rel="noopener noreferrer">Open PayMongo sandbox simulator</a>`
-                        : '<p class="staff-walkin-qr-warning" role="alert">PayMongo did not provide a trusted sandbox simulator link. The QR is shown for inspection only; do not scan or pay it.</p>') : ''}
+                        : '') : ''}
                     <div class="staff-walkin-qr-meta">
                         <div class="staff-summary-row"><span>Amount to pay</span><strong>${window.escapeHtml(amountText)}</strong></div>
                         <p class="staff-walkin-qr-status" data-staff-walkin-qr-status role="status" aria-live="polite">${testMode ? 'After choosing a simulator result, check for PayMongo confirmation.' : expired ? 'Checkout expired. Check once more for a late payment confirmation.' : 'Waiting for PayMongo payment confirmation…'}</p>
@@ -2674,6 +2678,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderStaffReceipt({ ...ack, transaction_id: ack.transaction_id || payment.payment_id, source: payment.source }, staffReceiptModalContent, 'transaction');
     }
 
+    function showImmediatePaymentAcknowledgment(acknowledgment, source) {
+        const ack = normalizeRpcRow(acknowledgment);
+        if (!ack || !staffReceiptModalContent || !staffReceiptModal) return false;
+        if (!['paid', 'succeeded', 'completed', 'partially_paid', 'partially paid', 'partially_settled']
+            .includes(String(ack.payment_status || '').toLowerCase())) return false;
+        staffReceiptModalContent.replaceChildren();
+        staffReceiptModal.setAttribute('data-open', '');
+        staffReceiptModal.hidden = false;
+        staffReceiptModalLastFocus = document.activeElement;
+        updateStaffModalBackground();
+        renderStaffReceipt({ ...ack, source }, staffReceiptModalContent, 'transaction');
+        staffReceiptDialog?.focus();
+        return true;
+    }
+
     function closeStaffReceiptModal() {
         if (!staffReceiptModal) return;
         staffReceiptModal.removeAttribute('data-open');
@@ -2753,6 +2772,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             walkinCashTenderedInput?.focus();
             return;
         }
+
+        const walkinTotal = walkinState.items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+        const walkinConfirmMessage = walkinState.payment === 'cash'
+            ? `Collect ${formatStaffPeso(walkinTotal)} in Cash and save this walk-in payment?`
+            : `Prepare a QR Ph payment for ${formatStaffPeso(walkinTotal)}? PayMongo may add a transaction fee, shown before the customer authorizes payment. The reservation and acknowledgment are confirmed only after PayMongo verifies payment.`;
+        if (!await confirmStaffAction(walkinConfirmMessage,
+            walkinState.payment === 'cash' ? 'Confirm Cash Payment' : 'Confirm QR Payment',
+            walkinState.payment === 'cash' ? 'Complete cash payment' : 'Show QR')) return;
 
         button.disabled = true;
         const originalText = button.textContent;
@@ -2913,6 +2940,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const timeInBalanceEl = document.querySelector('[data-staff-timein-balance]');
     const timeInNoteEl = document.querySelector('[data-staff-timein-note]');
     const timeInPaymentWrap = document.querySelector('[data-staff-timein-payment-wrap]');
+    const timeInQrPanel = document.querySelector('[data-staff-timein-qr-panel]');
     const timeInPaymentOptionEls = document.querySelectorAll('[data-staff-timein-payment-wrap] [data-staff-payment-option]');
     const timeInConfirmBtn = document.querySelector('[data-staff-timein-confirm]');
     const timeInCancelBtn = document.querySelector('[data-staff-timein-cancel]');
@@ -2925,6 +2953,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let timeInModalRow = null;
     let timeInSelectedMethod = null;
     let timeInRefreshSeq = 0;
+    let timeInQrPollTimer = null;
 
     // { table, idField, idValue } for either source type — booking_id for a
     // booking (same column timeInBooking() used pre-S2), or whichever
@@ -2988,6 +3017,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (radio) radio.checked = false;
         });
         if (timeInPaymentWrap) timeInPaymentWrap.hidden = !needsPayment;
+        if (timeInQrPanel) timeInQrPanel.hidden = true;
+        if (timeInConfirmBtn) timeInConfirmBtn.hidden = false;
 
         if (timeInNoteEl) {
             if (!knownTotal) {
@@ -3003,8 +3034,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (timeInConfirmBtn) {
             if (needsPayment) {
-                timeInConfirmBtn.textContent = timeInSelectedMethod === 'PayMongo'
-                    ? `Pay ${formatStaffPeso(info.balance)} with PayMongo`
+                timeInConfirmBtn.textContent = timeInSelectedMethod === 'QR Payment'
+                    ? `Show QR for ${formatStaffPeso(info.balance)}`
                     : `Collect ${formatStaffPeso(info.balance)} & Time-In`;
                 timeInConfirmBtn.disabled = true;
             } else {
@@ -3059,6 +3090,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!timeInModalIsOpen || !timeInModal) return;
         timeInModalIsOpen = false;
         timeInRefreshSeq += 1;
+        if (timeInQrPollTimer) { window.clearInterval(timeInQrPollTimer); timeInQrPollTimer = null; }
         timeInModalRow = null;
 
         timeInModal.removeAttribute('data-open');
@@ -3151,8 +3183,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (timeInConfirmBtn) {
                 const info = timeInPaymentInfo(timeInModalRow);
                 timeInConfirmBtn.disabled = false;
-                timeInConfirmBtn.textContent = timeInSelectedMethod === 'PayMongo'
-                    ? `Pay ${formatStaffPeso(info.balance)} with PayMongo`
+                timeInConfirmBtn.textContent = timeInSelectedMethod === 'QR Payment'
+                    ? `Show QR for ${formatStaffPeso(info.balance)}`
                     : `Collect ${formatStaffPeso(info.balance)} & Time-In`;
             }
         });
@@ -3184,28 +3216,91 @@ document.addEventListener('DOMContentLoaded', async () => {
             const needsPayment = info.total !== null && info.balance > 0;
             if (needsPayment && !timeInSelectedMethod) {
                 renderTimeInModal(row);
-                window.InigoToast?.show('Choose Cash or PayMongo first.', true);
+                window.InigoToast?.show('Choose Cash or QR Payment first.', true);
                 return;
             }
 
-            if (needsPayment && timeInSelectedMethod === 'PayMongo') {
-                timeInConfirmBtn.textContent = 'Opening PayMongo…';
+            const confirmation = needsPayment
+                ? timeInSelectedMethod === 'QR Payment'
+                    ? `Show a QR Ph code for ${formatStaffPeso(info.balance)}? PayMongo may add a transaction fee, shown before the customer authorizes payment. Attendance and a receipt are recorded only after PayMongo confirms payment.`
+                    : `Collect ${formatStaffPeso(info.balance)} in Cash and record Time-In?`
+                : `Record Time-In for ${row.customerName || 'this customer'}?`;
+            if (!await confirmStaffAction(confirmation,
+                needsPayment && timeInSelectedMethod === 'QR Payment' ? 'Confirm QR Payment' : 'Confirm Time-In',
+                needsPayment && timeInSelectedMethod === 'QR Payment' ? 'Show QR' : needsPayment ? 'Collect cash' : 'Time-In')) {
+                timeInConfirmBtn.disabled = false;
+                timeInConfirmBtn.textContent = needsPayment
+                    ? timeInSelectedMethod === 'QR Payment' ? `Show QR for ${formatStaffPeso(info.balance)}` : `Collect ${formatStaffPeso(info.balance)} & Time-In`
+                    : 'Time-In';
+                return;
+            }
+
+            if (needsPayment && timeInSelectedMethod === 'QR Payment') {
+                timeInConfirmBtn.textContent = 'Preparing QR…';
                 let checkout;
                 try {
                     checkout = await window.sb.functions.invoke('paymongo-balance-checkout', {
-                        body: { source, id: String(target.idValue) },
+                        body: { source, id: String(target.idValue), channel: 'qrph' },
                     });
                 } catch (error) {
                     checkout = { error };
                 }
-                const checkoutUrl = checkout?.data?.checkout_url;
-                if (checkout?.error || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('https://checkout.paymongo.com/')) {
+                const qrImageUrl = checkout?.data?.qr_image_url;
+                if (checkout?.error || typeof qrImageUrl !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(qrImageUrl)) {
                     timeInConfirmBtn.disabled = false;
                     renderTimeInModal(row);
-                    window.InigoToast?.show(checkout?.error?.message || 'Could not start PayMongo checkout.', true);
+                    let message = checkout?.error?.message || checkout?.data?.message || 'Could not prepare QR Ph payment.';
+                    try {
+                        const response = checkout?.error?.context;
+                        if (response && typeof response.clone === 'function') {
+                            const body = await response.clone().json();
+                            if (typeof body?.message === 'string' && body.message.trim()) message = body.message.trim().slice(0, 300);
+                        }
+                    } catch { /* Keep the safe fallback message. */ }
+                    window.InigoToast?.show(message, true);
                     return;
                 }
-                window.location.assign(checkoutUrl);
+                const safeImage = window.escapeHtml(qrImageUrl);
+                const testUrl = typeof checkout.data.qr_test_url === 'string'
+                    && checkout.data.qr_test_url.startsWith('https://test.paymongo.com/')
+                    ? `<a class="staff-btn-ghost" href="${window.escapeHtml(checkout.data.qr_test_url)}" target="_blank" rel="noopener noreferrer">Open PayMongo sandbox simulator</a>` : '';
+                if (timeInQrPanel) {
+                    timeInQrPanel.hidden = false;
+                    const testMode = checkout.data.test_mode === true;
+                    const amountText = formatStaffPeso(Number(checkout.data.base_minor) / 100 || info.balance);
+                    timeInQrPanel.innerHTML = `<div class="staff-timein-qr-code"><img class="staff-timein-qr-image" src="${safeImage}" alt="${testMode ? 'PayMongo test QR Ph code. Do not scan or pay.' : 'Dynamic QR Ph payment code'}"></div><div class="staff-timein-qr-copy"><span class="staff-form-label">PayMongo · QR Ph${testMode ? ' · SANDBOX' : ''}</span><h4>${testMode ? 'Simulate sandbox payment' : 'Scan to pay'}</h4>${testMode ? `<p class="staff-walkin-qr-warning" role="alert">Test QR: Do not scan or pay.${testUrl ? ' Use the simulator.' : ' Simulator unavailable.'}</p>` : `<p>Scan to pay ${window.escapeHtml(amountText)}. The reservation will be marked paid and timed in after PayMongo confirms payment.</p>`}${testUrl}<p class="staff-walkin-qr-status" role="status" aria-live="polite" data-staff-timein-qr-status>Waiting for PayMongo confirmation…</p><button type="button" class="staff-btn-ghost" data-staff-timein-qr-check>Check payment status</button></div>`;
+                    timeInConfirmBtn.hidden = true;
+                    timeInPaymentWrap.hidden = true;
+                }
+                const checkQr = async () => {
+                    if (!timeInModalIsOpen || !timeInModalRow || timeInModalRow !== row) return;
+                    const fresh = await fetchFreshTimeInRow(row);
+                    if (fresh.error) return;
+                    if (!timeInBalanceConfirmed(fresh.row)) return;
+                    if (timeInQrPollTimer) { window.clearInterval(timeInQrPollTimer); timeInQrPollTimer = null; }
+                    const status = timeInQrPanel?.querySelector('[data-staff-timein-qr-status]');
+                    if (status) status.textContent = 'Payment confirmed. Loading acknowledgment…';
+                    let history;
+                    try {
+                        history = await window.sb.rpc('staff_get_transaction_payment_history', {
+                            p_source: source,
+                            p_id: String(target.idValue),
+                        });
+                    } catch { history = null; }
+                    const rows = normalizeRpcRow(history?.data)?.payment_history || [];
+                    const paymentId = fresh.row.raw.balance_payment_id;
+                    const tx = rows.find(item => String(item.payment_id) === String(paymentId));
+                    if (tx?.acknowledgment && showImmediatePaymentAcknowledgment(tx.acknowledgment, source)) {
+                        closeTimeInModal();
+                        window.InigoToast?.show('PayMongo confirmed payment. The acknowledgment is ready to print or download.');
+                    } else if (status) status.textContent = 'Payment is confirmed. Refresh the transaction list to view its acknowledgment.';
+                    refreshBookingOverview();
+                    refreshCourtSchedule();
+                    refreshTransactions();
+                };
+                timeInQrPanel?.querySelector('[data-staff-timein-qr-check]')?.addEventListener('click', checkQr);
+                if (checkout.data.test_mode !== true) timeInQrPollTimer = window.setInterval(checkQr, 2500);
+                timeInConfirmBtn.disabled = true;
                 return;
             }
 
@@ -3228,6 +3323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (needsPayment) {
                 window.InigoToast?.show(`Timed in · ${formatStaffPeso(info.balance)} collected in Cash.`);
+                if (collection.data?.receipt) showImmediatePaymentAcknowledgment(collection.data.receipt, source);
             } else {
                 window.InigoToast?.show('Timed in.');
             }

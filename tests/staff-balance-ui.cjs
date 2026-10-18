@@ -11,7 +11,7 @@ const booking = {
     payment_id: 12, rate_unit_snapshot: '/hr', rate_quantity: 1,
 };
 
-function fixture(row) {
+function fixture(row, checkoutError = false) {
     window.__balanceQa = { calls: [], booking: row };
     const qa = window.__balanceQa;
     function result(table, query) {
@@ -57,7 +57,13 @@ function fixture(row) {
         functions: { invoke: async (name, options) => {
             qa.calls.push({ kind: 'function', name, options });
             if (window.__qaRecordBalance) await window.__qaRecordBalance({ kind: 'function', name, options });
-            return { data: { checkout_url: 'https://checkout.paymongo.com/qa-balance' }, error: null };
+            if (checkoutError && options.body.channel === 'qrph') return { data: null, error: {
+                message: 'Edge Function returned a non-2xx status code',
+                context: new Response(JSON.stringify({ message: 'QR Payment is unavailable for this facility.' }), { status: 503 }),
+            } };
+            return { data: options.body.channel === 'qrph'
+                ? { qr_image_url: 'data:image/png;base64,AAAA', base_minor: 5000, test_mode: true }
+                : { checkout_url: 'https://checkout.paymongo.com/qa-balance' }, error: null };
         } },
         auth: {
             getSession: async () => ({ data: { session: { user: { id: 'qa-staff' } } } }),
@@ -71,7 +77,12 @@ function fixture(row) {
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
-        for (const method of ['Cash', 'PayMongo']) {
+        for (const scenario of [
+            { method: 'Cash' },
+            { method: 'QR Payment' },
+            { method: 'QR Payment', checkoutError: true },
+        ]) {
+            const { method, checkoutError = false } = scenario;
             const context = await browser.newContext({ timezoneId: 'Asia/Manila', viewport: { width: 390, height: 844 } });
             const page = await context.newPage();
             page.setDefaultTimeout(12000);
@@ -84,7 +95,7 @@ function fixture(row) {
             await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript',
                 body: `window.__qaToasts=[];window.InigoLoading={show(){},hide(){}};window.InigoToast={show:(message,isError)=>window.__qaToasts.push({message,isError})};` }));
             await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript',
-                body: `(${fixture})(${JSON.stringify(booking)});` }));
+                body: `(${fixture})(${JSON.stringify(booking)}, ${JSON.stringify(checkoutError)});` }));
             await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript',
                 body: `window.inigosyncProfile={id:'qa-staff',role:'staff',status:'active',full_name:'QA Staff'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
             await page.route('**/includes/appSettings.js', route => route.fulfill({ contentType: 'application/javascript',
@@ -98,6 +109,10 @@ function fixture(row) {
             await page.locator('[data-staff-timein-balance]').getByText('₱50.00').waitFor();
             await page.locator(`[data-staff-timein-method="${method}"]`).check();
             await page.locator('[data-staff-timein-confirm]').click();
+            await page.locator('[data-staff-confirm-modal]').waitFor({ state: 'visible' });
+            const confirmation = await page.locator('[data-staff-confirm-text]').innerText();
+            assert.match(confirmation, method === 'Cash' ? /Collect ₱50\.00 in Cash/ : /may add a transaction fee/i);
+            await page.locator('[data-staff-confirm-accept]').click();
             if (method === 'Cash') {
                 await page.waitForFunction(() => window.__balanceQa.calls.some(call => call.name === 'staff_collect_cash_and_check_in'));
                 const cash = await page.evaluate(() => window.__balanceQa.calls.find(call => call.name === 'staff_collect_cash_and_check_in'));
@@ -106,9 +121,17 @@ function fixture(row) {
             } else {
                 await page.waitForTimeout(200);
                 const online = calls.find(call => call.name === 'paymongo-balance-checkout');
-                assert.equal(online?.options.body.source, 'booking');
-                assert.equal(online?.options.body.id, '42');
+                assert.deepEqual(online?.options.body, { source: 'booking', id: '42', channel: 'qrph' });
                 assert.equal(calls.some(call => call.name === 'staff_collect_cash_and_check_in'), false);
+                if (checkoutError) {
+                    await page.waitForFunction(() => window.__qaToasts.at(-1)?.message === 'QR Payment is unavailable for this facility.');
+                    assert.equal(await page.locator('[data-staff-timein-qr-panel]').isVisible(), false,
+                        'failed QR checkout never displays a payment QR');
+                    assert.equal(await page.locator('[data-staff-receipt-modal]').isVisible(), false,
+                        'failed QR checkout never displays a payment acknowledgment');
+                } else {
+                    await page.locator('[data-staff-timein-qr-panel]').waitFor({ state: 'visible' });
+                }
             }
             if (method === 'Cash') assert.equal(await page.evaluate(() => window.__balanceQa.calls.some(call => call.table === 'payment' && call.kind === 'insert')), false);
             assert.deepEqual(errors, [], `${method} browser errors`);

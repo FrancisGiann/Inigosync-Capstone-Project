@@ -17,7 +17,7 @@ function occupied(source, court, unit, date, hour, status = 'pending') {
 function clientFixture(options) {
     const data = options.rows.slice();
     const calls = [];
-    window.__reservationQa = { data, calls, insertError: options.insertError || null, insertErrorAfter: options.insertErrorAfter,
+    window.__reservationQa = { data, calls, checkoutError: options.checkoutError || null, insertError: options.insertError || null, insertErrorAfter: options.insertErrorAfter,
         insertErrorOnce: options.insertErrorOnce || false, insertDelayMs: options.insertDelayMs || 0,
         authoritativeAmountTotal: options.authoritativeAmountTotal, rpcError: null, rpcDelayForDay: {},
         rules: { open_hour: 8, close_hour: 20, is_closed: false, grace_minutes: 30, timezone: 'Asia/Manila' },
@@ -123,6 +123,13 @@ function clientFixture(options) {
         functions: { invoke: async (name, options) => {
             calls.push({ kind: 'function', name, options });
             if (window.__qaRecordCheckout) await window.__qaRecordCheckout(name, options);
+            if (window.__reservationQa.checkoutError) {
+                const failure = window.__reservationQa.checkoutError;
+                return { data: null, error: {
+                    message: 'Edge Function returned a non-2xx status code',
+                    context: new Response(JSON.stringify({ message: failure.message }), { status: failure.status || 500 }),
+                } };
+            }
             return { data: { checkout_url: 'https://checkout.paymongo.com/qa' }, error: null };
         } },
         auth: {
@@ -204,7 +211,7 @@ function courtDataFixture(options = {}) {
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
-        async function setup(role, rows, insertError = null, inventoryUnavailable = false, rates = false, sets = false, authoritativeAmountTotal = undefined, insertErrorAfter = undefined, insertDelayMs = 0, insertErrorOnce = false, ownerData = null, emptyPickleballInventory = false) {
+        async function setup(role, rows, insertError = null, inventoryUnavailable = false, rates = false, sets = false, authoritativeAmountTotal = undefined, insertErrorAfter = undefined, insertDelayMs = 0, insertErrorOnce = false, ownerData = null, emptyPickleballInventory = false, checkoutError = null) {
             const context = await browser.newContext({ timezoneId: 'Asia/Manila', viewport: { width: 1280, height: 900 } });
             const page = await context.newPage();
             page.setDefaultTimeout(12000);
@@ -217,7 +224,7 @@ function courtDataFixture(options = {}) {
             await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript',
                 body: `window.__qaToasts=[];window.InigoLoading={show(){},hide(){}};window.InigoToast={show:(message,isError)=>window.__qaToasts.push({message,isError:!!isError})};` }));
             await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript',
-                body: `(${clientFixture})(${JSON.stringify({ rows, insertError, insertErrorAfter, insertDelayMs, insertErrorOnce, authoritativeAmountTotal, owner: ownerData })});` }));
+                body: `(${clientFixture})(${JSON.stringify({ rows, insertError, insertErrorAfter, insertDelayMs, insertErrorOnce, authoritativeAmountTotal, owner: ownerData, checkoutError })});` }));
             await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript',
                 body: `window.inigosyncProfile={id:'qa-user',role:${JSON.stringify(role)},status:'active',full_name:'QA User',email:'qa@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
             await page.route('**/includes/courtsData.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${courtDataFixture})(${JSON.stringify({ inventoryUnavailable, rates, sets, emptyPickleballInventory })});` }));
@@ -338,6 +345,8 @@ function courtDataFixture(options = {}) {
             await customerProceedToPayment(page);
             await page.locator('[data-dash-book-submit]').click();
             await page.locator('[data-dash-book-fee-confirmation]').waitFor({ state: 'visible' });
+            assert.match(await page.locator('#dash-book-fee-description').innerText(), /depending on your payment method/i,
+                'fee disclosure is neutral before the customer chooses a payment method');
             assert.equal(checkoutCalls.length, 0, 'checkout waits for fee confirmation');
             await page.locator('[data-dash-book-fee-confirmation] [data-dash-book-fee-close]').last().click();
             assert.equal(checkoutCalls.length, 0, 'cancelling fee confirmation creates no checkout');
@@ -351,6 +360,22 @@ function courtDataFixture(options = {}) {
             assert.equal(checkoutCalls[0].options.body.items[0].unit_id, 'basketball-unit-2');
             assert.equal(await page.evaluate(() => window.__reservationQa?.calls.filter(c => c.kind === 'insert' && c.table === 'booking').length ?? 0), 0);
             assert.deepEqual(errors, [], 'customer checkout browser errors');
+            await context.close();
+        }
+        // Initial checkout displays the Edge Function response body instead of the generic SDK status.
+        {
+            const { page, context, errors, checkoutCalls } = await setup('customer', [], null, false, false, false,
+                undefined, undefined, 0, false, null, false, { status: 503, message: 'PayMongo is temporarily unavailable.' });
+            await customerReadyToSubmit(page);
+            await customerProceedToPayment(page);
+            await page.locator('[data-dash-book-submit]').click();
+            await page.locator('[data-dash-book-fee-continue]').click();
+            await page.waitForFunction(() => window.__qaToasts.at(-1)?.message === 'PayMongo is temporarily unavailable.');
+            assert.equal(checkoutCalls.length, 1, 'failed initial checkout invokes the server once');
+            assert.equal(await page.evaluate(() => window.__qaToasts.at(-1).isError), true);
+            assert.equal(await page.evaluate(() => window.__reservationQa.calls.filter(c => c.kind === 'insert' && c.table === 'booking').length), 0,
+                'failed checkout does not create an unpaid booking');
+            assert.deepEqual(errors, [], 'initial checkout error response browser errors');
             await context.close();
         }
         // Booking details remove controls keep totals and focus current; the final removal returns focus to Book a Court.
@@ -405,6 +430,24 @@ function courtDataFixture(options = {}) {
             assert.equal(checkoutCalls.length, 1, 'confirmed retry makes one checkout request');
             assert.equal(checkoutCalls[0].options.body.booking_id, 77);
             assert.deepEqual(errors, [], 'retry fee confirmation browser errors');
+            await context.close();
+        }
+        // Retry checkout reads and displays the server error body as well.
+        {
+            const retryBooking = { source: 'online', booking_id: 78, customer_id: 'qa-user', courts: 'Basketball',
+                court_unit: 'Court 1', time_date: `${tomorrow}T10:00:00+08:00`, end_at: `${tomorrow}T11:00:00+08:00`,
+                duration_minutes: 60, status: 'pending', amount_total: 300, amount_paid: 0, payment_id: null };
+            const { page, context, errors, checkoutCalls } = await setup('customer', [retryBooking], null, false, false, false,
+                undefined, undefined, 0, false, null, false, { status: 409, message: 'This booking is no longer payable.' });
+            await page.locator('[data-dash-nav="bookings"]').first().click();
+            const retryButton = page.locator('[data-dash-retry-checkout="78"]');
+            await retryButton.waitFor({ state: 'visible' });
+            await retryButton.click();
+            await page.locator('[data-dash-book-fee-continue]').click();
+            await page.waitForFunction(() => window.__qaToasts.at(-1)?.message === 'This booking is no longer payable.');
+            assert.equal(checkoutCalls.length, 1, 'failed retry invokes the server once');
+            assert.equal(await retryButton.isEnabled(), true, 'failed retry restores the control');
+            assert.deepEqual(errors, [], 'retry checkout error response browser errors');
             await context.close();
         }
         // Admin hours changed after a slot was selected: forced refresh clears it before it can enter cart.

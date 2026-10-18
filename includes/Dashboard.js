@@ -104,6 +104,17 @@ document.addEventListener('DOMContentLoaded', () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    async function getFunctionErrorMessage(error, fallback) {
+        const response = error?.context;
+        if (response && typeof response.clone === 'function') {
+            try {
+                const body = await response.clone().json();
+                if (typeof body?.message === 'string' && body.message.trim()) return body.message.trim().slice(0, 300);
+            } catch (_) { /* Keep the SDK message when the response is not JSON. */ }
+        }
+        return typeof error?.message === 'string' && error.message.trim() ? error.message.trim() : fallback;
+    }
+
     navButtons.forEach((btn) => {
         btn.addEventListener('click', () => setActivePanel(btn.dataset.dashNav));
     });
@@ -1798,7 +1809,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     })),
                 },
             });
-            if (error || typeof data?.checkout_url !== 'string' || !data.checkout_url.startsWith('https://checkout.paymongo.com/')) {
+            if (error) throw new Error(await getFunctionErrorMessage(error, 'Secure checkout could not start. Please retry shortly.'));
+            if (typeof data?.checkout_url !== 'string' || !data.checkout_url.startsWith('https://checkout.paymongo.com/')) {
                 throw new Error(data?.message || 'Secure checkout could not start. Please retry shortly.');
             }
             window.location.assign(data.checkout_url);
@@ -2534,7 +2546,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 return;
                             }
                             console.error('[dashboard] PayMongo retry failed', error || data);
-                            window.InigoToast?.show(data?.message || 'Could not reopen online checkout. Please try again.', true);
+                            const message = error
+                                ? await getFunctionErrorMessage(error, 'Could not reopen online checkout. Please try again.')
+                                : data?.message || 'Could not reopen online checkout. Please try again.';
+                            window.InigoToast?.show(message, true);
                         } catch (error) {
                             console.error('[dashboard] PayMongo retry failed', error);
                             window.InigoToast?.show(error?.message || 'Could not reopen online checkout. Please try again.', true);

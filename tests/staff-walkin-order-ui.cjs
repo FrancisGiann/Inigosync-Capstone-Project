@@ -629,6 +629,7 @@ function occupancyRow(hour, source = 'online') {
         await setPage.locator('[data-staff-walkin-cash-tendered]').fill('200');
         assert.equal(await setPage.locator('[data-staff-walkin-save]').isDisabled(), false, 'the full ₱200 order tender enables cash completion');
         await setPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(setPage, { accept: true });
         const setReceipt = setPage.locator('[data-staff-walkin-receipt] .payment-ack-card');
         await setReceipt.waitFor();
         assert.match(await setReceipt.innerText(), /PAYMENT ACKNOWLEDGEMENT/);
@@ -696,6 +697,7 @@ function occupancyRow(hour, source = 'online') {
         assert.match(await page.locator('[data-staff-walkin-cash-change]').innerText(), /₱50\.00/);
         assert.equal(await page.locator('[data-staff-walkin-save]').isDisabled(), false, 'sufficient tender enables cash save');
         await page.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(page, { accept: true });
         const walkinReceipt = page.locator('[data-staff-walkin-receipt] .payment-ack-card');
         await walkinReceipt.waitFor();
         assert.match(await walkinReceipt.innerText(), /PAYMENT ACKNOWLEDGEMENT/);
@@ -736,6 +738,7 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await qrPage.locator('[data-staff-walkin-summary-payment]').innerText(), 'QR Ph');
         await qrPage.locator('[data-staff-walkin-next]').click();
         await qrPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(qrPage, { accept: true });
         await qrPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/"]').waitFor();
         await qrPage.waitForFunction(() => {
             const image = document.querySelector('[data-staff-walkin-qr-image] img');
@@ -744,6 +747,22 @@ function occupancyRow(hour, source = 'online') {
         assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /Amount to pay\s+₱375\.00/, 'QR amount follows the server checkout charge, not the stale client estimate');
         assert.match(await qrPage.locator('[data-staff-walkin-qr-status]').innerText(), /Waiting for PayMongo payment confirmation/);
         assert.match(await qrPage.locator('.staff-walkin-qr-card').innerText(), /scan this amount-specific QR code/i);
+        const desktopQrLayout = await qrPage.locator('.staff-walkin-qr-card').evaluate(card => {
+            const bounds = card.getBoundingClientRect();
+            return { width: bounds.width, viewportWidth: window.innerWidth, scrollWidth: document.documentElement.scrollWidth };
+        });
+        assert.ok(desktopQrLayout.width > 900, 'desktop QR card uses the full available staff content width');
+        assert.ok(desktopQrLayout.scrollWidth <= desktopQrLayout.viewportWidth, 'desktop QR layout does not overflow horizontally');
+        await qrPage.setViewportSize({ width: 390, height: 844 });
+        const mobileQrLayout = await qrPage.locator('.staff-walkin-qr-card').evaluate(card => {
+            const bounds = card.getBoundingClientRect();
+            const code = card.querySelector('.staff-walkin-qr-code').getBoundingClientRect();
+            return { width: bounds.width, codeWidth: code.width, viewportWidth: window.innerWidth, scrollWidth: document.documentElement.scrollWidth };
+        });
+        assert.ok(mobileQrLayout.width > 300, 'mobile QR card fills the available content width');
+        assert.ok(mobileQrLayout.codeWidth <= mobileQrLayout.width, 'mobile QR image fits inside its card');
+        assert.ok(mobileQrLayout.scrollWidth <= mobileQrLayout.viewportWidth, 'mobile QR layout does not overflow horizontally');
+        await qrPage.setViewportSize({ width: 1280, height: 720 });
         const qrSetup = await qrPage.evaluate(() => ({
             orderCreates: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted'),
             checkout: window.__walkinQa.calls.find(call => call.kind === 'function' && call.name === 'staff-walkin-checkout'),
@@ -790,6 +809,7 @@ function occupancyRow(hour, source = 'online') {
         await sandboxQrPage.locator('[data-staff-walkin-qr-option]').click();
         await sandboxQrPage.locator('[data-staff-walkin-next]').click();
         await sandboxQrPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(sandboxQrPage, { accept: true });
         const sandboxPanel = sandboxQrPage.locator('.staff-walkin-qr-card');
         await sandboxPanel.getByRole('link', { name: 'Open PayMongo sandbox simulator' }).waitFor();
         const sandboxImage = sandboxQrPage.locator('[data-staff-walkin-qr-image] img');
@@ -801,7 +821,9 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await sandboxQrPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/png;base64,"]').count(), 1, 'sandbox screen renders PayMongo’s actual test QR image');
         const sandboxImageDimensions = await sandboxImage.evaluate(image => ({ width: image.naturalWidth, height: image.naturalHeight }));
         assert.ok(sandboxImageDimensions.width > 0 && sandboxImageDimensions.height > 0, 'sandbox QR fixture decodes to a visible image');
-        assert.match(await sandboxPanel.innerText(), /Do not scan or pay this test QR/i, 'sandbox screen prominently warns against scanning or paying');
+        assert.equal(await sandboxPanel.locator('.staff-walkin-qr-warning[role="alert"]').count(), 1, 'sandbox displays one concise safety warning');
+        assert.match(await sandboxPanel.locator('.staff-walkin-qr-warning').innerText(), /Test QR: Do not scan or pay\./i, 'sandbox screen prominently warns against scanning or paying');
+        assert.doesNotMatch(await sandboxPanel.innerText(), /actual test QR image|Scanning it can process a real transaction|shown for inspection only/i, 'sandbox screen omits duplicated verbose warning copy');
         assert.equal(await sandboxPanel.locator('[data-staff-walkin-qr-simulate]').getAttribute('href'), 'https://test.paymongo.com/qrph/fixture');
         await sandboxQrPage.clock.fastForward(5000);
         assert.equal(await sandboxQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0, 'sandbox does not start payment polling before simulation');
@@ -828,10 +850,12 @@ function occupancyRow(hour, source = 'online') {
         await untrustedSimulatorPage.locator('[data-staff-walkin-qr-option]').click();
         await untrustedSimulatorPage.locator('[data-staff-walkin-next]').click();
         await untrustedSimulatorPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(untrustedSimulatorPage, { accept: true });
         const untrustedPanel = untrustedSimulatorPage.locator('.staff-walkin-qr-card');
         assert.equal(await untrustedSimulatorPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/png;base64,"]').count(), 1, 'an untrusted simulator URL does not hide the provider QR image');
         assert.equal(await untrustedPanel.locator('[data-staff-walkin-qr-simulate]').count(), 0, 'untrusted simulator URLs are never linked');
-        assert.match(await untrustedPanel.innerText(), /QR is shown for inspection only; do not scan or pay it/i);
+        assert.equal(await untrustedPanel.locator('.staff-walkin-qr-warning[role="alert"]').count(), 1, 'untrusted simulator case keeps one safety warning');
+        assert.match(await untrustedPanel.locator('.staff-walkin-qr-warning').innerText(), /Test QR: Do not scan or pay\. Simulator unavailable\./i);
         await untrustedSimulatorContext.context.close();
 
         const qrPreorderRetryContext = await openStaffPage(browser, {
@@ -849,6 +873,7 @@ function occupancyRow(hour, source = 'online') {
         await qrPreorderRetryPage.locator('[data-staff-walkin-qr-option]').click();
         await qrPreorderRetryPage.locator('[data-staff-walkin-next]').click();
         await qrPreorderRetryPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(qrPreorderRetryPage, { accept: true });
         const reviewRetry = qrPreorderRetryPage.getByRole('button', { name: 'Review and try again' });
         await reviewRetry.waitFor();
         assert.match(await qrPreorderRetryPage.locator('[data-staff-walkin-receipt]').innerText(), /No walk-in order was created/);
@@ -857,6 +882,7 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await qrPreorderRetryPage.locator('[data-staff-walkin-save]').isDisabled(), false);
         assert.equal(await qrPreorderRetryPage.evaluate(() => window.__walkinQa.checkoutAttempts), 1, 'reviewing the order does not retry automatically');
         await qrPreorderRetryPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(qrPreorderRetryPage, { accept: true });
         await qrPreorderRetryPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/"]').waitFor();
         assert.equal(await qrPreorderRetryPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted').length), 0);
         await qrPreorderRetryContext.context.close();
@@ -876,6 +902,7 @@ function occupancyRow(hour, source = 'online') {
         await qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-option]').click();
         await qrExistingOrderRetryPage.locator('[data-staff-walkin-next]').click();
         await qrExistingOrderRetryPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(qrExistingOrderRetryPage, { accept: true });
         const setupRetry = qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-checkout-retry="existing-order"]');
         await setupRetry.waitFor();
         await setupRetry.click();
@@ -906,6 +933,7 @@ function occupancyRow(hour, source = 'online') {
         await qrAmbiguousFailurePage.locator('[data-staff-walkin-qr-option]').click();
         await qrAmbiguousFailurePage.locator('[data-staff-walkin-next]').click();
         await qrAmbiguousFailurePage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(qrAmbiguousFailurePage, { accept: true });
         await qrAmbiguousFailurePage.getByText(/verify whether an order was created before retrying/i).waitFor();
         assert.equal(await qrAmbiguousFailurePage.getByRole('button', { name: 'Review and try again' }).count(), 0);
         assert.equal(await qrAmbiguousFailurePage.locator('[data-staff-walkin-qr-checkout-retry]').count(), 0);
@@ -926,6 +954,7 @@ function occupancyRow(hour, source = 'online') {
         await expiredQrPage.locator('[data-staff-walkin-qr-option]').click();
         await expiredQrPage.locator('[data-staff-walkin-next]').click();
         await expiredQrPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(expiredQrPage, { accept: true });
         await expiredQrPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/png;base64,"]').waitFor();
         await expiredQrPage.setViewportSize({ width: 320, height: 900 });
         const qrDimensions = await expiredQrPage.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
@@ -956,6 +985,7 @@ function occupancyRow(hour, source = 'online') {
         await invalidQrPage.locator('[data-staff-walkin-qr-option]').click();
         await invalidQrPage.locator('[data-staff-walkin-next]').click();
         await invalidQrPage.locator('[data-staff-walkin-save]').click();
+        await resolveStaffConfirm(invalidQrPage, { accept: true });
         await invalidQrPage.getByText('QR Ph unavailable').waitFor();
         assert.equal(await invalidQrPage.locator('[data-staff-walkin-qr-image]').count(), 0, 'a lookalike hostname is never encoded into a QR');
         assert.equal(await invalidQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0, 'invalid checkout data never triggers an acknowledgment lookup');
@@ -982,6 +1012,126 @@ function occupancyRow(hour, source = 'online') {
         assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /Payment status\s+Paid/);
         assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /NOT AN OFFICIAL RECEIPT/);
         await paidReturn.context.close();
+
+        const timeInQrContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:45:00Z',
+            config: {
+                testMode: true, qrTestUrl: 'https://test.paymongo.com/qrph/timein-fixture',
+                bookings: [{ booking_id: 77, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
+                    time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
+                    status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
+                    rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12, payment_method: 'PayMongo' }],
+            },
+        });
+        const timeInQrPage = timeInQrContext.page;
+        await timeInQrPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
+        await timeInQrPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
+        await timeInQrPage.locator('[data-staff-timein-method="QR Payment"]').click();
+        await timeInQrPage.locator('[data-staff-timein-confirm]').click();
+        await resolveStaffConfirm(timeInQrPage, { accept: true, title: 'Confirm QR Payment' });
+        const timeInQrPanel = timeInQrPage.locator('[data-staff-timein-qr-panel]');
+        await timeInQrPanel.locator('.staff-timein-qr-image').waitFor();
+        assert.equal(await timeInQrPanel.locator('.staff-walkin-qr-warning[role="alert"]').count(), 1, 'Time-In sandbox displays one concise safety warning');
+        assert.match(await timeInQrPanel.locator('.staff-walkin-qr-warning').innerText(), /Test QR: Do not scan or pay\. Use the simulator\./i);
+        assert.equal(await timeInQrPanel.getByRole('link', { name: 'Open PayMongo sandbox simulator' }).getAttribute('href'),
+            'https://test.paymongo.com/qrph/timein-fixture', 'Time-In keeps its existing sandbox simulator link');
+        const timeInDesktopLayout = await timeInQrPanel.evaluate(panel => ({
+            panelWidth: panel.getBoundingClientRect().width,
+            modalWidth: panel.closest('.staff-modal').getBoundingClientRect().width,
+            viewportWidth: window.innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+        }));
+        assert.ok(timeInDesktopLayout.modalWidth > 900, 'Time-In QR view expands to a full-width desktop card');
+        assert.ok(timeInDesktopLayout.panelWidth < timeInDesktopLayout.modalWidth, 'Time-In QR card remains inset within the expanded modal');
+        assert.ok(timeInDesktopLayout.scrollWidth <= timeInDesktopLayout.viewportWidth, 'Time-In desktop QR view does not overflow horizontally');
+        await timeInQrPage.setViewportSize({ width: 390, height: 844 });
+        const timeInMobileLayout = await timeInQrPanel.evaluate(panel => ({
+            panelWidth: panel.getBoundingClientRect().width,
+            imageWidth: panel.querySelector('.staff-timein-qr-code').getBoundingClientRect().width,
+            viewportWidth: window.innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+        }));
+        assert.ok(timeInMobileLayout.panelWidth > 300, `Time-In QR card fills the mobile modal width: ${JSON.stringify(timeInMobileLayout)}`);
+        assert.ok(timeInMobileLayout.imageWidth <= timeInMobileLayout.panelWidth, 'Time-In QR image fits within its mobile card');
+        assert.ok(timeInMobileLayout.scrollWidth <= timeInMobileLayout.viewportWidth, 'Time-In mobile QR view does not overflow horizontally');
+        await timeInQrContext.context.close();
+
+        const untrustedTimeInQrContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:45:00Z',
+            config: {
+                testMode: true, qrTestUrl: 'https://attacker.example/simulator',
+                bookings: [{ booking_id: 78, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
+                    time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
+                    status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
+                    rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12, payment_method: 'PayMongo' }],
+            },
+        });
+        const untrustedTimeInPage = untrustedTimeInQrContext.page;
+        await untrustedTimeInPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
+        await untrustedTimeInPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
+        await untrustedTimeInPage.locator('[data-staff-timein-method="QR Payment"]').click();
+        await untrustedTimeInPage.locator('[data-staff-timein-confirm]').click();
+        await resolveStaffConfirm(untrustedTimeInPage, { accept: true, title: 'Confirm QR Payment' });
+        const untrustedTimeInPanel = untrustedTimeInPage.locator('[data-staff-timein-qr-panel]');
+        await untrustedTimeInPanel.locator('.staff-timein-qr-image').waitFor();
+        assert.equal(await untrustedTimeInPanel.getByRole('link', { name: 'Open PayMongo sandbox simulator' }).count(), 0,
+            'Time-In does not link an untrusted simulator URL');
+        assert.match(await untrustedTimeInPanel.locator('.staff-walkin-qr-warning').innerText(), /Test QR: Do not scan or pay\. Simulator unavailable\./i,
+            'Time-In clearly warns when its simulator URL is unavailable');
+        await untrustedTimeInQrContext.context.close();
+
+        const timeInPaidContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:45:00Z',
+            config: {
+                testMode: true, qrTestUrl: 'https://test.paymongo.com/qrph/paid-fixture',
+                bookings: [{ booking_id: 79, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
+                    time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
+                    status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
+                    balance_payment_id: 513, rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12 }],
+                paymentHistory: [{ payment_id: 513, acknowledgment: {
+                    receipt_id: 'qa-balance-receipt', receipt_number: 'QA-BAL-513', transaction_id: 513,
+                    source_id: 79, payment_status: 'paid', payment_method: 'PayMongo', issued_at: '2026-09-27T01:01:00+08:00',
+                    subtotal: 50, fee: 0, total: 50, court_subtotal_minor: 5000, amount_paid_minor: 5000,
+                    remaining_balance_minor: 0, fee_minor: 0, gross_minor: 5000,
+                    items: [{ reservation_id: 79, sport: 'Badminton', court: 'Badminton', unit: 'Court 1',
+                        starts_at: '2026-09-27T01:00:00+08:00', ends_at: '2026-09-27T02:00:00+08:00',
+                        duration_minutes: 60, rate_unit: '/hr', rate_quantity: 1, subtotal_minor: 5000 }],
+                    disclaimer: 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.',
+                } }],
+            },
+        });
+        const timeInPaidPage = timeInPaidContext.page;
+        await timeInPaidPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
+        await timeInPaidPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
+        await timeInPaidPage.locator('[data-staff-timein-method="QR Payment"]').click();
+        await timeInPaidPage.locator('[data-staff-timein-confirm]').click();
+        await resolveStaffConfirm(timeInPaidPage, { accept: true, title: 'Confirm QR Payment' });
+        await timeInPaidPage.locator('[data-staff-timein-qr-panel]').waitFor({ state: 'visible' });
+        await timeInPaidPage.locator('[data-staff-timein-qr-check]').click();
+        await timeInPaidPage.waitForTimeout(50);
+        assert.equal(await timeInPaidPage.locator('[data-staff-receipt-modal]').isVisible(), false,
+            'an unconfirmed balance never presents a receipt');
+        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_get_transaction_payment_history').length), 0,
+            'acknowledgment history is not queried while the provider payment is pending');
+        await timeInPaidPage.evaluate(() => {
+            window.__walkinQa.config.bookings[0].amount_paid = 100;
+        });
+        await timeInPaidPage.locator('[data-staff-timein-qr-check]').click();
+        const timeInReceipt = timeInPaidPage.locator('[data-staff-receipt-modal]');
+        await timeInReceipt.waitFor({ state: 'visible' });
+        assert.match(await timeInReceipt.innerText(), /QA-BAL-513/);
+        assert.match(await timeInReceipt.innerText(), /Payment status\s+Paid/);
+        assert.equal(await timeInReceipt.locator('[data-staff-receipt-download]').count(), 1,
+            'confirmed saved acknowledgment includes its download action');
+        assert.equal(await timeInReceipt.locator('[data-staff-receipt-print]').count(), 1,
+            'confirmed saved acknowledgment includes its print action');
+        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_get_transaction_payment_history').length), 1,
+            'one confirmed payment loads one saved acknowledgment');
+        await timeInPaidPage.locator('[data-staff-receipt-close]').click();
+        await timeInPaidPage.waitForTimeout(50);
+        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_get_transaction_payment_history').length), 1,
+            'closing the receipt does not retrieve or create a duplicate acknowledgment');
+        await timeInPaidContext.context.close();
 
         if (process.env.WALKIN_QR_ONLY === '1') {
             assert.deepEqual(errors, [], 'QR walk-in browser scenarios have no uncaught page errors');
