@@ -136,6 +136,8 @@ Deno.serve(async (req: Request) => {
   if (prepared.status !== "creating") return json({ message: "This checkout needs staff review.", order_id: orderId }, 409, origin);
 
   if (qrPhCheckout) {
+    let qrStage = "validating saved QR checkout";
+    try {
     const amountMinor = Number(prepared.base_minor);
     const expiresAt = Date.parse(prepared.expires_at);
     const expirySeconds = Math.floor((expiresAt - Date.now()) / 1000);
@@ -153,6 +155,7 @@ Deno.serve(async (req: Request) => {
       return json({ message: "The saved QR Ph attempt needs staff review.", order_id: orderId }, 409, origin);
 
     if (!intentId) {
+      qrStage = "creating PayMongo payment intent";
       const intentRequest = { amount: amountMinor, currency: "PHP", payment_method_allowed: ["qrph"],
         description: `IñigoSync walk-in ${prepared.attempt_id}` };
       let intentResponse: Response;
@@ -178,6 +181,7 @@ Deno.serve(async (req: Request) => {
       }
       request = { ...intentRequest, client_key: attrs.client_key,
         qr_expiry_seconds: Math.min(9000, expirySeconds) };
+      qrStage = "saving PayMongo payment intent";
       const { data: registered, error: registerError } = await admin.rpc("register_paymongo_qrph_intent", {
         p_attempt_id: prepared.attempt_id, p_request: request, p_intent_id: intentId,
       });
@@ -188,12 +192,19 @@ Deno.serve(async (req: Request) => {
     // Recover the provider response if QR attach succeeded but the previous
     // Edge invocation timed out before persisting the image.
     if (prepared.paymongo_session_id) {
+      qrStage = "verifying saved PayMongo payment intent";
       let existingResponse: Response;
       try {
         existingResponse = await fetch(`https://orders-api.paymongo.com/v1/payment_intents/${encodeURIComponent(intentId)}`, {
           headers: { authorization: `Basic ${btoa(`${secretKey}:`)}` }, signal: AbortSignal.timeout(8000),
         });
-      } catch {
+        if (existingResponse.status === 404) {
+          existingResponse = await fetch(`https://api.paymongo.com/v1/payment_intents/${encodeURIComponent(intentId)}`, {
+            headers: { authorization: `Basic ${btoa(`${secretKey}:`)}` }, signal: AbortSignal.timeout(8000),
+          });
+        }
+      } catch (error) {
+        console.error("PayMongo QR Ph intent retrieval failed", error instanceof Error ? error.message : "network error");
         return json({ message: "The saved PayMongo intent could not be verified. Contact the owner before retrying QR setup.", order_id: orderId }, 503, origin);
       }
       const existingPayload = existingResponse.ok ? await existingResponse.json().catch(() => null) : null;
@@ -222,6 +233,7 @@ Deno.serve(async (req: Request) => {
 
     let paymentMethodResponse: Response;
     const paymentMethodExpiry = request.qr_expiry_seconds;
+    qrStage = "creating QR Ph payment method";
     try {
       paymentMethodResponse = await fetch("https://api.paymongo.com/v1/payment_methods", {
         method: "POST", headers: { authorization: `Basic ${btoa(`${publicKey}:`)}`,
@@ -229,7 +241,8 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ data: { attributes: { type: "qrph", expiry_seconds: paymentMethodExpiry } } }),
         signal: AbortSignal.timeout(12000),
       });
-    } catch {
+    } catch (error) {
+      console.error("PayMongo QR Ph method creation request failed", error instanceof Error ? error.message : "network error");
       return json({ message: "PayMongo could not prepare the QR code. Retry setup before taking payment.", order_id: orderId }, 503, origin);
     }
     const methodPayload = await paymentMethodResponse.json().catch(() => null);
@@ -241,6 +254,7 @@ Deno.serve(async (req: Request) => {
     }
 
     let attachResponse: Response;
+    qrStage = "attaching QR Ph payment method";
     try {
       attachResponse = await fetch(`https://api.paymongo.com/v1/payment_intents/${encodeURIComponent(intentId)}/attach`, {
         method: "POST", headers: { authorization: `Basic ${btoa(`${publicKey}:`)}`,
@@ -248,7 +262,8 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({ data: { attributes: { payment_method: paymentMethodId, client_key: request.client_key } } }),
         signal: AbortSignal.timeout(12000),
       });
-    } catch {
+    } catch (error) {
+      console.error("PayMongo QR Ph attachment request failed", error instanceof Error ? error.message : "network error");
       return json({ message: "PayMongo could not finish the QR code. Retry setup before taking payment.", order_id: orderId }, 503, origin);
     }
     const attachPayload = await attachResponse.json().catch(() => null);
@@ -263,6 +278,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify(attachPayload?.errors || []).slice(0, 1000));
       return json({ message: "PayMongo did not return a valid dynamic QR code. Retry setup before taking payment.", order_id: orderId }, 502, origin);
     }
+    qrStage = "saving QR Ph image";
     const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_qrph_intent", {
       p_attempt_id: prepared.attempt_id, p_intent_id: intentId, p_qr_image_url: qrImageUrl,
       p_qr_livemode: attachedIntent.attributes.livemode,
@@ -275,6 +291,11 @@ Deno.serve(async (req: Request) => {
       ...(attachedIntent.attributes.livemode === false ? { test_mode: true, qr_test_url: qrTestUrl }
         : { test_mode: false }),
       base_minor: amountMinor, currency: "PHP", expires_at: prepared.expires_at, channel: "qrph" }, 200, origin);
+    } catch (error) {
+      console.error("Unexpected staff walk-in QR Ph setup failure", qrStage,
+        error instanceof Error ? error.stack || error.message : "unknown error");
+      return json({ message: "QR Ph setup hit an unexpected error while " + qrStage + ". The order remains pending; retry setup or contact the owner if this continues.", order_id: orderId }, 503, origin);
+    }
   }
 
   const success = new URL(qrPhCheckout ? "/Pages/walkin_payment_return.html" : "/Pages/staff_dashboard.html", base);

@@ -2322,13 +2322,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return data && typeof data === 'object' ? (data.data && !data.order_id ? normalizeRpcRow(data.data) : data) : null;
     }
 
-    async function loadWalkinAcknowledgment(orderId) {
+    async function loadWalkinAcknowledgment(orderId, { pendingQrOrder = false } = {}) {
         if (!window.sb || !orderId) return { error: 'Order reference is missing.' };
         let result;
         try { result = await window.sb.rpc('get_walkin_order_acknowledgment', { p_order_id: String(orderId) }); }
         catch (error) { result = { error }; }
         const row = normalizeRpcRow(result?.data);
-        if (result?.error) return { error: result.error.message || 'Could not load the acknowledgment.' };
+        if (result?.error) {
+            if (pendingQrOrder && result.error.code === 'P0002') {
+                return { pending: true, error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
+            }
+            return { error: result.error.message || 'Could not load the acknowledgment.' };
+        }
         if (!row || !Array.isArray(row.items) || !row.items.length || !['paid', 'succeeded', 'completed'].includes(String(row.payment_status || '').toLowerCase())) {
             return { pending: true, error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
         }
@@ -2503,7 +2508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinQrCheckInFlight = true;
         const checkButton = walkinReceiptEl?.querySelector('[data-staff-walkin-qr-check]');
         if (manual && checkButton) { checkButton.disabled = true; checkButton.textContent = 'Checking…'; }
-        const result = await loadWalkinAcknowledgment(orderId);
+        const result = await loadWalkinAcknowledgment(orderId, { pendingQrOrder: String(active.orderId) === String(orderId) });
         walkinQrCheckInFlight = false;
         if (activeWalkinQr !== active) return;
         if (manual && checkButton?.isConnected) { checkButton.disabled = false; checkButton.textContent = 'Check payment status'; }
@@ -2527,7 +2532,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setWalkinQrStatus(result.error && !result.pending
             ? 'Could not verify payment yet. The screen will retry automatically; you can also check again.'
             : 'Waiting for PayMongo payment confirmation…');
-        scheduleWalkinQrPoll();
+        if (!active.testMode) scheduleWalkinQrPoll();
     }
 
     async function prepareWalkinQrCheckout(orderId, amount) {
@@ -2538,6 +2543,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         } catch (error) { checkout = { error }; }
         if (checkout?.error) {
+            try {
+                const response = checkout.error.context;
+                if (response && typeof response.json === 'function') {
+                    const payload = await response.json();
+                    if (payload?.message) checkout.error.message = payload.message;
+                }
+            } catch { /* Some invocation errors have no readable response body. */ }
             renderWalkinQrError(orderId, amount,
                 checkout.error.message || 'Could not prepare the PayMongo checkout.');
             return false;
@@ -3629,48 +3641,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let staffSettingsEditing = false;
 
     const staffAvatarFileInput = document.querySelector('[data-staff-avatar-file]');
-    const staffAvatarEditBtn = document.querySelector('[data-staff-avatar-edit]');
     const staffAvatarUploadBtn = document.querySelector('[data-staff-avatar-upload-trigger]');
     const staffAvatarRemoveBtn = document.querySelector('[data-staff-avatar-remove]');
-    const staffAvatarModal = document.querySelector('[data-staff-avatar-modal]');
-    const staffAvatarDialog = staffAvatarModal?.querySelector('[data-staff-avatar-dialog]');
-    let staffAvatarModalReturnFocus = null;
-
-    function closeStaffAvatarModal() {
-        if (!staffAvatarModal || staffAvatarModal.hidden) return;
-        staffAvatarModal.hidden = true;
-        staffAvatarModal.removeAttribute('data-open');
-        staffAvatarModalReturnFocus?.focus?.();
-        staffAvatarModalReturnFocus = null;
-    }
-
-    function openStaffAvatarModal() {
-        if (!staffAvatarModal || !staffAvatarDialog) return;
-        staffAvatarModalReturnFocus = document.activeElement;
-        staffAvatarModal.hidden = false;
-        staffAvatarModal.setAttribute('data-open', '');
-        staffAvatarUploadBtn?.focus();
-    }
-
-    staffAvatarEditBtn?.addEventListener('click', openStaffAvatarModal);
-    staffAvatarModal?.querySelectorAll('[data-staff-avatar-close]').forEach(button => button.addEventListener('click', closeStaffAvatarModal));
-    staffAvatarModal?.addEventListener('click', event => {
-        if (event.target === staffAvatarModal) closeStaffAvatarModal();
-    });
-    staffAvatarModal?.addEventListener('keydown', event => {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            closeStaffAvatarModal();
-            return;
-        }
-        if (event.key === 'Tab' && staffAvatarDialog) {
-            const controls = Array.from(staffAvatarDialog.querySelectorAll('button:not(:disabled), input:not(:disabled)'))
-                .filter(control => !control.hidden && control.type !== 'file');
-            const first = controls[0], last = controls[controls.length - 1];
-            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-        }
-    });
 
     // Only a data: URL (freshly downscaled) or an https:// URL is ever
     // painted as an <img src> in renderStaffProfile() below — guards
@@ -3740,10 +3712,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 if (!await confirmStaffAction('Save this photo as your profile photo?', 'Save profile photo?', 'Save photo')) return;
                 const ok = await saveStaffAvatarUrl(dataUrl, profileId);
-                if (ok) {
-                    window.InigoToast?.show('Profile photo updated.');
-                    closeStaffAvatarModal();
-                }
+                if (ok) window.InigoToast?.show('Profile photo updated.');
             } catch (err) {
                 console.error('[staff] avatar upload failed', err);
                 window.InigoToast?.show((err && err.message) || 'Could not process that image. Please try a different file.', true);
@@ -3770,7 +3739,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (staffAvatarUploadBtn) staffAvatarUploadBtn.disabled = false;
             if (ok) {
                 window.InigoToast?.show('Profile photo removed.');
-                closeStaffAvatarModal();
             }
         });
     }
@@ -3796,9 +3764,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 el.textContent = initials;
             }
         });
-        const modalAvatarPreview = document.querySelector('[data-staff-avatar-modal-preview]');
-        if (modalAvatarPreview) {
-            modalAvatarPreview.setAttribute('aria-label', avatarUrl
+        const avatarPreview = document.querySelector('[data-staff-avatar-preview]');
+        if (avatarPreview) {
+            avatarPreview.setAttribute('aria-label', avatarUrl
                 ? 'Current profile photo'
                 : `No profile photo; initials placeholder: ${initials}`);
         }

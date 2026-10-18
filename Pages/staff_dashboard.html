@@ -632,10 +632,12 @@
                     <section class="staff-account-photo" aria-label="Profile photo">
                         <div class="staff-card-head"><h3>Profile Photo</h3></div>
                         <div class="staff-avatar-upload-row">
-                            <div class="staff-avatar staff-avatar-upload-preview">RD</div>
+                            <div class="staff-avatar staff-avatar-upload-preview" data-staff-avatar-preview role="img" aria-live="polite" aria-label="No profile photo; initials placeholder: RD">RD</div>
                             <div class="staff-avatar-upload-controls">
                                 <div class="staff-avatar-upload-actions">
-                                    <button type="button" class="staff-btn-primary" data-staff-avatar-edit>Edit</button>
+                                    <button type="button" class="staff-btn-primary" data-staff-avatar-upload-trigger>Upload Photo</button>
+                                    <button type="button" class="staff-btn-ghost" data-staff-avatar-remove hidden>Remove Photo</button>
+                                    <input type="file" accept="image/*" class="staff-visually-hidden" data-staff-avatar-file>
                                 </div>
                                 <p class="staff-form-hint">Choose an image, adjust its crop, then confirm before it is saved.</p>
                             </div>
@@ -880,22 +882,6 @@
             <button type="button" class="staff-btn-ghost" data-staff-confirm-cancel>Cancel</button>
             <button type="button" class="staff-btn-primary" data-staff-confirm-accept>Continue</button>
         </div>
-    </div>
-</div>
-
-<div class="staff-modal-overlay" data-staff-avatar-modal hidden>
-    <div class="staff-modal staff-avatar-modal" role="dialog" aria-modal="true" aria-labelledby="staffAvatarModalTitle" tabindex="-1" data-staff-avatar-dialog>
-        <button type="button" class="staff-modal-close" data-staff-avatar-close aria-label="Close profile photo editor">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-        <h3 id="staffAvatarModalTitle">Edit Profile Photo</h3>
-        <div class="staff-avatar staff-avatar-modal-preview" data-staff-avatar-modal-preview role="img" aria-live="polite" aria-label="No profile photo; initials placeholder: RD">RD</div>
-        <div class="staff-avatar-modal-actions">
-            <button type="button" class="staff-btn-primary" data-staff-avatar-upload-trigger>Choose new photo</button>
-            <button type="button" class="staff-btn-ghost" data-staff-avatar-remove hidden>Remove photo</button>
-            <input type="file" accept="image/*" class="staff-visually-hidden" data-staff-avatar-file>
-        </div>
-        <p class="staff-form-hint">Choose an image, adjust its crop, then confirm before it is saved.</p>
     </div>
 </div>
 

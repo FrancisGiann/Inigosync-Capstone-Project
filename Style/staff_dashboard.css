@@ -952,7 +952,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 /* These account controls use .staff-btn-primary/.staff-btn-ghost display
    rules above, which override the browser's default [hidden] styling. */
-.staff-avatar-modal [data-staff-avatar-remove][hidden],
+.staff-avatar-upload-actions [data-staff-avatar-remove][hidden],
 .staff-form-actions [data-staff-settings-edit="profile"][hidden],
 .staff-form-actions [data-staff-settings-cancel="profile"][hidden],
 .staff-form-actions [data-staff-settings-save="profile"][hidden] {
@@ -1499,25 +1499,12 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     padding-right: 34px; /* clears the absolutely-positioned close button */
 }
 
-.staff-avatar-modal { width: min(420px, calc(100vw - 32px)); }
 .staff-profile-modal { box-sizing: border-box; width: min(720px, calc(100vw - 32px)); }
 .staff-profile-modal .staff-form-actions { justify-content: flex-end; }
 .staff-profile-modal .staff-form-actions > button { min-width: 120px; }
-.staff-avatar-modal-preview {
-    width: 104px;
-    height: 104px;
-    margin: 0 auto 20px;
-    font-size: 32px;
-}
-.staff-avatar-modal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.staff-avatar-modal-actions > button { flex: 1 1 150px; }
-.staff-avatar-modal .staff-form-hint { margin: 12px 0 0; }
 
 @media (max-width: 480px) {
     .staff-profile-summary { grid-template-columns: minmax(0, 1fr); }
-    .staff-avatar-modal { padding: 22px 18px; }
-    .staff-avatar-modal-actions { flex-direction: column; }
-    .staff-avatar-modal-actions > button { width: 100%; }
 }
 
 .staff-modal-close {

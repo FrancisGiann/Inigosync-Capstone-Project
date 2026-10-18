@@ -34,8 +34,9 @@ const payment = { id: 'pay_Qrphfixture', type: 'payment', attributes: {
     payment_intent_id: 'pi_Qrphfixture', source: { type: 'qrph' },
 } };
 
-function workerFixture(providerResource) {
+function workerFixture(providerResource, { ordersStatus = 200, legacyStatus = 200 } = {}) {
     const calls = [];
+    const urls = [];
     const admin = { rpc: async (name, args) => {
         calls.push({ name, args });
         if (name === 'verify_paymongo_expiry_worker') return { data: true, error: null };
@@ -48,11 +49,15 @@ function workerFixture(providerResource) {
     const handler = serve(workerSource, { createClient: () => admin }, {
         SUPABASE_URL: 'https://db.example', SUPABASE_SERVICE_ROLE_KEY: 'service-fixture',
         PAYMONGO_SECRET_KEY: 'sk_test_fixture',
-    }, async () => new Response(JSON.stringify(providerResource), { status: 200 }));
+    }, async url => {
+        urls.push(url);
+        const status = url.startsWith('https://orders-api.paymongo.com/') ? ordersStatus : legacyStatus;
+        return new Response(JSON.stringify(status === 200 ? providerResource : { errors: [] }), { status });
+    });
     const request = () => new Request('https://db.example/functions/v1/paymongo-expire-checkouts', {
         method: 'POST', headers: { 'x-paymongo-cron-secret': 'cron-fixture' }, body: '{}',
     });
-    return { calls, handler, request };
+    return { calls, urls, handler, request };
 }
 
 test('expiry worker reconciles a provider-succeeded dynamic QR payment', async () => {
@@ -75,6 +80,38 @@ test('expiry worker marks a still-pending QR intent expired after its hold', asy
     assert.ok(fixture.calls.some(call => call.name === 'mark_paymongo_checkout_expired'
         && call.args.p_attempt_id === 'attempt-fixture' && call.args.p_session_id === 'pi_Qrphfixture'));
     assert.equal(fixture.calls.some(call => call.name === 'record_paymongo_qrph_paid'), false);
+});
+
+test('expiry worker retries a legacy QR intent lookup after orders-api returns 404', async () => {
+    const fixture = workerFixture(paymentIntent({ status: 'awaiting_next_action' }), { ordersStatus: 404 });
+    const response = await fixture.handler()(fixture.request());
+    assert.deepEqual(await response.json(), { processed: 1, expired: 1, paid: 0, deferred: 0 });
+    assert.deepEqual(fixture.urls, [
+        'https://orders-api.paymongo.com/v1/payment_intents/pi_Qrphfixture',
+        'https://api.paymongo.com/v1/payment_intents/pi_Qrphfixture',
+    ]);
+});
+
+test('expiry worker does not release a hold if both QR intent lookups return 404', async () => {
+    const fixture = workerFixture(paymentIntent(), { ordersStatus: 404, legacyStatus: 404 });
+    const response = await fixture.handler()(fixture.request());
+    assert.deepEqual(await response.json(), { processed: 1, expired: 0, paid: 0, deferred: 1 });
+    assert.equal(fixture.calls.some(call => call.name === 'mark_paymongo_checkout_expired'), false);
+});
+
+test('expiry worker does not fall back or release a hold after a non-404 provider failure', async () => {
+    const fixture = workerFixture(paymentIntent(), { ordersStatus: 500 });
+    const response = await fixture.handler()(fixture.request());
+    assert.deepEqual(await response.json(), { processed: 1, expired: 0, paid: 0, deferred: 1 });
+    assert.deepEqual(fixture.urls, ['https://orders-api.paymongo.com/v1/payment_intents/pi_Qrphfixture']);
+    assert.equal(fixture.calls.some(call => call.name === 'mark_paymongo_checkout_expired'), false);
+});
+
+test('expiry worker rejects a mismatched legacy QR intent before releasing a hold', async () => {
+    const fixture = workerFixture(paymentIntent({ amount: 11999, status: 'awaiting_next_action' }), { ordersStatus: 404 });
+    const response = await fixture.handler()(fixture.request());
+    assert.deepEqual(await response.json(), { processed: 1, expired: 0, paid: 0, deferred: 1 });
+    assert.equal(fixture.calls.some(call => call.name === 'mark_paymongo_checkout_expired'), false);
 });
 
 test('expiry worker defers an amount mismatch without settlement or hold release', async () => {

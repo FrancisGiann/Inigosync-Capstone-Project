@@ -76,16 +76,32 @@ Deno.serve(async (req: Request) => {
       const resourceUrl = qrPhIntent
         ? `https://orders-api.paymongo.com/v1/payment_intents/${encodeURIComponent(sessionId)}`
         : `https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`;
-      const getResponse = await fetch(resourceUrl, {
+      let getResponse = await fetch(resourceUrl, {
         headers: { authorization: `Basic ${basic}` },
         signal: AbortSignal.timeout(10000),
       });
-      if (!getResponse.ok) { deferred++; continue; }
+      // Some QR intents created on the legacy API are not visible through the
+      // newer orders-api router. A 404 there is inconclusive, so retry the
+      // original PayMongo API before deciding whether this hold can expire.
+      if (qrPhIntent && getResponse.status === 404) {
+        getResponse = await fetch(`https://api.paymongo.com/v1/payment_intents/${encodeURIComponent(sessionId)}`, {
+          headers: { authorization: `Basic ${basic}` },
+          signal: AbortSignal.timeout(10000),
+        });
+      }
+      if (!getResponse.ok) {
+        console.error("PayMongo expiry provider lookup deferred", { qrPhIntent, status: getResponse.status });
+        deferred++; continue;
+      }
       let resource = (await getResponse.json())?.data;
       let attributes = resource?.attributes;
       if (!resource || typeof attributes?.status !== "string"
           || typeof attributes?.livemode !== "boolean"
           || attributes.livemode !== paymongoKey.startsWith("sk_live_")) {
+        console.error("PayMongo expiry provider resource invalid", {
+          qrPhIntent, hasResource: !!resource, status: attributes?.status,
+          livemode: attributes?.livemode,
+        });
         deferred++;
         continue;
       }
@@ -95,6 +111,12 @@ Deno.serve(async (req: Request) => {
             || attributes.currency !== "PHP" || attributes.amount !== item.checkout_request.amount
             || !Array.isArray(attributes.payment_method_allowed)
             || !attributes.payment_method_allowed.includes("qrph")) {
+          console.error("PayMongo QR Ph expiry resource mismatch", {
+            resourceType: resource.type, status: attributes.status,
+            currency: attributes.currency, amountMatches: attributes.amount === item.checkout_request.amount,
+            allowsQrPh: Array.isArray(attributes.payment_method_allowed)
+              && attributes.payment_method_allowed.includes("qrph"),
+          });
           deferred++;
           continue;
         }
@@ -120,6 +142,7 @@ Deno.serve(async (req: Request) => {
           continue;
         }
         if (!["awaiting_next_action", "awaiting_payment_method"].includes(attributes.status)) {
+          console.error("PayMongo QR Ph expiry status deferred", { status: attributes.status });
           deferred++;
           continue;
         }
@@ -129,7 +152,10 @@ Deno.serve(async (req: Request) => {
         const { data: marked, error: markError } = await admin.rpc("mark_paymongo_checkout_expired", {
           p_attempt_id: attemptId, p_session_id: sessionId,
         });
-        if (markError || marked !== true) deferred++;
+        if (markError || marked !== true) {
+          console.error("PayMongo QR Ph expiry persistence deferred", { error: markError?.message, marked });
+          deferred++;
+        }
         else expired++;
         continue;
       }

@@ -51,19 +51,16 @@ test('staff settings exposes phone fields through the explicit edit/save/cancel 
         'author-level button styles do not override hidden profile controls');
     assert.match(css, /\.staff-account-personal\s*>\s*\[data-staff-settings-edit="profile"\]\[hidden\]\s*\{\s*display:\s*none;/,
         'the account card Edit action stays hidden while the modal is open');
-    assert.match(css, /\.staff-avatar-modal\s+\[data-staff-avatar-remove\]\[hidden\][\s\S]*?display:\s*none;/,
+    assert.match(css, /\.staff-avatar-upload-actions\s+\[data-staff-avatar-remove\]\[hidden\][\s\S]*?display:\s*none;/,
         'author-level button styles do not expose Remove Photo without an avatar');
-    assert.match(html, /data-staff-avatar-edit[^>]*>Edit<\/button>/, 'the profile photo card has one Edit action');
-    assert.match(html, /data-staff-avatar-modal hidden[\s\S]*?role="dialog" aria-modal="true"[\s\S]*?data-staff-avatar-upload-trigger[\s\S]*?data-staff-avatar-remove hidden[\s\S]*?data-staff-avatar-file/,
-        'the accessible photo dialog owns upload, conditional removal, and file selection');
-    assert.match(html, /class="staff-avatar staff-avatar-modal-preview" data-staff-avatar-modal-preview role="img" aria-live="polite"/,
-        'the dialog shows an announced avatar preview above its actions');
-    assert.match(css, /\.staff-avatar-modal-preview\s*\{[\s\S]*?margin:\s*0 auto/,
-        'the modal avatar preview is sized and centered responsively');
-    assert.match(source, /modalAvatarPreview\.setAttribute\('aria-label', avatarUrl[\s\S]*?No profile photo; initials placeholder:/,
-        'the preview label explains when initials are standing in for a missing photo');
-    assert.match(source, /event\.key === 'Escape'[\s\S]*?closeStaffAvatarModal\(\)/, 'the photo dialog closes on Escape');
-    assert.match(source, /event\.key === 'Tab'[\s\S]*?staffAvatarDialog[\s\S]*?last\?\.focus\(\)/, 'the photo dialog traps keyboard focus');
+    assert.match(html, /data-staff-avatar-upload-trigger>Upload Photo<\/button>[\s\S]*?data-staff-avatar-remove hidden[^>]*>Remove Photo<\/button>[\s\S]*?data-staff-avatar-file/,
+        'the photo card exposes direct upload, conditional removal, and file selection');
+    assert.match(html, /data-staff-avatar-preview role="img" aria-live="polite"/,
+        'the card preview announces whether an avatar is present');
+    assert.doesNotMatch(html, /data-staff-avatar-edit|data-staff-avatar-modal|Edit Profile Photo/,
+        'the separate photo editor and Edit action are removed');
+    assert.match(source, /avatarPreview\.setAttribute\('aria-label', avatarUrl[\s\S]*?No profile photo; initials placeholder:/,
+        'the card preview label explains when initials are standing in for a missing photo');
     assert.match(source, /if \(staffAvatarRemoveBtn\.hidden \|\| !isRenderableStaffAvatarUrl\(window\.inigosyncProfile\?\.avatar_url\)\) return;/,
         'removal is unavailable when there is no renderable avatar');
 });
@@ -168,7 +165,7 @@ test('delayed profile renders preserve mutable drafts while editing and repaint 
     const preview = { label: '', setAttribute(name, value) { if (name === 'aria-label') this.label = value; } };
     const document = {
         querySelectorAll(selector) { return selector === '.staff-avatar' || selector === '[data-staff-profile-name]' ? [] : []; },
-        querySelector(selector) { return selector === '[data-staff-avatar-modal-preview]' ? preview : elements.get(selector) || null; },
+        querySelector(selector) { return selector === '[data-staff-avatar-preview]' ? preview : elements.get(selector) || null; },
     };
     const context = {
         document,

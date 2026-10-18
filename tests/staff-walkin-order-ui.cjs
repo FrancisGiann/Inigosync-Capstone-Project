@@ -109,10 +109,16 @@ function fixture(config) {
             }
             if (name === 'get_walkin_order_acknowledgment') {
                 qa.acknowledgmentAttempts += 1;
-                if (config.ackError) return { data: null, error: { message: 'Acknowledgment access denied in fixture' } };
+                if (config.ackError) return { data: null, error: { code: '42501', message: 'Acknowledgment access denied in fixture' } };
                 const paymentStatus = config.ackPaidAfter
                     ? (qa.acknowledgmentAttempts >= config.ackPaidAfter ? 'paid' : 'pending')
                     : (config.paymentStatus || 'paid');
+                if (paymentStatus === 'pending') {
+                    if (config.pendingAsStatusAfter && qa.acknowledgmentAttempts >= config.pendingAsStatusAfter) {
+                        return { data: { payment_status: 'awaiting_payment' }, error: null };
+                    }
+                    return { data: null, error: { code: 'P0002', message: 'Receipt not found' } };
+                }
                 return { data: {
                     receipt_id: 'qa-receipt', receipt_number: 'QA-001', issued_at: new Date().toISOString(), customer_name: 'Guest Customer',
                     items: qa.createdItems.length ? qa.createdItems.map(item => ({
@@ -168,7 +174,8 @@ function fixture(config) {
             }
             if (options.body.channel === 'qrph' && Array.isArray(options.body.items)) qa.createdItems = options.body.items;
             qa.checkoutAttempts += 1;
-            if (config.failCheckoutOnce && qa.checkoutAttempts === 1) return { data: null, error: {
+            const checkoutFailureCount = Number(config.failCheckoutCount || (config.failCheckoutOnce ? 1 : 0));
+            if (qa.checkoutAttempts <= checkoutFailureCount) return { data: null, error: {
                 message: 'Temporary checkout error',
                 ...(config.checkoutFailureResponse ? { context: new Response(JSON.stringify(config.checkoutFailureResponse), { status: 409 }) } : {}),
             } };
@@ -715,7 +722,7 @@ function occupancyRow(hour, source = 'online') {
 
         const qrContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
-            config: { paymentStatus: 'pending', ackPaidAfter: 2, paymentMethod: 'PayMongo', orderBaseMinor: 37000, checkoutBaseMinor: 37500 },
+            config: { paymentStatus: 'pending', ackPaidAfter: 3, pendingAsStatusAfter: 2, paymentMethod: 'PayMongo', orderBaseMinor: 37000, checkoutBaseMinor: 37500 },
         });
         const qrPage = qrContext.page;
         await qrPage.locator('[data-staff-nav="walkin"]').click();
@@ -755,15 +762,22 @@ function occupancyRow(hour, source = 'online') {
         assert.ok(qrSetup.providerQrDimensions.width > 0 && qrSetup.providerQrDimensions.height > 0, 'live QR fixture decodes to a visible image');
         await qrPage.locator('[data-staff-walkin-qr-check]').click();
         assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1);
+        assert.match(await qrPage.locator('[data-staff-walkin-qr-status]').innerText(), /Waiting for PayMongo payment confirmation/,
+            'the acknowledgment RPCs P0002 for a known unpaid QR order, so the UI keeps showing a normal pending state');
         assert.equal(await qrPage.locator('.payment-ack-card').count(), 0, 'a pending status check does not show a paid acknowledgment');
         await qrPage.clock.fastForward(5000);
-        await qrPage.locator('.payment-ack-card').waitFor();
         assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 2, 'the staff screen polls again while the checkout remains in expiry window');
+        assert.match(await qrPage.locator('[data-staff-walkin-qr-status]').innerText(), /Waiting for PayMongo payment confirmation/,
+            'the new acknowledgment RPC status-only response remains pending');
+        assert.equal(await qrPage.locator('.payment-ack-card').count(), 0, 'a status-only response never renders a receipt');
+        await qrPage.clock.fastForward(5000);
+        await qrPage.locator('.payment-ack-card').waitFor();
+        assert.equal(await qrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 3, 'a later paid response renders the acknowledgment');
         await qrContext.context.close();
 
         const sandboxQrContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
-            config: { paymentStatus: 'pending', testMode: true, qrTestUrl: 'https://test.paymongo.com/qrph/fixture' },
+            config: { paymentStatus: 'pending', testMode: true, qrTestUrl: 'https://test.paymongo.com/qrph/fixture', ackError: true },
         });
         const sandboxQrPage = sandboxQrContext.page;
         await sandboxQrPage.locator('[data-staff-nav="walkin"]').click();
@@ -791,6 +805,12 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await sandboxPanel.locator('[data-staff-walkin-qr-simulate]').getAttribute('href'), 'https://test.paymongo.com/qrph/fixture');
         await sandboxQrPage.clock.fastForward(5000);
         assert.equal(await sandboxQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 0, 'sandbox does not start payment polling before simulation');
+        await sandboxQrPage.locator('[data-staff-walkin-qr-check]').click();
+        assert.match(await sandboxQrPage.locator('[data-staff-walkin-qr-status]').innerText(), /Could not verify payment yet/,
+            'authorization or other RPC errors remain verification errors instead of being treated as unpaid');
+        await sandboxQrPage.clock.fastForward(5000);
+        assert.equal(await sandboxQrPage.evaluate(() => window.__walkinQa.acknowledgmentAttempts), 1,
+            'a manual sandbox status check does not start repeated polling');
         await sandboxQrContext.context.close();
 
         const untrustedSimulatorContext = await openStaffPage(browser, {
@@ -843,7 +863,7 @@ function occupancyRow(hour, source = 'online') {
 
         const qrExistingOrderRetryContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
-            config: { failCheckoutOnce: true, checkoutFailureResponse: { message: 'Checkout setup failed.', order_id: 'existing-order' } },
+            config: { failCheckoutCount: 2, checkoutFailureResponse: { message: 'QR Ph confirmation is unavailable. Enable the signed payment.paid webhook before accepting QR payments.', order_id: 'existing-order' } },
         });
         const qrExistingOrderRetryPage = qrExistingOrderRetryContext.page;
         await qrExistingOrderRetryPage.locator('[data-staff-nav="walkin"]').click();
@@ -859,12 +879,16 @@ function occupancyRow(hour, source = 'online') {
         const setupRetry = qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-checkout-retry="existing-order"]');
         await setupRetry.waitFor();
         await setupRetry.click();
+        await qrExistingOrderRetryPage.getByText(/QR Ph confirmation is unavailable\. Enable the signed payment\.paid webhook/i).waitFor();
+        assert.equal(await qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-checkout-retry="existing-order"]').count(), 1, 'a failed setup retry keeps the pending order retryable');
+        await qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-checkout-retry="existing-order"]').click();
         await qrExistingOrderRetryPage.locator('[data-staff-walkin-qr-image] img[src^="data:image/"]').waitFor();
         const retryBodies = await qrExistingOrderRetryPage.evaluate(() => window.__walkinQa.calls
             .filter(call => call.kind === 'function' && call.name === 'staff-walkin-checkout')
             .map(call => call.options.body));
-        assert.equal(retryBodies.length, 2);
+        assert.equal(retryBodies.length, 3);
         assert.deepEqual(retryBodies[1], { order_id: 'existing-order', channel: 'qrph' }, 'a known pending order retries setup by ID without creating a duplicate');
+        assert.deepEqual(retryBodies[2], { order_id: 'existing-order', channel: 'qrph' }, 'subsequent retries continue using the same pending order');
         await qrExistingOrderRetryContext.context.close();
 
         const qrAmbiguousFailureContext = await openStaffPage(browser, {
@@ -1292,8 +1316,7 @@ function occupancyRow(hour, source = 'online') {
         const canceledAvatarContext = await openStaffPage(browser, { timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z' });
         const canceledAvatarPage = canceledAvatarContext.page;
         await canceledAvatarPage.locator('.staff-sidebar .staff-nav [data-staff-nav="settings"]').click();
-        await canceledAvatarPage.locator('[data-staff-avatar-edit]').click();
-        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-modal]').isVisible(), true, 'Edit opens the profile photo dialog');
+        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-upload-trigger]').isVisible(), true, 'Upload Photo is available directly on the card');
         assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-remove]').isVisible(), false, 'Remove photo stays hidden before an avatar is saved');
         await canceledAvatarPage.locator('[data-staff-avatar-file]').setInputFiles({
             name: 'avatar.png', mimeType: 'image/png',
@@ -1315,9 +1338,6 @@ function occupancyRow(hour, source = 'online') {
         const uploadedAvatar = await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.find(call => call.kind === 'update' && call.table === 'profiles'));
         assert.match(uploadedAvatar.payload.avatar_url, /^data:image\/jpeg;base64,/i, 'confirmed crop persists as a JPEG data URL');
         assert.deepEqual(uploadedAvatar.filters, [['id', 'eq', 'qa-staff']], 'avatar upload is scoped to the signed-in staff account');
-        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-modal]').isVisible(), false, 'successful upload closes the photo dialog');
-
-        await canceledAvatarPage.locator('[data-staff-avatar-edit]').click();
         assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-remove]').isVisible(), true, 'Remove photo appears for a saved avatar');
         await canceledAvatarPage.locator('[data-staff-avatar-remove]').click();
         await resolveStaffConfirm(canceledAvatarPage, { title: 'Remove profile photo?', message: 'Are you sure you want to remove your profile photo?' });
@@ -1330,8 +1350,6 @@ function occupancyRow(hour, source = 'online') {
         const removedAvatar = await canceledAvatarPage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'update' && call.table === 'profiles')[1]);
         assert.equal(removedAvatar.payload.avatar_url, null, 'confirmed removal clears the saved avatar');
         assert.deepEqual(removedAvatar.filters, [['id', 'eq', 'qa-staff']], 'avatar removal is scoped to the signed-in staff account');
-        assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-modal]').isVisible(), false, 'successful removal closes the photo dialog');
-        await canceledAvatarPage.locator('[data-staff-avatar-edit]').click();
         assert.equal(await canceledAvatarPage.locator('[data-staff-avatar-remove]').isVisible(), false, 'Remove photo is hidden after the avatar is removed');
         await canceledAvatarContext.context.close();
 

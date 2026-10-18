@@ -10,7 +10,7 @@ const executable = stripTypeScriptTypes(source, { mode: 'strip' });
 const orderId = 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526';
 const attemptId = 'd25dc45b-40ba-4b5b-96d6-4487dbe7a526';
 
-function checkoutFixture({ channel, requestBody, settings = { card_enabled: true, gcash_enabled: true, qrph_enabled: false }, savedRequest = null, existingIntent = false, preparedOverride = null, expiresAt = '2031-01-01T00:15:00Z', webhookReady = true, testUrl = 'https://test.paymongo.com/qrph/fixture', qrImageUrl = 'data:image/png;base64,AAAA', secretMode = 'test', intentLivemode = false, attachedLivemode = false, providerLivemode = false } = {}) {
+function checkoutFixture({ channel, requestBody, settings = { card_enabled: true, gcash_enabled: true, qrph_enabled: false }, savedRequest = null, existingIntent = false, preparedOverride = null, expiresAt = '2031-01-01T00:15:00Z', webhookReady = true, testUrl = 'https://test.paymongo.com/qrph/fixture', qrImageUrl = 'data:image/png;base64,AAAA', secretMode = 'test', intentLivemode = false, attachedLivemode = false, providerLivemode = false, ordersLookupStatus = 200, legacyLookupStatus = 200, throwRpc = null } = {}) {
     let handler;
     let checkoutRequest;
     let fixtureAttachedArgs;
@@ -20,6 +20,7 @@ function checkoutFixture({ channel, requestBody, settings = { card_enabled: true
         auth: { getUser: async () => ({ data: { user: { id: 'staff-1' } }, error: null }) },
         rpc: async (name, args) => {
             rpcCalls.push({ name, args });
+            if (name === throwRpc) throw new Error('fixture database transport failure');
             if (name === 'staff_create_walkin_order_service') return { data: { order_id: orderId, base_minor: 12000 }, error: null };
             if (name === 'prepare_staff_walkin_checkout') return { data: preparedOverride || { status: 'creating', attempt_id: attemptId, base_minor: 12000, expires_at: expiresAt, checkout_request: savedRequest, ...(existingIntent ? { paymongo_session_id: 'pi_fixture' } : {}) }, error: null };
             if (name === 'register_paymongo_checkout_request') return { data: true, error: null };
@@ -47,8 +48,11 @@ function checkoutFixture({ channel, requestBody, settings = { card_enabled: true
                 return new Response(JSON.stringify({ data: { id: 'pm_fixture' } }), { status: 200, headers: { 'content-type': 'application/json' } });
             if (url.includes('/attach'))
                 return new Response(JSON.stringify({ data: { id: 'pi_fixture', attributes: { amount: 12000, livemode: attachedLivemode, next_action: { code: { image_url: qrImageUrl, test_url: testUrl } } } } }), { status: 200, headers: { 'content-type': 'application/json' } });
-            if (url.includes('/v1/payment_intents/pi_fixture'))
+            if (url.includes('/v1/payment_intents/pi_fixture')) {
+                const status = url.startsWith('https://orders-api.paymongo.com/') ? ordersLookupStatus : legacyLookupStatus;
+                if (status !== 200) return new Response(JSON.stringify({ errors: [] }), { status });
                 return new Response(JSON.stringify({ data: { id: 'pi_fixture', attributes: { amount: 12000, livemode: providerLivemode, next_action: { code: { image_url: qrImageUrl, test_url: testUrl } } } } }), { status: 200, headers: { 'content-type': 'application/json' } });
+            }
             checkoutRequest = JSON.parse(options.body).data.attributes;
             return new Response(JSON.stringify({ data: { id: 'cs_fixture', attributes: { checkout_url: 'https://checkout.paymongo.com/fixture', livemode: false } } }), { status: 200, headers: { 'content-type': 'application/json' } });
         },
@@ -83,6 +87,17 @@ test('direct QR Ph flow makes an amount-specific PayMongo intent with GCash disa
     assert.equal(result.qr_test_url, 'https://test.paymongo.com/qrph/fixture');
     assert.equal(fixture.attachedArgs().p_qr_test_url, 'https://test.paymongo.com/qrph/fixture');
     assert.equal(fixture.attachedArgs().p_qr_livemode, false);
+});
+
+test('unexpected QR Ph setup errors return a retryable pending-order response instead of a platform 5xx', async () => {
+    const fixture = checkoutFixture({ channel: 'qrph', throwRpc: 'attach_paymongo_qrph_intent',
+        settings: { card_enabled: false, gcash_enabled: false, qrph_enabled: true } });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 503);
+    const result = await response.json();
+    assert.equal(result.order_id, orderId);
+    assert.match(result.message, /unexpected error while saving QR Ph image/i);
+    assert.ok(fixture.rpcCalls.some(call => call.name === 'register_paymongo_qrph_intent'), 'the created intent remains registered for idempotent retry');
 });
 
 test('fresh live QR Ph intent and attachment return a live QR without test metadata', async () => {
@@ -276,4 +291,27 @@ test('QR setup retry recovers an already attached PayMongo QR instead of creatin
     assert.equal(fixture.attachedArgs().p_qr_livemode, false);
     assert.equal(fixture.apiRequests.some(call => call.url.endsWith('/v1/payment_methods')), false);
     assert.deepEqual(fixture.rpcCalls.map(call => call.name), ['prepare_staff_walkin_checkout', 'attach_paymongo_qrph_intent']);
+});
+
+test('QR setup retry retrieves a legacy intent after orders-api returns 404', async () => {
+    const savedRequest = { amount: 12000, currency: 'PHP', payment_method_allowed: ['qrph'], client_key: 'pi_fixture_secret', qr_expiry_seconds: 850 };
+    const fixture = checkoutFixture({ channel: 'qrph', settings: { card_enabled: false, gcash_enabled: false, qrph_enabled: true },
+        savedRequest, existingIntent: true, ordersLookupStatus: 404 });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 200);
+    assert.deepEqual(fixture.apiRequests.map(call => call.url), [
+        'https://orders-api.paymongo.com/v1/payment_intents/pi_fixture',
+        'https://api.paymongo.com/v1/payment_intents/pi_fixture',
+    ]);
+    assert.equal(fixture.attachedArgs().p_qr_livemode, false);
+});
+
+test('QR setup retry does not create another payment method when both intent lookups return 404', async () => {
+    const savedRequest = { amount: 12000, currency: 'PHP', payment_method_allowed: ['qrph'], client_key: 'pi_fixture_secret', qr_expiry_seconds: 850 };
+    const fixture = checkoutFixture({ channel: 'qrph', settings: { card_enabled: false, gcash_enabled: false, qrph_enabled: true },
+        savedRequest, existingIntent: true, ordersLookupStatus: 404, legacyLookupStatus: 404 });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 409);
+    assert.equal(fixture.apiRequests.some(call => call.url.endsWith('/v1/payment_methods')), false);
+    assert.equal(fixture.attachedArgs(), undefined);
 });
