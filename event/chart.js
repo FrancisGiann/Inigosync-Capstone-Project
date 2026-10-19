@@ -91,18 +91,23 @@ function aggregateBookingRows(rows) {
         return !Number.isNaN(parsed.getTime()) && manilaParts(parsed).year === year;
     }).length);
     const total = values => values.reduce((sum, value) => sum + value, 0);
+    const weekRows = weekKeys.map(key => eligibleRows.filter(row => rowManilaDate(row) === key));
+    const emptyIncome = values => values.map(() => 0);
+    const weekIncome = emptyIncome(weekValues);
+    const monthIncome = emptyIncome(monthValues);
+    const yearIncome = emptyIncome(yearValues);
     const status = rows => {
         const counts = { booked: 0, completed: 0, no_show: 0 };
         rows.forEach(row => { const key = bookingStatus(row); if (key) counts[key]++; });
         return counts;
     };
     CHART_DATA = {
-        week: { labels: weekLabels, periods: weekPeriods, values: weekValues, total: total(weekValues), status: status(eligibleRows.filter(row => weekKeys.includes(rowManilaDate(row)))), unit: rangeCaption('week') },
-        month: { labels: monthLabels, periods: monthPeriods, values: monthValues, total: total(monthValues), status: status(eligibleRows.filter(row => {
+        week: { labels: weekLabels, periods: weekPeriods, values: weekValues, total: total(weekValues), paid: weekIncome, status: status(weekRows.flat()), unit: rangeCaption('week') },
+        month: { labels: monthLabels, periods: monthPeriods, values: monthValues, total: total(monthValues), paid: monthIncome, status: status(eligibleRows.filter(row => {
             const parsed = new Date(row.time_date); if (Number.isNaN(parsed.getTime())) return false;
             return manilaParts(parsed).year === today.year;
         })), unit: rangeCaption('month') },
-        year: { labels: yearLabels, periods: yearPeriods, values: yearValues, total: total(yearValues), status: status(eligibleRows.filter(row => {
+        year: { labels: yearLabels, periods: yearPeriods, values: yearValues, total: total(yearValues), paid: yearIncome, status: status(eligibleRows.filter(row => {
             const parsed = new Date(row.time_date); if (Number.isNaN(parsed.getTime())) return false;
             const rowYear = manilaParts(parsed).year;
             return rowYear >= decadeStart && rowYear < decadeStart + 10;
@@ -240,6 +245,7 @@ function buildBookingReport(range, now = new Date()) {
         generatedDate: new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' })
             .format(new Date(Date.UTC(today.year, today.month - 1, today.day))),
         total: source.total,
+        totalPaid: source.paid.reduce((sum, value) => sum + value, 0),
         status: buildStatusReport(source),
         takeaway: bookingTakeaway(source, range),
         scopeNote: 'Includes paid confirmed, completed, and no-show reservations (including automatically canceled no-shows). Pending and canceled reservations are excluded. Future paid confirmed reservations count in their scheduled calendar period.',
@@ -247,10 +253,13 @@ function buildBookingReport(range, now = new Date()) {
         rows: source.periods.map((period, index) => ({
             period,
             bookings: source.values[index],
+            paid: source.paid[index],
         })),
     };
 }
 
+const REPORT_RANGES = ['week', 'month', 'year'];
+const pdfMoney = amount => `PHP ${(Number(amount) || 0).toFixed(2)}`;
 function setChartDataState(state) {
     chartDataState = state;
     chartDataAvailable = state === 'ready';
@@ -317,25 +326,38 @@ function exportBookingReport(format) {
 
 function performBookingReportExport(format) {
     if (!chartDataAvailable) return false;
-    const report = buildBookingReport(currentChartRange);
-    if (!report) return false;
+    // Array.map passes the row index as the second argument; buildBookingReport
+    // uses that parameter as its clock. Pass only the range to keep dates in Manila.
+    const reports = REPORT_RANGES.map(range => buildBookingReport(range));
+    if (reports.some(report => !report)) return false;
     const today = manilaParts(new Date());
-    const filename = `booking-report-${currentChartRange}-${dateKey(today.year, today.month, today.day)}`;
+    const filename = `booking-report-all-periods-${dateKey(today.year, today.month, today.day)}`;
     if (format === 'xlsx') {
         if (!window.XLSX?.utils || typeof window.XLSX.writeFile !== 'function') {
             showExportError('Excel export is unavailable because its report library did not load.');
             return false;
         }
-        const sheet = window.XLSX.utils.aoa_to_sheet([
-            [report.title], ['Range', report.rangeName], ['Period', report.periodLabel], ['Total eligible bookings', report.total],
-            ['Takeaway', report.takeaway], [report.barMeaning], ['Included reservations', report.scopeNote], ['Generated (Manila)', report.generatedDate], [],
-            ['Period', 'Bookings'], ...report.rows.map(row => [row.period, row.bookings]),
-            [], ['Booking status', 'Count'], ...Object.keys(ADMIN_STATUS_LABELS).map(key => [ADMIN_STATUS_LABELS[key], report.status.counts[key]]),
-            ['Total eligible bookings', report.status.total], ['Status takeaway', report.status.summary],
-        ]);
-        sheet['!cols'] = [{ wch: 28 }, { wch: 16 }];
         const book = window.XLSX.utils.book_new();
-        window.XLSX.utils.book_append_sheet(book, sheet, 'Booking Trends');
+        reports.forEach(report => {
+            const rows = [
+                [report.title],
+                ['Range', report.rangeName],
+                ['Period', report.periodLabel],
+                ['Generated (Manila)', report.generatedDate],
+                [],
+                ['Period', 'Bookings', 'Received (PHP, payment date)'],
+                ...report.rows.map(row => [row.period, row.bookings, row.paid]),
+                ['Total eligible bookings', report.total, report.totalPaid],
+                [],
+                ['Booking status', 'Count'],
+                ...Object.keys(ADMIN_STATUS_LABELS).map(key => [ADMIN_STATUS_LABELS[key], report.status.counts[key]]),
+                ['Total bookings', report.status.total],
+            ];
+            const sheet = window.XLSX.utils.aoa_to_sheet(rows);
+            sheet['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 30 }];
+            sheet['!rows'] = rows.map(() => ({ hpt: 18 }));
+            window.XLSX.utils.book_append_sheet(book, sheet, `${report.rangeName} Report`);
+        });
         window.XLSX.writeFile(book, `${filename}.xlsx`);
         return true;
     }
@@ -346,42 +368,35 @@ function performBookingReportExport(format) {
             return false;
         }
         const pdf = new JsPDF({ unit: 'mm', format: 'a4' });
-        pdf.setFontSize(16); pdf.text(report.title, 16, 18);
-        pdf.setFontSize(10); pdf.text(`${report.rangeName} - ${report.periodLabel.replace(/–/g, '-')}`, 16, 26);
-        pdf.text(`Total eligible bookings: ${report.total}`, 16, 32);
-        const takeawayLines = pdf.splitTextToSize(report.takeaway, 176);
-        pdf.text(takeawayLines, 16, 39);
-        const meaningLines = pdf.splitTextToSize(report.barMeaning, 176);
-        pdf.text(meaningLines, 16, 39 + takeawayLines.length * 5 + 2);
-        const generatedY = 39 + (takeawayLines.length + meaningLines.length) * 5 + 4;
-        pdf.text(`Generated ${report.generatedDate} (Asia/Manila)`, 16, generatedY);
-        const scopeLines = pdf.splitTextToSize(report.scopeNote, 176);
-        pdf.text(scopeLines, 16, generatedY + 6);
-        let y = generatedY + 6 + scopeLines.length * 5 + 9;
-        pdf.setFontSize(10); pdf.setFont(undefined, 'bold');
-        pdf.text('Period', 16, y); pdf.text('Bookings', 170, y, { align: 'right' });
-        pdf.setFont(undefined, 'normal');
-        y += 7;
-        report.rows.forEach(row => {
-            if (y > 275) {
-                pdf.addPage(); y = 18;
-                pdf.setFont(undefined, 'bold');
-                pdf.text('Period', 16, y); pdf.text('Bookings', 170, y, { align: 'right' });
-                pdf.setFont(undefined, 'normal'); y += 7;
-            }
-            pdf.text(row.period, 16, y); pdf.text(String(row.bookings), 170, y, { align: 'right' });
-            y += 7;
+        reports.forEach((report, reportIndex) => {
+            if (reportIndex) pdf.addPage();
+            pdf.setFontSize(16); pdf.text(`${report.title} - ${report.rangeName}`, 16, 18);
+            pdf.setFontSize(10); pdf.text(report.periodLabel.replace(/–/g, '-'), 16, 26);
+            pdf.text(`Bookings: ${report.total}     Received: ${pdfMoney(report.totalPaid)}`, 16, 32);
+            pdf.text(pdf.splitTextToSize(report.takeaway, 176), 16, 39);
+            pdf.text(pdf.splitTextToSize(`${report.barMeaning} Sales use payment date; booking counts use reservation date.`, 176), 16, 46);
+            pdf.setFont(undefined, 'bold'); pdf.text('Booking graph', 16, 56); pdf.setFont(undefined, 'normal');
+            const max = Math.max(0, ...report.rows.map(row => row.bookings));
+            report.rows.forEach((row, index) => {
+                const y = 63 + index * 5.5;
+                pdf.text(row.period, 16, y);
+                if (max) pdf.setFillColor(193, 148, 72);
+                pdf.rect?.(77, y - 3, max ? Math.max(0.8, row.bookings / max * 48) : 0.8, 3, 'F');
+                pdf.text(`${row.bookings} bookings`, 130, y);
+            });
+            let y = 63 + report.rows.length * 5.5 + 6;
+            pdf.setFont(undefined, 'bold'); pdf.text('Period', 16, y); pdf.text('Bookings', 91, y); pdf.text('Received (PHP)', 170, y, { align: 'right' });
+            pdf.setFont(undefined, 'normal'); y += 6;
+            report.rows.forEach(row => { pdf.text(row.period, 16, y); pdf.text(String(row.bookings), 91, y); pdf.text(pdfMoney(row.paid), 170, y, { align: 'right' }); y += 6; });
+            y += 4; pdf.setFont(undefined, 'bold'); pdf.text('Booking status', 16, y); pdf.text('Count', 170, y, { align: 'right' });
+            pdf.setFont(undefined, 'normal'); y += 6;
+            Object.keys(ADMIN_STATUS_LABELS).forEach(key => { pdf.text(ADMIN_STATUS_LABELS[key], 16, y); pdf.text(String(report.status.counts[key]), 170, y, { align: 'right' }); y += 6; });
+            pdf.setFont(undefined, 'bold'); pdf.text(`Total bookings: ${report.status.total}`, 16, y); y += 6;
+            pdf.setFont(undefined, 'normal'); pdf.text(pdf.splitTextToSize(report.status.summary, 176), 16, y);
+            pdf.setFontSize(8);
+            pdf.text(pdf.splitTextToSize(report.scopeNote, 176), 16, 258);
+            pdf.text(pdf.splitTextToSize('Sales are payment amounts recorded in this calendar period, including online and walk-in bookings, balance payments, and paid staff walk-in orders. They are grouped by payment date.', 176), 16, 276);
         });
-        y += 5;
-        if (y > 270) { pdf.addPage(); y = 18; }
-        pdf.setFont(undefined, 'bold'); pdf.text('Booking status', 16, y); pdf.text('Count', 170, y, { align: 'right' });
-        pdf.setFont(undefined, 'normal'); y += 7;
-        Object.keys(ADMIN_STATUS_LABELS).forEach(key => { pdf.text(ADMIN_STATUS_LABELS[key], 16, y); pdf.text(String(report.status.counts[key]), 170, y, { align: 'right' }); y += 7; });
-        pdf.setFont(undefined, 'bold'); pdf.text(`Total eligible bookings: ${report.status.total}`, 16, y); y += 7;
-        pdf.setFont(undefined, 'normal');
-        const statusLines = pdf.splitTextToSize(report.status.summary, 176);
-        if (y + statusLines.length * 5 > 285) { pdf.addPage(); y = 18; }
-        pdf.text(statusLines, 16, y);
         pdf.save(`${filename}.pdf`);
         return true;
     }
@@ -465,6 +480,45 @@ async function loadChartData() {
         return false;
     }
     aggregateBookingRows(rows);
+    let incomeResults;
+    try {
+        incomeResults = await Promise.all([
+            window.sb.rpc('owner_income_report', { p_from_at: weekStart, p_to_at: weekEnd, p_bucket: 'day' }),
+            window.sb.rpc('owner_income_report', { p_from_at: manilaYearStartIso(year), p_to_at: manilaYearEndIso(year), p_bucket: 'month' }),
+            window.sb.rpc('owner_income_report', { p_from_at: decadeStartIso, p_to_at: decadeEndIso, p_bucket: 'year' }),
+        ]);
+    } catch (error) {
+        console.error('[admin-chart] failed to load payment ledger report', error);
+        if (request !== chartRequestId) return false;
+        setChartDataState('error');
+        return false;
+    }
+    if (request !== chartRequestId || incomeResults.some(result => !result || result.error || !Array.isArray(result.data) || result.data.some(row => !row?.bucket_start || !Number.isFinite(Number(row.income))))) {
+        if (request === chartRequestId) {
+            console.error('[admin-chart] failed to load payment ledger report', incomeResults?.find(result => result?.error)?.error);
+            setChartDataState('error');
+        }
+        return false;
+    }
+    const bucketKey = (value, bucket) => {
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) return null;
+        const parts = manilaParts(parsed);
+        return bucket === 'day' ? dateKey(parts.year, parts.month, parts.day) : bucket === 'month' ? `${parts.year}-${pad2(parts.month)}` : String(parts.year);
+    };
+    const weekKeys = Array.from({ length: 7 }, (_, index) => {
+        const localDate = new Date(Date.parse(weekStart) + 8 * 60 * 60 * 1000 + index * 86400000);
+        return dateKey(localDate.getUTCFullYear(), localDate.getUTCMonth() + 1, localDate.getUTCDate());
+    });
+    const applyIncome = (range, result, bucket) => {
+        const source = CHART_DATA[range];
+        const incomeByBucket = new Map(result.data.map(row => [bucketKey(row.bucket_start, bucket), Number(row.income) || 0]));
+        source.paid = source.periods.map((_, index) => incomeByBucket.get(bucket === 'day' ? weekKeys[index] : bucket === 'month' ? `${year}-${pad2(index + 1)}` : String(decadeStart + index)) || 0);
+        source.totalPaid = source.paid.reduce((sum, value) => sum + value, 0);
+    };
+    applyIncome('week', incomeResults[0], 'day');
+    applyIncome('month', incomeResults[1], 'month');
+    applyIncome('year', incomeResults[2], 'year');
     setChartDataState('ready');
     return true;
 }

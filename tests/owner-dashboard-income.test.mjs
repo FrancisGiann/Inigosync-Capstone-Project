@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const chartSource = await readFile(new URL('../event/chart.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20261001191136_owner_income_dashboard.sql', import.meta.url), 'utf8');
+const reportMigration = await readFile(new URL('../supabase/migrations/20261019184938_owner_income_report_periods.sql', import.meta.url), 'utf8');
 const dashboardHtml = await readFile(new URL('../Pages/owner_dashboard.html', import.meta.url), 'utf8');
 const dashboardCss = await readFile(new URL('../Style/owner_dashboard.css', import.meta.url), 'utf8');
 const dashboardScript = await readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8');
@@ -221,57 +222,111 @@ test('booking status pie hover shows matching status, count, and percentage besi
 });
 
 test('booking report exporters pass chart totals and period rows to both file formats', () => {
-    let workbookRows; let workbookFilename; const pdfCalls = [];
+    const workbookSheets = []; let workbookFilename; const pdfCalls = [];
+    class FixedDate extends Date {
+        constructor(...args) { super(...(args.length ? args : ['2026-10-01T02:00:00Z'])); }
+        static now() { return new Date('2026-10-01T02:00:00Z').getTime(); }
+    }
     class FakePdf {
         setFontSize() {} setFont() {}
         splitTextToSize(text) { return [text]; }
         text(...args) { pdfCalls.push(args); }
-        addPage() {}
+        addPage() { pdfCalls.push(['addPage']); }
+        rect(...args) { pdfCalls.push(['rect', ...args]); }
+        setFillColor() {}
         save(filename) { pdfCalls.push(['save', filename]); }
     }
     const context = {
-        Date, Intl, Number, String, Object, Array, Math, console,
+        Date: FixedDate, Intl, Number, String, Object, Array, Math, console,
         document: { addEventListener() {}, querySelector: () => null },
         window: {
             XLSX: {
                 utils: {
-                    aoa_to_sheet: rows => { workbookRows = rows; return { rows }; },
-                    book_new: () => ({}), book_append_sheet() {},
+                    aoa_to_sheet: rows => ({ rows }),
+                    book_new: () => ({}), book_append_sheet: (_book, sheet, name) => workbookSheets.push({ rows: sheet.rows, merges: sheet['!merges'], name }),
                 },
                 writeFile: (_book, filename) => { workbookFilename = filename; },
             },
             jspdf: { jsPDF: FakePdf },
         },
     };
-    runInNewContext(`${chartSource}\nglobalThis.__aggregate = aggregateBookingRows; globalThis.__ready = value => { chartDataAvailable = value; }; globalThis.__range = range => { currentChartRange = range; }; globalThis.__export = exportBookingReport;`, context);
-    context.__aggregate([{ time_date: new Date().toISOString(), status: 'confirmed', amount_paid: 20 }]);
+    runInNewContext(`${chartSource}\nglobalThis.__aggregate = aggregateBookingRows; globalThis.__seedIncome = () => { CHART_DATA.week.paid[0] = 12.5; CHART_DATA.month.paid[0] = 25.5; CHART_DATA.year.paid[0] = 77.5; }; globalThis.__ready = value => { chartDataAvailable = value; }; globalThis.__range = range => { currentChartRange = range; }; globalThis.__export = exportBookingReport;`, context);
+    context.__aggregate([{ time_date: '2026-10-01T02:00:00Z', status: 'confirmed', amount_paid: 20 }]);
+    context.__seedIncome();
     context.__ready(true);
     context.__range('year');
     assert.equal(context.__export('xlsx'), true);
-    assert.match(workbookFilename, /booking-report-year-\d{4}-\d{2}-\d{2}\.xlsx/);
+    assert.match(workbookFilename, /booking-report-all-periods-\d{4}-\d{2}-\d{2}\.xlsx/);
+    assert.deepEqual(workbookSheets.map(sheet => sheet.name), ['Weekly Report', 'Monthly Report', 'Yearly Report']);
+    const tableRows = sheet => {
+        const header = sheet.rows.findIndex(row => row[0] === 'Period' && row[1] === 'Bookings');
+        return sheet.rows.slice(header + 1, header + 1 + (sheet.name === 'Weekly Report' ? 7 : sheet.name === 'Monthly Report' ? 12 : 10));
+    };
+    const weeklyRows = tableRows(workbookSheets[0]);
+    const monthlyRows = tableRows(workbookSheets[1]);
+    assert.equal(weeklyRows.length, 7);
+    assert.equal(monthlyRows.length, 12);
+    assert.equal(weeklyRows.reduce((sum, row) => sum + row[1], 0), 1);
+    assert.equal(monthlyRows.reduce((sum, row) => sum + row[1], 0), 1);
+    assert.equal(weeklyRows[0][2], 12.5);
+    assert.equal(monthlyRows[0][2], 25.5);
+    assert.equal(weeklyRows[0][0], 'September 28, 2026');
+    const workbookRows = workbookSheets[2].rows;
     assert.ok(workbookRows.some(row => row[0] === 'Booking Report'));
     assert.ok(workbookRows.some(row => row[0] === 'Range' && row[1] === 'Yearly'));
     assert.ok(workbookRows.some(row => row[0] === 'Period' && /^Calendar decade \d{4}–\d{4}$/.test(row[1])));
     assert.equal(workbookRows.filter(row => /^20\d{2}$/.test(row[0])).length, 10,
         'the yearly export includes all ten calendar years');
     assert.ok(workbookRows.some(row => row[0] === 'Total eligible bookings' && row[1] === 1));
-    assert.ok(workbookRows.some(row => row[0] === 'Takeaway' && /Busiest/.test(row[1])));
-    assert.ok(workbookRows.some(row => row[0] === 'Included reservations' && /Future paid confirmed reservations/.test(row[1])));
-    assert.ok(workbookRows.some(row => row[0] === 'Generated (Manila)' && row[1]));
+    assert.ok(workbookRows.some(row => row[0] === 'Generated (Manila)' && row[1] === 'October 1, 2026'),
+        'generated date uses the current Manila date instead of the map index as a timestamp');
     assert.ok(workbookRows.some(row => row[0] === 'Period' && row[1] === 'Bookings'));
+    assert.equal(workbookRows.find(row => row[0] === 'Period' && row[1] === 'Bookings')[2], 'Received (PHP, payment date)');
+    assert.ok(!workbookRows.flat().some(value => typeof value === 'string' && /graph|bar|recorded in this calendar period/i.test(value)));
+    assert.ok(!workbookSheets.some(sheet => sheet.rows.flat().some(value => typeof value === 'string' && /[█·]/.test(value))));
     assert.ok(workbookRows.some(row => row[0] === 'Booking status' && row[1] === 'Count'));
     assert.ok(workbookRows.some(row => row[0] === 'Booked' && row[1] === 1));
     assert.ok(workbookRows.some(row => row[0] === 'Total eligible bookings' && row[1] === 1));
-    assert.ok(workbookRows.some(row => row[0] === 'Status takeaway' && /This booking is confirmed/.test(row[1])));
+    assert.ok(workbookRows.some(row => row[0] === 'Total bookings' && row[1] === 1));
     assert.equal(context.__export('pdf'), true);
-    assert.ok(pdfCalls.some(call => call[0] === 'Booking Report'));
-    assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && /Future paid confirmed reservations/.test(call[0][0])));
-    assert.ok(pdfCalls.some(call => call[0] === 'Total eligible bookings: 1'));
+    assert.ok(pdfCalls.some(call => call[0] === 'Booking Report - Weekly'));
+    assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && /Sales use payment date/.test(call[0][0])));
+    assert.ok(pdfCalls.some(call => call[0] === 'Bookings: 1     Received: PHP 12.50'));
     assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && call[0][0].startsWith('Busiest year:')));
     assert.ok(pdfCalls.some(call => call[0] === 'Booking status'));
     assert.ok(pdfCalls.some(call => call[0] === 'Booked'));
     assert.ok(pdfCalls.some(call => Array.isArray(call[0]) && /This booking is confirmed/.test(call[0][0])));
     assert.ok(pdfCalls.some(call => call[0] === 'save' && call[1].endsWith('.pdf')));
+    assert.equal(pdfCalls.filter(call => call[0] === 'addPage').length, 2);
+    assert.equal(pdfCalls.filter(call => call[0] === 'rect').length, 29, 'PDF includes a bar graph for all 7 + 12 + 10 periods');
+    assert.ok(!workbookRows.flat().some(value => typeof value === 'string' && /tax/i.test(value)));
+});
+
+test('loaded reports use payment ledger totals keyed by Manila payment period', async () => {
+    class FixedDate extends Date {
+        constructor(...args) { super(...(args.length ? args : ['2026-10-01T02:00:00Z'])); }
+        static now() { return new Date('2026-10-01T02:00:00Z').getTime(); }
+    }
+    const incomeCalls = [];
+    const context = {
+        Date: FixedDate, Intl, Number, String, Object, Array, Math, console,
+        document: { addEventListener() {} },
+        window: { sb: { rpc: async (name, args) => {
+            if (name === 'owner_income_report') {
+                incomeCalls.push(args);
+                return { data: [{ bucket_start: args.p_from_at, income: 125.5 }], error: null };
+            }
+            return { data: [], error: null };
+        } } },
+    };
+    runInNewContext(`${chartSource}\nglobalThis.__load = loadChartData; globalThis.__report = buildBookingReport;`, context);
+    assert.equal(await context.__load(), true);
+    assert.deepEqual(incomeCalls.map(call => call.p_bucket), ['day', 'month', 'year']);
+    for (const range of ['week', 'month', 'year']) {
+        const report = context.__report(range);
+        assert.equal(report.totalPaid, 125.5);
+        assert.equal(report.rows.reduce((sum, row) => sum + row.paid, 0), 125.5);
+    }
 });
 
 test('New Year booking trend fetch covers the decade in bounded segments and completes the cross-year week', async () => {
@@ -283,19 +338,20 @@ test('New Year booking trend fetch covers the decade in bounded segments and com
     const context = {
         Date: FixedDate, Intl, Number, String, Object, Array, Math, console,
         document: { addEventListener() {} },
-        window: { sb: { rpc: async (name, args) => { requests.push({ name, ...args }); return { data: [], error: null }; } } },
+        window: { sb: { rpc: async (name, args) => { requests.push({ name, ...args }); return { data: name === 'owner_income_report' ? [{ bucket_start: args.p_from_at, income: 0 }] : [], error: null }; } } },
     };
     runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__isChartAvailable = () => chartDataAvailable;`, context);
     await context.__loadChartData();
     assert.equal(context.__isChartAvailable(), true, 'a successful empty result is valid loaded data');
-    assert.equal(requests.length, 11);
-    assert.ok(requests.every(request => request.name === 'admin_booking_overview'));
-    const ranges = requests.map(request => [request.p_from_at, request.p_to_at]);
+    const bookingRequests = requests.filter(request => request.name === 'admin_booking_overview');
+    assert.equal(bookingRequests.length, 11);
+    assert.equal(requests.filter(request => request.name === 'owner_income_report').length, 3);
+    const ranges = bookingRequests.map(request => [request.p_from_at, request.p_to_at]);
     assert.deepEqual(ranges[0], ['2019-12-29T16:00:00.000Z', '2019-12-31T16:00:00.000Z']);
     assert.deepEqual(ranges.slice(1), Array.from({ length: 10 }, (_, i) => [
         `${2020 + i - 1}-12-31T16:00:00.000Z`, `${2020 + i}-12-31T16:00:00.000Z`,
     ]));
-    assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
+    assert.ok(bookingRequests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
 });
 
 test('weekly chart retains all days and status across a calendar year boundary', async () => {
@@ -315,15 +371,17 @@ test('weekly chart retains all days and status across a calendar year boundary',
         document: { addEventListener() {} },
         window: { sb: { rpc: async (name, args) => {
             requests.push({ name, ...args });
+            if (name === 'owner_income_report') return { data: [{ bucket_start: args.p_from_at, income: 0 }], error: null };
             const from = Date.parse(args.p_from_at); const to = Date.parse(args.p_to_at);
             return { data: rows.filter(row => Date.parse(row.time_date) >= from && Date.parse(row.time_date) < to) };
         } } },
     };
     runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__data = () => CHART_DATA;`, context);
     assert.equal(await context.__loadChartData(), true);
-    assert.equal(requests.length, 10);
-    assert.ok(requests.every(request => request.name === 'admin_booking_overview'));
-    assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
+    const bookingRequests = requests.filter(request => request.name === 'admin_booking_overview');
+    assert.equal(bookingRequests.length, 10);
+    assert.equal(requests.filter(request => request.name === 'owner_income_report').length, 3);
+    assert.ok(bookingRequests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
     assert.equal(context.__data().week.total, 4);
     assert.deepEqual(Array.from(context.__data().week.values), [1, 0, 0, 1, 1, 0, 1]);
     assert.deepEqual(JSON.parse(JSON.stringify(context.__data().week.status)), { booked: 2, completed: 1, no_show: 1 });
@@ -345,18 +403,19 @@ test('last decade week fetches its 2030 tail and keeps yearly data within 2020�
         document: { addEventListener() {} },
         window: { sb: { rpc: async (name, args) => {
             requests.push({ name, ...args });
+            if (name === 'owner_income_report') return { data: [{ bucket_start: args.p_from_at, income: 0 }], error: null };
             const from = Date.parse(args.p_from_at); const to = Date.parse(args.p_to_at);
             return { data: rows.filter(row => Date.parse(row.time_date) >= from && Date.parse(row.time_date) < to) };
         } } },
     };
     runInNewContext(`${chartSource}\nglobalThis.__loadChartData = loadChartData; globalThis.__data = () => CHART_DATA;`, context);
     assert.equal(await context.__loadChartData(), true);
-    assert.equal(requests.length, 11);
+    assert.equal(requests.length, 14);
     assert.deepEqual(
-        [requests.at(-1).p_from_at, requests.at(-1).p_to_at],
+        [requests.filter(request => request.name === 'admin_booking_overview').at(-1).p_from_at, requests.filter(request => request.name === 'admin_booking_overview').at(-1).p_to_at],
         ['2029-12-31T16:00:00.000Z', '2030-01-06T16:00:00.000Z'],
     );
-    assert.ok(requests.every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
+    assert.ok(requests.filter(request => request.name === 'admin_booking_overview').every(request => Date.parse(request.p_to_at) - Date.parse(request.p_from_at) <= 366 * 86400000));
     assert.equal(context.__data().week.total, 3);
     assert.deepEqual(Array.from(context.__data().week.values), [1, 1, 0, 0, 0, 1, 0]);
     assert.deepEqual(JSON.parse(JSON.stringify(context.__data().week.status)), { booked: 1, completed: 1, no_show: 1 });
@@ -378,6 +437,26 @@ test('booking trend RPC failure keeps exports unavailable', async () => {
     assert.ok(buttons.every(button => button.disabled));
 });
 
+test('payment ledger RPC failure keeps report exports unavailable', async () => {
+    const buttons = [{ disabled: false }, { disabled: false }];
+    const calls = [];
+    const context = {
+        Date, Intl, Number, String, Object, Array, Math, console,
+        document: { addEventListener() {}, querySelectorAll: () => buttons, querySelector: () => null },
+        window: { sb: { rpc: async name => {
+            calls.push(name);
+            return name === 'owner_income_report'
+                ? { data: null, error: new Error('ledger unavailable') }
+                : { data: [], error: null };
+        } } },
+    };
+    runInNewContext(`${chartSource}\nglobalThis.__load = loadChartData; globalThis.__isAvailable = () => chartDataAvailable;`, context);
+    assert.equal(await context.__load(), false);
+    assert.equal(context.__isAvailable(), false);
+    assert.equal(calls.filter(name => name === 'owner_income_report').length, 3);
+    assert.ok(buttons.every(button => button.disabled));
+});
+
 test('stale booking report responses cannot replace the newest request', async () => {
     class FixedDate extends Date {
         constructor(...args) { super(...(args.length ? args : ['2026-10-01T02:00:00Z'])); }
@@ -387,14 +466,16 @@ test('stale booking report responses cannot replace the newest request', async (
     const context = {
         Date: FixedDate, Intl, Number, String, Object, Array, Math, console,
         document: { addEventListener() {} },
-        window: { sb: { rpc: () => new Promise(resolve => pending.push(resolve)) } },
+        window: { sb: { rpc: (name, args) => new Promise(resolve => pending.push({ resolve, name, args })) } },
     };
     runInNewContext(`${chartSource}\nglobalThis.__load = loadChartData; globalThis.__data = () => CHART_DATA;`, context);
     const oldRequest = context.__load();
     const currentRequest = context.__load();
-    for (const resolve of pending.slice(10, 20)) resolve({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'completed' }], error: null });
+    for (const { resolve } of pending.slice(10, 20)) resolve({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'completed' }], error: null });
+    await new Promise(resolve => setImmediate(resolve));
+    for (const { resolve, args } of pending.slice(20, 23)) resolve({ data: [{ bucket_start: args.p_from_at, income: 0 }], error: null });
     assert.equal(await currentRequest, true);
-    for (const resolve of pending.slice(0, 10)) resolve({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'confirmed', amount_paid: 80 }], error: null });
+    for (const { resolve } of pending.slice(0, 10)) resolve({ data: [{ time_date: '2026-10-01T00:00:00Z', status: 'confirmed', amount_paid: 80 }], error: null });
     assert.equal(await oldRequest, false);
     assert.deepEqual(JSON.parse(JSON.stringify(context.__data().month.status)), { booked: 0, completed: 1, no_show: 0 });
 });
@@ -408,6 +489,22 @@ test('income RPC requires an active owner and uses Manila payment-time ledger bu
     assert.match(migration, /union\s+select b\.balance_payment_id/i);
     assert.match(migration, /union\s+select o\.payment_id from internal\.staff_walkin_orders/i);
     assert.match(migration, /revoke all on function public\.owner_income_period\(text\) from public, anon/i);
+});
+
+test('all-period income RPC is owner-gated and includes linked online, walk-in, balance, and staff-order payments', () => {
+    assert.match(reportMigration, /p\.role\s*=\s*'admin'\s+and coalesce\(p\.status, 'active'\) <> 'disabled'/i);
+    assert.match(reportMigration, /p_bucket is null or p_bucket not in \('day', 'month', 'year'\)/i);
+    assert.match(reportMigration, /v_local_to <> v_local_from \+ v_expected_span/i);
+    assert.match(reportMigration, /p_bucket = 'day' and extract\(isodow from v_local_from\) <> 1/i);
+    assert.match(reportMigration, /p_bucket = 'month' and \(extract\(month from v_local_from\) <> 1 or extract\(day from v_local_from\) <> 1\)/i);
+    assert.match(reportMigration, /mod\(extract\(year from v_local_from\)::integer, 10\) <> 0/i);
+    assert.match(reportMigration, /complete supported Manila calendar period/i);
+    assert.match(reportMigration, /date_trunc\(p_bucket, pay\.created_at at time zone 'Asia\/Manila'\)/i);
+    assert.match(reportMigration, /union select w\.balance_payment_id/i);
+    assert.match(reportMigration, /union select b\.balance_payment_id/i);
+    assert.match(reportMigration, /union select o\.payment_id from internal\.staff_walkin_orders/i);
+    assert.match(reportMigration, /revoke all on function public\.owner_income_report\(timestamptz,timestamptz,text\) from public, anon/i);
+    assert.match(reportMigration, /grant execute on function public\.owner_income_report\(timestamptz,timestamptz,text\) to authenticated/i);
 });
 
 test('owner income defaults to Month and replaces the bookings stat', () => {

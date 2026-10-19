@@ -81,7 +81,8 @@
                 units: data.units.map((unit) => ({
                     id: unit.id || null, label: String(unit.label || ''), photo_url: unit.photo_url || null,
                     photo_file: null, rate_day: unit.rate_day == null ? '' : String(unit.rate_day), rate_night: unit.rate_night == null ? '' : String(unit.rate_night),
-                    rate_unit: unit.rate_unit || '/hr', resource_ids: Array.isArray(unit.resource_ids) ? unit.resource_ids.slice() : [],
+                    // Keep legacy per-set pricing on edit; all other units use the fixed one-hour slot basis.
+                    rate_unit: unit.rate_unit === '/set' ? '/set' : '/hr', resource_ids: Array.isArray(unit.resource_ids) ? unit.resource_ids.slice() : [],
                     resource_search: '', resource_expanded: false, resource_open: false,
                     maintenance: Array.isArray(unit.maintenance) ? unit.maintenance.map((period) => ({ id: period.id || null, start_at: period.start_at || '', end_at: period.end_at || '', note: period.note || '', publish_at: period.publish_at || null })) : [],
                 })),
@@ -170,8 +171,8 @@
             unitHost.innerHTML = units.map((unit, index) => {
                 const preview = unit.photo_file ? '' : imageMarkup(unit.photo_url, `${unit.label} photo`);
                 return `<article class="ioc-unit-card" data-ioc-unit="${index}"><header class="ioc-unit-head"><div><span class="ioc-eyebrow">Unit ${index + 1}</span><h4>${esc(unit.label || `${unitNoun($('[data-ioc-unit-kind]').value)} ${index + 1}`)}</h4></div><button type="button" class="ioc-text-danger" data-ioc-remove-unit="${index}">Remove unit</button></header>
-                    <div class="ioc-unit-top"><label class="ioc-field"><span>Unit label</span><input class="admin-input" maxlength="80" value="${esc(unit.label)}" data-ioc-unit-label="${index}"></label><div class="ioc-unit-photo"><div class="ioc-unit-preview" data-ioc-unit-preview="${index}">${preview}</div><label class="ioc-button ioc-button-secondary" for="ioc-unit-photo-${index}">Choose unit photo</label><input class="ioc-file-input" id="ioc-unit-photo-${index}" type="file" accept="image/*" data-ioc-unit-file="${index}"></div></div>
-                    <div class="ioc-rate-grid ${unit.rate_unit === '/set' ? 'is-per-set' : ''}" data-ioc-rate-grid="${index}"><label class="ioc-field"><span data-ioc-day-label="${index}">${unit.rate_unit === '/set' ? 'Price per set' : 'Day rate'}</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_day)}" placeholder="Not set" data-ioc-rate-day="${index}"><small data-ioc-set-hint="${index}" ${unit.rate_unit === '/set' ? '' : 'hidden'}>One set reserves one 60-minute slot.</small></label><label class="ioc-field" data-ioc-night-field="${index}" ${unit.rate_unit === '/set' ? 'hidden' : ''}><span>Night rate</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_night)}" placeholder="Same as day" data-ioc-rate-night="${index}"></label><label class="ioc-field"><span>Rate basis</span><select class="admin-select" data-ioc-rate-unit="${index}"><option value="/hr" ${unit.rate_unit === '/hr' ? 'selected' : ''}>Per hour</option><option value="/set" ${unit.rate_unit === '/set' ? 'selected' : ''}>Per set (60 minutes)</option></select></label></div>
+                    <div class="ioc-unit-top"><label class="ioc-field"><span>Unit label</span><input class="admin-input" maxlength="80" value="${esc(unit.label)}" data-ioc-unit-label="${index}"></label><div class="ioc-unit-photo"><div class="ioc-unit-preview" data-ioc-unit-preview="${index}">${preview}</div><button class="ioc-button ioc-button-secondary" type="button" data-ioc-choose-unit-photo="${index}">Choose unit photo</button><input class="ioc-file-input ioc-unit-file-input" id="ioc-unit-photo-${index}" type="file" accept="image/*" tabindex="-1" aria-label="Photo for ${esc(unit.label || `unit ${index + 1}`)}" data-ioc-unit-file="${index}"></div></div>
+                    <div class="ioc-rate-grid ${unit.rate_unit === '/set' ? 'is-per-set' : ''}" data-ioc-rate-grid="${index}"><label class="ioc-field"><span data-ioc-day-label="${index}">${unit.rate_unit === '/set' ? 'Price per set' : 'Day rate'}</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_day)}" placeholder="Not set" data-ioc-rate-day="${index}"><small data-ioc-set-hint="${index}" ${unit.rate_unit === '/set' ? '' : 'hidden'}>One set reserves one 60-minute slot.</small></label><label class="ioc-field" data-ioc-night-field="${index}" ${unit.rate_unit === '/set' ? 'hidden' : ''}><span>Night rate</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_night)}" placeholder="Same as day" data-ioc-rate-night="${index}"></label></div>
                     <div class="ioc-unit-connections"><div class="ioc-subhead"><strong>Availability connections</strong><span data-ioc-connection-count="${index}"></span></div><label class="ioc-field ioc-resource-search"><span>Search shared spaces</span><input class="admin-input" type="search" maxlength="100" placeholder="Search by sport or space name…" value="${esc(unit.resource_search)}" data-ioc-resource-search="${index}"></label><div class="ioc-resource-selected" data-ioc-resource-selected="${index}"></div><details class="ioc-resource-details" data-ioc-resource-details="${index}" ${unit.resource_open ? 'open' : ''}><summary>Choose shared spaces</summary><div class="ioc-connection-list" data-ioc-unit-resources="${index}"></div></details></div>
                     <div class="ioc-maintenance"><div class="ioc-subhead"><strong>Scheduled maintenance</strong><button type="button" class="ioc-link-button" data-ioc-add-maintenance="${index}">+ Add period</button></div><div data-ioc-maintenance-list="${index}"></div></div>
                 </article>`;
@@ -186,15 +187,39 @@
             unitHost.querySelectorAll('[data-ioc-unit-label]').forEach((input) => input.addEventListener('input', () => { state.draft.units[Number(input.dataset.iocUnitLabel)].label = input.value; markDirty(); input.closest('.ioc-unit-card').querySelector('h4').textContent = input.value || 'Unit'; }));
             unitHost.querySelectorAll('[data-ioc-rate-day]').forEach((input) => input.addEventListener('input', () => { state.draft.units[Number(input.dataset.iocRateDay)].rate_day = input.value; markDirty(); }));
             unitHost.querySelectorAll('[data-ioc-rate-night]').forEach((input) => input.addEventListener('input', () => { state.draft.units[Number(input.dataset.iocRateNight)].rate_night = input.value; markDirty(); }));
-            unitHost.querySelectorAll('[data-ioc-rate-unit]').forEach((input) => input.addEventListener('change', () => {
-                const index = Number(input.dataset.iocRateUnit); const unit = state.draft.units[index];
-                unit.rate_unit = input.value;
-                if (unit.rate_unit === '/set') unit.rate_night = '';
-                updateRateFields(index); markDirty();
+            const photoPickerPositions = new WeakMap();
+            const restorePhotoScroll = (snapshot) => {
+                editor.scrollTop = snapshot.dialogScrollTop;
+                editor.querySelector('.ioc-editor-scroll').scrollTop = snapshot.contentScrollTop;
+                state.scrollTop = snapshot.contentScrollTop;
+            };
+            const restorePhotoPicker = (input, completed = true) => {
+                const snapshot = photoPickerPositions.get(input);
+                if (snapshot) {
+                    restorePhotoScroll(snapshot);
+                    if (completed) {
+                        window.removeEventListener('focus', snapshot.onReturn);
+                        photoPickerPositions.delete(input);
+                    }
+                }
+                unitHost.querySelector(`[data-ioc-choose-unit-photo="${input.dataset.iocUnitFile}"]`)?.focus({ preventScroll: true });
+                if (snapshot) window.requestAnimationFrame(() => restorePhotoScroll(snapshot));
+            };
+            unitHost.querySelectorAll('[data-ioc-choose-unit-photo]').forEach((button) => button.addEventListener('click', () => {
+                const input = unitHost.querySelector(`[data-ioc-unit-file="${button.dataset.iocChooseUnitPhoto}"]`);
+                if (!input) return;
+                const scroll = editor.querySelector('.ioc-editor-scroll');
+                const snapshot = { dialogScrollTop: editor.scrollTop, contentScrollTop: scroll.scrollTop, onReturn: null };
+                snapshot.onReturn = () => window.setTimeout(() => restorePhotoPicker(input, false), 50);
+                photoPickerPositions.set(input, snapshot);
+                window.addEventListener('focus', snapshot.onReturn, { once: true });
+                input.click();
             }));
             unitHost.querySelectorAll('[data-ioc-unit-file]').forEach((input) => input.addEventListener('change', async () => {
                 const draft = state.draft;
-                const unit = draft?.units[Number(input.dataset.iocUnitFile)]; const file = input.files?.[0]; input.value = '';
+                const index = Number(input.dataset.iocUnitFile); const unit = draft?.units[index]; const file = input.files?.[0]; input.value = '';
+                const pickerSnapshot = photoPickerPositions.get(input);
+                restorePhotoPicker(input);
                 if (!file || !unit) return;
                 try {
                     const cropped = await cropDraftPhoto(file);
@@ -202,6 +227,16 @@
                     unit.photo_file = cropped; markDirty();
                     updateUnitPhotoPreview(unit, draft.units.indexOf(unit));
                 } catch (error) { toast(error.message || 'Could not prepare this unit photo.', true); }
+                finally {
+                    unitHost.querySelector(`[data-ioc-choose-unit-photo="${index}"]`)?.focus({ preventScroll: true });
+                    if (pickerSnapshot) {
+                        restorePhotoScroll(pickerSnapshot);
+                        window.requestAnimationFrame(() => restorePhotoScroll(pickerSnapshot));
+                    }
+                }
+            }));
+            unitHost.querySelectorAll('[data-ioc-unit-file]').forEach((input) => input.addEventListener('cancel', () => {
+                restorePhotoPicker(input);
             }));
             unitHost.querySelectorAll('[data-ioc-add-maintenance]').forEach((button) => button.addEventListener('click', () => {
                 const index = Number(button.dataset.iocAddMaintenance); state.draft.units[index].maintenance.push({ id: null, start_at: '', end_at: '', note: '', publish_at: null }); markDirty(); renderUnits();
@@ -216,20 +251,6 @@
             return new File([blob], 'court-photo.jpg', { type: 'image/jpeg' });
         }
 
-        function updateRateFields(index) {
-            const unit = state.draft?.units[index]; const card = unitHost.querySelector(`[data-ioc-unit="${index}"]`);
-            if (!unit || !card) return;
-            const perSet = unit.rate_unit === '/set';
-            card.querySelector(`[data-ioc-rate-grid="${index}"]`)?.classList.toggle('is-per-set', perSet);
-            const dayLabel = card.querySelector(`[data-ioc-day-label="${index}"]`);
-            if (dayLabel) dayLabel.textContent = perSet ? 'Price per set' : 'Day rate';
-            const setHint = card.querySelector(`[data-ioc-set-hint="${index}"]`);
-            if (setHint) setHint.hidden = !perSet;
-            const nightField = card.querySelector(`[data-ioc-night-field="${index}"]`);
-            if (nightField) nightField.hidden = perSet;
-            const nightInput = card.querySelector(`[data-ioc-rate-night="${index}"]`);
-            if (nightInput && perSet) nightInput.value = '';
-        }
         function resourceLabel(resource) {
             return String(resource?.name || 'Shared space');
         }

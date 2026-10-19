@@ -317,6 +317,7 @@ async function verifyOwnerScheduleFlow(page, width) {
                         console.log(`PASS owner schedule ${width}px ${theme}`);
                         continue;
                     }
+                    if (process.env.OWNER_QA_COURTS_ONLY !== '1') {
                     assert.equal(await page.locator('[data-admin-slides] [data-media-card]').count(), 2);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}/${theme} horizontal overflow on overview`);
                     await page.locator('[data-admin-stat="customer-accounts"]').getByText('1').waitFor();
@@ -707,6 +708,7 @@ async function verifyOwnerScheduleFlow(page, width) {
                     assert.equal(paymentSave.payload.gcash_enabled, false);
                     assert.doesNotMatch(await page.locator('[data-admin-panel="payments"]').innerText(), /secret|sk_test/i);
 
+                    }
                     // Long listing cards and Add Sport editor remain usable at narrow widths.
                     await page.locator('[data-admin-nav="courts"]').first().evaluate(el => el.click());
                     await page.locator('[data-admin-panel="courts"] .ioc-listing-card').first().waitFor();
@@ -722,7 +724,7 @@ async function verifyOwnerScheduleFlow(page, width) {
                     await page.locator('[data-ioc-new-unit-label]').fill('Lane 1');
                     await page.locator('[data-ioc-add-unit]').click();
                     assert.equal(await page.locator('[data-ioc-units] .ioc-unit-card').count(), 1);
-                    assert.equal(await page.locator('[data-ioc-rate-unit="0"]').inputValue(), '/set', 'new Bowling units default to per-set pricing');
+                    assert.equal(await page.locator('[data-ioc-rate-unit]').count(), 0, 'rate basis is automatic and has no selector');
                     assert.equal(await page.locator('[data-ioc-day-label="0"]').innerText(), 'Price per set');
                     assert.match(await page.locator('[data-ioc-set-hint="0"]').innerText(), /60-minute slot/);
                     assert.equal(await page.locator('[data-ioc-night-field="0"]').isHidden(), true);
@@ -737,7 +739,17 @@ async function verifyOwnerScheduleFlow(page, width) {
                     await spaceSearch.fill('No matching space name');
                     assert.equal(await page.locator('[data-ioc-unit-resources="0"] .ioc-resource-group-selected [data-ioc-resource="0"]').count(), 1, 'selected connections stay visible when search excludes them');
                     assert.equal(await page.locator('[data-ioc-unit-resources="0"] .ioc-resource-group-selected [data-ioc-resource="0"]').isChecked(), true);
-                    const courtFile = { name: 'court.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('qa image') };
+                    const courtPng = await page.evaluate(() => {
+                        const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 9;
+                        const context = canvas.getContext('2d'); context.fillStyle = '#fc6'; context.fillRect(0, 0, 16, 9);
+                        return canvas.toDataURL('image/png').split(',')[1];
+                    });
+                    const courtFile = { name: 'court.png', mimeType: 'image/png', buffer: Buffer.from(courtPng, 'base64') };
+                    const photoLayoutBefore = await page.locator('[data-ioc-editor]').evaluate(el => {
+                        const dialog = el.getBoundingClientRect();
+                        const dock = el.querySelector('[data-ioc-action-dock]').getBoundingClientRect();
+                        return { dialogTop: dialog.top, dialogHeight: dialog.height, dialogScrollTop: el.scrollTop, dockTop: dock.top, dockHeight: dock.height, scrollTop: el.querySelector('.ioc-editor-scroll').scrollTop };
+                    });
                     const coverBefore = await page.locator('[data-ioc-cover-preview]').innerHTML();
                     const unitBefore = await page.locator('[data-ioc-unit-preview="0"]').innerHTML();
                     await page.evaluate(() => {
@@ -745,7 +757,9 @@ async function verifyOwnerScheduleFlow(page, width) {
                         window.InigoImageTools.openCropEditor = async (_file, options) => { window.__courtCropOptions.push(options); return null; };
                     });
                     await page.locator('[data-ioc-cover-file]').setInputFiles(courtFile);
-                    await page.locator('[data-ioc-unit-file="0"]').setInputFiles(courtFile);
+                    const cancelledUnitPicker = page.waitForEvent('filechooser');
+                    await page.locator('[data-ioc-choose-unit-photo="0"]').evaluate(button => button.click());
+                    await (await cancelledUnitPicker).setFiles(courtFile);
                     await page.waitForFunction(() => window.__courtCropOptions.length === 2);
                     assert.equal(await page.locator('[data-ioc-cover-preview]').innerHTML(), coverBefore, 'cancelled cover crop keeps the prior preview');
                     assert.equal(await page.locator('[data-ioc-unit-preview="0"]').innerHTML(), unitBefore, 'cancelled unit crop keeps the prior preview');
@@ -753,10 +767,23 @@ async function verifyOwnerScheduleFlow(page, width) {
                         window.InigoImageTools.openCropEditor = async (_file, options) => { window.__courtCropOptions.push(options); return new Blob([new Uint8Array([255, 216, 255, 217])], { type: 'image/jpeg' }); };
                     });
                     await page.locator('[data-ioc-cover-file]').setInputFiles(courtFile);
-                    await page.locator('[data-ioc-unit-file="0"]').setInputFiles(courtFile);
+                    const unitPicker = page.waitForEvent('filechooser');
+                    await page.locator('[data-ioc-choose-unit-photo="0"]').evaluate(button => button.click());
+                    await (await unitPicker).setFiles(courtFile);
                     await page.locator('[data-ioc-cover-preview] img').waitFor();
                     await page.locator('[data-ioc-unit-preview="0"] img').waitFor();
+                    assert.equal(await page.evaluate(() => document.activeElement.matches('[data-ioc-choose-unit-photo="0"]')), true, 'photo selection restores focus to its visible control');
                     assert.equal(await page.evaluate(() => window.__courtCropOptions.every(options => options.aspect === 16 / 9)), true);
+                    await page.locator('[data-ioc-unit-file="0"]').evaluate(input => { input.focus(); input.dispatchEvent(new Event('cancel')); });
+                    assert.equal(await page.evaluate(() => document.activeElement.matches('[data-ioc-choose-unit-photo="0"]')), true, 'native picker cancellation restores focus to its visible control');
+                    const photoLayout = await page.locator('[data-ioc-editor]').evaluate(el => {
+                        const dialog = el.getBoundingClientRect();
+                        const dock = el.querySelector('[data-ioc-action-dock]').getBoundingClientRect();
+                        const scroll = el.querySelector('.ioc-editor-scroll');
+                        return { dialogTop: dialog.top, dialogHeight: dialog.height, dialogScrollTop: el.scrollTop, dockTop: dock.top, dockHeight: dock.height, dockBottomOffset: dialog.bottom - dock.bottom, scrollTop: scroll.scrollTop };
+                    });
+                    assert.ok(photoLayout.dialogHeight > 0 && photoLayout.dockHeight > 0 && photoLayout.dockHeight <= 121 && Math.abs(photoLayout.dockBottomOffset) <= 1, 'staging a unit photo keeps the modal and action dock within their layout bounds');
+                    assert.ok(Math.abs(photoLayout.dialogTop - photoLayoutBefore.dialogTop) <= 1 && Math.abs(photoLayout.dialogHeight - photoLayoutBefore.dialogHeight) <= 1 && Math.abs(photoLayout.dockTop - photoLayoutBefore.dockTop) <= 1, 'unit photo selection does not shift the modal or action dock');
                     await page.locator('[data-ioc-add-maintenance="0"]').click();
                     assert.equal(await page.locator('[data-ioc-unit-preview="0"] img').count(), 1, 'rerender keeps the staged unit crop preview');
                     await page.locator('[data-ioc-remove-maintenance="0:0"]').click();
@@ -781,6 +808,7 @@ async function verifyOwnerScheduleFlow(page, width) {
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.rpc === 'admin_save_sport'));
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.upload).length), 2, 'cover and unit crop files upload only on Save');
                     const sportPayload = await page.evaluate(() => window.__ownerQa.calls.find(call => call.rpc === 'admin_save_sport').args.p_payload);
+                    assert.equal(sportPayload.units[0].rate_unit, '/set', 'legacy per-set sport pricing remains automatic for Bowling');
                     assert.match(sportPayload.image_url, /\/cover-.*\.jpg$/);
                     assert.match(sportPayload.units[0].photo_url, /\/unit-.*\.jpg$/);
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.remove).length), 2, 'failed save cleans up both newly uploaded photos');
@@ -796,10 +824,14 @@ async function verifyOwnerScheduleFlow(page, width) {
                     await page.locator('[data-ioc-name]').fill('QA Covered Sport');
                     await page.locator('[data-ioc-new-unit-label]').fill('Court 1');
                     await page.locator('[data-ioc-add-unit]').click();
+                    await page.locator('[data-ioc-new-unit-label]').fill('Court 2');
+                    await page.locator('[data-ioc-add-unit]').click();
                     await page.locator('[data-ioc-cover-file]').setInputFiles(courtFile);
                     await page.locator('[data-ioc-unit-file="0"]').setInputFiles(courtFile);
+                    await page.locator('[data-ioc-unit-file="1"]').setInputFiles(courtFile);
                     await page.locator('[data-ioc-cover-preview] img').waitFor();
                     await page.locator('[data-ioc-unit-preview="0"] img').waitFor();
+                    await page.locator('[data-ioc-unit-preview="1"] img').waitFor();
                     await page.locator('[data-ioc-save]').click();
                     await page.locator('[data-confirm-yes]').click();
                     await page.locator('[data-ioc-editor-overlay]').waitFor({ state: 'hidden' });
@@ -809,7 +841,12 @@ async function verifyOwnerScheduleFlow(page, width) {
                     assert.match(savedCover, /\/cover-.*\.jpg$/);
                     const savedUnitPhoto = await page.evaluate(() => window.__ownerQa.savedSport.units[0].photo_url);
                     assert.match(savedUnitPhoto, /\/unit-.*\.jpg$/);
+                    const savedSecondUnitPhoto = await page.evaluate(() => window.__ownerQa.savedSport.units[1].photo_url);
+                    assert.match(savedSecondUnitPhoto, /\/unit-.*\.jpg$/);
+                    assert.equal(await page.evaluate(() => window.__ownerQa.savedSport.units.length), 2, 'both unit photos save with the sport');
+                    assert.equal(await page.evaluate(() => window.__ownerQa.savedSport.units[0].rate_unit), '/hr', 'ordinary sport units save with the fixed hourly basis');
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'admin_save_sport').length), 2);
+                    if (process.env.OWNER_QA_COURTS_ONLY !== '1') {
                     await context.addInitScript(({ cover, unit }) => { window.__qaSavedCover = cover; window.__qaSavedUnitPhoto = unit; }, { cover: savedCover, unit: savedUnitPhoto });
                     const landing = await context.newPage();
                     await landing.route(/^https:\/\//, route => route.abort());
@@ -825,6 +862,7 @@ async function verifyOwnerScheduleFlow(page, width) {
                     await landing.locator('[data-court-id="qa-covered-sport"]').click();
                     assert.equal(await landing.locator('[data-court-viewer-media] img').getAttribute('src'), savedUnitPhoto, 'court viewer uses the saved unit photo after reload');
                     await landing.close();
+                    }
                     await coveredCard.locator('[data-ioc-edit]').click();
                     assert.equal(await page.locator('[data-ioc-editor]').getAttribute('data-mode'), 'edit');
                     assert.equal(await page.locator('[data-ioc-cover-preview] img').getAttribute('src'), savedCover, 'editor reloads the saved cover');
