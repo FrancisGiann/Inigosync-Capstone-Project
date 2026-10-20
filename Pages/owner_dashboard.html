@@ -592,11 +592,8 @@
             <section class="admin-panel" data-admin-panel="audit">
                 <div class="admin-card owner-audit-card">
                     <div class="owner-audit-filters" aria-label="Audit trail filters">
-                        <label class="admin-form-group"><span class="admin-form-label">Search event ID or text</span><input type="search" class="admin-input" maxlength="120" placeholder="Search actions, people, or record IDs" data-owner-audit-search></label>
-                        <label class="admin-form-group"><span class="admin-form-label">From</span><input type="date" class="admin-input" data-owner-audit-from></label>
-                        <label class="admin-form-group"><span class="admin-form-label">Through</span><input type="date" class="admin-input" data-owner-audit-to></label>
-                        <label class="admin-form-group"><span class="admin-form-label">Category</span><select class="admin-select" data-owner-audit-category><option value="all">All categories</option><option value="account">Account</option><option value="booking">Booking</option><option value="payment">Payment</option><option value="staff">Staff</option><option value="owner">Owner activity</option></select></label>
-                        <label class="admin-form-group"><span class="admin-form-label">Actor</span><select class="admin-select" data-owner-audit-actor><option value="all">All actors</option></select></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Search Event ID or Actor name</span><input type="search" class="admin-input" maxlength="120" placeholder="Search event ID or actor name" data-owner-audit-search></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Date and time · Manila time</span><input type="datetime-local" class="admin-input" data-owner-audit-datetime><span class="admin-form-hint">Matches events in the selected minute.</span></label>
                         <label class="admin-form-group"><span class="admin-form-label">Role</span><select class="admin-select" data-owner-audit-role><option value="all">All roles</option><option value="admin">Owner</option><option value="staff">Staff</option><option value="customer">Customer</option><option value="system">System</option></select></label>
                     </div>
                     <p class="owner-audit-session-note">Sign-out entries record a sign-out action handled by IñigoSync. Closing a browser or tab cannot be reliably observed.</p>
@@ -604,14 +601,22 @@
                     <div class="owner-audit-table-wrap" role="region" aria-label="Audit trail events" tabindex="0">
                     <table class="admin-table owner-audit-table">
                             <caption class="owner-audit-caption">Recorded system events and transactions</caption>
-                            <colgroup><col class="owner-audit-col-date"><col class="owner-audit-col-id"><col class="owner-audit-col-event"><col class="owner-audit-col-category"><col class="owner-audit-col-actor"><col class="owner-audit-col-role"><col class="owner-audit-col-record"><col class="owner-audit-col-amount"><col class="owner-audit-col-summary"></colgroup>
-                            <thead><tr><th scope="col">Date and time</th><th scope="col">Event ID</th><th scope="col">Event</th><th scope="col">Category</th><th scope="col">Actor</th><th scope="col">Role</th><th scope="col">Record</th><th scope="col">Amount</th><th scope="col">Summary</th></tr></thead>
-                            <tbody data-owner-audit-rows><tr><td colspan="9">No events loaded.</td></tr></tbody>
+                            <colgroup><col class="owner-audit-col-id"><col class="owner-audit-col-date"><col class="owner-audit-col-event"><col class="owner-audit-col-role"><col class="owner-audit-col-actor"><col class="owner-audit-col-amount"><col class="owner-audit-col-summary"></colgroup>
+                            <thead><tr><th scope="col">Event ID</th><th scope="col">Date &amp; Time</th><th scope="col">Event</th><th scope="col">Role</th><th scope="col">Actor</th><th scope="col">Amount</th><th scope="col">Summary</th></tr></thead>
+                            <tbody data-owner-audit-rows><tr><td colspan="7">No events loaded.</td></tr></tbody>
                         </table>
                     </div>
                     <nav class="owner-audit-pagination" data-owner-audit-pagination aria-label="Audit trail pages" hidden><button type="button" class="admin-btn-ghost" data-owner-audit-prev disabled>Previous</button><span data-owner-audit-page-info aria-live="polite">Page 1 of 1</span><button type="button" class="admin-btn-ghost" data-owner-audit-next disabled>Next</button></nav>
                 </div>
             </section>
+            <div class="admin-modal-overlay owner-audit-detail-overlay" data-owner-audit-detail-modal hidden>
+                <section class="admin-modal owner-audit-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="ownerAuditDetailTitle" aria-describedby="ownerAuditDetailDescription" tabindex="-1" data-owner-audit-detail-dialog>
+                    <button type="button" class="admin-modal-close" data-owner-audit-detail-close aria-label="Close event summary">×</button>
+                    <h3 id="ownerAuditDetailTitle">Event summary</h3>
+                    <p class="admin-card-sub" id="ownerAuditDetailDescription">Detailed information recorded for this event.</p>
+                    <dl class="owner-audit-detail-list" data-owner-audit-detail-list></dl>
+                </section>
+            </div>
             <section class="admin-panel" data-admin-panel="settings">
                 <div class="admin-card owner-account-card">
                     <section class="owner-photo-section" aria-label="Profile photo">

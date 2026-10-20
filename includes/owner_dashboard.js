@@ -1919,11 +1919,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const auditRows = document.querySelector('[data-owner-audit-rows]');
     const auditStatus = document.querySelector('[data-owner-audit-status]');
     const auditSearch = document.querySelector('[data-owner-audit-search]');
-    const auditFrom = document.querySelector('[data-owner-audit-from]');
-    const auditTo = document.querySelector('[data-owner-audit-to]');
-    const auditCategory = document.querySelector('[data-owner-audit-category]');
-    const auditActor = document.querySelector('[data-owner-audit-actor]');
+    const auditDateTime = document.querySelector('[data-owner-audit-datetime]');
     const auditRole = document.querySelector('[data-owner-audit-role]');
+    const auditDetailModal = document.querySelector('[data-owner-audit-detail-modal]');
+    const auditDetailDialog = document.querySelector('[data-owner-audit-detail-dialog]');
+    const auditDetailList = document.querySelector('[data-owner-audit-detail-list]');
+    const auditDetailTitle = document.querySelector('#ownerAuditDetailTitle');
     const auditPagination = document.querySelector('[data-owner-audit-pagination]');
     const auditPageInfo = document.querySelector('[data-owner-audit-page-info]');
     const auditPrev = document.querySelector('[data-owner-audit-prev]');
@@ -1934,19 +1935,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let auditSearchTimer = null;
     let auditRefreshTimer = null;
     let auditRequestsInFlight = 0;
+    let auditDisplayedRows = [];
     const AUDIT_REFRESH_INTERVAL = 15000;
     const formatActivityTime = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
-    function auditDateBoundaryIso(value, addDay = false) {
+    function auditDateTimeBoundaryIso(value, addMinute = false) {
         if (!value) return null;
-        const date = new Date(`${value}T00:00:00+08:00`);
+        const date = new Date(`${value}:00+08:00`);
         if (Number.isNaN(date.valueOf())) return null;
-        if (addDay) date.setUTCDate(date.getUTCDate() + 1);
+        if (addMinute) date.setUTCMinutes(date.getUTCMinutes() + 1);
         return date.toISOString();
-    }
-
-    function auditCategoryLabel(value) {
-        return ({ account: 'Account', booking: 'Booking', payment: 'Payment', staff: 'Staff', owner: 'Owner activity' })[value] || 'Activity';
     }
 
     function auditRoleLabel(value) {
@@ -1955,10 +1953,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderAuditTrailRows(rows) {
         if (!auditRows) return;
-        auditRows.innerHTML = rows.length ? rows.map(item => {
+        auditDisplayedRows = rows;
+        auditRows.innerHTML = rows.length ? rows.map((item, index) => {
             const amount = item.amount !== null && item.amount !== undefined && Number.isFinite(Number(item.amount))
                 ? `₱${Number(item.amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
-            const record = item.target_type || item.target_id ? `${item.target_type || 'Record'}${item.target_id ? ` #${item.target_id}` : ''}` : '—';
             const cellValue = value => {
                 const text = String(value ?? '—');
                 const escaped = window.escapeHtml(text);
@@ -1967,21 +1965,55 @@ document.addEventListener('DOMContentLoaded', () => {
             const eventId = String(item.event_id || '—');
             const eventLabel = humanizeStaffAction(item.action);
             const actorName = item.actor_name || 'Deleted account';
-            const category = auditCategoryLabel(item.category);
             const role = auditRoleLabel(item.actor_role);
             const timeLabel = formatActivityTime(item.created_at);
             return `<tr>
-                <td><time datetime="${window.escapeHtml(item.created_at || '')}" class="owner-audit-cell-value" title="${window.escapeHtml(timeLabel)}">${window.escapeHtml(timeLabel)}</time></td>
                 <td><code class="owner-audit-cell-value" title="${window.escapeHtml(eventId)}">${window.escapeHtml(eventId)}</code></td>
+                <td><time datetime="${window.escapeHtml(item.created_at || '')}" class="owner-audit-cell-value" title="${window.escapeHtml(timeLabel)}">${window.escapeHtml(timeLabel)}</time></td>
                 <td>${cellValue(eventLabel)}</td>
-                <td>${cellValue(category)}</td>
-                <td>${cellValue(actorName)}</td>
                 <td>${cellValue(role)}</td>
-                <td>${cellValue(record)}</td>
+                <td>${cellValue(actorName)}</td>
                 <td>${cellValue(amount)}</td>
-                <td>${cellValue(item.summary || '—')}</td>
+                <td><button type="button" class="admin-btn-ghost owner-audit-summary-button" data-owner-audit-summary="${index}" aria-haspopup="dialog" aria-label="View detailed summary for event ${window.escapeHtml(eventId)}">View</button></td>
             </tr>`;
-        }).join('') : '<tr><td colspan="9">No events match these filters.</td></tr>';
+        }).join('') : '<tr><td colspan="7">No events match these filters.</td></tr>';
+    }
+
+    function openAuditEventDetails(index, trigger) {
+        const item = auditDisplayedRows[index];
+        if (!item || !auditDetailModal || !auditDetailList) return;
+        const amount = item.amount !== null && item.amount !== undefined && Number.isFinite(Number(item.amount))
+            ? `₱${Number(item.amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+        const fields = [
+            ['Event ID', item.event_id || '—'],
+            ['Date & Time', formatActivityTime(item.created_at)],
+            ['Event', humanizeStaffAction(item.action)],
+            ['Role', auditRoleLabel(item.actor_role)],
+            ['Actor', item.actor_name || 'Deleted account'],
+            ['Amount', amount],
+        ];
+        const details = item.details && typeof item.details === 'object' && !Array.isArray(item.details) ? item.details : {};
+        const monetaryDetailKeys = new Set(['amount', 'total', 'paid', 'subtotal', 'base_amount', 'fee', 'gross_amount']);
+        for (const [key, value] of Object.entries(details)) {
+            if (value === null || value === undefined || value === '') continue;
+            const label = key.replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+            const displayValue = monetaryDetailKeys.has(key) && Number.isFinite(Number(value))
+                ? `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : typeof value === 'object' ? JSON.stringify(value) : String(value);
+            fields.push([label, displayValue]);
+        }
+        if (!Object.keys(details).length && item.summary) fields.push(['Details', item.summary]);
+        auditDetailTitle.textContent = `${humanizeStaffAction(item.action)} · Event summary`;
+        auditDetailList.innerHTML = fields.map(([label, value]) => `<div><dt>${window.escapeHtml(label)}</dt><dd>${window.escapeHtml(value)}</dd></div>`).join('');
+        if (auditDetailDialog) auditDetailDialog._auditTrigger = trigger;
+        window.InigoOwnerUI?.open(auditDetailModal);
+    }
+
+    function closeAuditEventDetails() {
+        if (!auditDetailModal || auditDetailModal.hidden) return;
+        const trigger = auditDetailDialog?._auditTrigger;
+        window.InigoOwnerUI?.close(auditDetailModal);
+        if (trigger?.isConnected) trigger.focus();
     }
 
     async function loadAuditTrail({ silent = false } = {}) {
@@ -1996,32 +2028,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const { data, error } = await window.sb.rpc('owner_audit_trail', {
                 p_search: auditSearch?.value.trim() || '',
-                p_from: auditDateBoundaryIso(auditFrom?.value),
-                p_to: auditDateBoundaryIso(auditTo?.value, true),
-                p_category: auditCategory?.value || 'all',
-                p_actor_id: auditActor?.value && auditActor.value !== 'all' ? auditActor.value : null,
+                p_from: auditDateTimeBoundaryIso(auditDateTime?.value),
+                p_to: auditDateTimeBoundaryIso(auditDateTime?.value, true),
                 p_actor_role: auditRole?.value || 'all',
                 p_offset: auditPage * AUDIT_PAGE_SIZE,
                 p_limit: AUDIT_PAGE_SIZE,
             });
             if (generation !== auditGeneration) return;
             if (error) throw error;
-            const actors = Array.isArray(data?.actors) ? data.actors : [];
-            const selectedActor = auditActor?.value || 'all';
-            if (auditActor) {
-                const selectedActorLabel = auditActor.selectedOptions[0]?.textContent || 'Staff member · Staff';
-                auditActor.innerHTML = '<option value="all">All actors</option>' + actors.map(actor =>
-                    `<option value="${window.escapeHtml(actor.id)}">${window.escapeHtml(actor.name)} · ${window.escapeHtml(auditRoleLabel(actor.role))}</option>`
-                ).join('');
-                if (actors.some(actor => actor.id === selectedActor)) auditActor.value = selectedActor;
-                else if (selectedActor !== 'all') {
-                    const option = document.createElement('option');
-                    option.value = selectedActor;
-                    option.textContent = selectedActorLabel;
-                    auditActor.append(option);
-                    auditActor.value = selectedActor;
-                } else auditActor.value = 'all';
-            }
             const rows = Array.isArray(data?.rows) ? data.rows : [];
             const total = Math.max(0, Number(data?.total_count) || 0);
             renderAuditTrailRows(rows);
@@ -2036,7 +2050,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('[admin] audit trail could not be loaded', error);
             if (!silent) {
                 if (auditStatus) auditStatus.textContent = 'Audit trail could not be loaded. Please try again later.';
-                if (auditRows) auditRows.innerHTML = '<tr><td colspan="9">Audit trail could not be loaded.</td></tr>';
+                if (auditRows) auditRows.innerHTML = '<tr><td colspan="7">Audit trail could not be loaded.</td></tr>';
             }
         } finally {
             auditRequestsInFlight = Math.max(0, auditRequestsInFlight - 1);
@@ -2081,7 +2095,20 @@ document.addEventListener('DOMContentLoaded', () => {
         window.clearTimeout(auditSearchTimer);
         auditSearchTimer = window.setTimeout(loadAuditTrail, 250);
     });
-    [auditFrom, auditTo, auditCategory, auditActor, auditRole].forEach(input => input?.addEventListener('change', resetAuditPage));
+    auditDateTime?.addEventListener('change', resetAuditPage);
+    auditRole?.addEventListener('change', resetAuditPage);
+    auditRows?.addEventListener('click', event => {
+        const button = event.target.closest('[data-owner-audit-summary]');
+        if (button) openAuditEventDetails(Number(button.dataset.ownerAuditSummary), button);
+    });
+    document.querySelector('[data-owner-audit-detail-close]')?.addEventListener('click', closeAuditEventDetails);
+    auditDetailModal?.addEventListener('click', event => { if (event.target === auditDetailModal) closeAuditEventDetails(); });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && auditDetailModal && !auditDetailModal.hidden) {
+            event.preventDefault();
+            closeAuditEventDetails();
+        }
+    });
     auditPrev?.addEventListener('click', () => { if (auditPage > 0) { auditPage -= 1; loadAuditTrail(); } });
     auditNext?.addEventListener('click', () => { auditPage += 1; loadAuditTrail(); });
     async function recordOwnerActivity(title, targetSection, detail = '') {

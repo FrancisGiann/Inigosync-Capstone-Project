@@ -28,7 +28,8 @@ function fixture() {
         action: index === 0 ? 'recorded_walk_in' : index % 2 ? 'checked_in' : 'collected_payment',
         category: index % 2 ? 'booking' : 'payment', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff',
         target_type: index % 2 ? 'walkin' : 'booking', target_id: `record-${String(index + 1).padStart(2, '0')}`,
-        amount: index % 2 ? null : 500, summary: index === 0 ? 'Walk-in customer · Court 1 — extended audit context for checking that long event summaries remain on one line and expose their complete value in the title tooltip.' : `Court ${index + 1} · customer booking`,
+        amount: index % 2 ? null : 500, summary: index === 0 ? 'Walk-in event details' : `Court ${index + 1} · customer booking`,
+        details: { customer: index === 0 ? 'Walk-in Customer' : `Customer ${index + 1}`, court: `Court ${index + 1}`, unit: 'Court 1', description: index === 0 ? 'Walk-in customer · Court 1 — complete event details shown in the summary dialog.' : `Booking event details for court ${index + 1}` },
     }));
     auditEvents.push({ event_id: 'owner-event-1', source: 'owner_activity', created_at: '2026-09-01T10:00:00Z', action: 'Owner profile updated', category: 'owner', actor_id: 'qa-owner', actor_name: 'QA Owner', actor_role: 'admin', target_type: 'settings', target_id: null, amount: null, summary: 'The owner updated their account settings.' });
     auditEvents.push({ event_id: 'session-event-1', source: 'customer_operational_events', created_at: '2026-09-02T10:00:00Z', action: 'sign_out', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-out observed' });
@@ -147,15 +148,12 @@ function fixture() {
             if (name === 'owner_audit_trail') {
                 if (state.holdNextAuditRpc) await new Promise(resolve => { state.releaseAuditRpc = resolve; state.holdNextAuditRpc = false; });
                 let rows = auditEvents.slice();
-                if (args.p_search) rows = rows.filter(row => JSON.stringify(row).toLocaleLowerCase().includes(String(args.p_search).toLocaleLowerCase()));
-                if (args.p_category && args.p_category !== 'all') rows = rows.filter(row => row.category === args.p_category);
-                if (args.p_actor_id) rows = rows.filter(row => row.actor_id === args.p_actor_id);
+                if (args.p_search) rows = rows.filter(row => `${row.event_id} ${row.actor_name}`.toLocaleLowerCase().includes(String(args.p_search).toLocaleLowerCase()));
                 if (args.p_actor_role && args.p_actor_role !== 'all') rows = rows.filter(row => row.actor_role === args.p_actor_role);
                 if (args.p_from) rows = rows.filter(row => new Date(row.created_at) >= new Date(args.p_from));
                 if (args.p_to) rows = rows.filter(row => new Date(row.created_at) < new Date(args.p_to));
                 return { data: {
                     rows: rows.slice(args.p_offset, args.p_offset + args.p_limit), total_count: rows.length,
-                    actors: [{ id: 'qa-owner', name: 'QA Owner', role: 'admin' }, { id: 'qa-staff', name: 'QA Staff', role: 'staff' }],
                 }, error: null };
             }
             if (name === 'owner_get_booking_rules') return { data: ownerRules, error: null };
@@ -887,33 +885,37 @@ async function verifyOwnerPaymentFlow(page) {
                     for (const row of auditLayout.rows) {
                         assert.ok(row.every(group => Math.abs(group.controlTop - row[0].controlTop) <= 1), `${width}px audit controls align within each filter row`);
                     }
-                    const auditLongCells = await page.locator('[data-owner-audit-rows] tr').first().locator('td:nth-child(2), td:nth-child(9)').evaluateAll(cells => cells.map(cell => {
-                        const value = cell.querySelector('.owner-audit-cell-value');
+                    const auditLongCells = await page.locator('[data-owner-audit-rows] tr').first().locator('td:nth-child(1) .owner-audit-cell-value').evaluateAll(cells => cells.map(value => {
                         const style = getComputedStyle(value);
                         return { text: value.textContent, title: value.title, clipped: value.scrollWidth > value.clientWidth, whiteSpace: style.whiteSpace, overflow: style.overflow, textOverflow: style.textOverflow };
                     }));
-                    assert.ok(auditLongCells.every(cell => cell.clipped && cell.whiteSpace === 'nowrap' && cell.overflow === 'hidden' && cell.textOverflow === 'ellipsis'), 'long audit identifiers and summaries stay one line and truncate cleanly');
-                    assert.ok(auditLongCells.every(cell => cell.title === cell.text), 'truncated audit values expose their full text in the title tooltip');
+                    assert.ok(auditLongCells.every(cell => cell.clipped && cell.whiteSpace === 'nowrap' && cell.overflow === 'hidden' && cell.textOverflow === 'ellipsis'), 'long audit identifiers stay one line and truncate cleanly');
+                    assert.ok(auditLongCells.every(cell => cell.title === cell.text), 'truncated audit IDs expose their full text in the title tooltip');
+                    assert.deepEqual(await page.locator('.owner-audit-table thead th').allTextContents(), ['Event ID', 'Date & Time', 'Event', 'Role', 'Actor', 'Amount', 'Summary']);
+                    // Auto refresh prepends one mocked event, so index 1 is the fixture's first reservation event.
+                    await page.locator('[data-owner-audit-summary="1"]').click();
+                    await page.locator('[data-owner-audit-detail-dialog]').getByText('Walk-in Customer', { exact: true }).waitFor();
+                    await page.locator('[data-owner-audit-detail-dialog]').getByText('complete event details', { exact: false }).waitFor();
+                    await page.keyboard.press('Escape');
+                    await page.locator('[data-owner-audit-detail-modal]').waitFor({ state: 'hidden' });
                     assert.equal(await page.locator('[data-owner-audit-rows] tr').count(), 25);
                     assert.match(await page.locator('[data-owner-audit-page-info]').innerText(), /Page 1 of 2/);
                     await page.locator('[data-owner-audit-next]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_offset === 25);
                     assert.match(await page.locator('[data-owner-audit-page-info]').innerText(), /Page 2 of 2/);
-                    await page.locator('[data-owner-audit-actor]').selectOption('qa-staff');
-                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_actor_id === 'qa-staff');
                     await page.locator('[data-owner-audit-role]').selectOption('staff');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_actor_role === 'staff');
-                    await page.locator('[data-owner-audit-category]').selectOption('payment');
-                    await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_category === 'payment');
-                    await page.locator('[data-owner-audit-from]').fill('2026-09-10');
-                    await page.locator('[data-owner-audit-to]').fill('2026-09-26');
+                    await page.locator('[data-owner-audit-datetime]').fill('2026-09-11T18:00');
                     await page.waitForFunction(() => {
                         const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
-                        return args?.p_from && args?.p_to;
+                        return args?.p_from === '2026-09-11T10:00:00.000Z' && args?.p_to === '2026-09-11T10:01:00.000Z';
                     });
+                    assert.equal(await page.locator('[data-owner-audit-rows]').getByText('audit-31').count(), 1, 'the selected Manila minute includes the matching event');
                     await page.locator('[data-owner-audit-search]').fill('audit-31');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_search === 'audit-31');
                     assert.equal(await page.locator('[data-owner-audit-rows]').getByText('audit-31').count(), 1);
+                    const auditArgs = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1).args);
+                    assert.equal('p_category' in auditArgs || 'p_actor_id' in auditArgs, false, 'audit RPC receives only search, date/time, role, and pagination parameters');
                     await page.locator('[data-admin-nav="staff"]').evaluate(el => el.click());
 
                     // Staff details stay read-only; the owner action changes position only.
