@@ -14,15 +14,15 @@ let failCourtFetch = false;
             await page.route('**/rest/v1/**', route => {
                 const table = new URL(route.request().url()).pathname.split('/').pop();
                 if (table === 'court' && failCourtFetch) return route.fulfill({status:500,json:{message:'Fixture court fetch failure'}});
-                if (table === 'public_booking_reviews' && reviews === 'error') return route.fulfill({status:500,json:{message:'Fixture review fetch failure'}});
+                if (table === 'public_featured_booking_reviews' && reviews === 'error') return route.fulfill({status:500,json:{message:'Fixture review fetch failure'}});
                 const data = table === 'event'
                     ? Array.from({length:count},(_,i)=>({title:'Feature '+(i+1),meta:'Venue event',tag:'Featured',image_url:'../assets/landing/featured-tournament-placeholder.png'}))
                     : table === 'court'
                         ? Array.from({length:publishedSportsCount},(_,i)=>({id:'court-'+i,name:'Sport '+(i+1),quantity:1,unit:'courts',is_active:true,display_order:i,rate:null,rate_unit:'/hr',sport:{slug:'sport-'+i,name:'Sport '+(i+1)}}))
-                        : table === 'public_booking_reviews' && reviews === 'loaded'
+                        : table === 'public_featured_booking_reviews' && reviews === 'loaded'
                             ? [
-                                {display_name:'sam@example.com 09281234567',rating:5,comment:'Great courts and friendly staff.',created_at:'2026-09-20T10:00:00Z'},
-                                {display_name:'Taylor',rating:4,comment:'Easy booking.',created_at:'2026-09-18T10:00:00Z'}
+                                {display_order:1,rating:5,comment:'Great courts and friendly staff.',created_at:'2026-09-20T10:00:00Z'},
+                                {display_order:2,rating:4,comment:'Easy booking.',created_at:'2026-09-18T10:00:00Z'}
                             ]
                             : [];
                 return route.fulfill({json:data});
@@ -245,11 +245,11 @@ let failCourtFetch = false;
         await animated.setViewportSize({width:390,height:900});
         await animated.evaluate(()=>scrollTo(0,0));
         await animated.screenshot({path:'output/landing-controls-mobile.png',fullPage:true});
-        for (const [reviews,expected] of [['empty','No reviews yet'],['error','Customer reviews are temporarily unavailable.']]) {
+        for (const [reviews,expected] of [['empty','No featured reviews yet'],['error','Customer reviews are temporarily unavailable.']]) {
             const reviewPage=await setup({reviews});
             if (reviews === 'empty') {
                 await reviewPage.locator('.onsite-review-placeholder').waitFor({state:'visible'});
-                assert.match(await reviewPage.locator('.onsite-review-placeholder').innerText(),/No reviews yet[\s\S]*Reviews from completed bookings will appear here/);
+                assert.match(await reviewPage.locator('.onsite-review-placeholder').innerText(),/No featured reviews yet[\s\S]*Selected customer reviews will appear here after the owner chooses them/);
                 assert(await reviewPage.locator('[data-onsite-reviews-status]').isHidden());
             } else {
                 await reviewPage.waitForFunction(text=>document.querySelector('[data-onsite-reviews-status]').textContent===text,expected);
@@ -257,6 +257,6 @@ let failCourtFetch = false;
             }
             await reviewPage.close();
         }
-        console.log('PASS arrows, wraparound, dots, keyboard, swipe, autoplay/pause, reduced motion, six widths, zero/one event, public review display, empty/error states and no Google widget dependency');
+        console.log('PASS arrows, wraparound, dots, keyboard, swipe, autoplay/pause, reduced motion, six widths, zero/one event, featured review order, empty/error states and no Google widget dependency');
     } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

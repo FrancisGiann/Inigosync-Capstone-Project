@@ -1385,13 +1385,12 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-audit-table td:nth-child(2) code { font-size: var(--fs-xs); }
 .owner-audit-table td:nth-child(8) { white-space: nowrap; text-align: right; }
 .owner-audit-caption { padding: 8px 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: left; }
-.owner-audit-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin-top: 16px; }
+.owner-audit-pagination { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 16px; }
 .owner-audit-pagination[hidden] { display: none; }
 
 @media (max-width: 600px) {
     .owner-audit-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .owner-audit-filters label:first-child { grid-column: 1 / -1; }
-    .owner-audit-card > .admin-card-head { align-items: flex-start; }
 }
 
 /* ==========================================================================

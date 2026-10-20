@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Configuration is gone (see this file's own removal note below).
         staff: { title: 'Staff Management', subtitle: 'Add, update, or remove staff accounts.' },
         courts: { title: 'Court Listings', subtitle: 'Add new courts, update details, or activate/deactivate existing ones.' },
-        'booking-rules': { title: 'Working Time Schedule', subtitle: 'Set shared opening hours and the no-show grace period.' },
+        'booking-rules': { title: 'Business Hours', subtitle: 'Set shared opening hours and the no-show grace period.' },
         media: { title: 'Media Manager', subtitle: "Whatever you upload here shows up on the website's home featured slideshow — both the landing page and the customer dashboard." },
         payments: { title: 'Payment Configuration', subtitle: 'Set the deposit amount and payment methods for new bookings.' },
         // Revision A3 (implementation_plan.md, decision C5) — new tab, after
@@ -87,10 +87,11 @@ document.addEventListener('DOMContentLoaded', () => {
         closeMobileSidebar();
         closeProfileMenu();
         document.dispatchEvent(new CustomEvent('inigosync:owner-panel', { detail: name }));
-        if (name === 'payments') { loadOwnerPaymentSettings(); refreshPayMongoHealth(); }
+        if (name === 'payments') loadOwnerPaymentSettings();
         if (name === 'booking-rules') loadBookingRules();
         if (name === 'announcement') loadOwnerAnnouncements();
-        if (name === 'audit') loadAuditTrail();
+        if (name === 'audit') startAuditTrailUpdates();
+        else stopAuditTrailUpdates();
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -1305,41 +1306,107 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Payment Configuration — owner-only controls for future bookings.
-    // The database's RLS protects writes; PayMongo secrets never reach this
-    // page. The payment-health function returns safe connection metadata.
+    // The database's RLS protects writes; payment credentials stay server-side.
     // ------------------------------------------------------------------
     const ownerPaymentPercent = document.querySelector('[data-owner-payment-percent]');
     const ownerPaymentSave = document.querySelector('[data-owner-payment-save]');
+    const ownerPaymentEdit = document.querySelector('[data-owner-payment-edit]');
+    const ownerPaymentModal = document.querySelector('[data-owner-payment-modal]');
+    const ownerPaymentDialog = document.querySelector('[data-owner-payment-dialog]');
+    const ownerPaymentSavedPercent = document.querySelector('[data-owner-payment-saved-percent]');
+    const ownerPaymentSavedMethods = document.querySelector('[data-owner-payment-saved-methods]');
     const ownerPaymentMessage = document.querySelector('[data-owner-payment-message]');
-    const ownerPaymongoApi = document.querySelector('[data-owner-paymongo-api]');
-    const ownerPaymongoWebhook = document.querySelector('[data-owner-paymongo-webhook]');
-    const ownerPaymongoLast = document.querySelector('[data-owner-paymongo-last-payment]');
-    const ownerPaymongoRefresh = document.querySelector('[data-owner-paymongo-refresh]');
+    const ownerPaymentEditorMessage = document.querySelector('[data-owner-payment-editor-message]');
+    const ownerPaymentCancel = document.querySelector('[data-owner-payment-cancel]');
     const ownerPaymentInputs = Object.fromEntries(['cash', 'card', 'gcash', 'qrph'].map(method => [method,
         document.querySelector(`[data-owner-payment-method="${method}"]`)]));
     const ownerPaymentDefaults = { downpaymentPct: 50, cashEnabled: true, cardEnabled: false, gcashEnabled: true, qrphEnabled: false };
     let ownerPaymentLoadGeneration = 0;
+    let ownerPaymentBaseline = null;
+    let ownerPaymentBackdropStart = false;
 
-    function setOwnerPaymentMessage(message, isError = false) {
-        if (!ownerPaymentMessage) return;
-        ownerPaymentMessage.textContent = message || '';
-        ownerPaymentMessage.classList.toggle('is-error', Boolean(isError));
-        ownerPaymentMessage.classList.toggle('is-success', Boolean(message) && !isError);
+    function setOwnerPaymentMessage(message, isError = false, target = ownerPaymentMessage) {
+        if (!target) return;
+        target.textContent = message || '';
+        target.classList.toggle('is-error', Boolean(message) && isError);
+        target.classList.toggle('is-success', Boolean(message) && !isError);
+    }
+
+    function normalizeOwnerPaymentSettings(settings) {
+        return {
+            downpaymentPct: Number(settings.downpaymentPct ?? 50),
+            cashEnabled: settings.cashEnabled !== false,
+            cardEnabled: settings.cardEnabled === true,
+            gcashEnabled: settings.gcashEnabled !== false,
+            qrphEnabled: settings.qrphEnabled === true,
+        };
     }
 
     function paintOwnerPaymentSettings(settings) {
-        if (ownerPaymentPercent) ownerPaymentPercent.value = String(settings.downpaymentPct ?? 50);
-        if (ownerPaymentInputs.cash) ownerPaymentInputs.cash.checked = settings.cashEnabled !== false;
-        if (ownerPaymentInputs.card) ownerPaymentInputs.card.checked = settings.cardEnabled === true;
-        if (ownerPaymentInputs.gcash) ownerPaymentInputs.gcash.checked = settings.gcashEnabled !== false;
-        if (ownerPaymentInputs.qrph) ownerPaymentInputs.qrph.checked = settings.qrphEnabled === true;
+        const normalized = normalizeOwnerPaymentSettings(settings);
+        if (ownerPaymentPercent) ownerPaymentPercent.value = String(normalized.downpaymentPct);
+        if (ownerPaymentInputs.cash) ownerPaymentInputs.cash.checked = normalized.cashEnabled;
+        if (ownerPaymentInputs.card) ownerPaymentInputs.card.checked = normalized.cardEnabled;
+        if (ownerPaymentInputs.gcash) ownerPaymentInputs.gcash.checked = normalized.gcashEnabled;
+        if (ownerPaymentInputs.qrph) ownerPaymentInputs.qrph.checked = normalized.qrphEnabled;
+        if (ownerPaymentSavedPercent) ownerPaymentSavedPercent.textContent = `${normalized.downpaymentPct}%`;
+        if (ownerPaymentSavedMethods) {
+            const methods = [
+                ['Cash', normalized.cashEnabled], ['Card', normalized.cardEnabled],
+                ['GCash', normalized.gcashEnabled], ['QR Ph', normalized.qrphEnabled],
+            ].filter(([, enabled]) => enabled).map(([name]) => name);
+            ownerPaymentSavedMethods.textContent = methods.join(', ') || 'None enabled';
+        }
+        return normalized;
+    }
+
+    function getOwnerPaymentDraft() {
+        return normalizeOwnerPaymentSettings({
+            downpaymentPct: ownerPaymentPercent?.value,
+            cashEnabled: ownerPaymentInputs.cash?.checked,
+            cardEnabled: ownerPaymentInputs.card?.checked,
+            gcashEnabled: ownerPaymentInputs.gcash?.checked,
+            qrphEnabled: ownerPaymentInputs.qrph?.checked,
+        });
+    }
+
+    function ownerPaymentHasChanges() {
+        if (!ownerPaymentBaseline || !ownerPaymentPercent) return false;
+        return JSON.stringify(getOwnerPaymentDraft()) !== JSON.stringify(ownerPaymentBaseline);
+    }
+
+    function openOwnerPaymentModal() {
+        if (!ownerPaymentBaseline || ownerPaymentEdit?.disabled) return;
+        paintOwnerPaymentSettings(ownerPaymentBaseline);
+        setOwnerPaymentMessage('', false, ownerPaymentEditorMessage);
+        window.InigoOwnerUI?.open(ownerPaymentModal);
+    }
+
+    function closeOwnerPaymentModal() {
+        window.InigoOwnerUI?.close(ownerPaymentModal);
+    }
+
+    async function cancelOwnerPaymentEdit() {
+        if (!ownerPaymentModal || ownerPaymentModal.hidden || ownerPaymentSave?.disabled) return;
+        if (ownerPaymentHasChanges()) {
+            const accepted = await window.InigoOwnerUI?.confirm({
+                title: 'Discard payment settings changes?',
+                message: 'Your unsaved payment settings changes will be lost.',
+                confirmLabel: 'Discard changes',
+                danger: true,
+            });
+            if (!accepted) return;
+        }
+        if (ownerPaymentBaseline) paintOwnerPaymentSettings(ownerPaymentBaseline);
+        setOwnerPaymentMessage('', false, ownerPaymentEditorMessage);
+        closeOwnerPaymentModal();
     }
 
     async function loadOwnerPaymentSettings() {
-        if (!ownerPaymentSave) return;
+        if (!ownerPaymentEdit) return;
         const generation = ++ownerPaymentLoadGeneration;
         setOwnerPaymentMessage('Loading payment settings…');
-        ownerPaymentSave.disabled = true;
+        ownerPaymentEdit.disabled = true;
         if (!window.sb) {
             setOwnerPaymentMessage('Payment settings are unavailable until the server connection is ready.', true);
             return;
@@ -1351,7 +1418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (generation !== ownerPaymentLoadGeneration) return;
             if (error) throw error;
             if (data) {
-                paintOwnerPaymentSettings({
+                ownerPaymentBaseline = paintOwnerPaymentSettings({
                     downpaymentPct: Number(data.downpayment_pct),
                     cashEnabled: data.cash_enabled,
                     cardEnabled: data.card_enabled,
@@ -1360,23 +1427,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 setOwnerPaymentMessage('Settings loaded. Changes apply to new checkouts.');
             } else {
-                paintOwnerPaymentSettings(ownerPaymentDefaults);
+                ownerPaymentBaseline = paintOwnerPaymentSettings(ownerPaymentDefaults);
                 setOwnerPaymentMessage('Using the default 50% deposit and enabled GCash and cash options.');
             }
-            ownerPaymentSave.disabled = false;
+            ownerPaymentEdit.disabled = false;
         } catch (error) {
             if (generation !== ownerPaymentLoadGeneration) return;
             console.error('[admin] payment settings could not be loaded', error);
+            ownerPaymentBaseline = null;
             setOwnerPaymentMessage('Payment settings could not be loaded. Try refreshing the page.', true);
         }
     }
 
     async function saveOwnerPaymentSettings() {
-        if (!ownerPaymentSave || !window.sb) return;
+        if (!ownerPaymentSave || !window.sb || ownerPaymentSave.disabled) return;
         const rawPercent = ownerPaymentPercent?.value.trim() || '';
         const percent = Number(rawPercent);
         if (!rawPercent || !Number.isFinite(percent) || percent <= 0 || percent >= 100 || !/^\d+(\.\d{1,2})?$/.test(rawPercent)) {
-            setOwnerPaymentMessage('Enter a down payment greater than 0% and less than 100%, using up to two decimal places.', true);
+            setOwnerPaymentMessage('Enter a down payment greater than 0% and less than 100%, using up to two decimal places.', true, ownerPaymentEditorMessage);
             ownerPaymentPercent?.focus();
             return;
         }
@@ -1388,58 +1456,62 @@ document.addEventListener('DOMContentLoaded', () => {
             qrph_enabled: Boolean(ownerPaymentInputs.qrph?.checked),
         };
         if (!settings.card_enabled && !settings.gcash_enabled && !settings.qrph_enabled) {
-            setOwnerPaymentMessage('Enable at least one online payment method (Card, GCash, or QR Ph) for customer bookings.', true);
+            setOwnerPaymentMessage('Enable at least one online payment method (Card, GCash, or QR Ph) for customer bookings.', true, ownerPaymentEditorMessage);
             ownerPaymentInputs.card?.focus();
             return;
         }
         if (window.inigosyncProfile?.role !== 'admin') {
-            setOwnerPaymentMessage('Only the owner can change payment settings.', true);
+            setOwnerPaymentMessage('Only the owner can change payment settings.', true, ownerPaymentEditorMessage);
             return;
         }
+        const accepted = await window.InigoOwnerUI?.confirm({
+            title: 'Save payment settings?',
+            message: `Apply a ${percent}% down payment and the selected payment methods to new checkouts?`,
+            confirmLabel: 'Save payment settings',
+        });
+        if (!accepted) return;
         ownerPaymentSave.disabled = true;
         ownerPaymentSave.textContent = 'Saving…';
-        setOwnerPaymentMessage('Saving payment settings…');
+        setOwnerPaymentMessage('Saving payment settings…', false, ownerPaymentEditorMessage);
         try {
             const { error } = await window.sb.from('app_settings').update(settings).eq('id', true);
             if (error) throw error;
             window.InigoAppSettings?.invalidateSettings();
             await window.InigoAppSettings?.getSettings({ force: true });
+            ownerPaymentBaseline = paintOwnerPaymentSettings({
+                downpaymentPct: settings.downpayment_pct,
+                cashEnabled: settings.cash_enabled,
+                cardEnabled: settings.card_enabled,
+                gcashEnabled: settings.gcash_enabled,
+                qrphEnabled: settings.qrph_enabled,
+            });
             setOwnerPaymentMessage('Payment settings saved. They apply to new checkouts; existing bookings keep their agreed amount.');
+            setOwnerPaymentMessage('Payment settings saved.', false, ownerPaymentEditorMessage);
+            closeOwnerPaymentModal();
         } catch (error) {
             console.error('[admin] payment settings save failed', error);
-            setOwnerPaymentMessage(error.message || 'Payment settings could not be saved. Please try again.', true);
+            setOwnerPaymentMessage(error.message || 'Payment settings could not be saved. Please try again.', true, ownerPaymentEditorMessage);
         } finally {
             ownerPaymentSave.disabled = false;
             ownerPaymentSave.textContent = 'Save payment settings';
         }
     }
 
-    async function refreshPayMongoHealth() {
-        if (!ownerPaymongoApi) return;
-        [ownerPaymongoApi, ownerPaymongoWebhook, ownerPaymongoLast].forEach(el => { if (el) el.textContent = 'Checking…'; });
-        if (!window.sb?.functions) {
-            [ownerPaymongoApi, ownerPaymongoWebhook, ownerPaymongoLast].forEach(el => { if (el) el.textContent = 'Unavailable'; });
-            return;
-        }
-        if (ownerPaymongoRefresh) ownerPaymongoRefresh.disabled = true;
-        try {
-            const { data, error } = await window.sb.functions.invoke('payment-health');
-            if (error) throw error;
-            ownerPaymongoApi.textContent = data?.api_connected === true ? 'Connected' : data?.api_connected === false ? 'Not connected' : 'Unavailable';
-            ownerPaymongoWebhook.textContent = data?.webhook_configured === true ? 'Ready' : data?.webhook_configured === false ? 'Not set up' : 'Unavailable';
-            ownerPaymongoLast.textContent = data?.last_confirmed_payment_at
-                ? formatActivityTime(data.last_confirmed_payment_at)
-                : data?.last_confirmed_payment_at === null ? 'No confirmed payments yet' : 'Unavailable';
-        } catch (error) {
-            console.warn('[admin] PayMongo health check is unavailable', error);
-            [ownerPaymongoApi, ownerPaymongoWebhook, ownerPaymongoLast].forEach(el => { if (el) el.textContent = 'Unavailable'; });
-        } finally {
-            if (ownerPaymongoRefresh) ownerPaymongoRefresh.disabled = false;
-        }
-    }
-
+    ownerPaymentEdit?.addEventListener('click', openOwnerPaymentModal);
     ownerPaymentSave?.addEventListener('click', saveOwnerPaymentSettings);
-    ownerPaymongoRefresh?.addEventListener('click', refreshPayMongoHealth);
+    ownerPaymentCancel?.addEventListener('click', cancelOwnerPaymentEdit);
+    ownerPaymentModal?.querySelector('[data-owner-payment-close]')?.addEventListener('click', cancelOwnerPaymentEdit);
+    ownerPaymentModal?.addEventListener('pointerdown', event => { ownerPaymentBackdropStart = event.target === ownerPaymentModal; });
+    ownerPaymentModal?.addEventListener('click', event => {
+        if (ownerPaymentBackdropStart && event.target === ownerPaymentModal) cancelOwnerPaymentEdit();
+        ownerPaymentBackdropStart = false;
+    });
+    ownerPaymentDialog?.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            cancelOwnerPaymentEdit();
+        }
+    });
 
     // Court and media editors live in owner-courts.js and owner-media.js.
 
@@ -1468,11 +1540,38 @@ document.addEventListener('DOMContentLoaded', () => {
     let bookingRulesLoading = false;
     let bookingRulesEditing = false;
     let bookingRulesLoaded = false;
+    let bookingRulesEditBaseline = null;
+
+    function initializeBookingRuleTimeSelect(select) {
+        if (!select || select.tagName !== 'SELECT') return;
+        const options = [new Option('Select time', '')];
+        for (let hour = 0; hour < 24; hour += 1) {
+            const value = `${String(hour).padStart(2, '0')}:00`;
+            options.push(new Option(value, value));
+        }
+        select.replaceChildren(...options);
+    }
+
+    bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-open],[data-owner-rules-close]')
+        .forEach(initializeBookingRuleTimeSelect);
 
     function setBookingRulesMessage(message, isError = false) {
         if (!bookingRulesMessage) return;
         bookingRulesMessage.textContent = message;
         bookingRulesMessage.classList.toggle('is-error', isError);
+    }
+
+    function getBookingRulesDraft() {
+        return JSON.stringify({
+            effectiveFrom: bookingRulesEffective?.value || '',
+            graceMinutes: bookingRulesGrace?.value || '',
+            weekdays: [...(bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]') || [])].map(row => ({
+                weekday: row.dataset.ownerRulesDay,
+                opensAt: row.querySelector('[data-owner-rules-open]')?.value || '',
+                closesAt: row.querySelector('[data-owner-rules-close]')?.value || '',
+                isClosed: row.querySelector('[data-owner-rules-closed]')?.checked === true,
+            })),
+        });
     }
 
     function renderSavedBookingWeek(rules, list) {
@@ -1591,13 +1690,14 @@ document.addEventListener('DOMContentLoaded', () => {
     bookingRulesEdit?.addEventListener('click', () => {
         if (!bookingRulesLoaded || bookingRulesLoading) return;
         bookingRulesModalLastFocused = document.activeElement;
+        bookingRulesEditBaseline = getBookingRulesDraft();
         if (bookingRulesModal) {
             bookingRulesModal.hidden = false;
             void bookingRulesModal.offsetWidth;
             bookingRulesModal.setAttribute('data-open', '');
         }
         setBookingRulesEditing(true);
-        setBookingRulesMessage('Edit the weekly hours, effective date, or no-show grace period, then save the Working Time Schedule.');
+        setBookingRulesMessage('Edit the weekly hours, effective date, or no-show grace period, then save Business Hours.');
         bookingRulesEffective?.focus();
     });
 
@@ -1619,7 +1719,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (event.key === 'Tab') {
-            const focusable = [...bookingRulesDialog.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])')]
+            const focusable = [...bookingRulesDialog.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])')]
                 .filter(element => element.offsetParent !== null);
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
@@ -1636,13 +1736,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bookingRulesCancel?.addEventListener('click', async () => {
         if (!bookingRulesEditing || bookingRulesLoading) return;
-        bookingRulesLoading = false;
-        bookingRulesEdit.disabled = true;
-        bookingRulesCancel.disabled = true;
+        const hasChanges = getBookingRulesDraft() !== bookingRulesEditBaseline;
+        if (hasChanges) {
+            const accepted = await window.InigoOwnerUI?.confirm({
+                title: 'Discard Business Hours changes?',
+                message: 'Your unsaved Business Hours changes will be lost.',
+                confirmLabel: 'Discard changes',
+                danger: true,
+            });
+            if (!accepted) return;
+        }
+        if (bookingRulesEdit && hasChanges) bookingRulesEdit.disabled = true;
+        if (bookingRulesCancel) bookingRulesCancel.disabled = true;
         setBookingRulesEditing(false);
-        setBookingRulesMessage('Discarding unsaved schedule changes…');
-        await loadBookingRules();
-        bookingRulesCancel.disabled = false;
+        bookingRulesEditBaseline = null;
+        if (hasChanges) {
+            setBookingRulesMessage('Discarding unsaved schedule changes…');
+            await loadBookingRules();
+        }
+        if (bookingRulesCancel) bookingRulesCancel.disabled = false;
         closeBookingRulesModal();
     });
 
@@ -1676,9 +1788,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (weeklyHours.length !== 7) { setBookingRulesMessage('The weekly schedule must include all seven days.', true); return; }
 
         const accepted = await window.InigoOwnerUI?.confirm({
-            title: 'Save Working Time Schedule?',
+            title: 'Save Business Hours?',
             message: `Apply these opening hours and a ${graceMinutes}-minute no-show grace period from ${effectiveFrom}?`,
-            confirmLabel: 'Save schedule',
+            confirmLabel: 'Save Business Hours',
         });
         if (!accepted) return;
 
@@ -1693,8 +1805,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error) throw error;
             window.InigoBusinessHours?.notifyRulesUpdated?.();
             await loadBookingRules();
-            setBookingRulesMessage('Working Time Schedule saved. The shared availability schedule will use it from the effective date.');
-            window.InigoToast?.show('Working Time Schedule saved.');
+            setBookingRulesMessage('Business Hours saved. Shared availability will use these hours from the effective date.');
+            window.InigoToast?.show('Business Hours saved.');
             setBookingRulesEditing(false);
             closeBookingRulesModal();
         } catch (error) {
@@ -1820,6 +1932,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let auditPage = 0;
     let auditGeneration = 0;
     let auditSearchTimer = null;
+    let auditRefreshTimer = null;
+    let auditRequestsInFlight = 0;
+    const AUDIT_REFRESH_INTERVAL = 15000;
     const formatActivityTime = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
     function auditDateBoundaryIso(value, addDay = false) {
@@ -1869,12 +1984,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('') : '<tr><td colspan="9">No events match these filters.</td></tr>';
     }
 
-    async function loadAuditTrail() {
+    async function loadAuditTrail({ silent = false } = {}) {
         if (!window.sb || !auditRows) return;
         const generation = ++auditGeneration;
-        auditRows.setAttribute('aria-busy', 'true');
-        if (auditStatus) auditStatus.textContent = 'Loading audit trail…';
-        if (auditPagination) auditPagination.hidden = true;
+        auditRequestsInFlight += 1;
+        if (!silent) {
+            auditRows.setAttribute('aria-busy', 'true');
+            if (auditStatus) auditStatus.textContent = 'Loading audit trail…';
+            if (auditPagination) auditPagination.hidden = true;
+        }
         try {
             const { data, error } = await window.sb.rpc('owner_audit_trail', {
                 p_search: auditSearch?.value.trim() || '',
@@ -1916,12 +2034,46 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             if (generation !== auditGeneration) return;
             console.error('[admin] audit trail could not be loaded', error);
-            if (auditStatus) auditStatus.textContent = 'Audit trail could not be loaded. Try refreshing.';
-            if (auditRows) auditRows.innerHTML = '<tr><td colspan="9">Audit trail could not be loaded.</td></tr>';
+            if (!silent) {
+                if (auditStatus) auditStatus.textContent = 'Audit trail could not be loaded. Please try again later.';
+                if (auditRows) auditRows.innerHTML = '<tr><td colspan="9">Audit trail could not be loaded.</td></tr>';
+            }
         } finally {
-            if (generation === auditGeneration) auditRows.setAttribute('aria-busy', 'false');
+            auditRequestsInFlight = Math.max(0, auditRequestsInFlight - 1);
+            if (!silent && generation === auditGeneration) auditRows.setAttribute('aria-busy', 'false');
         }
     }
+
+    function isAuditPanelVisible() {
+        return auditPanel?.classList.contains('is-active') && document.visibilityState === 'visible';
+    }
+
+    function stopAuditTrailUpdates() {
+        if (auditRefreshTimer !== null) {
+            window.clearInterval(auditRefreshTimer);
+            auditRefreshTimer = null;
+        }
+        // Discard any response that returns after the owner leaves the panel.
+        auditGeneration += 1;
+    }
+
+    function startAuditTrailUpdates() {
+        if (!isAuditPanelVisible()) {
+            stopAuditTrailUpdates();
+            return;
+        }
+        if (auditRefreshTimer === null) {
+            auditRefreshTimer = window.setInterval(() => {
+                if (isAuditPanelVisible() && auditRequestsInFlight === 0) loadAuditTrail({ silent: true });
+            }, AUDIT_REFRESH_INTERVAL);
+        }
+        loadAuditTrail();
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (isAuditPanelVisible()) startAuditTrailUpdates();
+        else stopAuditTrailUpdates();
+    });
 
     const resetAuditPage = () => { auditPage = 0; loadAuditTrail(); };
     auditSearch?.addEventListener('input', () => {
@@ -1930,7 +2082,6 @@ document.addEventListener('DOMContentLoaded', () => {
         auditSearchTimer = window.setTimeout(loadAuditTrail, 250);
     });
     [auditFrom, auditTo, auditCategory, auditActor, auditRole].forEach(input => input?.addEventListener('change', resetAuditPage));
-    document.querySelector('[data-owner-audit-refresh]')?.addEventListener('click', loadAuditTrail);
     auditPrev?.addEventListener('click', () => { if (auditPage > 0) { auditPage -= 1; loadAuditTrail(); } });
     auditNext?.addEventListener('click', () => { auditPage += 1; loadAuditTrail(); });
     async function recordOwnerActivity(title, targetSection, detail = '') {
@@ -2776,45 +2927,129 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Owner review inbox reads only the privacy-safe view. Rating filters
-    // and paging are server-side so every published booking review is
-    // reachable without loading the entire table into the browser.
+    // Owners choose exactly three written public booking reviews for the
+    // landing page. The database RPC validates and saves the ordered set.
     const reviewList = document.querySelector('[data-admin-review-list]');
-    const reviewSummary = document.querySelector('[data-admin-review-summary]');
     const reviewPager = document.querySelector('[data-admin-review-pagination]');
+    const reviewCount = document.querySelector('[data-featured-review-count]');
+    const reviewMessage = document.querySelector('[data-featured-review-message]');
+    const reviewModalCount = document.querySelector('[data-featured-review-modal-count]');
+    const reviewModalMessage = document.querySelector('[data-featured-review-modal-message]');
+    const reviewSave = document.querySelector('[data-featured-review-save]');
+    const reviewOpen = document.querySelector('[data-featured-review-open]');
+    const reviewModal = document.querySelector('[data-featured-review-modal]');
+    const reviewSlots = document.querySelector('[data-featured-review-slots]');
+    const ownerReviewBrowser = document.querySelector('[data-owner-review-list]');
+    const ownerReviewBrowserPager = document.querySelector('[data-owner-review-pagination]');
     let reviewRatingFilter = 'all';
     let reviewPage = 0;
     let reviewRequest = 0;
+    let ownerReviewBrowserFilter = 'all';
+    let ownerReviewBrowserPage = 0;
+    let ownerReviewBrowserRequest = 0;
+    let ownerReviewBrowserLoading = false;
+    let ownerReviewBrowserLoaded = false;
+    let featuredSelectionRequest = 0;
+    let savedFeaturedReviewIds = [];
+    let draftFeaturedReviewIds = [];
+    const featuredReviewDetails = new Map();
+    let featuredSelectionLoaded = false;
+    let savingFeaturedReviews = false;
+    let closingFeaturedModal = false;
     const REVIEW_PAGE_SIZE = 10;
+    const featuredSelectionChanged = () => savedFeaturedReviewIds.length !== draftFeaturedReviewIds.length || savedFeaturedReviewIds.some((id, index) => id !== draftFeaturedReviewIds[index]);
+    const selectedFeaturedReviewIds = () => reviewModal && !reviewModal.hidden ? draftFeaturedReviewIds : savedFeaturedReviewIds;
+    async function loadOwnerReviewBrowser(force = false) {
+        if (!ownerReviewBrowser || !window.sb) return;
+        if (ownerReviewBrowserLoading || (!force && ownerReviewBrowserLoaded)) return;
+        const request = ++ownerReviewBrowserRequest;
+        ownerReviewBrowserLoading = true;
+        ownerReviewBrowser.setAttribute('aria-busy', 'true');
+        let query = window.sb.from('public_booking_reviews').select('id,rating,comment,created_at', { count: 'exact' })
+            .order('created_at', { ascending: false }).range(ownerReviewBrowserPage * REVIEW_PAGE_SIZE, (ownerReviewBrowserPage + 1) * REVIEW_PAGE_SIZE - 1);
+        if (ownerReviewBrowserFilter !== 'all') query = query.eq('rating', Number(ownerReviewBrowserFilter));
+        try {
+            const { data, count, error } = await query;
+            if (request !== ownerReviewBrowserRequest) return;
+            ownerReviewBrowser.setAttribute('aria-busy', 'false');
+            if (error) {
+                ownerReviewBrowser.innerHTML = '<p class="admin-form-hint">Reviews could not be loaded. Check your owner access and try again.</p>';
+                console.error('[admin] public review browser query failed', error);
+                return;
+            }
+            const rows = data || [];
+            ownerReviewBrowser.innerHTML = rows.length ? rows.map((review) => {
+                featuredReviewDetails.set(review.id, review);
+                const rating = Math.max(0, Math.min(5, Number(review.rating) || 0));
+                const comment = typeof review.comment === 'string' && review.comment.trim()
+                    ? `<p>${window.escapeHtml(review.comment)}</p>`
+                    : '<p class="owner-review-no-comment">No written comment</p>';
+                const date = review.created_at ? new Date(review.created_at) : null;
+                const dateText = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : 'Date unavailable';
+                const datetime = review.created_at ? ` datetime="${window.escapeHtml(review.created_at)}"` : '';
+                return `<article class="admin-review-item owner-review-browser-item"><div class="admin-review-item-head"><strong>Verified customer</strong><span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span></div>${comment}<time${datetime}>${window.escapeHtml(dateText)}</time></article>`;
+            }).join('') : '<p class="admin-form-hint">No customer reviews match this filter yet.</p>';
+            const pages = Math.max(1, Math.ceil((count || 0) / REVIEW_PAGE_SIZE));
+            if (ownerReviewBrowserPager) ownerReviewBrowserPager.hidden = (count || 0) <= REVIEW_PAGE_SIZE;
+            const info = document.querySelector('[data-owner-review-page-info]');
+            const prev = document.querySelector('[data-owner-review-prev]');
+            const next = document.querySelector('[data-owner-review-next]');
+            if (info) info.textContent = `Page ${ownerReviewBrowserPage + 1} of ${pages}`;
+            if (prev) prev.disabled = ownerReviewBrowserPage <= 0;
+            if (next) next.disabled = ownerReviewBrowserPage + 1 >= pages;
+            ownerReviewBrowserLoaded = true;
+        } catch (error) {
+            if (request !== ownerReviewBrowserRequest) return;
+            ownerReviewBrowser.setAttribute('aria-busy', 'false');
+            ownerReviewBrowser.innerHTML = '<p class="admin-form-hint">Reviews could not be loaded. Check your owner access and try again.</p>';
+            console.error('[admin] public review browser query failed', error);
+        } finally {
+            if (request === ownerReviewBrowserRequest) ownerReviewBrowserLoading = false;
+        }
+    }
+    function renderFeaturedReviewSlots() {
+        if (!reviewSlots) return;
+        reviewSlots.setAttribute('aria-busy', String(!featuredSelectionLoaded));
+        reviewSlots.innerHTML = Array.from({ length: 3 }, (_, index) => {
+            const id = savedFeaturedReviewIds[index];
+            const review = id ? featuredReviewDetails.get(id) : null;
+            return `<article class="owner-featured-review-slot${id ? ' is-filled' : ''}"><span class="owner-featured-review-slot-number">${index + 1}</span>${review ? `<div><div class="owner-featured-review-slot-rating" aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</div><p>“${window.escapeHtml(review.comment)}”</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></div>` : `<p>${id ? 'Loading saved review…' : 'Your next featured story goes here'}</p>`}</article>`;
+        }).join('');
+    }
     async function loadOwnerReviews() {
         if (!reviewList || !window.sb) return;
         const request = ++reviewRequest;
         reviewList.setAttribute('aria-busy', 'true');
-        let query = window.sb.from('public_booking_reviews').select('id,display_name,rating,comment,created_at', { count: 'exact' })
+        let query = window.sb.from('public_booking_reviews').select('id,rating,comment,created_at', { count: 'exact' })
+            .not('comment', 'is', null).neq('comment', '')
             .order('created_at', { ascending: false }).range(reviewPage * REVIEW_PAGE_SIZE, (reviewPage + 1) * REVIEW_PAGE_SIZE - 1);
         if (reviewRatingFilter !== 'all') query = query.eq('rating', Number(reviewRatingFilter));
-        const [{ data, count, error }, summaryResult] = await Promise.all([query, window.sb.rpc('owner_review_summary')]);
+        const { data, count, error } = await query;
         if (request !== reviewRequest) return;
         reviewList.setAttribute('aria-busy', 'false');
         if (error) {
             reviewList.innerHTML = '<p class="admin-form-hint">Reviews could not be loaded. Check your owner access and try again.</p>';
-            if (reviewSummary) reviewSummary.textContent = 'Review list unavailable';
             console.error('[admin] owner reviews query failed', error);
             return;
         }
         const total = count || 0;
-        if (reviewSummary) {
-            const summary = Array.isArray(summaryResult.data) ? summaryResult.data[0] : summaryResult.data;
-            if (summaryResult.error || !summary) reviewSummary.textContent = 'Overall rating unavailable';
-            else {
-                const count = Number(summary.total_count || 0);
-                reviewSummary.classList.add('owner-review-summary');
-            const score = count ? Number(summary.average_rating).toFixed(1) : '—';
-            const roundedStars = count ? Math.max(0, Math.min(5, Math.round(Number(summary.average_rating)))) : 0;
-            reviewSummary.innerHTML = `<strong class="owner-review-score">${score} / 5.0</strong>${count ? `<span class="owner-review-average-stars" aria-label="${roundedStars} out of 5 stars">${'★'.repeat(roundedStars)}${'☆'.repeat(5 - roundedStars)}</span>` : ''}`;
-            }
-        }
-        reviewList.innerHTML = data?.length ? data.map((review) => `<article class="admin-review-item"><div class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></div><p>${window.escapeHtml(review.comment || 'No written comment.')}</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></article>`).join('') : '<p class="admin-form-hint">There are no reviews in this filter.</p>';
+        const eligibleReviews = (data || []).filter((review) => typeof review.comment === 'string' && review.comment.trim().length > 0);
+        reviewList.innerHTML = eligibleReviews.length ? eligibleReviews.map((review) => {
+            featuredReviewDetails.set(review.id, review);
+            const featuredReviewIds = selectedFeaturedReviewIds();
+            const selectedIndex = featuredReviewIds.indexOf(review.id);
+            const checked = selectedIndex >= 0;
+            const selectionOrder = checked ? `<span class="owner-featured-review-order" aria-label="Featured review ${selectedIndex + 1}">${selectedIndex + 1}</span>` : '';
+            const disabled = (!checked && featuredReviewIds.length >= 3) || savingFeaturedReviews || !featuredSelectionLoaded;
+            return `<label class="admin-review-item owner-featured-review-item${checked ? ' is-selected' : ''}"><input type="checkbox" data-featured-review-id="${window.escapeHtml(review.id)}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''} aria-label="${checked ? 'Remove' : 'Add'} this ${Number(review.rating)} star review${selectionOrder ? `; selected ${selectedIndex + 1} of 3` : ''}"><span class="owner-featured-review-content"><span class="admin-review-item-head"><strong>Verified customer</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></span><span class="owner-featured-review-comment">${window.escapeHtml(review.comment)}</span><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></span>${selectionOrder}</label>`;
+        }).join('') : '<p class="admin-form-hint">No eligible reviews with written comments are available yet.</p>';
+        reviewList.querySelectorAll('[data-featured-review-id]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+            const id = checkbox.dataset.featuredReviewId;
+            if (checkbox.checked && draftFeaturedReviewIds.length < 3 && !draftFeaturedReviewIds.includes(id)) draftFeaturedReviewIds.push(id);
+            else if (!checkbox.checked) draftFeaturedReviewIds = draftFeaturedReviewIds.filter((selectedId) => selectedId !== id);
+            setFeaturedReviewStatus();
+            loadOwnerReviews();
+        }));
         const pages = Math.max(1, Math.ceil(total / REVIEW_PAGE_SIZE));
         if (reviewPager) reviewPager.hidden = total <= REVIEW_PAGE_SIZE;
         const info = document.querySelector('[data-admin-review-page-info]');
@@ -2824,46 +3059,108 @@ document.addEventListener('DOMContentLoaded', () => {
         if (prev) prev.disabled = reviewPage <= 0;
         if (next) next.disabled = reviewPage + 1 >= pages;
     }
-    // Private feedback is separate from public booking reviews: it has no
-    // booking eligibility requirement and is visible to active staff/admin
-    // accounts through the feedback table's RLS policy.
-    const ownerDirectFeedback = document.querySelector('[data-owner-direct-feedback]');
-    const ownerFeedbackMore = document.querySelector('[data-owner-feedback-more]');
-    const OWNER_FEEDBACK_PAGE_SIZE = 10;
-    let ownerFeedbackVisibleCount = OWNER_FEEDBACK_PAGE_SIZE;
-    let ownerFeedbackRequest = 0;
-    async function loadOwnerFeedback(reset = true) {
-        if (!ownerDirectFeedback || !window.sb) return;
-        if (reset) ownerFeedbackVisibleCount = OWNER_FEEDBACK_PAGE_SIZE;
-        const request = ++ownerFeedbackRequest;
-        ownerDirectFeedback.setAttribute('aria-busy', 'true');
+    function setFeaturedReviewStatus(message = '', isError = false) {
+        if (reviewCount) {
+            reviewCount.textContent = `${savedFeaturedReviewIds.length} of 3 selected`;
+        }
+        if (reviewModalCount) reviewModalCount.textContent = `${draftFeaturedReviewIds.length} of 3 selected`;
+        if (reviewSave) reviewSave.disabled = draftFeaturedReviewIds.length !== 3 || !featuredSelectionChanged() || savingFeaturedReviews || !featuredSelectionLoaded;
+        if (reviewOpen) reviewOpen.disabled = !featuredSelectionLoaded || savingFeaturedReviews;
+        for (const target of [reviewMessage, reviewModalMessage]) {
+            if (!target) continue;
+            target.textContent = message;
+            target.classList.toggle('is-error', Boolean(message) && isError);
+            target.classList.toggle('is-success', Boolean(message) && !isError);
+        }
+        if (!reviewModal || reviewModal.hidden) renderFeaturedReviewSlots();
+    }
+    async function loadFeaturedReviewSelection() {
+        if (!window.sb) return;
+        const request = ++featuredSelectionRequest;
         try {
-            const { data, count, error } = await window.sb.from('feedback')
-                .select('id,rating,message,created_at', { count: 'exact' })
-                .order('created_at', { ascending: false })
-                .range(0, ownerFeedbackVisibleCount - 1);
-            if (request !== ownerFeedbackRequest) return;
-            ownerDirectFeedback.setAttribute('aria-busy', 'false');
+            const { data, error } = await window.sb.from('owner_featured_review_selection').select('review_ids').eq('singleton', true).maybeSingle();
+            if (request !== featuredSelectionRequest) return;
             if (error) throw error;
-            ownerDirectFeedback.innerHTML = data?.length ? data.map((entry) => {
-                const rating = Number(entry.rating);
-                const stars = Number.isInteger(rating) && rating >= 1 && rating <= 5
-                    ? `<span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span>`
-                    : '';
-                return `<article class="admin-review-item"><div class="admin-review-item-head"><strong>Customer feedback</strong>${stars}</div><p>${window.escapeHtml(entry.message || '')}</p><time datetime="${window.escapeHtml(entry.created_at)}">${window.escapeHtml(new Date(entry.created_at).toLocaleDateString())}</time></article>`;
-            }).join('') : '<p class="admin-form-hint">No direct customer feedback yet.</p>';
-            if (ownerFeedbackMore) ownerFeedbackMore.hidden = (count || 0) <= ownerFeedbackVisibleCount;
+            savedFeaturedReviewIds = Array.isArray(data?.review_ids) ? data.review_ids.filter((id) => typeof id === 'string').slice(0, 3) : [];
+            draftFeaturedReviewIds = [...savedFeaturedReviewIds];
+            featuredSelectionLoaded = true;
+            setFeaturedReviewStatus();
+            if (savedFeaturedReviewIds.length) {
+                const { data: details, error: detailsError } = await window.sb.from('public_booking_reviews').select('id,rating,comment,created_at').in('id', savedFeaturedReviewIds);
+                if (request !== featuredSelectionRequest) return;
+                if (detailsError) throw detailsError;
+                (details || []).forEach(review => featuredReviewDetails.set(review.id, review));
+                renderFeaturedReviewSlots();
+            }
+            await loadOwnerReviews();
         } catch (error) {
-            if (request !== ownerFeedbackRequest) return;
-            ownerDirectFeedback.setAttribute('aria-busy', 'false');
-            ownerDirectFeedback.innerHTML = '<p class="admin-form-hint">Direct feedback could not be loaded. Check your owner access and try again.</p>';
-            if (ownerFeedbackMore) ownerFeedbackMore.hidden = true;
-            console.error('[admin] direct customer feedback query failed', error);
+            if (request !== featuredSelectionRequest) return;
+            featuredSelectionLoaded = false;
+            setFeaturedReviewStatus('The featured selection could not be loaded. Please refresh and try again.', true);
+            console.error('[admin] featured review selection query failed', error);
         }
     }
-    ownerFeedbackMore?.addEventListener('click', () => {
-        ownerFeedbackVisibleCount += OWNER_FEEDBACK_PAGE_SIZE;
-        loadOwnerFeedback(false);
+    async function closeFeaturedReviewModal(discard = false) {
+        if (!reviewModal || reviewModal.hidden || closingFeaturedModal || savingFeaturedReviews) return;
+        if (featuredSelectionChanged()) {
+            closingFeaturedModal = true;
+            const accepted = await window.InigoOwnerUI?.confirm({
+                title: 'Discard review changes?',
+                message: 'Your saved featured reviews will stay as they are.',
+                confirmLabel: 'Discard changes', danger: true,
+            });
+            closingFeaturedModal = false;
+            if (!accepted) return;
+        }
+        if (discard || featuredSelectionChanged()) draftFeaturedReviewIds = [...savedFeaturedReviewIds];
+        setFeaturedReviewStatus();
+        window.InigoOwnerUI?.close(reviewModal);
+    }
+    reviewOpen?.addEventListener('click', () => {
+        if (!featuredSelectionLoaded || savingFeaturedReviews) return;
+        draftFeaturedReviewIds = [...savedFeaturedReviewIds];
+        reviewRatingFilter = 'all'; reviewPage = 0;
+        document.querySelectorAll('[data-admin-review-rating]').forEach((item, index) => { item.classList.toggle('is-active', index === 0); item.setAttribute('aria-pressed', String(index === 0)); });
+        setFeaturedReviewStatus();
+        window.InigoOwnerUI?.open(reviewModal);
+        loadOwnerReviews();
+    });
+    document.querySelector('[data-featured-review-cancel]')?.addEventListener('click', () => closeFeaturedReviewModal(true));
+    document.querySelector('[data-featured-review-close]')?.addEventListener('click', () => closeFeaturedReviewModal());
+    reviewModal?.addEventListener('click', event => { if (event.target === reviewModal) closeFeaturedReviewModal(); });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && reviewModal && !reviewModal.hidden && !document.querySelector('.owner-confirm-overlay:not([hidden])')) {
+            event.preventDefault(); event.stopPropagation(); closeFeaturedReviewModal();
+        }
+    });
+    reviewSave?.addEventListener('click', async () => {
+        if (draftFeaturedReviewIds.length !== 3 || !featuredSelectionChanged() || savingFeaturedReviews || !window.sb) return;
+        const accepted = await window.InigoOwnerUI?.confirm({
+            title: 'Save featured reviews?',
+            message: 'This will update the three reviews shown on your landing page.',
+            confirmLabel: 'Save reviews',
+        });
+        if (!accepted) return;
+        const idsToSave = [...draftFeaturedReviewIds];
+        savingFeaturedReviews = true;
+        setFeaturedReviewStatus('Saving featured reviews…');
+        try {
+            const { error } = await window.sb.rpc('owner_save_featured_booking_reviews', { p_review_ids: idsToSave });
+            if (error) throw error;
+            savedFeaturedReviewIds = idsToSave;
+            draftFeaturedReviewIds = [...idsToSave];
+            window.InigoOwnerUI?.close(reviewModal);
+            setFeaturedReviewStatus('Featured reviews saved.');
+        } catch (error) {
+            setFeaturedReviewStatus(error?.message || 'Featured reviews could not be saved. Try again.', true);
+            console.error('[admin] featured review save failed', error);
+        } finally {
+            const finalMessage = reviewMessage?.textContent || '';
+            const finalIsError = reviewMessage?.classList.contains('is-error') || false;
+            savingFeaturedReviews = false;
+            setFeaturedReviewStatus(finalMessage, finalIsError);
+            await loadOwnerReviews();
+        }
     });
     document.querySelectorAll('[data-admin-review-rating]').forEach((button) => button.addEventListener('click', () => {
         reviewRatingFilter = button.dataset.adminReviewRating || 'all'; reviewPage = 0;
@@ -2872,8 +3169,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     document.querySelector('[data-admin-review-prev]')?.addEventListener('click', () => { if (reviewPage > 0) { reviewPage -= 1; loadOwnerReviews(); } });
     document.querySelector('[data-admin-review-next]')?.addEventListener('click', () => { reviewPage += 1; loadOwnerReviews(); });
-    document.addEventListener('inigosync:owner-panel', event => { if (event.detail === 'feedback') { loadOwnerReviews(); loadOwnerFeedback(); } });
-    window.setInterval(() => { if (!document.hidden && document.querySelector('[data-admin-panel="feedback"].is-active')) { loadOwnerReviews(); loadOwnerFeedback(false); } }, 15000);
-    document.addEventListener('inigosync:profile-ready', () => { loadOwnerReviews(); loadOwnerFeedback(); });
-    if (window.inigosyncProfile) { loadOwnerReviews(); loadOwnerFeedback(); }
+    document.querySelectorAll('[data-owner-review-rating]').forEach((button) => button.addEventListener('click', () => {
+        ownerReviewBrowserFilter = button.dataset.ownerReviewRating || 'all'; ownerReviewBrowserPage = 0;
+        document.querySelectorAll('[data-owner-review-rating]').forEach((item) => { item.classList.toggle('is-active', item === button); item.setAttribute('aria-pressed', String(item === button)); });
+        loadOwnerReviewBrowser(true);
+    }));
+    document.querySelector('[data-owner-review-prev]')?.addEventListener('click', () => { if (ownerReviewBrowserPage > 0) { ownerReviewBrowserPage -= 1; loadOwnerReviewBrowser(true); } });
+    document.querySelector('[data-owner-review-next]')?.addEventListener('click', () => { ownerReviewBrowserPage += 1; loadOwnerReviewBrowser(true); });
+    document.addEventListener('inigosync:owner-panel', event => { if (event.detail === 'feedback') { loadFeaturedReviewSelection(); ownerReviewBrowserPage = 0; loadOwnerReviewBrowser(true); } });
+    document.addEventListener('inigosync:profile-ready', () => { loadFeaturedReviewSelection(); loadOwnerReviewBrowser(); });
+    if (window.inigosyncProfile) { loadFeaturedReviewSelection(); loadOwnerReviewBrowser(); }
 });

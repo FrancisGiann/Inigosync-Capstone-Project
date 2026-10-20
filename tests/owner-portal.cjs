@@ -10,6 +10,9 @@ const slides = [
 const reviews = [
     { id: 'r1', display_name: 'Alex', rating: 5, comment: 'Great', created_at: '2026-09-01T00:00:00Z' },
     { id: 'r2', display_name: 'Bo', rating: 3, comment: 'Okay', created_at: '2026-09-02T00:00:00Z' },
+    { id: 'r3', display_name: 'Casey', rating: 4, comment: 'Superb courts', created_at: '2026-09-03T00:00:00Z' },
+    { id: 'r4', display_name: 'Dana', rating: 5, comment: 'Helpful staff', created_at: '2026-09-04T00:00:00Z' },
+    { id: 'r5', display_name: 'Em', rating: 5, comment: null, created_at: '2026-09-05T00:00:00Z' },
 ];
 const activities = [{ id: 'activity-1', owner_id: 'qa-owner', title: 'Sport updated', detail: 'Basketball Court 1 rates changed', target_section: 'courts', created_at: '2026-09-01T00:00:00Z', seen_at: null }];
 function fixture() {
@@ -30,7 +33,8 @@ function fixture() {
     auditEvents.push({ event_id: 'owner-event-1', source: 'owner_activity', created_at: '2026-09-01T10:00:00Z', action: 'Owner profile updated', category: 'owner', actor_id: 'qa-owner', actor_name: 'QA Owner', actor_role: 'admin', target_type: 'settings', target_id: null, amount: null, summary: 'The owner updated their account settings.' });
     auditEvents.push({ event_id: 'session-event-1', source: 'customer_operational_events', created_at: '2026-09-02T10:00:00Z', action: 'sign_out', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-out observed' });
     const ownerRules = { timezone: 'Asia/Manila', rules: [{ effective_from: '2026-01-01', grace_minutes: 30, weekly_hours: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, opens_at: '08:00:00', closes_at: '22:00:00', is_closed: false })) }] };
-    const state = window.__ownerQa = { calls: [], ownerActivityOrQueries: [], failReorder: false, failSeen: false, phoneInUse: false };
+    const state = window.__ownerQa = { calls: [], ownerActivityOrQueries: [], failReorder: false, failSeen: false, failFeaturedSelection: window.__ownerQaFailFeaturedSelection === true, phoneInUse: false };
+    state.auditEvents = auditEvents;
     const data = {
         event: [
             { id: '00000000-0000-4000-8000-000000000001', title: 'A very long featured tournament title that would otherwise push the card actions down and make its neighbors uneven', meta: 'First', tag: 'Event', image_url: null, display_order: 1, is_published: true, created_at: '2026-09-01T00:00:00Z' },
@@ -39,14 +43,18 @@ function fixture() {
         public_booking_reviews: [
             { id: 'r1', display_name: 'Alex', rating: 5, comment: 'Great', created_at: '2026-09-01T00:00:00Z' },
             { id: 'r2', display_name: 'Bo', rating: 3, comment: 'Okay', created_at: '2026-09-02T00:00:00Z' },
+            { id: 'r3', display_name: 'Casey', rating: 4, comment: 'Superb courts', created_at: '2026-09-03T00:00:00Z' },
+            { id: 'r4', display_name: 'Dana', rating: 5, comment: 'Helpful staff', created_at: '2026-09-04T00:00:00Z' },
+            { id: 'r5', display_name: 'Em', rating: 5, comment: null, created_at: '2026-09-05T00:00:00Z' },
         ],
+        owner_featured_review_selection: [],
         owner_activity: [{ id: 'activity-1', owner_id: 'qa-owner', title: 'Sport updated', detail: 'Basketball Court 1 rates changed', target_section: 'courts', created_at: '2026-09-01T00:00:00Z', seen_at: null }],
         profiles: [
             { id: 'qa-owner', role: 'admin', full_name: 'QA Owner', email: 'owner@example.test', position: 'Owner', status: 'active', created_at: '2025-01-01T00:00:00Z' },
             { id: 'qa-staff', role: 'staff', full_name: 'QA Staff', email: 'staff@example.test', position: 'Court Attendant', status: 'active', birthdate: '2000-09-26', contact_num: '+639171234567', address: '12 Example Street, Cebu City', gender: 'Prefer not to say', emergency_contact_name: 'QA Contact', emergency_contact_number: '09171234568', created_at: '2026-01-01T00:00:00Z' },
             { id: 'qa-customer', role: 'customer', full_name: 'QA Customer', email: 'customer@example.test', status: 'active', created_at: '2026-02-01T00:00:00Z' },
         ],
-        app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true }],
+        app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true, qrph_enabled: true }],
         court: Array.from({ length: 24 }, (_, index) => ({ id: `court-${index + 1}`, sport_id: `sport-${index + 1}`, slug: `sport-${index + 1}`, name: index === 0 ? 'A long court listing title that must wrap without shifting other actions' : `Sport ${index + 1}`, quantity: index + 1, unit: 'courts', description: 'Responsive fixture', image_url: null, is_active: index !== 23, display_order: index + 1, sport: { id: `sport-${index + 1}`, name: `Sport ${index + 1}`, slug: `sport-${index + 1}` } })),
     };
     if (window.__qaSavedCover) {
@@ -55,10 +63,13 @@ function fixture() {
     }
     state.tables = data;
     const result = (table, q) => {
+        if (table === 'owner_featured_review_selection' && state.failFeaturedSelection) return { data: null, error: { message: 'Simulated featured selection failure' }, count: 0 };
         let rows = (data[table] || []).slice();
         if (q.filters) rows = rows.filter(row => Object.entries(q.filters).every(([key, value]) => row[key] == value));
         if (q.inFilters) rows = rows.filter(row => Object.entries(q.inFilters).every(([key, values]) => values.includes(row[key])));
         if (q.ilike) rows = rows.filter(row => String(row[q.ilike.key] || '').toLowerCase().includes(q.ilike.value.replace(/^%|%$/g, '').toLowerCase()));
+        if (q.notFilters) rows = rows.filter(row => Object.entries(q.notFilters).every(([key, filter]) => filter.operator === 'is' ? row[key] !== filter.value : filter.operator === 'eq' ? row[key] != filter.value : true));
+        if (q.neqFilters) rows = rows.filter(row => Object.entries(q.neqFilters).every(([key, value]) => row[key] != value));
         if (q.or) {
             if (table === 'owner_activity') state.ownerActivityOrQueries.push(q.or);
             const terms = [...q.or.matchAll(/(title|detail)\.ilike\."%((?:\\.|[^"\\])*)%"/g)]
@@ -91,7 +102,7 @@ function fixture() {
                 select(_columns, options) { q.head = !!options?.head; q.countRequested = options?.count; return chain; },
                 eq(key, value) { q.filters[key] = value; return chain; },
                 is(key, value) { q.filters[key] = value; return chain; },
-                in(key, values) { q.inFilters ||= {}; q.inFilters[key] = values; return chain; }, ilike(key, value) { q.ilike = { key, value }; return chain; }, gte() { return chain; }, gt() { return chain; }, lte() { return chain; }, lt() { return chain; }, or(value) { q.or = value; return chain; },
+                in(key, values) { q.inFilters ||= {}; q.inFilters[key] = values; return chain; }, ilike(key, value) { q.ilike = { key, value }; return chain; }, not(key, operator, value) { q.notFilters ||= {}; q.notFilters[key] = { operator, value }; return chain; }, neq(key, value) { q.neqFilters ||= {}; q.neqFilters[key] = value; return chain; }, gte() { return chain; }, gt() { return chain; }, lte() { return chain; }, lt() { return chain; }, or(value) { q.or = value; return chain; },
                 order(key, options = {}) { q.sort.push({ key, ascending: options.ascending !== false }); return chain; },
                 range(from, to) { q.range = [from, to]; return chain; }, limit(n) { q.limit = n; return chain; },
                 abortSignal() { return chain; },
@@ -120,7 +131,12 @@ function fixture() {
                 return { data: { court_id: courtId, version: 1 }, error: null };
             }
             if (name === 'admin_reorder_slides') return state.failReorder ? { data: null, error: { message: 'Simulated reorder failure' } } : { data: args.p_ids, error: null };
-            if (name === 'owner_review_summary') return { data: { average_rating: 4, total_count: 2, star_counts: { 1: 0, 2: 0, 3: 1, 4: 0, 5: 1 } }, error: null };
+            if (name === 'owner_save_featured_booking_reviews') {
+                const selection = data.owner_featured_review_selection[0] || { singleton: true };
+                selection.review_ids = args.p_review_ids;
+                data.owner_featured_review_selection[0] = selection;
+                return { data: args.p_review_ids, error: null };
+            }
             if (name === 'owner_staff_activity') {
                 let rows = staffAudit.filter(row => row.actor_id === args.p_staff_id || args.p_staff_id === 'qa-staff');
                 const query = String(args.p_search || '').toLocaleLowerCase();
@@ -129,6 +145,7 @@ function fixture() {
                 return { data: { rows: rows.slice(args.p_offset, args.p_offset + args.p_limit), total_count }, error: null };
             }
             if (name === 'owner_audit_trail') {
+                if (state.holdNextAuditRpc) await new Promise(resolve => { state.releaseAuditRpc = resolve; state.holdNextAuditRpc = false; });
                 let rows = auditEvents.slice();
                 if (args.p_search) rows = rows.filter(row => JSON.stringify(row).toLocaleLowerCase().includes(String(args.p_search).toLocaleLowerCase()));
                 if (args.p_category && args.p_category !== 'all') rows = rows.filter(row => row.category === args.p_category);
@@ -160,7 +177,6 @@ function fixture() {
         },
         storage: { from: () => ({ list: async () => ({ data: [], error: null }), upload: async (path, file) => { state.calls.push({ upload: path, type: file.type, size: file.size }); return { data: { path }, error: null }; }, remove: async paths => { state.calls.push({ remove: paths }); return { error: null }; }, getPublicUrl: path => ({ data: { publicUrl: `https://example.test/storage/v1/object/public/media/${path}` } }) }) },
         functions: { invoke: async (name, options) => {
-            if (name === 'payment-health') return { data: { api_connected: true, webhook_configured: true, last_confirmed_payment_at: '2026-09-26T10:00:00Z' }, error: null };
             if (name === 'validate-contact-phone') {
                 state.calls.push({ function: name, options });
                 if (state.phoneInUse) return { data: { valid: false, reason: 'in_use' }, error: null };
@@ -206,17 +222,52 @@ async function verifyOwnerScheduleFlow(page, width) {
     await page.locator('[data-owner-rules-effective]').fill(date);
     await page.locator('[data-owner-rules-grace]').fill('40');
     await page.locator('[data-owner-rules-cancel]').click();
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    assert.match(await page.locator('.owner-confirm-overlay').innerText(), /unsaved Business Hours changes will be lost/i);
+    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), true, 'declining discard keeps the schedule editor open');
+    await page.locator('[data-owner-rules-cancel]').click();
+    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
     assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'Cancel closes the dialog');
     assert.equal(await page.locator('[data-owner-rules-effective]').inputValue(), await page.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())), 'Cancel reloads the saved editor fields');
     assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), false, 'Cancel does not expose its draft as scheduled');
+
+    await page.locator('[data-owner-rules-edit]').click();
+    await page.locator('[data-owner-rules-cancel]').click();
+    assert.equal(await page.locator('.owner-confirm-overlay').count(), 0, 'Cancel without edits closes directly without a confirmation');
+    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'Cancel without edits closes the schedule editor');
+
+    async function verifyScheduleFieldPromptsOnDiscard(selector, change, restore, label) {
+        await page.locator('[data-owner-rules-edit]').click();
+        await change();
+        await page.locator('[data-owner-rules-cancel]').click();
+        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+        await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+        assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), true, `${label} discard prompt can be declined`);
+        await restore();
+        await page.locator('[data-owner-rules-cancel]').click();
+        assert.equal(await page.locator('.owner-confirm-overlay').count(), 0, `${label} reverted to baseline cancels directly`);
+        assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, `${label} baseline closes the editor`);
+        assert.equal(await page.locator(selector).count(), 1, `${label} selector remains unique`);
+    }
+
+    await verifyScheduleFieldPromptsOnDiscard('[data-owner-rules-day="1"] [data-owner-rules-open]',
+        () => page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').selectOption('09:00'),
+        () => page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').selectOption('08:00'), 'opening time');
+    await verifyScheduleFieldPromptsOnDiscard('[data-owner-rules-day="1"] [data-owner-rules-close]',
+        () => page.locator('[data-owner-rules-day="1"] [data-owner-rules-close]').selectOption('21:00'),
+        () => page.locator('[data-owner-rules-day="1"] [data-owner-rules-close]').selectOption('22:00'), 'closing time');
+    await verifyScheduleFieldPromptsOnDiscard('[data-owner-rules-day="1"] [data-owner-rules-closed]',
+        () => page.locator('[data-owner-rules-day="1"] [data-owner-rules-closed]').check(),
+        () => page.locator('[data-owner-rules-day="1"] [data-owner-rules-closed]').uncheck(), 'Closed flag');
 
     await page.locator('[data-owner-rules-edit]').click();
     await page.locator('[data-owner-rules-effective]').fill(date);
     await page.locator('[data-owner-rules-grace]').fill('45');
     for (let weekday = 1; weekday <= 7; weekday += 1) {
         const row = page.locator(`[data-owner-rules-day="${weekday}"]`);
-        await row.locator('[data-owner-rules-open]').fill(`${String(weekday + 8).padStart(2, '0')}:00`);
-        await row.locator('[data-owner-rules-close]').fill('22:00');
+        await row.locator('[data-owner-rules-open]').selectOption(`${String(weekday + 8).padStart(2, '0')}:00`);
+        await row.locator('[data-owner-rules-close]').selectOption('22:00');
     }
     await page.locator('[data-owner-rules-save]').click();
     await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
@@ -229,19 +280,115 @@ async function verifyOwnerScheduleFlow(page, width) {
     assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–22:00/);
 }
 
+async function verifyOwnerPaymentFlow(page) {
+    await page.locator('[data-admin-nav="payments"]').evaluate(el => el.click());
+    assert.equal(await page.locator('[data-owner-paymongo-api], [data-owner-paymongo-webhook], [data-owner-paymongo-last-payment], [data-owner-paymongo-refresh]').count(), 0,
+        'payment configuration no longer shows connection status controls');
+    await page.locator('[data-owner-payment-saved-percent]').getByText('50%').waitFor();
+    assert.match(await page.locator('[data-owner-payment-saved-methods]').innerText(), /Cash.*GCash.*QR Ph/);
+    assert.equal(await page.locator('[data-owner-payment-percent]').isVisible(), false, 'payment controls are hidden until Edit is selected');
+    await page.locator('[data-owner-payment-edit]').click();
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), true, 'Edit opens the payment settings dialog');
+    assert.equal(await page.locator('[data-owner-payment-dialog]').getAttribute('aria-modal'), 'true');
+    assert.equal(await page.evaluate(() => document.activeElement.matches('[data-owner-payment-close]')), true, 'dialog opening moves focus to its close control');
+    assert.equal(await page.locator('[data-owner-payment-method="gcash"]').isChecked(), true, 'payment methods remain available');
+    assert.equal(await page.locator('[data-owner-payment-method="qrph"]').isChecked(), true, 'saved QR Ph setting loads into the editor');
+    await page.locator('[data-owner-payment-cancel]').click();
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), false, 'unchanged Cancel closes without a discard prompt');
+
+    await page.locator('[data-owner-payment-edit]').click();
+    await page.locator('[data-owner-payment-method="qrph"]').uncheck();
+    await page.locator('[data-owner-payment-cancel]').click();
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    assert.match(await page.locator('.owner-confirm-overlay').innerText(), /unsaved payment settings changes will be lost/i,
+        'changing only QR Ph is detected as an unsaved change');
+    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+    assert.equal(await page.locator('[data-owner-payment-method="qrph"]').isChecked(), false, 'declining QR Ph discard keeps its draft');
+    await page.locator('[data-owner-payment-cancel]').click();
+    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+    assert.equal(await page.locator('[data-owner-payment-method="qrph"]').isChecked(), true, 'discard restores saved QR Ph editor value');
+
+    await page.locator('[data-owner-payment-edit]').click();
+    await page.locator('[data-owner-payment-method="gcash"]').uncheck();
+    await page.locator('[data-owner-payment-method="qrph"]').uncheck();
+    await page.locator('[data-owner-payment-save]').click();
+    assert.match(await page.locator('[data-owner-payment-editor-message]').innerText(), /at least one online payment method/i);
+    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'app_settings' && call.write === 'update').length), 0,
+        'invalid payment configuration remains blocked');
+    await page.locator('[data-owner-payment-method="card"]').check();
+    await page.locator('[data-owner-payment-percent]').fill('35.5');
+    await page.locator('[data-owner-payment-cancel]').click();
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), true, 'declining discard keeps the editor open');
+    assert.equal(await page.locator('[data-owner-payment-percent]').inputValue(), '35.5', 'declining discard preserves the draft');
+    await page.keyboard.press('Escape');
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), true, 'Escape cancels the discard prompt without closing the editor');
+    await page.locator('[data-owner-payment-close]').click();
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), false, 'confirmed X discard closes the editor');
+    assert.equal(await page.locator('[data-owner-payment-saved-percent]').innerText(), '50%', 'discard restores the saved summary');
+
+    await page.locator('[data-owner-payment-edit]').click();
+    await page.locator('[data-owner-payment-method="gcash"]').uncheck();
+    await page.locator('[data-owner-payment-method="card"]').check();
+    await page.locator('[data-owner-payment-method="qrph"]').uncheck();
+    await page.locator('[data-owner-payment-percent]').fill('35.5');
+    await page.locator('[data-owner-payment-save]').click();
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'app_settings' && call.write === 'update').length), 0,
+        'payment settings are not written before shared save confirmation');
+    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), true, 'canceling save confirmation keeps the draft open');
+    assert.equal(await page.locator('[data-owner-payment-percent]').inputValue(), '35.5', 'canceling save confirmation preserves the draft');
+    await page.locator('[data-owner-payment-save]').click();
+    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'app_settings' && call.write === 'update'));
+    const paymentSave = await page.evaluate(() => window.__ownerQa.calls.find(call => call.table === 'app_settings' && call.write === 'update'));
+    assert.equal(paymentSave.payload.downpayment_pct, 35.5);
+    assert.equal(paymentSave.payload.card_enabled, true);
+    assert.equal(paymentSave.payload.gcash_enabled, false);
+    assert.equal(paymentSave.payload.qrph_enabled, false, 'QR Ph state is included in the saved payload');
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), false, 'successful save closes the editor');
+    assert.equal(await page.locator('[data-owner-payment-saved-percent]').innerText(), '35.5%', 'saved summary reflects the new value');
+    await page.locator('[data-owner-payment-edit]').click();
+    await page.locator('[data-owner-payment-percent]').fill('40');
+    await page.locator('[data-owner-payment-modal]').click({ position: { x: 3, y: 3 } });
+    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+    assert.equal(await page.locator('[data-owner-payment-modal]').isVisible(), true, 'backdrop discard can be canceled');
+    await page.locator('[data-owner-payment-cancel]').click();
+    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+    assert.equal(await page.locator('[data-owner-payment-percent]').inputValue(), '35.5', 'confirmed discard restores saved editor fields');
+    assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.function === 'payment-health')), false,
+        'payment configuration does not request connection status');
+}
+
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     const failures = [];
     try {
-        for (const width of process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_QUICK === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
-            for (const theme of process.env.OWNER_QA_QUICK === '1' ? ['light'] : ['light', 'dark']) {
+        for (const width of process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_REVIEWS_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' || process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
+            for (const theme of process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? ['light'] : ['light', 'dark']) {
                 const context = await browser.newContext({ viewport: { width, height: 900 }, timezoneId: 'Asia/Manila', reducedMotion: 'reduce' });
                 const page = await context.newPage();
                 page.setDefaultTimeout(5000);
                 page.setDefaultNavigationTimeout(10000);
                 const errors = [];
                 page.on('pageerror', error => errors.push(error.message));
-                await page.addInitScript(theme => localStorage.setItem('inigosync-theme', theme), theme);
+                await page.addInitScript(({ colorTheme, failFeaturedSelection }) => {
+                    localStorage.setItem('inigosync-theme', colorTheme);
+                    window.__ownerQaFailFeaturedSelection = failFeaturedSelection;
+                    const nativeSetInterval = window.setInterval.bind(window);
+                    window.__ownerQaIntervals = [];
+                    window.setInterval = (callback, delay, ...args) => {
+                        if (delay === 15000) window.__ownerQaIntervals.push(callback);
+                        return nativeSetInterval(callback, delay, ...args);
+                    };
+                }, { colorTheme: theme, failFeaturedSelection: process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' });
                 await page.route(/^https:\/\//, route => route.abort());
                 await page.route('**/chart.umd.min.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.Chart=class{static defaults={font:{},color:''};constructor(_canvas,config){this.data=config.data;this.options=config.options;}update(){}};` }));
                 await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})();` }));
@@ -258,6 +405,106 @@ async function verifyOwnerScheduleFlow(page, width) {
                 await page.route('**/includes/courts-data.js', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
                 await page.goto('http://127.0.0.1:4178/Pages/owner_dashboard.html', { waitUntil: 'domcontentloaded' });
                 try {
+                    if (process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1') {
+                        await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
+                        await page.locator('[data-owner-review-list] .owner-review-browser-item').first().waitFor();
+                        await page.locator('[data-featured-review-message]').getByText('The featured selection could not be loaded. Please refresh and try again.').waitFor();
+                        assert.equal(await page.locator('[data-owner-review-list] .owner-review-browser-item').count(), 5, 'public reviews load despite a featured-selection read failure');
+                        assert.equal(await page.locator('[data-featured-review-open]').isDisabled(), true, 'the chooser stays disabled when its saved selection could not be loaded');
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), false, 'failed selection loading does not open the chooser');
+                        assert.deepEqual(errors, [], 'selection failure does not prevent public review browsing or cause page errors');
+                        console.log(`PASS public review browser with featured selection failure ${width}px ${theme}`);
+                        continue;
+                    }
+                    if (process.env.OWNER_QA_REVIEWS_ONLY === '1') {
+                        await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
+                        await page.locator('[data-featured-review-count]').getByText('0 of 3 selected').waitFor();
+                        assert.equal(await page.getByRole('heading', { name: 'Featured booking reviews' }).count(), 0, 'the old picker card heading is removed');
+                        assert.equal(await page.locator('[data-featured-review-slots] .owner-featured-review-slot').count(), 3, 'empty state reserves three featured slots');
+                        assert.equal(await page.locator('[data-featured-review-slots] .owner-featured-review-slot:not(.is-filled)').first().evaluate(el => getComputedStyle(el, '::after').content), '"✦"', 'empty slots have a theme-aware decorative mark');
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), false, 'the chooser remains closed while the public review browser is visible');
+                        assert.equal(await page.locator('[data-owner-review-list] .owner-review-browser-item').count(), 5, 'the read-only browser shows every public review before opening the chooser');
+                        assert.equal(await page.locator('[data-owner-review-list] input').count(), 0, 'the read-only browser has no selection controls');
+                        assert.equal(await page.locator('[data-owner-review-pagination]').evaluate(el => getComputedStyle(el).display), 'none', 'pagination stays hidden below ten reviews');
+                        await page.evaluate(() => window.__ownerQa.tables.public_booking_reviews.push(...Array.from({ length: 5 }, (_, index) => ({ id: `page10-${index}`, rating: 2, comment: null, created_at: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00Z` }))));
+                        await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
+                        await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
+                        await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 10);
+                        assert.equal(await page.locator('[data-owner-review-pagination]').evaluate(el => getComputedStyle(el).display), 'none', 'pagination stays hidden at exactly ten reviews');
+                        await page.evaluate(() => window.__ownerQa.tables.public_booking_reviews.push({ id: 'page11', rating: 2, comment: null, created_at: '2026-09-07T00:00:00Z' }));
+                        await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
+                        await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
+                        await page.locator('[data-owner-review-pagination]').waitFor({ state: 'visible' });
+                        assert.equal(await page.locator('[data-owner-review-list] .owner-review-browser-item').count(), 10, 'one page contains at most ten reviews');
+                        await page.locator('[data-owner-review-next]').click();
+                        await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 1);
+                        assert.equal(await page.locator('[data-owner-review-page-info]').innerText(), 'Page 2 of 2', 'the eleventh review appears on page two');
+                        await page.evaluate(() => { window.__ownerQa.tables.public_booking_reviews = window.__ownerQa.tables.public_booking_reviews.filter(review => !review.id.startsWith('page10-') && review.id !== 'page11'); });
+                        await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
+                        await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
+                        await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 5);
+                        await page.locator('[data-owner-review-list]').getByText('No written comment').waitFor();
+                        await page.locator('[data-owner-review-rating="1"]').click();
+                        await page.locator('[data-owner-review-list]').getByText('No customer reviews match this filter yet.').waitFor();
+                        await page.locator('[data-owner-review-rating="all"]').click();
+                        await page.locator('[data-owner-review-list] .owner-review-browser-item').first().waitFor();
+                        await page.locator('[data-featured-review-open]').click();
+                        assert.equal(await page.locator('[data-featured-review-modal]').getAttribute('hidden'), null, 'Choose reviews opens the accessible modal');
+                        assert.equal(await page.locator('[data-featured-review-dialog]').getAttribute('aria-modal'), 'true');
+                        assert.equal(await page.locator('[data-featured-review-id]').count(), 4, 'blank or whitespace-only comments are ineligible');
+                        assert.equal(await page.locator('[data-admin-review-pagination]').evaluate(el => getComputedStyle(el).display), 'none', 'the single-page pager stays hidden');
+                        assert.ok(await page.locator('[data-featured-review-modal-count]').evaluate(el => el.getBoundingClientRect().top - el.previousElementSibling.getBoundingClientRect().bottom >= 8), 'selection count is spaced below the modal description');
+                        await page.locator('[data-featured-review-id="r2"]').check();
+                        await page.locator('[data-featured-review-id="r1"]').check();
+                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), true, 'fewer than three reviews cannot be saved');
+                        await page.locator('[data-featured-review-id="r3"]').check();
+                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'exactly three reviews enable Save');
+                        assert.equal(await page.locator('[data-featured-review-id="r4"]').isDisabled(), true, 'the fourth review is disabled at the three-review limit');
+                        await page.locator('[data-featured-review-cancel]').click();
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), true, 'declining discard keeps the draft open');
+                        assert.equal(await page.locator('[data-featured-review-id]:checked').count(), 3, 'declining discard retains the draft choices');
+                        await page.locator('[data-featured-review-save]').click();
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        assert.match(await page.locator('.owner-confirm-overlay').innerText(), /update the three reviews shown on your landing page/i);
+                        assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection), [], 'selection is not written before confirmation');
+                        await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), true, 'declining save keeps the picker open');
+                        await page.locator('[data-featured-review-save]').click();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.locator('[data-featured-review-message]').getByText('Featured reviews saved.').waitFor();
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), false, 'saved selection closes the picker');
+                        assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection[0].review_ids), ['r2', 'r1', 'r3'], 'selection order persists');
+                        await page.evaluate(() => window.__ownerQa.tables.public_booking_reviews.push({ id: 'r6', rating: 2, comment: null, created_at: '2026-09-06T00:00:00Z' }));
+                        await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
+                        await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
+                        assert.equal(await page.locator('[data-featured-review-slots] .owner-featured-review-slot.is-filled').count(), 3, 'saved reviews are shown in the three homepage slots');
+                        assert.equal(await page.locator('[data-owner-review-list] .owner-review-browser-item').count(), 6, 'revisiting feedback refreshes the read-only browser with newly available public reviews');
+                        assert.equal(await page.locator('[data-owner-review-list]').getByText('No written comment').count(), 2, 'new rating-only reviews keep their no-comment treatment after refresh');
+                        await page.locator('[data-featured-review-open]').click();
+                        await page.waitForFunction(() => [...document.querySelectorAll('[data-featured-review-id]:checked')].length === 3);
+                        assert.deepEqual(await page.locator('[data-featured-review-id]:checked').evaluateAll(inputs => inputs.map(input => input.closest('label').querySelector('.owner-featured-review-order').textContent).sort()), ['1', '2', '3'], 'saved choices reload with their order markers');
+                        await page.locator('[data-featured-review-id="r3"]').uncheck();
+                        await page.locator('[data-featured-review-close]').click();
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), true, 'declining the X discard keeps the draft open');
+                        await page.locator('[data-featured-review-modal]').click({ position: { x: 4, y: 4 } });
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), false, 'backdrop asks before discarding a changed draft');
+                        await page.locator('[data-featured-review-open]').click();
+                        await page.waitForFunction(() => [...document.querySelectorAll('[data-featured-review-id]:checked')].length === 3);
+                        await page.keyboard.press('Escape');
+                        assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), false, 'Escape closes an unchanged draft directly');
+                        await page.locator('[data-featured-review-open]').click();
+                        await page.waitForFunction(() => [...document.querySelectorAll('[data-featured-review-id]:checked')].length === 3);
+                        assert.equal(await page.locator('[data-owner-direct-feedback]').count(), 0, 'private feedback has no separate display');
+                        assert.deepEqual(errors, [], 'review selection has no uncaught page errors');
+                        console.log(`PASS featured booking review selection ${width}px ${theme}`);
+                        continue;
+                    }
                     if (process.env.OWNER_QA_STAFF_ONLY === '1') {
                         await page.locator('[data-admin-nav="staff"]').first().evaluate(el => el.click());
                         assert.equal(await page.locator('[data-admin-panel="staff"]').getByRole('heading', { name: 'All Staff Accounts' }).count(), 0);
@@ -309,6 +556,12 @@ async function verifyOwnerScheduleFlow(page, width) {
                         const invite = await page.evaluate(() => window.__ownerQa.calls.find(call => call.request === 'invite-staff'));
                         assert.deepEqual(invite.body, { email: 'new-staff@example.test', position: 'Secretary' }, 'accepted confirmation sends the intended invite');
                         console.log(`PASS staff Actions ${width}px ${theme}`);
+                        continue;
+                    }
+                    if (process.env.OWNER_QA_PAYMENT_ONLY === '1') {
+                        await verifyOwnerPaymentFlow(page);
+                        assert.deepEqual(errors, [], `${width}px payment flow has no uncaught page errors`);
+                        console.log(`PASS owner payment ${width}px ${theme}`);
                         continue;
                     }
                     if (process.env.OWNER_QA_SCHEDULE_ONLY === '1') {
@@ -385,7 +638,7 @@ async function verifyOwnerScheduleFlow(page, width) {
                     assert.equal(await page.locator('[data-admin-panel="announcement"]').isVisible(), true);
                     assert.equal(await page.locator('[data-admin-title]').innerText(), 'Announcement');
                     await page.locator('[data-admin-nav="booking-rules"]').evaluate(el => el.click());
-                    assert.equal(await page.locator('[data-admin-title]').innerText(), 'Working Time Schedule');
+                    assert.equal(await page.locator('[data-admin-title]').innerText(), 'Business Hours');
                     await page.locator('[data-owner-rules-edit]').waitFor({ state: 'visible' });
                     assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'main card shows the current effective date');
                     assert.equal(await page.locator('[data-owner-rules-saved-grace]').innerText(), '30 minutes', 'main card shows the current grace period');
@@ -427,14 +680,24 @@ async function verifyOwnerScheduleFlow(page, width) {
                     assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'Edit enables weekly hours');
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('40');
-                    assert.deepEqual(await page.locator('[data-owner-rules-open], [data-owner-rules-close]').evaluateAll(inputs => inputs.map(input => input.step)),
-                        Array(14).fill('3600'), 'every weekday time input accepts whole-hour values only');
-                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').fill('09:30');
+                    const scheduleTimeOptions = await page.locator('[data-owner-rules-open], [data-owner-rules-close]').evaluateAll(selects => selects.map(select => ({
+                        tag: select.tagName,
+                        values: [...select.options].map(option => option.value).filter(Boolean),
+                    })));
+                    assert.ok(scheduleTimeOptions.every(({ tag, values }) => tag === 'SELECT'
+                        && values.length === 24 && values.every(value => /^\d{2}:00$/.test(value))),
+                    'every weekday schedule control only offers whole-hour values');
+                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').evaluate(select => { select.value = '09:30'; });
                     await page.locator('[data-owner-rules-save]').click();
                     assert.match(await page.locator('[data-owner-rules-message]').innerText(), /whole-hour.*:00/i, 'minute values are rejected before save');
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.rpc === 'owner_save_booking_rules')), false, 'minute values never reach the save RPC');
-                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').fill('09:00');
+                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').selectOption('09:00');
                     await page.locator('[data-owner-rules-cancel]').click();
+                    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                    assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), true, 'declining schedule discard leaves edits intact');
+                    await page.locator('[data-owner-rules-cancel]').click();
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
                     assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'Cancel closes schedule editor modal');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_get_booking_rules').length >= 2);
                     assert.equal(await page.locator('[data-owner-rules-effective]').inputValue(), await page.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())), 'Cancel reloads and discards draft values');
@@ -446,8 +709,8 @@ async function verifyOwnerScheduleFlow(page, width) {
                     await page.locator('[data-owner-rules-grace]').fill('45');
                     for (let weekday = 1; weekday <= 7; weekday += 1) {
                         const dayRow = page.locator(`[data-owner-rules-day="${weekday}"]`);
-                        await dayRow.locator('[data-owner-rules-open]').fill(`${String(weekday + 8).padStart(2, '0')}:00`);
-                        await dayRow.locator('[data-owner-rules-close]').fill('22:00');
+                        await dayRow.locator('[data-owner-rules-open]').selectOption(`${String(weekday + 8).padStart(2, '0')}:00`);
+                        await dayRow.locator('[data-owner-rules-close]').selectOption('22:00');
                     }
                     await page.evaluate(date => window.InigoBusinessHours.getForDate(date), futureScheduleDate);
                     const ruleReadCountBeforeSave = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'booking_rules_for_date').length);
@@ -577,6 +840,37 @@ async function verifyOwnerScheduleFlow(page, width) {
                     // Audit Trail aggregates activity with bounded search, filter and pagination.
                     await page.locator('[data-admin-nav="audit"]').evaluate(el => el.click());
                     await page.locator('[data-owner-audit-rows] tr').first().waitFor();
+                    assert.equal(await page.locator('[data-owner-audit-refresh]').count(), 0, 'audit trail does not show a manual refresh button');
+                    assert.equal(await page.getByText('Recorded account, booking, payment, and staff activity.', { exact: true }).count(), 0, 'audit trail omits the redundant subtitle');
+                    const auditBeforeBackgroundRefresh = await page.evaluate(() => {
+                        window.__ownerQa.holdNextAuditRpc = true;
+                        const rpcCount = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').length;
+                        const intervalCount = window.__ownerQaIntervals.length;
+                        window.__ownerQa.auditEvents.unshift({ event_id: 'auto-audit-event', source: 'audit_log', created_at: new Date().toISOString(), action: 'automatic_update', category: 'owner', actor_id: 'qa-owner', actor_name: 'QA Owner', actor_role: 'admin', target_type: 'audit', target_id: null, amount: null, summary: 'Newly recorded event' });
+                        window.__ownerQaIntervals.at(-1)?.();
+                        return { rpcCount, intervalCount, status: document.querySelector('[data-owner-audit-status]').textContent, busy: document.querySelector('[data-owner-audit-rows]').getAttribute('aria-busy'), paginationHidden: document.querySelector('[data-owner-audit-pagination]').hidden, rows: document.querySelector('[data-owner-audit-rows]').textContent };
+                    });
+                    assert.equal(auditBeforeBackgroundRefresh.intervalCount, 1, 'the audit panel registers one captured automatic refresh interval');
+                    await page.waitForFunction(count => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').length > count, auditBeforeBackgroundRefresh.rpcCount);
+                    const auditDuringBackgroundRefresh = await page.evaluate(() => {
+                        const view = { status: document.querySelector('[data-owner-audit-status]').textContent, busy: document.querySelector('[data-owner-audit-rows]').getAttribute('aria-busy'), paginationHidden: document.querySelector('[data-owner-audit-pagination]').hidden, rows: document.querySelector('[data-owner-audit-rows]').textContent };
+                        window.__ownerQa.releaseAuditRpc?.();
+                        return view;
+                    });
+                    assert.deepEqual(auditDuringBackgroundRefresh, { status: auditBeforeBackgroundRefresh.status, busy: auditBeforeBackgroundRefresh.busy, paginationHidden: auditBeforeBackgroundRefresh.paginationHidden, rows: auditBeforeBackgroundRefresh.rows }, 'background refresh keeps the displayed status, rows, and pagination available while fetching');
+                    await page.locator('[data-owner-audit-rows]').getByText('auto-audit-event').waitFor();
+                    const auditPaginationCenter = await page.locator('[data-owner-audit-pagination]').evaluate(el => {
+                        if (el.hidden) return null;
+                        const center = element => {
+                            const bounds = element.getBoundingClientRect();
+                            return bounds.left + bounds.width / 2;
+                        };
+                        const buttons = el.querySelectorAll('button');
+                        const first = buttons[0]?.getBoundingClientRect();
+                        const last = buttons[buttons.length - 1]?.getBoundingClientRect();
+                        return { group: (first.left + last.right) / 2, card: center(el.closest('.owner-audit-card')) };
+                    });
+                    if (auditPaginationCenter) assert.ok(Math.abs(auditPaginationCenter.group - auditPaginationCenter.card) <= 2, `${width}px audit pagination is horizontally centered in its card`);
                     const auditLayout = await page.locator('.owner-audit-filters').evaluate(el => {
                         const groups = [...el.querySelectorAll('.admin-form-group')].map(group => {
                             const label = group.querySelector('.admin-form-label').getBoundingClientRect();
@@ -680,32 +974,20 @@ async function verifyOwnerScheduleFlow(page, width) {
                     }
                     await page.locator('[data-admin-staff-modal-close]').first().click();
 
-                    // Aggregate must stay fixed when the list is filtered.
+                    // The owner selects and saves exactly three reviews in a deliberate order.
                     await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
-                    await page.locator('[data-admin-review-summary]').getByText('4.0 / 5.0').waitFor();
-                    await page.locator('[data-admin-review-rating="5"]').click();
-                    await page.locator('[data-admin-review-list]').getByText('Great').waitFor();
-                    assert.equal(await page.locator('[data-admin-review-list]').getByText('Okay').count(), 0);
-                    assert.match(await page.locator('[data-admin-review-summary]').innerText(), /4\.0 \/ 5\.0/);
-                    assert.doesNotMatch(await page.locator('[data-admin-review-summary]').innerText(), /customer reviews|No reviews yet/i);
+                    await page.locator('[data-featured-review-count]').getByText('0 of 3 selected').waitFor();
+                    await page.locator('[data-featured-review-id="r2"]').check();
+                    await page.locator('[data-featured-review-id="r1"]').check();
+                    assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), true, 'fewer than three reviews cannot be saved');
+                    await page.locator('[data-featured-review-id="r3"]').check();
+                    assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'exactly three reviews enable Save');
+                    await page.locator('[data-featured-review-save]').click();
+                    await page.locator('[data-featured-review-message]').getByText('Featured reviews saved.').waitFor();
+                    assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection[0].review_ids), ['r2', 'r1', 'r3'], 'selection order persists');
 
-                    // Payment settings are owner-only, validate online availability, and report safe PayMongo health.
-                    await page.locator('[data-admin-nav="payments"]').evaluate(el => el.click());
-                    await page.locator('[data-owner-paymongo-api]').getByText('Connected').waitFor();
-                    await page.locator('[data-owner-paymongo-webhook]').getByText('Ready').waitFor();
-                    assert.equal(await page.locator('[data-owner-payment-method="gcash"]').isChecked(), true);
-                    await page.locator('[data-owner-payment-method="gcash"]').uncheck();
-                    await page.locator('[data-owner-payment-save]').click();
-                    assert.match(await page.locator('[data-owner-payment-message]').innerText(), /at least one online payment method/i);
-                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'app_settings' && call.write === 'update').length), 0);
-                    await page.locator('[data-owner-payment-method="card"]').check();
-                    await page.locator('[data-owner-payment-percent]').fill('35.5');
-                    await page.locator('[data-owner-payment-save]').click();
-                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'app_settings' && call.write === 'update'));
-                    const paymentSave = await page.evaluate(() => window.__ownerQa.calls.find(call => call.table === 'app_settings' && call.write === 'update'));
-                    assert.equal(paymentSave.payload.downpayment_pct, 35.5);
-                    assert.equal(paymentSave.payload.card_enabled, true);
-                    assert.equal(paymentSave.payload.gcash_enabled, false);
+                    // Payment settings remain owner-only and validate online availability.
+                    await verifyOwnerPaymentFlow(page);
                     assert.doesNotMatch(await page.locator('[data-admin-panel="payments"]').innerText(), /secret|sk_test/i);
 
                     }

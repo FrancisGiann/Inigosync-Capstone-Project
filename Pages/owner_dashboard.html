@@ -89,7 +89,7 @@
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="booking-rules">
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M7.5 3v3M16.5 3v3M4 9h16M8 13h3m-3 3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-                    Working Time Schedule
+                    Business Hours
                 </button>
             </li>
             <li>
@@ -445,12 +445,12 @@
                         <ul class="owner-rules-saved-week" data-owner-rules-saved-week aria-label="Current saved weekly hours"></ul>
                         <div class="owner-rules-upcoming" data-owner-rules-upcoming hidden><h4>Scheduled changes</h4><p>Effective from <strong data-owner-rules-upcoming-effective></strong> · <span data-owner-rules-upcoming-grace></span>-minute no-show grace period</p><ul class="owner-rules-saved-week" data-owner-rules-upcoming-week aria-label="Scheduled weekly hours"></ul></div>
                     </div>
-                    <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Working Time Schedule</button></div>
+                    <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Business Hours</button></div>
                 </div>
                 <div class="admin-modal-overlay owner-rules-modal-overlay" data-owner-rules-modal hidden>
                     <div class="admin-modal owner-rules-modal" role="dialog" aria-modal="true" aria-labelledby="ownerRulesModalTitle" tabindex="-1" data-owner-rules-dialog>
-                        <button type="button" class="admin-modal-close" data-owner-rules-modal-close aria-label="Close Working Time Schedule editor">×</button>
-                        <h3 id="ownerRulesModalTitle">Edit Working Time Schedule</h3>
+                        <button type="button" class="admin-modal-close" data-owner-rules-modal-close aria-label="Close Business Hours editor">×</button>
+                        <h3 id="ownerRulesModalTitle">Edit Business Hours</h3>
                         <p class="admin-card-sub">Changes apply to shared availability from the effective date.</p>
                     <div class="owner-booking-rules-meta">
                         <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
@@ -461,18 +461,18 @@
                         <table class="owner-rules-table">
                             <thead><tr><th scope="col">Day</th><th scope="col">Opening time</th><th scope="col">Closing time</th><th scope="col">Closed</th></tr></thead>
                             <tbody data-owner-rules-weekdays>
-                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><input type="time" step="3600" class="admin-input" aria-label="Monday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Monday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><input type="time" step="3600" class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><input type="time" step="3600" class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><input type="time" step="3600" class="admin-input" aria-label="Thursday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Thursday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><input type="time" step="3600" class="admin-input" aria-label="Friday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Friday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><input type="time" step="3600" class="admin-input" aria-label="Saturday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Saturday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed disabled></td></tr>
-                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><input type="time" step="3600" class="admin-input" aria-label="Sunday opening time" data-owner-rules-open disabled></td><td><input type="time" step="3600" class="admin-input" aria-label="Sunday closing time" data-owner-rules-close disabled></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><select class="admin-input" aria-label="Monday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Monday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="2"><th scope="row">Tuesday</th><td><select class="admin-input" aria-label="Tuesday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Tuesday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Tuesday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="3"><th scope="row">Wednesday</th><td><select class="admin-input" aria-label="Wednesday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Wednesday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Wednesday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="4"><th scope="row">Thursday</th><td><select class="admin-input" aria-label="Thursday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Thursday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Thursday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="5"><th scope="row">Friday</th><td><select class="admin-input" aria-label="Friday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Friday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Friday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="6"><th scope="row">Saturday</th><td><select class="admin-input" aria-label="Saturday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Saturday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Saturday" data-owner-rules-closed disabled></td></tr>
+                                <tr data-owner-rules-day="7"><th scope="row">Sunday</th><td><select class="admin-input" aria-label="Sunday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Sunday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Sunday" data-owner-rules-closed disabled></td></tr>
                             </tbody>
                         </table>
                     </div>
                     <p class="owner-rules-message" data-owner-rules-message role="status" aria-live="polite"></p>
-                    <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Working Time Schedule</button></div>
+                    <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Business Hours</button></div>
                     </div>
                 </div>
             </section>
@@ -482,34 +482,70 @@
                     <div class="admin-card-head">
                         <div><h3>Booking payment options</h3><p class="admin-card-sub">Set the deposit for online bookings and the payment methods available to customers and staff.</p></div>
                     </div>
-                    <div class="owner-payment-config-grid">
-                        <label class="admin-form-group owner-payment-percent"><span class="admin-form-label">Down payment</span><span class="owner-payment-percent-input"><input type="number" class="admin-input" min="0.01" max="99.99" step="0.01" inputmode="decimal" data-owner-payment-percent aria-describedby="ownerPaymentPercentHint"><span>%</span></span><span class="admin-form-hint" id="ownerPaymentPercentHint">Set the deposit percentage for new online bookings.</span></label>
-                        <fieldset class="owner-payment-methods">
-                            <legend>Available payment methods</legend>
-                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="cash"><span><strong>Cash</strong><small>Staff counter and check-in payments</small></span></label>
-                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="card"><span><strong>Card</strong><small>Pay online with a card</small></span></label>
-                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="gcash"><span><strong>GCash</strong><small>Pay online with GCash</small></span></label>
-                            <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="qrph"><span><strong>QR Ph</strong><small>Customer scans a dynamic QR Ph code</small></span></label>
-                            <p class="admin-form-hint owner-payment-method-hint">Keep at least one online method enabled so customers can confirm bookings.</p>
-                        </fieldset>
-                    </div>
-                    <p class="owner-payment-config-message" data-owner-payment-message role="status" aria-live="polite"></p>
-                    <div class="admin-form-actions"><button type="button" class="admin-btn-save" data-owner-payment-save>Save payment settings</button></div>
-                </div>
-                <div class="admin-card owner-paymongo-card">
-                    <div class="admin-card-head"><div><h3>PayMongo connection</h3><p class="admin-card-sub">Connection checks show whether the payment service is ready. Payment credentials stay protected on the server.</p></div><button type="button" class="admin-btn-ghost" data-owner-paymongo-refresh>Refresh status</button></div>
-                    <dl class="owner-paymongo-status">
-                        <div><dt>API connection</dt><dd data-owner-paymongo-api>Checking…</dd></div>
-                        <div><dt>Payment confirmation setup</dt><dd data-owner-paymongo-webhook>Checking…</dd></div>
-                        <div><dt>Last confirmed payment</dt><dd data-owner-paymongo-last-payment>Checking…</dd></div>
+                    <dl class="owner-payment-summary" aria-live="polite">
+                        <div><dt>Down payment</dt><dd><span data-owner-payment-saved-percent>Loading…</span></dd></div>
+                        <div><dt>Available payment methods</dt><dd data-owner-payment-saved-methods>Loading…</dd></div>
                     </dl>
+                    <p class="owner-payment-config-message" data-owner-payment-message role="status" aria-live="polite"></p>
+                    <div class="admin-form-actions"><button type="button" class="admin-btn-save" data-owner-payment-edit disabled>Edit payment settings</button></div>
+                </div>
+                <div class="admin-modal-overlay owner-payment-modal-overlay" data-owner-payment-modal hidden>
+                    <div class="admin-modal owner-payment-modal" role="dialog" aria-modal="true" aria-labelledby="ownerPaymentModalTitle" tabindex="-1" data-owner-payment-dialog>
+                        <button type="button" class="admin-modal-close" data-owner-payment-close aria-label="Close payment settings editor">×</button>
+                        <h3 id="ownerPaymentModalTitle">Edit payment settings</h3>
+                        <p class="admin-card-sub">Changes apply to new checkouts; existing bookings keep their agreed amount.</p>
+                        <div class="owner-payment-config-grid">
+                            <label class="admin-form-group owner-payment-percent"><span class="admin-form-label">Down payment</span><span class="owner-payment-percent-input"><input type="number" class="admin-input" min="0.01" max="99.99" step="0.01" inputmode="decimal" data-owner-payment-percent aria-describedby="ownerPaymentPercentHint"><span>%</span></span><span class="admin-form-hint" id="ownerPaymentPercentHint">Set the deposit percentage for new online bookings.</span></label>
+                            <fieldset class="owner-payment-methods">
+                                <legend>Available payment methods</legend>
+                                <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="cash"><span><strong>Cash</strong><small>Staff counter and check-in payments</small></span></label>
+                                <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="card"><span><strong>Card</strong><small>Pay online with a card</small></span></label>
+                                <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="gcash"><span><strong>GCash</strong><small>Pay online with GCash</small></span></label>
+                                <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="qrph"><span><strong>QR Ph</strong><small>Customer scans a dynamic QR Ph code</small></span></label>
+                                <p class="admin-form-hint owner-payment-method-hint">Keep at least one online method enabled so customers can confirm bookings.</p>
+                            </fieldset>
+                        </div>
+                        <p class="owner-payment-config-message" data-owner-payment-editor-message role="status" aria-live="polite"></p>
+                        <div class="admin-form-actions owner-payment-actions"><button type="button" class="admin-btn-ghost" data-owner-payment-cancel>Cancel</button><button type="button" class="admin-btn-save" data-owner-payment-save>Save payment settings</button></div>
+                    </div>
                 </div>
             </section>
 
             <section class="admin-panel" data-admin-panel="feedback">
                 <div class="admin-card admin-booking-reviews-card">
-                    <div class="admin-review-summary" data-admin-review-summary aria-live="polite">Loading customer reviews…</div>
-                    <div class="admin-review-filter" role="group" aria-label="Filter reviews by star rating">
+                    <div class="owner-featured-review-stage">
+                        <svg class="owner-featured-review-art" viewBox="0 0 180 150" aria-hidden="true" focusable="false"><path d="M90 10 108 61l54 2-42 34 15 51-45-30-45 30 15-51L18 63l54-2z" fill="currentColor" opacity=".13"/><path d="m90 27 13 37 39 1-31 24 11 37-32-22-32 22 11-37-31-24 39-1z" fill="currentColor"/><circle cx="145" cy="30" r="9" fill="currentColor" opacity=".45"/><circle cx="36" cy="111" r="6" fill="currentColor" opacity=".45"/></svg>
+                        <div class="owner-featured-review-stage-copy"><p class="owner-featured-review-kicker">Homepage spotlight</p><p class="owner-featured-review-stage-title">Three stories from your customers</p><p class="owner-featured-review-stage-note">Your featured reviews appear on the landing page in the order shown.</p></div>
+                        <div class="owner-featured-review-count" data-featured-review-count aria-live="polite">Loading featured review selection…</div>
+                    </div>
+                    <div class="owner-featured-review-slots" data-featured-review-slots aria-live="polite" aria-busy="true"></div>
+                    <p class="owner-featured-review-message" data-featured-review-message role="status" aria-live="polite"></p>
+                    <div class="owner-featured-review-actions"><button type="button" class="admin-btn-save" data-featured-review-open disabled>Choose reviews</button></div>
+                    <section class="owner-review-browser" aria-labelledby="ownerReviewBrowserTitle">
+                        <div class="owner-review-browser-head"><div><h4 id="ownerReviewBrowserTitle">All customer reviews</h4><p class="admin-card-sub">Browse public booking reviews, including ratings without a written comment.</p></div></div>
+                        <div class="admin-review-filter owner-review-browser-filter" role="group" aria-label="Filter customer reviews by star rating">
+                            <button type="button" class="admin-chip is-active" data-owner-review-rating="all" aria-pressed="true">All ratings</button>
+                            <button type="button" class="admin-chip" data-owner-review-rating="5" aria-pressed="false">5 stars</button>
+                            <button type="button" class="admin-chip" data-owner-review-rating="4" aria-pressed="false">4 stars</button>
+                            <button type="button" class="admin-chip" data-owner-review-rating="3" aria-pressed="false">3 stars</button>
+                            <button type="button" class="admin-chip" data-owner-review-rating="2" aria-pressed="false">2 stars</button>
+                            <button type="button" class="admin-chip" data-owner-review-rating="1" aria-pressed="false">1 star</button>
+                        </div>
+                        <div class="admin-review-list owner-review-browser-list" data-owner-review-list aria-live="polite" aria-busy="true"><p class="admin-form-hint">Loading reviews…</p></div>
+                        <nav class="admin-review-pagination" data-owner-review-pagination aria-label="Customer review pages" hidden>
+                            <button type="button" class="admin-btn-ghost" data-owner-review-prev disabled>Previous</button>
+                            <span data-owner-review-page-info aria-live="polite">Page 1 of 1</span>
+                            <button type="button" class="admin-btn-ghost" data-owner-review-next disabled>Next</button>
+                        </nav>
+                    </section>
+                </div>
+                <div class="admin-modal-overlay owner-featured-review-overlay" data-featured-review-modal hidden>
+                    <div class="admin-modal owner-featured-review-modal" role="dialog" aria-modal="true" aria-labelledby="featuredReviewModalTitle" tabindex="-1" data-featured-review-dialog>
+                        <button type="button" class="admin-modal-close" data-featured-review-close aria-label="Close review chooser">×</button>
+                        <h3 id="featuredReviewModalTitle">Choose homepage reviews</h3>
+                        <p class="admin-card-sub">Select three reviews. Their numbers show the order on your landing page.</p>
+                        <p class="owner-featured-review-count owner-featured-review-modal-count" data-featured-review-modal-count aria-live="polite">0 of 3 selected</p>
+                        <div class="admin-review-filter" role="group" aria-label="Filter reviews by star rating">
                         <button type="button" class="admin-chip is-active" data-admin-review-rating="all" aria-pressed="true">All ratings</button>
                         <button type="button" class="admin-chip" data-admin-review-rating="5" aria-pressed="false">5 stars</button>
                         <button type="button" class="admin-chip" data-admin-review-rating="4" aria-pressed="false">4 stars</button>
@@ -517,19 +553,17 @@
                         <button type="button" class="admin-chip" data-admin-review-rating="2" aria-pressed="false">2 stars</button>
                         <button type="button" class="admin-chip" data-admin-review-rating="1" aria-pressed="false">1 star</button>
                     </div>
-                    <div class="admin-review-list" data-admin-review-list aria-live="polite" aria-busy="true">
+                        <div class="admin-review-list owner-featured-review-list" data-admin-review-list aria-live="polite" aria-busy="true">
                         <p class="admin-form-hint">Loading reviews…</p>
-                    </div>
-                    <nav class="admin-review-pagination" data-admin-review-pagination aria-label="Review pages" hidden>
+                        </div>
+                        <nav class="admin-review-pagination" data-admin-review-pagination aria-label="Review pages" hidden>
                         <button type="button" class="admin-btn-ghost" data-admin-review-prev disabled>Previous</button>
                         <span data-admin-review-page-info aria-live="polite">Page 1 of 1</span>
                         <button type="button" class="admin-btn-ghost" data-admin-review-next disabled>Next</button>
-                    </nav>
-                </div>
-                <div class="admin-card admin-booking-reviews-card owner-direct-feedback-card">
-                    <div class="admin-card-head"><div><h3>Direct customer feedback</h3><p class="admin-card-sub">Private feedback submitted from customer accounts.</p></div></div>
-                    <div class="admin-review-list" data-owner-direct-feedback aria-live="polite" aria-busy="true"><p class="admin-form-hint">Loading feedback…</p></div>
-                    <button type="button" class="admin-btn-ghost" data-owner-feedback-more hidden>Show more feedback</button>
+                        </nav>
+                        <p class="owner-featured-review-modal-message" data-featured-review-modal-message role="status" aria-live="polite"></p>
+                        <div class="admin-form-actions owner-featured-review-modal-actions"><button type="button" class="admin-btn-ghost" data-featured-review-cancel>Cancel</button><button type="button" class="admin-btn-save" data-featured-review-save disabled>Save selection</button></div>
+                    </div>
                 </div>
             </section>
             <!-- ============================================================
@@ -557,7 +591,6 @@
             </section>
             <section class="admin-panel" data-admin-panel="audit">
                 <div class="admin-card owner-audit-card">
-                    <div class="admin-card-head"><div><h3>Audit Trail</h3><p class="admin-card-sub">Recorded account, booking, payment, and staff activity.</p></div><button type="button" class="admin-btn-ghost" data-owner-audit-refresh>Refresh</button></div>
                     <div class="owner-audit-filters" aria-label="Audit trail filters">
                         <label class="admin-form-group"><span class="admin-form-label">Search event ID or text</span><input type="search" class="admin-input" maxlength="120" placeholder="Search actions, people, or record IDs" data-owner-audit-search></label>
                         <label class="admin-form-group"><span class="admin-form-label">From</span><input type="date" class="admin-input" data-owner-audit-from></label>

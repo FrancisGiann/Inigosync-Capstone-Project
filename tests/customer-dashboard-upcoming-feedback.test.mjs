@@ -42,15 +42,13 @@ test('customer bookings are loaded through an account-scoped query and retryable
     assert.match(html, /data-dash-upcoming-more[^>]*>Show more<\/button>/);
 });
 
-test('feedback schema restricts customer inserts to the active authenticated customer and owner reads to staff/admin', () => {
+test('feedback schema remains private while owner reviews use the public booking-review projection', () => {
     assert.match(migration, /alter table public\.feedback enable row level security/i);
     assert.match(migration, /profile_id\s*=\s*\(select auth\.uid\(\)\)[\s\S]*?internal\.is_active_customer\(\(select auth\.uid\(\)\)\)/i);
     assert.match(migration, /feedback_customer_select_own[\s\S]*?using\s*\(profile_id\s*=\s*\(select auth\.uid\(\)\)\)/i);
     assert.match(migration, /feedback_staff_select_all[\s\S]*?public\.inigosync_is_staff_or_admin\(\)/i);
     assert.match(migration, /revoke all on public\.feedback from public, anon/i);
-    assert.match(ownerDashboard, /\.from\('feedback'\)[\s\S]*?\.select\('id,rating,message,created_at'/);
-    assert.match(ownerDashboard, /window\.escapeHtml\(entry\.message \|\| ''\)/);
-    assert.match(ownerDashboard, /count\s*>\s*ownerFeedbackVisibleCount|\(count \|\| 0\) <= ownerFeedbackVisibleCount/);
+    assert.doesNotMatch(ownerDashboard, /\.from\('feedback'\)/);
     assert.match(dashboard, /\.from\('feedback'\)\.insert\([\s\S]*?profile_id:\s*window\.inigosyncProfile\.id/);
     assert.match(dashboard, /finally\s*\{\s*feedbackSubmitBtn\.disabled = false/);
 });
@@ -63,5 +61,6 @@ test('dashboard presentation controls remain scoped and remove obsolete overview
     assert.match(dashboard, /dashTopbar\.classList\.add\('is-hidden'\)/);
     assert.match(dashboard, /dashTopbar\.classList\.remove\('is-hidden'\)/);
     assert.match(css, /prefers-reduced-motion/);
-    assert.match(ownerHtml, /data-owner-direct-feedback/);
+    assert.doesNotMatch(ownerHtml, /data-owner-direct-feedback|Direct customer feedback/);
+    assert.match(ownerHtml, /data-featured-review-save/);
 });

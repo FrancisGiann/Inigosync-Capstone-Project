@@ -15,11 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'testimonial-card onsite-review-placeholder';
 
         const title = document.createElement('strong');
-        title.textContent = 'No reviews yet';
+        title.textContent = 'No featured reviews yet';
 
         const description = document.createElement('p');
         description.className = 'testimonial-quote';
-        description.textContent = 'Reviews from completed bookings will appear here once customers share their experience.';
+        description.textContent = 'Selected customer reviews will appear here after the owner chooses them.';
 
         card.append(title, description);
         grid.replaceChildren(card);
@@ -64,10 +64,9 @@ document.addEventListener('DOMContentLoaded', () => {
     (async () => {
         try {
             if (!window.sb) throw new Error('Database client unavailable');
-            const { data, error } = await window.sb.from('public_booking_reviews')
-                .select('rating,comment,created_at')
-                .order('created_at', { ascending: false })
-                .limit(3);
+            const { data, error } = await window.sb.from('public_featured_booking_reviews')
+                .select('rating,comment,created_at,display_order')
+                .order('display_order', { ascending: true });
             if (error) throw error;
 
             const reviews = (data || []).filter((review) => {
