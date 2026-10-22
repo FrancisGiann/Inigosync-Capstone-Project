@@ -661,13 +661,12 @@
                                     <input id="dashSettingsEmergencyName" type="text" class="dash-input" autocomplete="off" data-dash-settings-emergency-name>
                                 </div>
                                 <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsEmergencyNumber">Emergency contact number</label>
+                                    <div class="phone-field-heading"><label class="dash-form-label" for="dashSettingsEmergencyNumber">Emergency contact number</label><span id="dashSettingsEmergencyStatus" class="phone-field-status" data-dash-emergency-status role="status" aria-live="polite">Optional · shared contacts allowed</span></div>
                                     <div class="dash-mobile-verify-row">
-                                        <input id="dashSettingsEmergencyNumber" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" data-digits-only data-dash-settings-emergency-number>
+                                        <input id="dashSettingsEmergencyNumber" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" aria-describedby="dashSettingsEmergencyStatus" data-digits-only data-dash-settings-emergency-number>
                                         <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-emergency-save hidden disabled>Save validated number</button>
                                         <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-emergency-remove hidden>Remove</button>
                                     </div>
-                                    <span class="dash-mobile-status" role="status" data-dash-emergency-status>We check Philippine mobile format; emergency numbers may be shared with family.</span>
                                 </div>
                                 <div class="dash-form-group">
                                     <label class="dash-form-label" for="dashSettingsEmail">Email address</label>
@@ -675,13 +674,12 @@
                                     <span class="dash-mobile-status" role="status" data-dash-email-staged-status></span>
                                 </div>
                                 <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsMobile">Mobile number · optional</label>
+                                    <div class="phone-field-heading"><label class="dash-form-label" for="dashSettingsMobile">Mobile number · optional</label><span id="dashSettingsMobileStatus" class="phone-field-status" data-dash-mobile-status role="status" aria-live="polite">Optional · format and availability check</span></div>
                                     <div class="dash-mobile-verify-row">
-                                        <input id="dashSettingsMobile" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" data-digits-only data-dash-settings-mobile>
+                                        <input id="dashSettingsMobile" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" aria-describedby="dashSettingsMobileStatus" data-digits-only data-dash-settings-mobile>
                                         <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-validate hidden disabled>Save validated number</button>
                                         <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-mobile-remove hidden>Remove</button>
                                     </div>
-                                    <span class="dash-mobile-status" data-dash-mobile-status role="status">A contact number is optional. We check Philippine mobile format and whether it is already linked to an account.</span>
                                 </div>
                             </div>
                             </div>

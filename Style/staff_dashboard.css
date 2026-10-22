@@ -855,6 +855,12 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-phone-status[data-state="available"] { color: var(--color-court-green); }
 .staff-phone-status[data-state="warning"] { color: #9a6700; }
 .staff-phone-status[data-state="neutral"] { color: var(--color-ink-faint); }
+.phone-field-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.phone-field-status { display: block; flex: 0 1 58%; min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.phone-field-status[data-state="valid"],.phone-field-status[data-state="available"] { color: var(--color-court-green); }
+.phone-field-status[data-state="invalid"],.phone-field-status[data-state="in_use"],.phone-field-status[data-state="error"] { color: var(--color-alert); }
+.phone-field-status[data-state="warning"] { color: #9a6700; }
+.phone-field-status[data-state="checking"],.phone-field-status[data-state="neutral"] { color: var(--color-ink-faint); }
 [data-staff-settings-mobile][data-phone-availability="available"],[data-staff-settings-emergency-number][data-validation-state="valid"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
 [data-staff-settings-mobile][data-phone-availability="invalid"],[data-staff-settings-emergency-number][data-validation-state="invalid"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }
 [data-staff-settings-emergency-number][data-validation-state="warning"] { border-color: #b7791f; box-shadow: 0 0 0 1px #b7791f; }
@@ -1815,14 +1821,9 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 }
 .staff-form-hint[data-staff-customer-selected][hidden] { display: none; }
 .staff-walkin-mobile-status {
-    /* Keep Step 1's card steady while the optional mobile check changes state.
-       Clamp long status copy to the same three-line height on narrow screens. */
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    height: 4.5em;
-    max-height: 4.5em;
-    overflow: hidden;
+    min-width: 0;
+    height: auto;
+    max-height: none;
 }
 .staff-walkin-mobile-status:empty { visibility: hidden; }
 .staff-walkin-mobile-status[data-state="available"] { color: var(--color-court-green); }

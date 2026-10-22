@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function confirmStaffAction(message, title = 'Confirm action', acceptLabel = 'Continue') {
         if (!staffConfirmModal || !staffConfirmDialog) return Promise.resolve(false);
-        if (pendingStaffConfirm) closeStaffConfirm(false);
+        if (pendingStaffConfirm) return Promise.resolve(false);
         const returnFocus = document.activeElement;
         staffConfirmTitle.textContent = title;
         staffConfirmText.textContent = message;
@@ -1459,13 +1459,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (result.data) {
                 walkinState.mobileAvailability = 'in_use';
                 walkinState.mobileError = true;
-                paintWalkinMobileStatus('This number is already registered. Enter another mobile number.', 'in_use');
+                paintWalkinMobileStatus('Already registered', 'in_use');
                 return false;
             }
             const state = 'available';
             walkinState.mobileAvailability = state;
             walkinState.mobileError = false;
-            paintWalkinMobileStatus('Number is available.', state);
+            paintWalkinMobileStatus('Valid · available', state);
             return state === 'available';
         } catch (error) {
             if (revision !== walkinMobileCheckRevision || walkinMobileInput.value.trim() !== raw
@@ -4171,15 +4171,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffSettingsMobileInput.setAttribute('aria-invalid', 'false');
         if (staffPhoneStatus) { staffPhoneStatus.dataset.state = ''; staffPhoneStatus.classList.remove('is-error'); }
         const raw = staffSettingsMobileInput.value.trim();
-        if (!raw) { if (staffPhoneStatus) staffPhoneStatus.textContent = 'Optional. Enter a Philippine mobile number to check format and availability.'; return; }
+        if (!raw) { if (staffPhoneStatus) { staffPhoneStatus.textContent = 'Optional · format and availability check'; staffPhoneStatus.dataset.state = ''; } return; }
         const parsed = window.validatePhMobile?.(raw);
         if (!parsed?.valid) {
             staffSettingsMobileInput.dataset.phoneAvailability = 'invalid';
             staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
-            if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = parsed?.message || 'Enter a valid Philippine mobile number.'; }
+            if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = 'Invalid format'; }
             return;
         }
-        if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'checking'; staffPhoneStatus.textContent = 'Checking Philippine format and availability…'; }
+        if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'checking'; staffPhoneStatus.textContent = 'Checking…'; }
         staffMobileAvailability.timer = setTimeout(async () => {
             const controller = new AbortController();
             staffMobileAvailability.controller = controller;
@@ -4196,12 +4196,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 staffSettingsMobileInput.dataset.phoneAvailability = 'available';
                 staffSettingsMobileInput.setAttribute('aria-invalid', 'false');
                 staffSettingsMobileInput.dataset.checkedPhone = parsed.normalized;
-                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'available'; staffPhoneStatus.classList.remove('is-error'); staffPhoneStatus.textContent = 'Valid Philippine mobile number and available.'; }
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'available'; staffPhoneStatus.classList.remove('is-error'); staffPhoneStatus.textContent = 'Valid · available'; }
             } catch (error) {
                 if (controller.signal.aborted || request !== staffMobileAvailability.request) return;
                 staffSettingsMobileInput.dataset.phoneAvailability = 'invalid';
                 staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
-                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = error.message || 'Could not check this number. Try again.'; }
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = 'Check failed · retry'; }
             }
         }, 500);
     }
@@ -4254,7 +4254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffEmergencyPhoneValidation.validatedAt = 0;
         staffEmergencyPhoneValidation.phase = 'neutral';
         staffEmergencyPhoneValidation.error = '';
-        setStaffEmergencyPhoneStatus('neutral', 'Optional. We check format and show a warning if the number is already saved; shared family contacts are allowed.');
+        setStaffEmergencyPhoneStatus('neutral', 'Optional · shared contacts allowed');
     }
 
     function currentStaffEmergencyNumberNormalized() {
@@ -4279,7 +4279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!raw) {
             state.number = '';
             state.phase = 'neutral';
-            setStaffEmergencyPhoneStatus('neutral', 'Optional. We check format and show a warning if the number is already saved; shared family contacts are allowed.');
+            setStaffEmergencyPhoneStatus('neutral', 'Optional · shared contacts allowed');
             return;
         }
 
@@ -4295,7 +4295,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const request = state.request;
         state.number = localCheck.normalized;
         state.phase = 'pending';
-        setStaffEmergencyPhoneStatus('neutral', 'Checking Philippine format and whether the number is already saved…');
+        setStaffEmergencyPhoneStatus('neutral', 'Checking…');
         state.timer = setTimeout(async () => {
             const controller = new AbortController();
             state.controller = controller;
@@ -4335,8 +4335,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 state.validatedAt = Date.now();
                 state.warning = data.available === false;
                 setStaffEmergencyPhoneStatus(state.warning ? 'warning' : 'valid', state.warning
-                    ? 'This number is already saved somewhere. Emergency contacts may be shared with family; saving is allowed.'
-                    : 'Valid Philippine mobile number and not found in saved contact numbers.');
+                    ? 'Already saved · shared allowed'
+                    : 'Valid · available');
             } catch (error) {
                 if (controller.signal.aborted || request !== state.request) return;
                 state.phase = 'invalid';
@@ -4409,13 +4409,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffSettingsProfileReturnFocus = null;
     }
     function cancelStaffSettingsProfileEdit() {
+        return guardCancelStaffSettingsProfileEdit();
+    }
+    let staffProfileClosePending = false;
+    let staffProfileBaseline = null;
+    async function guardCancelStaffSettingsProfileEdit() {
+        if (staffProfileClosePending) return;
+        const profile = window.inigosyncProfile || {};
+        const baseline = staffProfileBaseline || profile;
+        const emergency = staffEmergencyNumberInput?.value.trim() || '';
+        const emergencyNormalized = emergency ? window.validatePhMobile(emergency) : { valid: true, normalized: '' };
+        const baselineMobile = baseline.contact_num || '';
+        const changed = (staffSettingsMobileInput?.value.trim() || '') !== baselineMobile
+            || (document.querySelector('[data-staff-settings-address]')?.value.trim() || '') !== (baseline.address || '')
+            || (document.querySelector('[data-staff-settings-emergency-name]')?.value.trim() || '') !== (baseline.emergency_contact_name || '')
+            || (emergencyNormalized.valid ? emergencyNormalized.normalized : emergency) !== (baseline.emergency_contact_number || '');
+        if (changed) {
+            staffProfileClosePending = true;
+            const accepted = await confirmStaffAction('Discard your unsaved profile changes?', 'Discard changes?', 'Discard changes');
+            staffProfileClosePending = false;
+            if (!accepted) return;
+        }
         setStaffSettingsEditing(false);
         if (window.inigosyncProfile) renderStaffProfile(window.inigosyncProfile);
+        staffProfileBaseline = null;
         closeStaffSettingsProfileModal();
     }
     staffSettingsEditBtn?.addEventListener('click', () => {
         if (!staffSettingsProfileModal || !staffSettingsProfileDialog) return;
         staffSettingsProfileReturnFocus = document.activeElement;
+        staffProfileBaseline = { ...window.inigosyncProfile };
         setStaffSettingsEditing(true);
         staffSettingsProfileModal.hidden = false;
         staffSettingsProfileModal.setAttribute('data-open', '');
@@ -4451,15 +4474,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const parsed = typedStaffMobile();
         if (!staffPhoneStatus) return;
         if (!staffSettingsMobileInput?.value.trim()) {
-            staffPhoneStatus.textContent = 'Optional. We check Philippine mobile format and whether the number is already linked to an account.';
+            staffPhoneStatus.textContent = 'Optional · format and availability check';
         } else if (!parsed.valid) {
-            staffPhoneStatus.textContent = parsed.message || 'Enter a valid Philippine mobile number.';
+            staffPhoneStatus.textContent = 'Invalid format';
         } else if (staffSettingsMobileInput.dataset.phoneAvailability === 'available') {
-            staffPhoneStatus.textContent = 'Valid Philippine mobile number and available.';
+            staffPhoneStatus.textContent = 'Valid · available';
         } else if (staffSettingsMobileInput.dataset.phoneAvailability === 'invalid') {
             // Keep the specific red message from the completed format or DB check.
         } else {
-            staffPhoneStatus.textContent = 'Checking Philippine format and availability…';
+            staffPhoneStatus.textContent = 'Checking…';
         }
     }
 
@@ -4477,6 +4500,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             const emergencyNameInput = document.querySelector('[data-staff-settings-emergency-name]');
             const emergencyNumberInput = document.querySelector('[data-staff-settings-emergency-number]');
             if (!ensureStaffEmergencyPhoneValidated()) return;
+            const currentProfile = staffProfileBaseline || window.inigosyncProfile;
+            const initialMobile = staffSettingsMobileInput?.value.trim() || '';
+            const initialMobileCheck = initialMobile ? window.validatePhMobile(initialMobile) : { valid: true, normalized: '' };
+            const initialEmergency = staffEmergencyNumberInput?.value.trim() || '';
+            const initialEmergencyCheck = initialEmergency ? window.validatePhMobile(initialEmergency) : { valid: true, normalized: '' };
+            const hasDraftChanges = !initialMobileCheck.valid || initialMobileCheck.normalized !== (currentProfile.contact_num || '')
+                || (addressInput?.value.trim() || '') !== (currentProfile.address || '')
+                || (emergencyNameInput?.value.trim() || '') !== (currentProfile.emergency_contact_name || '')
+                || !initialEmergencyCheck.valid || initialEmergencyCheck.normalized !== (currentProfile.emergency_contact_number || '');
+            if (!hasDraftChanges) { cancelStaffSettingsProfileEdit(); return; }
+            const draftAtConfirmation = {
+                mobile: mobileInput?.value.trim() || '',
+                address: addressInput?.value.trim() || '',
+                emergencyName: emergencyNameInput?.value.trim() || '',
+                emergencyNumber: emergencyNumberInput?.value.trim() || '',
+            };
             if (!await confirmStaffAction('Save these personal information changes?', 'Save profile changes?', 'Save changes')) return;
             if (!ensureStaffEmergencyPhoneValidated()) return;
             // Capture mutable drafts after the async confirmation resolves.
@@ -4486,6 +4525,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const addressRaw = addressInput ? addressInput.value.trim() : '';
             const emergencyNameRaw = emergencyNameInput ? emergencyNameInput.value.trim() : '';
             const emergencyNumberRaw = emergencyNumberInput ? emergencyNumberInput.value.trim() : '';
+            if (mobileRaw !== draftAtConfirmation.mobile || addressRaw !== draftAtConfirmation.address
+                || emergencyNameRaw !== draftAtConfirmation.emergencyName || emergencyNumberRaw !== draftAtConfirmation.emergencyNumber) {
+                window.InigoToast?.show('Your profile draft changed while confirmation was open. Review it and confirm again before saving.', true);
+                staffSettingsMobileInput?.focus();
+                return;
+            }
 
             // Mobile is optional (a staff account's contact_num can be
             // blank) but validated the same way as everywhere else in this
@@ -4546,7 +4591,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
 
-                if (staffPhoneStatus) staffPhoneStatus.textContent = 'Checking Philippine format and availability…';
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'checking'; staffPhoneStatus.textContent = 'Checking…'; }
                 staffSettingsSaveProfileBtn.textContent = 'Checking number…';
                 let validationResult;
                 try {
@@ -4584,7 +4629,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // consumes the one-use proof and derives validation fields.
                 contact_num = returnedNumber;
                 fullPatch.contact_num = returnedNumber;
-                if (staffPhoneStatus) staffPhoneStatus.textContent = 'Valid Philippine mobile number and available.';
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'available'; staffPhoneStatus.textContent = 'Valid · available'; }
                 staffSettingsSaveProfileBtn.textContent = 'Saving changes…';
             }
 
@@ -4895,7 +4940,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     document.querySelectorAll('[data-staff-settings-cancel="password"]').forEach((btn) => {
-        btn.addEventListener('click', () => resetStaffPwWizard());
+        btn.addEventListener('click', async () => {
+            if (staffPwUpdateInProgress) return;
+            const hasDraft = Boolean(pwCurrentInput?.value || pwNewInput?.value || pwConfirmInput?.value);
+            if (hasDraft && !await confirmStaffAction('Discard your password change draft?', 'Discard changes?', 'Discard changes')) return;
+            resetStaffPwWizard();
+        });
     });
 
     async function fetchBalanceReturnRow(source, id) {

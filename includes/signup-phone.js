@@ -40,6 +40,7 @@
                 const handlers = new AbortController();
                 number.value = phone || '';
                 status.textContent = '';
+                status.dataset.state = '';
                 validate.disabled = false;
                 validate.textContent = 'Validate and save';
                 skip.disabled = false;
@@ -53,9 +54,12 @@
                     resolve(result);
                 }
                 function showError(message) {
-                    status.textContent = '';
+                    // The status is visually clipped to one line by
+                    // .phone-field-status, while keeping the full reason in
+                    // its live-region text for assistive technology.
+                    status.textContent = message || 'Phone validation is unavailable.';
+                    status.dataset.state = 'invalid';
                     if (window.InigoAuthNotice?.showError) window.InigoAuthNotice.showError(message);
-                    else status.textContent = message;
                 }
                 cancel = () => finish('cancelled');
 
@@ -75,7 +79,8 @@
                     busy = true;
                     validate.disabled = skip.disabled = true;
                     validate.textContent = 'Validating…';
-                    status.textContent = 'Checking Philippine format and availability…';
+                    status.textContent = 'Checking…';
+                    status.dataset.state = 'checking';
                     try {
                         const { data, error } = await window.sb.functions.invoke('validate-contact-phone', {
                             body: { phone: check.normalized },
@@ -102,7 +107,8 @@
 
                         saved = true;
                         validate.textContent = 'Validated and saved';
-                        status.textContent = 'Valid Philippine mobile number; available for this account.';
+                        status.textContent = 'Valid · available';
+                        status.dataset.state = 'valid';
                         skip.textContent = 'Continue';
                     } catch (error) {
                         if (active) showError(error.message || 'Phone validation is temporarily unavailable. You can continue without a number.');

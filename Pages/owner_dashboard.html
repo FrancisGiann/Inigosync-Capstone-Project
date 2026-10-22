@@ -628,7 +628,7 @@
                         <p class="owner-announcement-message" data-owner-announcement-message role="status" aria-live="polite"></p>
                     </div>
                     <footer class="admin-modal-footer owner-announcement-wizard-nav">
-                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-owner-announcement-close>Cancel</button><button type="button" class="admin-btn-ghost" data-owner-announcement-back hidden>Go back</button><button type="button" class="admin-btn-save" data-owner-announcement-wizard-next>Next</button><button type="submit" class="admin-btn-save" data-owner-announcement-submit hidden>Publish announcement</button>
+                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-owner-announcement-close>Cancel</button><button type="button" class="admin-btn-ghost" data-owner-announcement-back hidden>Go back</button><button type="button" class="admin-btn-save" data-owner-announcement-wizard-next hidden>Next</button><button type="submit" class="admin-btn-save" data-owner-announcement-submit hidden>Publish announcement</button>
                     </footer>
                 </form>
             </div>
@@ -678,6 +678,7 @@
                             <div><dt>Address</dt><dd data-admin-profile-address>—</dd></div>
                             <div><dt>Date of birth</dt><dd data-admin-profile-birthdate>—</dd></div>
                             <div><dt>Gender</dt><dd data-admin-profile-gender>—</dd></div>
+                            <div><dt>Civil status</dt><dd data-admin-profile-civil-status>—</dd></div>
                         </dl>
                         <button type="button" class="admin-btn-primary" data-admin-profile-edit aria-haspopup="dialog" aria-controls="adminProfileEditDialog">Edit</button>
                     </section>
@@ -687,9 +688,8 @@
                      guided wizard identical in shape to the customer
                      dashboard's own (Pages/user_dashboard.html,
                      includes/Dashboard.js) under data-admin-pw-* names,
-                     replacing the old single 3-field form. Cancel (kept from
-                     the old markup, same hook) resets the wizard back to
-                     step 1 and clears every field. -->
+                     replacing the old single 3-field form. Cancel is only
+                     available after proceeding to step 2. -->
                 <div class="admin-card admin-wizard-card">
                     <div class="admin-card-head"><h3>Change Password</h3></div>
 
@@ -757,7 +757,7 @@
                     </div>
 
                     <div class="admin-wizard-nav">
-                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-admin-settings-cancel="password">Cancel</button>
+                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-admin-settings-cancel="password" hidden>Cancel</button>
                         <button type="button" class="admin-btn-ghost admin-wizard-back" data-admin-pw-back hidden>Go Back</button>
                         <button type="button" class="admin-btn-save admin-wizard-next" data-admin-pw-next disabled>Next</button>
                         <button type="button" class="admin-btn-save" data-admin-settings-save="password" hidden>Save Password</button>
@@ -1032,15 +1032,19 @@
         <div class="admin-settings-grid">
             <label class="admin-form-group"><span class="admin-form-label">Full name</span><input type="text" class="admin-input" autocomplete="name" data-admin-settings-name></label>
             <div class="admin-form-group"><span class="admin-form-label">Email address</span><p class="admin-input admin-readonly-email" data-admin-settings-email>—</p><span class="admin-form-hint">Your sign-in email cannot be changed.</span></div>
-            <div class="admin-form-group owner-mobile-verification"><label class="admin-form-label" for="adminOwnerMobileInput">Mobile number · optional</label><input id="adminOwnerMobileInput" type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile><span class="admin-form-hint" id="adminOwnerMobileStatus" data-admin-mobile-message role="status">We check Philippine mobile format and whether the number is already linked to an account.</span></div>
+            <div class="admin-form-group owner-mobile-verification"><div class="phone-field-heading"><label class="admin-form-label" for="adminOwnerMobileInput">Mobile number · optional</label><span class="phone-field-status" id="adminOwnerMobileStatus" data-admin-mobile-message role="status" aria-live="polite">Format and availability check</span></div><input id="adminOwnerMobileInput" type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile></div>
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
+            <label class="admin-form-group"><span class="admin-form-label">Civil status</span><select class="admin-input" data-admin-settings-civil-status><option value="" disabled hidden>Select civil status</option><option value="Single">Single</option><option value="Married">Married</option><option value="Separated">Separated</option><option value="Widowed">Widowed</option><option value="Prefer not to say">Prefer not to say</option></select></label>
         </div>
-        <div class="admin-google-account-row admin-modal-google-accounts">
-            <div><strong>Linked Google accounts</strong><div data-admin-linked-google-emails><p class="admin-form-hint">Loading linked accounts…</p></div></div>
-            <button type="button" class="admin-btn-secondary" data-admin-link-google>Add Gmail address</button>
-        </div>
+        <section class="admin-modal-google-accounts" aria-labelledby="adminGoogleAccountsTitle">
+            <div class="admin-google-accounts-head">
+                <div><h4 id="adminGoogleAccountsTitle">Linked Google accounts</h4><p>Use these accounts to sign in.</p></div>
+                <button type="button" class="admin-google-link-btn" data-admin-link-google><span aria-hidden="true">+</span> Add Gmail account</button>
+            </div>
+            <div class="admin-google-accounts-list" data-admin-linked-google-emails aria-live="polite"><p class="admin-form-hint">Loading linked accounts…</p></div>
+        </section>
         </div>
         <footer class="admin-form-actions admin-modal-footer">
             <button type="button" class="admin-btn-ghost" data-admin-settings-cancel="profile">Cancel</button>

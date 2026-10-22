@@ -21,7 +21,9 @@ test('optional Guest phone uses format validation and an authorized exact lookup
     assert.doesNotMatch(guestCheck, /validate-walkin-guest-phone|signup_phone_availability|phone_type|line_status|active Philippine mobile|provider/);
     assert.match(dashboard, /if \(!raw\)[\s\S]*?walkinState\.mobile = ''[\s\S]*?return true;/);
     assert.match(dashboard, /mobileAvailability === 'available'/);
-    assert.match(dashboardHtml, /Optional\. Use a Philippine mobile number that is not already registered\./);
+    assert.match(dashboardHtml, /Optional · not registered/);
+    assert.match(dashboard, /paintWalkinMobileStatus\('Already registered', 'in_use'\)/,
+        'registered guest numbers are rejected and displayed as a denial');
     assert.match(dashboardCss, /data-state="available"/);
     assert.doesNotMatch(dashboardCss, /data-state="not_mobile"|data-state="inactive"|data-state="rate_limited"/);
     assert.match(publicCheckRpc, /security invoker[\s\S]*?select internal\.staff_guest_phone_is_registered\(p_phone\)/);

@@ -110,6 +110,7 @@
                 state.draft.originalUnitPhotoUrls = state.draft.units.map((unit) => unit.photo_url).filter(Boolean);
                 editor.querySelector('[data-ioc-archive]').textContent = state.draft.listing.is_active ? 'Archive Sport' : 'Restore Sport';
                 fillEditor();
+                state.draft.baselineFingerprint = draftFingerprint(state.draft);
                 overlay.hidden = false;
                 void overlay.offsetWidth;
                 overlay.setAttribute('data-open', '');
@@ -120,7 +121,36 @@
             }
         }
 
-        function markDirty() { if (state.draft) state.draft.dirty = true; }
+        function draftFingerprint(draft) {
+            if (!draft) return '';
+            return JSON.stringify({
+                listing: {
+                    name: $('[data-ioc-name]')?.value ?? draft.listing.name ?? '',
+                    description: $('[data-ioc-description]')?.value ?? draft.listing.description ?? '',
+                    unit: $('[data-ioc-unit-kind]')?.value ?? draft.listing.unit ?? 'courts',
+                    image_url: draft.listing.image_url || null,
+                    cover_file: Boolean(draft.cover_file),
+                },
+                units: draft.units.map((unit) => ({
+                    id: unit.id, label: unit.label, photo_url: unit.photo_url || null, photo_file: Boolean(unit.photo_file),
+                    rate_day: unit.rate_day, rate_night: unit.rate_night, rate_unit: unit.rate_unit,
+                    resource_ids: unit.resource_ids.map(String),
+                    maintenance: unit.maintenance.map((period) => ({
+                        id: period.id || null,
+                        start: period.start_input ?? timeToManilaInput(period.start_at),
+                        end: period.end_input ?? timeToManilaInput(period.end_at),
+                        publish: period.publish_input ?? timeToManilaInput(period.publish_at),
+                        note: period.note || '',
+                    })),
+                })),
+            });
+        }
+        function draftIsDirty() {
+            if (!state.draft) return false;
+            state.draft.dirty = draftFingerprint(state.draft) !== state.draft.baselineFingerprint;
+            return state.draft.dirty;
+        }
+        function markDirty() { if (state.draft) draftIsDirty(); }
         function fillEditor() {
             const draft = state.draft;
             // The former editor had one global resource search/list after all
@@ -403,11 +433,14 @@
 
         async function save() {
             if (!state.draft || state.saving) return;
+            if (!draftIsDirty()) { closeEditor(true); return; }
             let payload;
             try { payload = buildPayload(new Map()); } catch (error) { toast(error.message, true); return; }
+            state.saving = true;
             const okay = await confirm({ title: 'Save sport changes?', message: 'This saves the sport details, unit rates, photos, shared spaces, and maintenance periods together.', confirmLabel: 'Save Changes' });
-            if (!okay) return;
-            const button = editor.querySelector('[data-ioc-save]'); state.saving = true; button.disabled = true; button.textContent = 'Saving…';
+            if (!okay) { state.saving = false; return; }
+            editor.inert = true;
+            const button = editor.querySelector('[data-ioc-save]'); button.disabled = true; button.textContent = 'Saving…';
             const newlyUploaded = [];
             try {
                 const uploaded = new Map();
@@ -430,12 +463,12 @@
                 await Promise.all(newlyUploaded.map(removeUnreferencedPhoto));
                 toast(error.message || 'Could not save sport changes. Your draft is still open.', true);
                 console.error('[owner-courts] Save failed; draft retained', error);
-            } finally { state.saving = false; button.disabled = false; button.textContent = 'Save Changes'; }
+            } finally { state.saving = false; editor.inert = false; button.disabled = false; button.textContent = 'Save Changes'; }
         }
 
         async function archiveListing() {
             if (!state.draft?.listing.id) return;
-            if (state.draft.dirty) { toast('Save or discard your edits before changing the listing status.', true); return; }
+            if (draftIsDirty()) { toast('Save or discard your edits before changing the listing status.', true); return; }
             const restore = !state.draft.listing.is_active;
             const okay = await confirm({ title: `${restore ? 'Restore' : 'Archive'} this sport?`, message: restore ? 'The sport and its available units will appear as active again.' : 'The sport will stop appearing as active. Existing booking history is preserved.', confirmLabel: restore ? 'Restore Sport' : 'Archive Sport', danger: !restore });
             if (!okay) return;
@@ -475,7 +508,8 @@
             if (!visible && explicit) reveal.focus();
         }
         function closeEditor(force = false) {
-            if (!force && state.draft?.dirty) {
+            if (state.saving && !force) return;
+            if (!force && draftIsDirty()) {
                 confirm({ title: 'Discard unsaved changes?', message: 'Your sport, unit, photo, connection, and maintenance edits will be lost.', confirmLabel: 'Discard changes', danger: true }).then((okay) => { if (okay) closeEditor(true); }); return;
             }
             overlay.removeAttribute('data-open'); window.setTimeout(() => { overlay.hidden = true; }, 180); state.draft = null;
@@ -495,17 +529,41 @@
             } catch (error) { cutoffDisplay.textContent = 'unavailable'; console.error('[owner-courts] Could not load cutoff', error); }
         }
         let cutoffReturnFocus = null;
-        root.querySelector('[data-ioc-cutoff-edit]').addEventListener('click', () => { cutoffReturnFocus = document.activeElement; cutoffOverlay.hidden = false; void cutoffOverlay.offsetWidth; cutoffOverlay.setAttribute('data-open', ''); cutoffOverlay.querySelector('[data-ioc-cutoff-dialog]').focus(); });
-        const closeCutoff = () => { cutoffOverlay.removeAttribute('data-open'); window.setTimeout(() => cutoffOverlay.hidden = true, 180); if (cutoffReturnFocus?.isConnected) cutoffReturnFocus.focus(); cutoffReturnFocus = null; };
-        cutoffOverlay.querySelectorAll('[data-ioc-cutoff-close]').forEach((button) => button.addEventListener('click', closeCutoff));
+        let cutoffClosePending = false;
+        let cutoffSaving = false;
+        function cutoffHasChanges() { return cutoffInput.value !== (cutoffOld ? String(cutoffOld).slice(0, 5) : ''); }
+        root.querySelector('[data-ioc-cutoff-edit]').addEventListener('click', () => { cutoffReturnFocus = document.activeElement; cutoffInput.value = cutoffOld ? String(cutoffOld).slice(0, 5) : ''; cutoffOverlay.hidden = false; void cutoffOverlay.offsetWidth; cutoffOverlay.setAttribute('data-open', ''); cutoffOverlay.querySelector('[data-ioc-cutoff-dialog]').focus(); });
+        async function closeCutoff(force = false) {
+            if (cutoffSaving && !force) return;
+            if (!force && cutoffHasChanges()) {
+                if (cutoffClosePending) return;
+                cutoffClosePending = true;
+                const okay = await confirm({ title: 'Discard cutoff change?', message: 'Your unsaved night rate cutoff will be lost.', confirmLabel: 'Discard changes', danger: true });
+                cutoffClosePending = false;
+                if (!okay) return;
+            }
+            cutoffOverlay.removeAttribute('data-open'); window.setTimeout(() => cutoffOverlay.hidden = true, 180); if (cutoffReturnFocus?.isConnected) cutoffReturnFocus.focus(); cutoffReturnFocus = null;
+        }
+        cutoffOverlay.querySelectorAll('[data-ioc-cutoff-close]').forEach((button) => button.addEventListener('click', () => closeCutoff()));
+        let cutoffBackdropStart = false;
+        cutoffOverlay.addEventListener('mousedown', (event) => { cutoffBackdropStart = event.target === cutoffOverlay; });
+        cutoffOverlay.addEventListener('click', (event) => {
+            if (cutoffBackdropStart && event.target === cutoffOverlay) closeCutoff();
+            cutoffBackdropStart = false;
+        });
         cutoffOverlay.querySelector('[data-ioc-cutoff-save]').addEventListener('click', async () => {
+            if (cutoffSaving) return;
+            if (!cutoffHasChanges()) { closeCutoff(); return; }
+            cutoffSaving = true;
+            const okay = await confirm({ title: 'Save night rate cutoff?', message: 'Apply this cutoff to night-rate bookings?', confirmLabel: 'Save cutoff' });
+            if (!okay) { cutoffSaving = false; return; }
             const button = cutoffOverlay.querySelector('[data-ioc-cutoff-save]'); button.disabled = true;
             try {
                 const value = cutoffInput.value || null;
                 const { error } = await window.sb.rpc('admin_set_night_rate_cutoff', { p_expected_cutoff: cutoffOld, p_cutoff: value }); if (error) throw error;
-                cutoffOld = value ? `${value}:00` : null; cutoffDisplay.textContent = value || 'not set'; closeCutoff(); toast('Night rate cutoff saved.'); activity('Night rate cutoff updated', value ? `${value} · Asia/Manila` : 'Cleared');
+                cutoffOld = value ? `${value}:00` : null; cutoffDisplay.textContent = value || 'not set'; closeCutoff(true); toast('Night rate cutoff saved.'); activity('Night rate cutoff updated', value ? `${value} · Asia/Manila` : 'Cleared');
             } catch (error) { toast(error.message || 'Could not save the cutoff.', true); }
-            finally { button.disabled = false; }
+            finally { cutoffSaving = false; button.disabled = false; }
         });
 
         root.querySelector('[data-ioc-add]').addEventListener('click', () => openEditor(null));
@@ -539,8 +597,9 @@
             const top = event.currentTarget.scrollTop; if (top > state.scrollTop + 4) setSavebarVisible(true); else if (top < state.scrollTop - 4) setSavebarVisible(false); state.scrollTop = top;
         }, { passive: true });
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !overlay.hidden && document.querySelector('.itools-crop-overlay:not([hidden])') === null) closeEditor();
-            if (event.key === 'Escape' && !cutoffOverlay.hidden) closeCutoff();
+            if (event.key !== 'Escape') return;
+            if (!cutoffOverlay.hidden) { event.preventDefault(); event.stopImmediatePropagation(); closeCutoff(); return; }
+            if (!overlay.hidden && document.querySelector('.itools-crop-overlay:not([hidden])') === null) { event.preventDefault(); closeEditor(); }
         });
         overlay.addEventListener('mousedown', (event) => { overlay.dataset.downBackdrop = String(event.target === overlay); });
         overlay.addEventListener('click', (event) => { if (event.target === overlay && overlay.dataset.downBackdrop === 'true') closeEditor(); overlay.dataset.downBackdrop = 'false'; });

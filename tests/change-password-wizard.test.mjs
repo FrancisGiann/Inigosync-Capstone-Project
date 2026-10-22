@@ -17,7 +17,7 @@ function extractFlow(role, source) {
     };
     const ends = {
         customer: '\n});',
-        owner: '    // Owner review inbox reads only',
+        owner: '    // Owners choose exactly three written public booking reviews',
         staff: '    async function fetchBalanceReturnRow',
     };
     const start = source.indexOf(starts[role]);
@@ -91,6 +91,7 @@ function makeWizard(role, { signIn, updateUser, confirm = true, staffConfirm = c
         [`[data-${prefix}-pw-back]`, back],
         [saveSelector, save],
         [`[data-${prefix}-pw-rules]`, rules],
+        ...(role === 'owner' ? [['[data-admin-settings-cancel="password"]', cancel]] : []),
         ...(role === 'staff' ? [['[data-staff-settings-cancel="password"]', cancel]] : []),
     ]);
     const lists = new Map([
@@ -105,6 +106,7 @@ function makeWizard(role, { signIn, updateUser, confirm = true, staffConfirm = c
     const window = {
         inigosyncProfile: { id: 'account-1', email: 'account@example.test' },
         InigoToast: { show() {} },
+        InigoOwnerUI: { confirm: async (...args) => { confirmCalls.count += 1; return typeof confirm === 'function' ? confirm(confirmCalls.count, ...args) : confirm; } },
         confirm: () => confirm,
         sb: {
             auth: {
@@ -205,19 +207,42 @@ for (const role of ['customer', 'owner', 'staff']) {
     });
 }
 
-test('owner Cancel invalidates a pending successful Next verification', async () => {
-    const pending = deferred();
-    const wizard = makeWizard('owner', { signIn: () => pending.promise });
+test('owner Cancel is hidden on Verify and available after reaching New password', async () => {
+    const wizard = makeWizard('owner');
+    assert.equal(wizard.cancel.hidden, true, 'Cancel is hidden on the first step');
     wizard.current.value = 'Correct123!';
     await wizard.current.dispatch('input');
-    const nextOperation = wizard.next.dispatch('click');
-    await Promise.resolve();
+    await wizard.next.dispatch('click');
+    assert.equal(wizard.cancel.hidden, false, 'Cancel is available on the second step');
     await wizard.cancel.dispatch('click');
-    pending.resolve({ data: { user: { id: 'account-1' } }, error: null });
-    await nextOperation;
+    assert.equal(wizard.cancel.hidden, true, 'Cancel is hidden again after reset');
     assert.equal(wizard.panels[0].classList.contains('is-active'), true);
     assert.equal(wizard.panels[1].classList.contains('is-active'), false);
     assert.equal(wizard.current.value, '');
+});
+
+test('owner password Save confirms before reauthentication and cancellation prevents mutation', async () => {
+    const pendingConfirm = deferred();
+    const wizard = makeWizard('owner', { confirm: () => pendingConfirm.promise });
+    wizard.current.value = 'Correct123!';
+    await wizard.current.dispatch('input');
+    await wizard.next.dispatch('click');
+    wizard.fresh.value = 'Strong1!';
+    wizard.confirmation.value = 'Strong1!';
+    await wizard.fresh.dispatch('input');
+    await wizard.confirmation.dispatch('input');
+
+    const saveOperation = wizard.save.dispatch('click');
+    await Promise.resolve();
+    assert.equal(wizard.confirmCalls.count, 1, 'owner Save opens one in-page confirmation');
+    assert.equal(wizard.authCalls.signIn, 1, 'save-time reauthentication waits for confirmation');
+    assert.equal(wizard.authCalls.update, 0);
+
+    pendingConfirm.resolve(false);
+    await saveOperation;
+    assert.equal(wizard.authCalls.signIn, 1, 'declining Save skips save-time reauthentication');
+    assert.equal(wizard.authCalls.update, 0, 'declining Save prevents password mutation');
+    assert.equal(wizard.fresh.value, 'Strong1!', 'declining Save retains the password draft');
 });
 
 for (const role of ['customer', 'owner', 'staff']) {

@@ -2492,7 +2492,7 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     padding: 12px 20px;
 }
 
-/* Provider format/type/active-status result. It does not establish ownership. */
+/* Compact Philippine-format and database-availability status beside each label. */
 .dash-mobile-status {
     display: block;
     margin-top: 8px;
@@ -2503,6 +2503,12 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-mobile-status.is-error,[data-dash-mobile-status][data-state="invalid"],[data-dash-emergency-status][data-state="invalid"] { color: var(--color-alert-text); }
 .dash-mobile-status.is-success,[data-dash-mobile-status][data-state="valid"],[data-dash-emergency-status][data-state="valid"] { color: var(--color-court-green); }
 .dash-mobile-status.is-warning,[data-dash-emergency-status][data-state="warning"] { color: #9a6700; }
+.phone-field-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.phone-field-status { display: block; flex: 0 1 58%; min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.phone-field-status[data-state="valid"],.phone-field-status[data-state="available"] { color: var(--color-court-green); }
+.phone-field-status[data-state="invalid"],.phone-field-status[data-state="in_use"],.phone-field-status[data-state="error"],.phone-field-status[data-state="rate_limited"] { color: var(--color-alert-text); }
+.phone-field-status[data-state="warning"] { color: #9a6700; }
+.phone-field-status[data-state="checking"],.phone-field-status[data-state="neutral"] { color: var(--color-ink-faint); }
 [data-dash-settings-mobile][data-phone-validation="valid"],[data-dash-settings-emergency-number][data-phone-validation="valid"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
 [data-dash-settings-mobile][data-phone-validation="invalid"],[data-dash-settings-emergency-number][data-phone-validation="invalid"] { border-color: var(--color-alert-text); box-shadow: 0 0 0 1px var(--color-alert-text); }
 [data-dash-settings-emergency-number][data-phone-validation="warning"] { border-color: #b7791f; box-shadow: 0 0 0 1px #b7791f; }

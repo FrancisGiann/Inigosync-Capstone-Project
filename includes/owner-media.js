@@ -12,6 +12,7 @@
     const placeholder = '../assets/landing/featured-tournament-placeholder.png';
     let slides = [];
     let activeDraft = null;
+    let savingDraft = false;
     let previousFocus = null;
     let touchDrag = null;
 
@@ -19,7 +20,7 @@
     const toast = (message, error) => window.InigoToast?.show(message, Boolean(error));
     const confirm = (options) => window.InigoOwnerUI?.confirm
         ? window.InigoOwnerUI.confirm(options)
-        : Promise.resolve(window.confirm(`${options.title}\n\n${options.message}`));
+        : Promise.resolve(false);
     const recordActivity = (title, detail) => window.InigoOwnerUI?.recordActivity?.(title, 'media', detail);
 
     function safeImage(url) {
@@ -97,6 +98,7 @@
     }
 
     async function closeEditor(force) {
+        if (savingDraft && !force) return;
         if (!force && hasChanges()) {
             const accepted = await confirm({ title: 'Discard slide changes?', message: 'Your unsaved slide details and selected photo will be lost.', confirmLabel: 'Discard changes', danger: true });
             if (!accepted) return;
@@ -212,9 +214,14 @@
 
     async function saveActiveSlide(event) {
         event.preventDefault();
-        if (!activeDraft) return;
+        if (!activeDraft || savingDraft) return;
         const values = getValues();
         if (!values.title) { toast('Add a title before saving.', true); editor.querySelector('[data-media-title]').focus(); return; }
+        if (!hasChanges()) { await closeEditor(false); return; }
+        savingDraft = true;
+        const accepted = await confirm({ title: activeDraft.isNew ? 'Save new slide?' : 'Save slide changes?', message: activeDraft.isNew ? 'Add this slide to the slideshow?' : 'Save these changes to the slideshow?', confirmLabel: 'Save slide' });
+        if (!accepted) { savingDraft = false; return; }
+        editor.inert = true;
         const button = dialog.querySelector('[data-media-save]');
         const wasNew = activeDraft.isNew;
         button.disabled = true;
@@ -252,6 +259,8 @@
             console.error('[owner-media] save failed', error);
             toast(error?.message || 'Could not save the slide. Your draft is still open.', true);
         } finally {
+            savingDraft = false;
+            editor.inert = false;
             if (button.isConnected) { button.disabled = false; button.textContent = 'Save'; }
         }
     }

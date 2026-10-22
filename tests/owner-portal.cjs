@@ -52,7 +52,7 @@ function fixture() {
     auditEvents.push({ event_id: 'session-event-1', source: 'customer_operational_events', created_at: '2026-09-02T10:00:00Z', action: 'sign_out', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-out observed' });
     auditEvents.push({ event_id: 'session-event-2', source: 'customer_operational_events', created_at: '2026-09-02T11:00:00Z', action: 'sign_in', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-in observed' });
     const ownerRules = { timezone: 'Asia/Manila', rules: [{ effective_from: '2026-01-01', grace_minutes: 30, weekly_hours: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, opens_at: '08:00:00', closes_at: '22:00:00', is_closed: false })) }] };
-    const state = window.__ownerQa = { calls: [], ownerActivityOrQueries: [], failReorder: false, failSeen: false, failFeaturedSelection: window.__ownerQaFailFeaturedSelection === true, phoneInUse: false };
+    const state = window.__ownerQa = { calls: [], ownerActivityOrQueries: [], failReorder: false, failSeen: false, failOwnerPrivateWrite: false, toastMessages: [], failFeaturedSelection: window.__ownerQaFailFeaturedSelection === true, phoneInUse: false };
     state.auditEvents = auditEvents;
     const data = {
         event: [
@@ -73,6 +73,7 @@ function fixture() {
             { id: 'qa-staff', role: 'staff', full_name: 'QA Staff', email: 'staff@example.test', position: 'Court Attendant', status: 'active', birthdate: '2000-09-26', contact_num: '+639171234567', address: '12 Example Street, Cebu City', gender: 'Prefer not to say', emergency_contact_name: 'QA Contact', emergency_contact_number: '09171234568', created_at: '2026-01-01T00:00:00Z' },
             { id: 'qa-customer', role: 'customer', full_name: 'QA Customer', email: 'customer@example.test', status: 'active', created_at: '2026-02-01T00:00:00Z' },
         ],
+        owner_private_details: [{ user_id: 'qa-owner', civil_status: 'Single' }],
         app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true, qrph_enabled: true }],
         court: Array.from({ length: 24 }, (_, index) => ({ id: `court-${index + 1}`, sport_id: `sport-${index + 1}`, slug: `sport-${index + 1}`, name: index === 0 ? 'A long court listing title that must wrap without shifting other actions' : `Sport ${index + 1}`, quantity: index + 1, unit: 'courts', description: 'Responsive fixture', image_url: null, is_active: index !== 23, display_order: index + 1, sport: { id: `sport-${index + 1}`, name: `Sport ${index + 1}`, slug: `sport-${index + 1}` } })),
     };
@@ -102,9 +103,16 @@ function fixture() {
         if (q.write) {
             state.calls.push({ table, write: q.write, payload: q.payload, filters: q.filters, inFilters: q.inFilters });
             if (table === 'owner_activity' && q.write === 'update' && state.failSeen) return { data: null, error: { message: 'Simulated seen update failure' }, count: 0 };
+            if (table === 'owner_private_details' && q.write === 'upsert' && state.failOwnerPrivateWrite) return { data: null, error: { message: 'Simulated private details failure' }, count: 0 };
             if (q.write === 'insert') {
                 const row = { ...(Array.isArray(q.payload) ? q.payload[0] : q.payload), id: `00000000-0000-4000-8000-${String((data[table] || []).length + 3).padStart(12, '0')}` };
                 (data[table] ||= []).push(row); rows = [row];
+            } else if (q.write === 'upsert') {
+                const payload = Array.isArray(q.payload) ? q.payload[0] : q.payload;
+                const row = (data[table] ||= []).find(candidate => candidate.user_id === payload.user_id);
+                if (row) Object.assign(row, payload);
+                else (data[table] ||= []).push(payload);
+                rows = [row || payload];
             } else if (q.write === 'update') {
                 rows.forEach(row => Object.assign(row, q.payload));
             } else if (q.write === 'delete') {
@@ -416,7 +424,7 @@ async function verifyOwnerPaymentFlow(page) {
                     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
                 });
                 await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.inigosyncProfile={id:'qa-owner',role:'admin',status:'active',full_name:'QA Owner',email:'owner@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
-                await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoLoading={show(){},hide(){}};window.InigoToast={show(){}};` }));
+                await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoLoading={show(){},hide(){}};window.InigoToast={show(message){window.__ownerQa?.toastMessages.push(message)}};` }));
                 await page.route('**/includes/courtsData.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoCourtsData={getCourts:async()=>[],getSports:async()=>[],invalidateCourts(){},monogramFor:()=>'',slugify:s=>s,rateHint:()=>null};` }));
                 await page.route('**/includes/courts-data.js', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
                 await page.goto('http://127.0.0.1:4178/Pages/owner_dashboard.html', { waitUntil: 'domcontentloaded' });
@@ -892,7 +900,7 @@ async function verifyOwnerPaymentFlow(page) {
                     assert.equal(await page.locator('[data-admin-panel="settings"] > .admin-card').count(), 2,
                         'profile details and password each have their own settings card');
                     assert.equal(await page.locator('.owner-account-card .owner-photo-section [data-admin-avatar-upload-trigger]').count(), 1);
-                    assert.equal(await page.locator('.owner-account-card .owner-profile-summary [data-admin-profile-full-name], .owner-account-card .owner-profile-summary [data-admin-profile-email], .owner-account-card .owner-profile-summary [data-admin-profile-mobile], .owner-account-card .owner-profile-summary [data-admin-profile-address], .owner-account-card .owner-profile-summary [data-admin-profile-birthdate], .owner-account-card .owner-profile-summary [data-admin-profile-gender]').count(), 6,
+                    assert.equal(await page.locator('.owner-account-card .owner-profile-summary [data-admin-profile-full-name], .owner-account-card .owner-profile-summary [data-admin-profile-email], .owner-account-card .owner-profile-summary [data-admin-profile-mobile], .owner-account-card .owner-profile-summary [data-admin-profile-address], .owner-account-card .owner-profile-summary [data-admin-profile-birthdate], .owner-account-card .owner-profile-summary [data-admin-profile-gender], .owner-account-card .owner-profile-summary [data-admin-profile-civil-status]').count(), 7,
                         'the combined owner account card keeps all owner profile fields');
                     assert.equal(await page.locator('[data-admin-profile-edit]').evaluate(el => el.parentElement.lastElementChild === el), true,
                         'Edit stays at the lower edge of the personal information section');
@@ -905,7 +913,38 @@ async function verifyOwnerPaymentFlow(page) {
                     await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
                     assert.equal(await page.evaluate(() => document.activeElement.hasAttribute('data-admin-profile-edit')), true);
 
-                    // Owner avatar controls are inline; crop cancellation leaves the saved photo unchanged and a completed crop saves immediately.
+                    // Owner civil status loads from the private table, saves there, and updates the profile summary.
+                    await page.locator('[data-admin-profile-edit]').click();
+                    const civilStatus = page.locator('[data-admin-settings-civil-status]');
+                    assert.equal(await civilStatus.inputValue(), 'Single', 'civil status loads into the edit modal');
+                    await civilStatus.selectOption('Married');
+                    await page.locator('[data-admin-settings-save="profile"]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'owner_private_details' && call.write === 'upsert' && call.payload.civil_status === 'Married'));
+                    await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
+                    assert.equal(await page.locator('[data-admin-profile-civil-status]').innerText(), 'Married', 'saved civil status appears in the profile summary');
+                    await page.locator('[data-admin-profile-edit]').click();
+                    assert.equal(await civilStatus.inputValue(), 'Married', 'saved civil status reloads into the edit modal');
+
+                    // A private-table failure after another profile write keeps local state in sync and reports the partial save.
+                    await page.locator('[data-admin-settings-name]').fill('QA Owner Updated');
+                    await civilStatus.selectOption('Separated');
+                    await page.evaluate(() => window.__ownerQa.failOwnerPrivateWrite = true);
+                    await page.locator('[data-admin-settings-save="profile"]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'owner_private_details' && call.write === 'upsert' && call.payload.civil_status === 'Separated'));
+                    assert.equal(await page.locator('[data-admin-profile-full-name]').innerText(), 'QA Owner Updated', 'successful profile write is reconciled immediately');
+                    assert.equal(await page.locator('[data-admin-profile-civil-status]').innerText(), 'Married', 'failed private write does not claim the new civil status');
+                    assert.equal(await civilStatus.inputValue(), 'Separated', 'failed private write keeps the unsaved civil status available to retry');
+                    assert.match(await page.evaluate(() => window.__ownerQa.toastMessages.at(-1)), /other profile changes were saved, but civil status could not be updated/i);
+                    const profileWriteCount = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.full_name === 'QA Owner Updated').length);
+                    const privateWriteCount = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'owner_private_details' && call.write === 'upsert' && call.payload.civil_status === 'Separated').length);
+                    await page.evaluate(() => window.__ownerQa.failOwnerPrivateWrite = false);
+                    await page.locator('[data-admin-settings-save="profile"]').click();
+                    await page.waitForFunction(count => window.__ownerQa.calls.filter(call => call.table === 'owner_private_details' && call.write === 'upsert' && call.payload.civil_status === 'Separated').length > count, privateWriteCount);
+                    assert.equal(await page.evaluate(name => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.full_name === name).length, 'QA Owner Updated'), profileWriteCount, 'retry only writes the unsaved civil status');
+                    await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
+                    assert.equal(await page.locator('[data-admin-profile-civil-status]').innerText(), 'Separated');
+
+                    // Owner avatar controls are inline; crop cancellation and declined save confirmation leave the saved photo unchanged.
                     assert.equal(await page.locator('[data-admin-avatar-edit]').count(), 0, 'profile photo has no Edit action');
                     assert.equal(await page.locator('[data-admin-avatar-modal]').count(), 0, 'profile photo editor modal is removed');
                     const chooseAvatarButton = page.locator('[data-admin-avatar-upload-trigger]');
@@ -927,10 +966,31 @@ async function verifyOwnerPaymentFlow(page) {
                     const savedAvatarChooser = page.waitForEvent('filechooser');
                     await chooseAvatarButton.click();
                     await (await savedAvatarChooser).setFiles(avatarFile);
-                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update'));
+                    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                    assert.match(await page.locator('.owner-confirm-overlay').innerText(), /save this cropped photo as your owner profile photo/i);
+                    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.avatar_url).length), 0,
+                        'declining the avatar save confirmation prevents persistence');
+                    assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), false, 'declining save leaves Remove Photo hidden');
+
+                    const acceptedAvatarChooser = page.waitForEvent('filechooser');
+                    await chooseAvatarButton.click();
+                    await (await acceptedAvatarChooser).setFiles(avatarFile);
+                    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                    await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.avatar_url));
                     assert.equal(await page.evaluate(() => window.__avatarCropOptions.at(-1).aspect), 1);
                     assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), true, 'Remove Photo appears after an avatar is saved');
                     await page.locator('[data-admin-avatar-remove]').click();
+                    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                    assert.match(await page.locator('.owner-confirm-overlay').innerText(), /remove your current owner profile photo/i);
+                    await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
+                    assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), true, 'declining removal keeps the saved avatar');
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.table === 'profiles' && call.write === 'update' && call.payload.avatar_url === null).length), 0,
+                        'declining removal prevents persistence');
+                    await page.locator('[data-admin-avatar-remove]').click();
+                    await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                    await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.avatar_url === null));
                     assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), false, 'Remove Photo hides after the avatar is removed');
 

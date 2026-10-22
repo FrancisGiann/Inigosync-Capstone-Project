@@ -19,11 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function check(force = false) {
         const phone = value(), version = revision;
-        if (!phone) { paint(''); return false; }
+        if (!phone) { paint('Optional', ''); return false; }
         const parsed = window.validatePhMobile?.(phone);
-        if (!parsed?.valid) { paint('Enter a complete mobile number.', 'invalid'); return false; }
+        if (!parsed?.valid) { paint('Invalid format', 'invalid'); return false; }
         if (!force && cached?.phone === parsed.normalized && Date.now() - cached.at < 30000) {
-            paint(cached.state === 'available' ? 'Available' : cached.state === 'in_use' ? 'Already in use' : cached.state, cached.state);
+            paint(cached.state === 'available' ? 'Valid · available' : cached.state === 'in_use' ? 'Already registered' : cached.state, cached.state);
             return cached.state === 'available';
         }
         if (pending?.phone === parsed.normalized && pending.version === version) return pending.promise;
@@ -42,9 +42,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!['in_use', 'available', 'rate_limited', 'invalid'].includes(data)) throw new Error('Unexpected response');
                 const messages = {
                     in_use: ['Already in use', 'in_use'],
-                    available: ['Valid and available', 'available'],
+                    available: ['Valid · available', 'available'],
                     rate_limited: ['Wait 1 min', 'rate_limited'],
-                    invalid: ['Enter a complete mobile number.', 'invalid'],
+                    invalid: ['Invalid format', 'invalid'],
                 };
                 const [text, state] = messages[data];
                 paint(text, state);

@@ -331,9 +331,8 @@
                                     <input id="staff-walkin-name" type="text" class="staff-input" placeholder="Juan Dela Cruz" data-staff-walkin-name>
                                 </div>
                                 <div class="staff-form-group">
-                                    <label class="staff-form-label" for="staff-walkin-mobile">Mobile number (optional)</label>
+                                    <div class="phone-field-heading"><label class="staff-form-label" for="staff-walkin-mobile">Mobile number (optional)</label><span class="staff-walkin-mobile-status phone-field-status" id="staffWalkinMobileStatus" data-staff-walkin-mobile-status aria-live="polite">Optional · not registered</span></div>
                                     <input id="staff-walkin-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" autocomplete="tel-national" aria-describedby="staffWalkinMobileStatus" data-staff-walkin-mobile>
-                                    <p class="staff-form-hint staff-walkin-mobile-status" id="staffWalkinMobileStatus" data-staff-walkin-mobile-status aria-live="polite">Optional. Use a Philippine mobile number that is not already registered.</p>
                                 </div>
                             </div>
                         </div>
@@ -749,9 +748,8 @@
                                 <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name readonly aria-readonly="true">
                             </div>
                             <div class="staff-form-group">
-                                <label class="staff-form-label" for="staff-settings-mobile">Contact number</label>
+                                <div class="phone-field-heading"><label class="staff-form-label" for="staff-settings-mobile">Contact number</label><span id="staff-phone-status" class="staff-phone-status phone-field-status" data-staff-phone-status aria-live="polite">Optional · format and availability check</span></div>
                                 <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-invalid="false" aria-describedby="staff-phone-status">
-                                <p id="staff-phone-status" class="staff-form-hint staff-phone-status" data-staff-phone-status aria-live="polite">Optional. We check Philippine mobile format and whether the number is already linked to an account.</p>
                             </div>
                         </div>
                         <!-- Revision S3 — address/birthdate/gender/emergency
@@ -786,9 +784,8 @@
                                 <input type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name readonly aria-readonly="true">
                             </div>
                             <div class="staff-form-group">
-                                <span class="staff-form-label">Emergency contact number</span>
-                                <input type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number aria-invalid="false" aria-describedby="staff-emergency-phone-status">
-                                <p id="staff-emergency-phone-status" class="staff-form-hint staff-phone-status" data-staff-emergency-phone-status data-state="neutral" aria-live="polite">Optional. Shared family emergency contacts are allowed; an existing number shows a warning.</p>
+                                <div class="phone-field-heading"><label class="staff-form-label" for="staff-settings-emergency-number">Emergency contact number</label><span id="staff-emergency-phone-status" class="staff-phone-status phone-field-status" data-staff-emergency-phone-status data-state="neutral" aria-live="polite">Optional · shared contacts allowed</span></div>
+                                <input id="staff-settings-emergency-number" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number aria-invalid="false" aria-describedby="staff-emergency-phone-status">
                             </div>
                         </div>
                         <p class="staff-form-hint" data-staff-settings-details-hint hidden>Address, birthdate, gender, and emergency contact aren't available yet — ask the owner to run database update 018.</p>

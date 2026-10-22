@@ -544,9 +544,9 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(timer);
             delete input.dataset.checkedPhone;
             const parsed = window.validatePhMobile?.(input.value.trim());
-            if (!input.value.trim()) { paint('', 'Optional. Shared family emergency numbers are allowed.'); return; }
+            if (!input.value.trim()) { paint('', 'Optional · shared contacts allowed'); return; }
             if (!parsed?.valid) { paint('invalid', parsed?.message || 'Enter a valid Philippine mobile number.'); return; }
-            paint('checking', 'Checking Philippine format and whether the number is already saved…');
+            paint('checking', 'Checking…');
             timer = setTimeout(async () => {
                 try {
                     const { data, error } = await window.sb.rpc('admin_phone_number_exists', {
@@ -556,8 +556,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (error || typeof data !== 'boolean') throw error || new Error('Unexpected response');
                     input.dataset.checkedPhone = parsed.normalized;
                     paint(data ? 'warning' : 'available', data
-                        ? 'This number is already saved somewhere. Emergency contacts may be shared with family; saving is allowed.'
-                        : 'Valid Philippine mobile number and not found in saved contact numbers.');
+                        ? 'Already saved · shared allowed'
+                        : 'Valid · available');
                 } catch (_) {
                     if (request === revision) paint('error', 'Could not check number availability. Try again.');
                 }
@@ -614,8 +614,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (firstField) firstField.focus();
     }
 
-    function closeStaffModal() {
+    let staffAddClosePending = false;
+    function staffAddDraftHasChanges() {
+        return Boolean(staffForm?.querySelector('[data-admin-staff-email]')?.value.trim())
+            || Boolean(staffForm?.querySelector('[data-admin-staff-role]')?.value);
+    }
+    async function closeStaffModal(force = false) {
         if (!staffModalIsOpen || !staffModal) return;
+        if (!force && staffAddDraftHasChanges()) {
+            if (staffAddClosePending) return;
+            staffAddClosePending = true;
+            const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard staff invitation?', message: 'Your unsent staff invitation details will be lost.', confirmLabel: 'Discard changes', danger: true });
+            staffAddClosePending = false;
+            if (!accepted) return;
+        }
         staffModalIsOpen = false;
 
         staffModal.removeAttribute('data-open');
@@ -636,7 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('[data-admin-staff-modal-close]').forEach((btn) => {
-        btn.addEventListener('click', closeStaffModal);
+        btn.addEventListener('click', () => closeStaffModal());
     });
 
     // S1 (Revision A1 fix, ported) — see the identical comment on the Court
@@ -654,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && staffModalIsOpen) closeStaffModal();
+        if (e.key === 'Escape' && staffModalIsOpen) { e.preventDefault(); closeStaffModal(); }
     });
 
     const staffTable = document.querySelector('[data-admin-staff-table]');
@@ -731,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 refreshStaffList();
                 resetStaffForm();
-                closeStaffModal();
+                closeStaffModal(true);
                 recordOwnerActivity(`Staff account created for ${email}`, 'staff');
             } catch (err) {
                 window.InigoToast?.show(err.message || 'Could not create the staff account. Please try again.', true);
@@ -758,11 +770,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let staffEditModalLastFocused = null;
     let staffEditModalProfileId = null;
     let staffEditModalProfileName = '';
+    let staffEditPositionBaseline = '';
+    let staffEditClosePending = false;
 
     function fillStaffEditForm(profile) {
         if (!staffEditDialog) return;
         const positionInput = staffEditDialog.querySelector('[data-admin-staff-edit-position]');
         if (positionInput) positionInput.value = profile.position || '';
+        staffEditPositionBaseline = profile.position || '';
 
         const age = computeAdminStaffAge(profile.birthdate);
         const details = [
@@ -821,8 +836,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (firstField) firstField.focus();
     }
 
-    function closeStaffEditModal() {
+    async function closeStaffEditModal(force = false) {
         if (!staffEditModalIsOpen || !staffEditModal) return;
+        const position = staffEditDialog?.querySelector('[data-admin-staff-edit-position]')?.value || '';
+        if (!force && staffEditModal.querySelector('[data-admin-staff-details-edit]:not([hidden])') && position !== staffEditPositionBaseline) {
+            if (staffEditClosePending) return;
+            staffEditClosePending = true;
+            const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard position change?', message: 'The unsaved staff position change will be lost.', confirmLabel: 'Discard changes', danger: true });
+            staffEditClosePending = false;
+            if (!accepted) return;
+        }
         staffEditModalIsOpen = false;
 
         staffEditModal.removeAttribute('data-open');
@@ -871,6 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.InigoToast?.show('Choose a valid staff position.', true);
                 return;
             }
+            if (position === staffEditPositionBaseline) { closeStaffEditModal(); return; }
 
             const staffName = staffEditModalProfileName;
             const accepted = await window.InigoOwnerUI?.confirm({
@@ -891,7 +915,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            closeStaffEditModal();
+            closeStaffEditModal(true);
             refreshStaffList();
             recordOwnerActivity(`Staff position changed: ${staffName}`, 'staff');
             window.InigoToast?.show('Staff position updated.');
@@ -1496,12 +1520,14 @@ document.addEventListener('DOMContentLoaded', () => {
             setOwnerPaymentMessage('Only the owner can change payment settings.', true, ownerPaymentEditorMessage);
             return;
         }
+        if (!ownerPaymentHasChanges()) { closeOwnerPaymentModal(); return; }
         const accepted = await window.InigoOwnerUI?.confirm({
             title: 'Save payment settings?',
             message: `Apply a ${percent}% down payment and the selected payment methods to new checkouts?`,
             confirmLabel: 'Save payment settings',
         });
         if (!accepted) return;
+        if (ownerPaymentModal) ownerPaymentModal.inert = true;
         ownerPaymentSave.disabled = true;
         ownerPaymentSave.textContent = 'Saving…';
         setOwnerPaymentMessage('Saving payment settings…', false, ownerPaymentEditorMessage);
@@ -1524,6 +1550,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('[admin] payment settings save failed', error);
             setOwnerPaymentMessage(error.message || 'Payment settings could not be saved. Please try again.', true, ownerPaymentEditorMessage);
         } finally {
+            if (ownerPaymentModal) ownerPaymentModal.inert = false;
             ownerPaymentSave.disabled = false;
             ownerPaymentSave.textContent = 'Save payment settings';
         }
@@ -1839,6 +1866,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (weeklyHours.length !== 7) { setBookingRulesMessage('The weekly schedule must include all seven days.', true); return; }
 
+        if (getBookingRulesDraft() === bookingRulesEditBaseline) {
+            setBookingRulesEditing(false);
+            bookingRulesEditBaseline = null;
+            closeBookingRulesModal();
+            return;
+        }
+
         const accepted = await window.InigoOwnerUI?.confirm({
             title: 'Save Business Hours?',
             message: `Apply these opening hours and a ${graceMinutes}-minute no-show grace period from ${effectiveFrom}?`,
@@ -1846,6 +1880,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (!accepted) return;
 
+        if (bookingRulesModal) bookingRulesModal.inert = true;
         bookingRulesSave.disabled = true;
         setBookingRulesMessage('Saving rules and checking existing reservations…');
         try {
@@ -1865,6 +1900,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('[admin] booking rules could not be saved', error);
             setBookingRulesMessage(error.message || 'Booking rules could not be saved. Check for conflicts with existing reservations.', true);
         } finally {
+            if (bookingRulesModal) bookingRulesModal.inert = false;
             bookingRulesSave.disabled = false;
         }
     });
@@ -1887,6 +1923,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const announcementBack = document.querySelector('[data-owner-announcement-back]');
     const announcementSteps = [...document.querySelectorAll('[data-owner-announcement-step]')];
     let announcementWizardStep = 1;
+    let announcementEditBaseline = '';
+    let announcementClosePending = false;
+    let announcementSavePending = false;
+    function getAnnouncementDraft() {
+        return JSON.stringify([...(announcementForm?.querySelectorAll('input, textarea, select') || [])].map(field =>
+            field.type === 'checkbox' || field.type === 'radio' ? [field.type, field.checked] : field.value));
+    }
+    function announcementHasChanges() { return getAnnouncementDraft() !== announcementEditBaseline; }
     let announcementEditingId = null;
     let announcementLastFocus = null;
     let announcementModalHideTimer = null;
@@ -1910,6 +1954,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isNaN(date.valueOf()) ? null : date.toISOString();
     }
 
+    function hasAnnouncementContent() {
+        const title = announcementForm?.querySelector('[data-owner-announcement-title]');
+        const body = announcementForm?.querySelector('[data-owner-announcement-body]');
+        return Boolean(title?.value.trim() && body?.value.trim());
+    }
+
     function setAnnouncementWizardStep(step) {
         announcementWizardStep = Math.min(3, Math.max(1, step));
         announcementSteps.forEach(panel => {
@@ -1925,9 +1975,15 @@ document.addEventListener('DOMContentLoaded', () => {
             else indicator.removeAttribute('aria-current');
         });
         if (announcementBack) announcementBack.hidden = announcementWizardStep === 1;
-        if (announcementNext) announcementNext.hidden = announcementWizardStep === 3;
+        if (announcementNext) announcementNext.hidden = announcementWizardStep === 3 || (announcementWizardStep === 1 && !hasAnnouncementContent());
         if (announcementSubmit) announcementSubmit.hidden = announcementWizardStep !== 3;
     }
+
+    announcementForm?.querySelectorAll('[data-owner-announcement-title], [data-owner-announcement-body]').forEach(field => {
+        field.addEventListener('input', () => {
+            if (announcementWizardStep === 1 && announcementNext) announcementNext.hidden = !hasAnnouncementContent();
+        });
+    });
 
     function openAnnouncementModal(item = null) {
         if (!announcementModal || !announcementForm) return;
@@ -1955,6 +2011,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeHint = announcementForm.querySelector('[data-owner-announcement-time-hint]');
         if (timeHint) timeHint.textContent = item ? 'Choose a future date and time. Manila time is used.' : 'Leave blank to publish immediately.';
         setAnnouncementWizardStep(1);
+        announcementEditBaseline = getAnnouncementDraft();
         setAnnouncementMessage('');
         announcementModal.hidden = false;
         void announcementModal.offsetWidth;
@@ -1962,14 +2019,22 @@ document.addEventListener('DOMContentLoaded', () => {
         title?.focus();
     }
 
-    function closeAnnouncementModal(force = false) {
+    async function closeAnnouncementModal(force = false) {
         if ((!force && announcementSaving) || !announcementModal || announcementModal.hidden) return;
+        if (!force && announcementHasChanges()) {
+            if (announcementClosePending) return;
+            announcementClosePending = true;
+            const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard announcement changes?', message: 'Your unsaved announcement details will be lost.', confirmLabel: 'Discard changes', danger: true });
+            announcementClosePending = false;
+            if (!accepted) return;
+        }
         announcementModal.removeAttribute('data-open');
         if (announcementModalHideTimer) window.clearTimeout(announcementModalHideTimer);
         announcementModalHideTimer = window.setTimeout(() => { announcementModal.hidden = true; announcementModalHideTimer = null; }, 250);
         if (announcementLastFocus && document.contains(announcementLastFocus)) announcementLastFocus.focus();
         announcementLastFocus = null;
         announcementEditingId = null;
+        announcementEditBaseline = '';
     }
 
     document.querySelector('[data-owner-announcement-new]')?.addEventListener('click', () => openAnnouncementModal());
@@ -1979,7 +2044,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.target === announcementModal && announcementModal.dataset.backdropDown === 'true') closeAnnouncementModal();
         delete announcementModal.dataset.backdropDown;
     });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape' && announcementModal && !announcementModal.hidden) closeAnnouncementModal(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && announcementModal && !announcementModal.hidden) { event.preventDefault(); event.stopPropagation(); closeAnnouncementModal(); } });
     announcementDialog?.addEventListener('keydown', event => {
         if (event.key !== 'Tab') return;
         const focusable = [...announcementDialog.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])')]
@@ -2075,7 +2140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     announcementForm?.addEventListener('submit', async event => {
         event.preventDefault();
         if (announcementWizardStep < 3) { announcementNext?.click(); return; }
-        if (!window.sb || !announcementSubmit) return;
+        if (!window.sb || !announcementSubmit || announcementSavePending || announcementSaving) return;
         const title = document.querySelector('[data-owner-announcement-title]')?.value.trim() || '';
         const body = document.querySelector('[data-owner-announcement-body]')?.value.trim() || '';
         const audience = document.querySelector('[data-owner-announcement-audience]')?.value || '';
@@ -2084,6 +2149,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!title || !body || !['customers', 'staff', 'both'].includes(audience)) { setAnnouncementMessage('Enter a title, message, and valid audience.', true); return; }
         if (publishInput && !publishAt) { setAnnouncementMessage('Choose a valid publication time.', true); return; }
         if (announcementEditingId && (!publishAt || new Date(publishAt) <= new Date())) { setAnnouncementMessage('Scheduled announcements must remain set for a future time.', true); return; }
+        if (!announcementHasChanges()) { await closeAnnouncementModal(); return; }
+        announcementSavePending = true;
+        const saveAccepted = await window.InigoOwnerUI?.confirm({
+            title: announcementEditingId ? 'Save announcement changes?' : 'Publish announcement?',
+            message: announcementEditingId ? 'Save these changes to the scheduled announcement?' : (publishAt ? 'Schedule this announcement for the selected time?' : 'Publish this announcement now?'),
+            confirmLabel: announcementEditingId ? 'Save changes' : (publishAt ? 'Schedule announcement' : 'Publish announcement'),
+        });
+        announcementSavePending = false;
+        if (!saveAccepted) return;
         announcementSubmit.disabled = true;
         announcementSaving = true;
         announcementForm.querySelectorAll('button, input, textarea, select').forEach(control => { control.disabled = true; });
@@ -2519,16 +2593,74 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminAvatarRemoveBtn = document.querySelector('[data-admin-avatar-remove]');
 
     document.querySelector('[data-admin-profile-edit]')?.addEventListener('click', () => {
+        ownerProfileEditBaseline = { ...(window.inigosyncProfile || {}) };
         paintOwnerDetails(window.inigosyncProfile || {});
         const modal = document.querySelector('[data-admin-settings-profile-modal]');
         window.InigoOwnerUI.open(modal);
         refreshLinkedGoogleEmails();
     });
-    document.querySelectorAll('[data-admin-settings-cancel="profile"]').forEach((button) => {
-        button.addEventListener('click', () => {
-            const modal = button.closest('.admin-modal-overlay');
-            window.InigoOwnerUI.close(modal);
+    let ownerProfileClosePending = false;
+    let ownerProfileEditBaseline = null;
+    function ownerProfileDraftHasChanges() {
+        const profile = window.inigosyncProfile || {};
+        const baseline = ownerProfileEditBaseline || profile;
+        const name = document.querySelector('[data-admin-settings-name]')?.value.trim() || '';
+        const mobile = document.querySelector('[data-admin-settings-mobile]')?.value.trim() || '';
+        const mobileCheck = mobile ? window.validatePhMobile?.(mobile) : null;
+        const normalizedMobile = mobile ? (mobileCheck?.valid ? mobileCheck.normalized : mobile) : '';
+        return name !== (baseline.full_name || '')
+            || normalizedMobile !== (baseline.contact_num || '')
+            || (document.querySelector('[data-admin-settings-address]')?.value.trim() || '') !== (baseline.address || '')
+            || (document.querySelector('[data-admin-settings-birthdate]')?.value || null) !== (baseline.birthdate || null)
+            || (document.querySelector('[data-admin-settings-gender]')?.value || '') !== (baseline.gender || '')
+            || (document.querySelector('[data-admin-settings-civil-status]')?.value || null) !== (baseline.civil_status || null);
+    }
+    function refreshOwnerProfileAfterAsyncLoad(profile) {
+        const modal = document.querySelector('[data-admin-settings-profile-modal]');
+        const isEditing = Boolean(modal && !modal.hidden && ownerProfileEditBaseline);
+        if (!isEditing) {
+            paintOwnerDetails(profile);
+            renderAdminProfile(profile);
+            return;
+        }
+
+        const baseline = ownerProfileEditBaseline;
+        const normalizePhone = value => {
+            const raw = String(value || '').trim();
+            if (!raw) return '';
+            const checked = window.validatePhMobile?.(raw);
+            return checked?.valid ? checked.normalized : raw;
+        };
+        const fields = [
+            ['[data-admin-settings-name]', baseline.full_name || '', profile.full_name || '', value => String(value || '').trim()],
+            ['[data-admin-settings-mobile]', baseline.contact_num || '', profile.contact_num || '', normalizePhone],
+            ['[data-admin-settings-address]', baseline.address || '', profile.address || '', value => String(value || '').trim()],
+            ['[data-admin-settings-birthdate]', baseline.birthdate || '', profile.birthdate || '', value => String(value || '')],
+            ['[data-admin-settings-gender]', baseline.gender || '', profile.gender || '', value => String(value || '')],
+            ['[data-admin-settings-civil-status]', baseline.civil_status || '', profile.civil_status || '', value => String(value || '')],
+        ];
+        fields.forEach(([selector, before, saved, normalize]) => {
+            const field = document.querySelector(selector);
+            if (field && normalize(field.value) === normalize(before)) field.value = saved;
         });
+        ownerProfileEditBaseline = { ...profile };
+        paintOwnerDetails(profile, true);
+        renderAdminProfile(profile, true);
+    }
+    async function cancelOwnerProfileEditing(button) {
+        if (ownerProfileClosePending) return;
+        const modal = button?.closest('.admin-modal-overlay') || document.querySelector('[data-admin-settings-profile-modal]');
+        if (ownerProfileDraftHasChanges()) {
+            ownerProfileClosePending = true;
+            const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard profile changes?', message: 'Your unsaved profile changes will be lost.', confirmLabel: 'Discard changes', danger: true });
+            ownerProfileClosePending = false;
+            if (!accepted) return;
+        }
+        window.InigoOwnerUI.close(modal);
+        ownerProfileEditBaseline = null;
+    }
+    document.querySelectorAll('[data-admin-settings-cancel="profile"]').forEach((button) => {
+        button.addEventListener('click', () => cancelOwnerProfileEditing(button));
     });
 
     const accountModals = [document.querySelector('[data-admin-settings-profile-modal]')].filter(Boolean);
@@ -2592,6 +2724,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     reader.onerror = () => reject(new Error('Could not finish processing the cropped photo.'));
                     reader.readAsDataURL(croppedBlob);
                 });
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Save profile photo?',
+                    message: 'Save this cropped photo as your owner profile photo?',
+                    confirmLabel: 'Save photo',
+                });
+                if (!accepted) return;
                 if (await saveAdminAvatarUrl(dataUrl)) window.InigoToast?.show('Profile photo updated.');
             } catch (err) {
                 console.error('[admin] avatar crop failed', err);
@@ -2604,7 +2742,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     adminAvatarRemoveBtn?.addEventListener('click', async () => {
+        if (adminAvatarRemoveBtn.disabled) return;
         adminAvatarRemoveBtn.disabled = true;
+        const accepted = await window.InigoOwnerUI?.confirm({
+            title: 'Remove profile photo?',
+            message: 'Remove your current owner profile photo?',
+            confirmLabel: 'Remove photo',
+            danger: true,
+        });
+        if (!accepted) { adminAvatarRemoveBtn.disabled = false; return; }
         const ok = await saveAdminAvatarUrl(null);
         adminAvatarRemoveBtn.disabled = false;
         if (ok) window.InigoToast?.show('Profile photo removed.');
@@ -2633,7 +2779,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // typed value in place and show the pending-confirmation hint instead;
     // every other call site (initial load, Cancel, a real profile change)
     // omits it, so those still correctly repaint/revert the field.
-    function renderAdminProfile(profile) {
+    function renderAdminProfile(profile, preserveEditorDraft = false) {
         const initials = (profile.full_name || profile.email || '?')
             .split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 
@@ -2654,7 +2800,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const nameInput = document.querySelector('[data-admin-settings-name]');
         const emailInput = document.querySelector('[data-admin-settings-email]');
-        if (nameInput) nameInput.value = profile.full_name || '';
+        if (nameInput && !preserveEditorDraft) nameInput.value = profile.full_name || '';
         if (emailInput) emailInput.textContent = profile.email || '—';
         const fullNameEl = document.querySelector('[data-admin-profile-full-name]');
         if (fullNameEl) fullNameEl.textContent = profile.full_name || '—';
@@ -2672,15 +2818,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (birthdateEl) birthdateEl.textContent = profile.birthdate || '—';
     }
 
-    function paintOwnerDetails(profile) {
+    function paintOwnerDetails(profile, preserveEditorDraft = false) {
         const savedMobile = window.validatePhMobile?.(profile.contact_num || '');
         const fields = [
             ['[data-admin-settings-mobile]', savedMobile?.valid ? savedMobile.normalized : (profile.contact_num || '')],
             ['[data-admin-settings-address]', profile.address || ''],
             ['[data-admin-settings-birthdate]', profile.birthdate || ''],
             ['[data-admin-settings-gender]', profile.gender || ''],
+            ['[data-admin-settings-civil-status]', profile.civil_status || ''],
         ];
-        fields.forEach(([selector, value]) => {
+        if (!preserveEditorDraft) fields.forEach(([selector, value]) => {
             const field = document.querySelector(selector);
             if (field) field.value = value;
         });
@@ -2688,18 +2835,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ['[data-admin-profile-address]', profile.address || '—'],
             ['[data-admin-profile-age]', computeAdminStaffAge(profile.birthdate) === null ? '—' : `${computeAdminStaffAge(profile.birthdate)} years old`],
             ['[data-admin-profile-gender]', profile.gender || '—'],
+            ['[data-admin-profile-civil-status]', profile.civil_status || '—'],
             ['[data-admin-profile-birthdate]', profile.birthdate || '—'],
         ];
         values.forEach(([selector, value]) => {
             const target = document.querySelector(selector);
             if (target) target.textContent = value;
         });
-        if (ownerMobileMessage) {
-            ownerMobileMessage.textContent = !profile.contact_num
-                ? 'A contact number is optional. We check Philippine mobile format and whether the number is already linked to an account.'
-                : 'Saved contact number. A new number is checked for Philippine format and availability before saving.';
+        if (ownerMobileMessage && !preserveEditorDraft) {
+            ownerMobileMessage.textContent = !profile.contact_num ? 'Optional · format and availability check' : 'Saved number';
             ownerMobileMessage.classList.remove('is-error');
-            ownerMobileMessage.dataset.state = '';
+            ownerMobileMessage.dataset.state = profile.contact_num ? 'available' : '';
         }
     }
 
@@ -2739,10 +2885,23 @@ document.addEventListener('DOMContentLoaded', () => {
         el.textContent = (!error && data) ? formatAdminMemberSince(data.created_at) : '—';
         if (!error && data) {
             Object.assign(window.inigosyncProfile, data);
-            ownerDetailsLoaded = true;
-            paintOwnerDetails(window.inigosyncProfile);
-            renderAdminProfile(window.inigosyncProfile);
+            refreshOwnerProfileAfterAsyncLoad(window.inigosyncProfile);
+        } else {
+            return;
         }
+        const { data: privateDetails, error: privateError } = await window.sb
+            .from('owner_private_details')
+            .select('civil_status')
+            .eq('user_id', window.inigosyncProfile.id)
+            .maybeSingle();
+        if (privateError) {
+            console.error('[admin] could not load owner private details', privateError);
+            window.InigoToast?.show('Could not load your civil status. Try reloading the page.', true);
+            return;
+        }
+        window.inigosyncProfile.civil_status = privateDetails?.civil_status || '';
+        ownerDetailsLoaded = true;
+        refreshOwnerProfileAfterAsyncLoad(window.inigosyncProfile);
     }
 
     document.addEventListener('inigosync:profile-ready', loadAdminProfileMemberSince);
@@ -2758,6 +2917,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // an email as "saved" before it truly is.
     // ------------------------------------------------------------------
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const OWNER_CIVIL_STATUSES = new Set(['Single', 'Married', 'Separated', 'Widowed', 'Prefer not to say']);
 
     const adminProfileSaveBtn = document.querySelector('[data-admin-settings-save="profile"]');
     const ownerMobileMessage = document.querySelector('[data-admin-mobile-message]');
@@ -2769,12 +2929,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let ownerMobileCheckedAt = 0;
     const OWNER_PHONE_PROOF_MAX_AGE_MS = 4 * 60 * 1000;
     const ownerMobileRecentChecks = new Map();
+    let ownerProfileSaveConfirmPending = false;
 
     function setOwnerMobileMessage(message, isError = false) {
         if (!ownerMobileMessage) return;
         ownerMobileMessage.textContent = message;
         ownerMobileMessage.classList.toggle('is-error', isError);
-        ownerMobileMessage.dataset.state = isError ? 'invalid' : ownerMobileCheckPassed ? 'available' : '';
+        ownerMobileMessage.dataset.state = isError ? 'invalid' : ownerMobileCheckPassed ? 'available' : (/^Checking/.test(message) ? 'checking' : '');
     }
 
     async function ownerPhoneFunctionError(error) {
@@ -2800,7 +2961,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function checkOwnerMobile(normalized, requestId) {
         if (!window.sb || !window.inigosyncProfile) return;
-        setOwnerMobileMessage('Checking Philippine format and availability…');
+        setOwnerMobileMessage('Checking…');
         try {
             const { data, error } = await window.sb.functions.invoke('validate-contact-phone', { body: { phone: normalized } });
             if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
@@ -2818,7 +2979,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ownerMobileRecentChecks.set(normalized, ownerMobileCheckedAt);
             ownerMobileInput.dataset.phoneAvailability = 'available';
             ownerMobileInput.setAttribute('aria-invalid', 'false');
-            setOwnerMobileMessage('Valid Philippine mobile number and available. Select Save Changes to update your profile.');
+            setOwnerMobileMessage('Valid · available');
         } catch (error) {
             if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
             ownerMobileCheckPassed = false;
@@ -2839,14 +3000,14 @@ document.addEventListener('DOMContentLoaded', () => {
         ownerMobileInput.setAttribute('aria-invalid', 'false');
         const raw = ownerMobileInput.value.trim();
         if (!raw) {
-            setOwnerMobileMessage('A contact number is optional. We check Philippine mobile format and whether the number is already linked to an account.');
+            setOwnerMobileMessage('Optional · format and availability check');
             return;
         }
         const localCheck = window.validatePhMobile?.(raw);
         if (!localCheck?.valid) {
             ownerMobileInput.dataset.phoneAvailability = 'invalid';
             ownerMobileInput.setAttribute('aria-invalid', 'true');
-            setOwnerMobileMessage('Enter a valid Philippine mobile number, such as 09171234567.', true);
+            setOwnerMobileMessage('Invalid format', true);
             return;
         }
         const recentCheckAt = ownerMobileRecentChecks.get(localCheck.normalized) || 0;
@@ -2856,10 +3017,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ownerMobileCheckedAt = recentCheckAt;
             ownerMobileInput.dataset.phoneAvailability = 'available';
             ownerMobileInput.setAttribute('aria-invalid', 'false');
-            setOwnerMobileMessage('Valid Philippine mobile number and available. Select Save Changes to update your profile.');
+            setOwnerMobileMessage('Valid · available');
             return;
         }
-        setOwnerMobileMessage('Valid Philippine mobile format. Checking availability…');
+        setOwnerMobileMessage('Checking…');
         ownerMobileCheckTimer = setTimeout(() => checkOwnerMobile(localCheck.normalized, requestId), 700);
     });
 
@@ -2872,11 +3033,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const addressInput = document.querySelector('[data-admin-settings-address]');
             const birthdateInput = document.querySelector('[data-admin-settings-birthdate]');
             const genderInput = document.querySelector('[data-admin-settings-gender]');
+            const civilStatusInput = document.querySelector('[data-admin-settings-civil-status]');
             const newName = nameInput ? nameInput.value.trim() : '';
             const mobileRaw = mobileInput ? mobileInput.value.trim() : '';
             const address = addressInput ? addressInput.value.trim() : '';
             const birthdate = birthdateInput?.value || null;
             const gender = genderInput?.value || '';
+            const civilStatus = civilStatusInput?.value || null;
+
+            if (civilStatus && !OWNER_CIVIL_STATUSES.has(civilStatus)) {
+                window.InigoToast?.show('Choose a valid civil status.', true);
+                civilStatusInput?.focus();
+                return;
+            }
 
             if (!ownerDetailsLoaded) {
                 window.InigoToast?.show('Account details are still loading. Please try again.', true);
@@ -2921,30 +3090,63 @@ document.addEventListener('DOMContentLoaded', () => {
             const detailsChanged = mobileNeedsRemoval || mobileReadyToSave
                 || address !== (window.inigosyncProfile.address || '')
                 || birthdate !== (window.inigosyncProfile.birthdate || null)
-                || gender !== (window.inigosyncProfile.gender || '');
+                || gender !== (window.inigosyncProfile.gender || '')
+                || civilStatus !== (window.inigosyncProfile.civil_status || null);
             if (!nameChanged && !detailsChanged) {
-                window.InigoToast?.show('Nothing to save.');
+                window.InigoOwnerUI?.close(document.querySelector('[data-admin-settings-profile-modal]'));
                 return;
             }
 
+            if (ownerProfileSaveConfirmPending) return;
+            ownerProfileSaveConfirmPending = true;
+            const saveAccepted = await window.InigoOwnerUI?.confirm({
+                title: 'Save profile changes?',
+                message: 'Save these changes to your owner profile?',
+                confirmLabel: 'Save changes',
+            });
+            ownerProfileSaveConfirmPending = false;
+            if (!saveAccepted) return;
+
+            const profileModal = document.querySelector('[data-admin-settings-profile-modal]');
+            if (profileModal) profileModal.inert = true;
             adminProfileSaveBtn.disabled = true;
+            const civilStatusNeedsSave = civilStatus !== (window.inigosyncProfile.civil_status || null);
+            const profileDetailsChanged = mobileNeedsRemoval || mobileReadyToSave
+                || address !== (window.inigosyncProfile.address || '')
+                || birthdate !== (window.inigosyncProfile.birthdate || null)
+                || gender !== (window.inigosyncProfile.gender || '');
+            const ownerProfileFieldsChanged = nameChanged || profileDetailsChanged;
+            let profileWriteSucceeded = false;
+            let civilStatusWriteSucceeded = false;
             try {
                 if (nameChanged || detailsChanged) {
                     const profilePatch = { full_name: newName, address, birthdate, gender };
                     if (mobileNeedsRemoval) profilePatch.contact_num = null;
                     if (mobileReadyToSave) profilePatch.contact_num = `+63${requestedMobile.slice(1)}`;
-                    const { error } = await window.sb.from('profiles').update(profilePatch).eq('id', window.inigosyncProfile.id);
-                    if (error) throw error;
-                    Object.assign(window.inigosyncProfile, { full_name: newName, address, birthdate, gender });
-                    if (mobileNeedsRemoval) {
-                        window.inigosyncProfile.contact_num = null;
-                        window.inigosyncProfile.contact_num_validated = false;
-                        window.inigosyncProfile.contact_num_validated_at = null;
+                    if (nameChanged || profileDetailsChanged) {
+                        const { error } = await window.sb.from('profiles').update(profilePatch).eq('id', window.inigosyncProfile.id);
+                        if (error) throw error;
+                        profileWriteSucceeded = true;
+                        Object.assign(window.inigosyncProfile, { full_name: newName, address, birthdate, gender });
+                        if (mobileNeedsRemoval) {
+                            window.inigosyncProfile.contact_num = null;
+                            window.inigosyncProfile.contact_num_validated = false;
+                            window.inigosyncProfile.contact_num_validated_at = null;
+                        }
+                        if (mobileReadyToSave) {
+                            window.inigosyncProfile.contact_num = `+63${requestedMobile.slice(1)}`;
+                            window.inigosyncProfile.contact_num_validated = true;
+                            window.inigosyncProfile.contact_num_validated_at = new Date().toISOString();
+                        }
                     }
-                    if (mobileReadyToSave) {
-                        window.inigosyncProfile.contact_num = `+63${requestedMobile.slice(1)}`;
-                        window.inigosyncProfile.contact_num_validated = true;
-                        window.inigosyncProfile.contact_num_validated_at = new Date().toISOString();
+                    if (civilStatusNeedsSave) {
+                        const { error } = await window.sb.from('owner_private_details').upsert({
+                            user_id: window.inigosyncProfile.id,
+                            civil_status: civilStatus,
+                        }, { onConflict: 'user_id' });
+                        if (error) throw error;
+                        civilStatusWriteSucceeded = true;
+                        window.inigosyncProfile.civil_status = civilStatus || '';
                     }
                 }
 
@@ -2953,9 +3155,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (nameChanged || detailsChanged) recordOwnerActivity('Owner profile updated', 'settings');
                 window.InigoToast?.show('Profile updated.');
                 window.InigoOwnerUI.close(document.querySelector('[data-admin-settings-profile-modal]'));
+                ownerProfileEditBaseline = null;
             } catch (err) {
-                window.InigoToast?.show(err.message || 'Could not save your changes.', true);
+                if (profileWriteSucceeded || civilStatusWriteSucceeded) {
+                    renderAdminProfile(window.inigosyncProfile);
+                    paintOwnerDetails(window.inigosyncProfile);
+                    if (civilStatusNeedsSave && !civilStatusWriteSucceeded && civilStatusInput) {
+                        civilStatusInput.value = civilStatus || '';
+                    }
+                    recordOwnerActivity('Owner profile updated', 'settings');
+                }
+                if (profileWriteSucceeded && civilStatusNeedsSave && !civilStatusWriteSucceeded) {
+                    window.InigoToast?.show('Your other profile changes were saved, but civil status could not be updated. Please retry.', true);
+                } else if (civilStatusWriteSucceeded && !profileWriteSucceeded && ownerProfileFieldsChanged) {
+                    window.InigoToast?.show('Your civil status was saved, but the other profile changes could not be updated. Please retry.', true);
+                } else {
+                    window.InigoToast?.show(err.message || 'Could not save your changes.', true);
+                }
             } finally {
+                if (profileModal) profileModal.inert = false;
                 adminProfileSaveBtn.disabled = false;
             }
         });
@@ -2975,8 +3193,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .map((identity) => identity.identity_data?.email)
             .filter(Boolean);
         root.innerHTML = emails.length
-            ? emails.map((email) => `<p class="admin-form-hint">✓ ${window.escapeHtml(email)} · Google verified</p>`).join('')
-            : '<p class="admin-form-hint">No additional Google account linked yet.</p>';
+            ? emails.map((email) => `<div class="admin-google-account"><span class="admin-google-account-check" aria-hidden="true">✓</span><span class="admin-google-account-email">${window.escapeHtml(email)}</span><span class="admin-google-account-badge">Linked</span></div>`).join('')
+            : '<p class="admin-google-accounts-empty">No Google account linked yet.</p>';
     }
 
     document.querySelector('[data-admin-link-google]')?.addEventListener('click', async (event) => {
@@ -3049,6 +3267,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ADMIN_PW_MAX_LENGTH = 15;
     const pwStepPanels = document.querySelectorAll('[data-admin-pw-step]');
     const pwStepIndicators = document.querySelectorAll('[data-admin-pw-step-indicator]');
+    const pwCancelBtn = document.querySelector('[data-admin-settings-cancel="password"]');
     const pwBackBtn = document.querySelector('[data-admin-pw-back]');
     const pwNextBtn = document.querySelector('[data-admin-pw-next]');
     const adminPasswordSaveBtn = document.querySelector('[data-admin-settings-save="password"]');
@@ -3115,6 +3334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             el.setAttribute('aria-current', n === adminPwWizardStep ? 'step' : 'false');
         });
 
+        if (pwCancelBtn) pwCancelBtn.hidden = adminPwWizardStep !== 2;
         if (pwBackBtn) pwBackBtn.hidden = adminPwWizardStep !== 2;
         if (adminPasswordSaveBtn) adminPasswordSaveBtn.hidden = adminPwWizardStep !== 2;
         if (pwNextBtn) {
@@ -3173,8 +3393,9 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAdminPwWizard();
 
     if (adminPasswordSaveBtn) {
+        let adminPwSaveConfirmPending = false;
         adminPasswordSaveBtn.addEventListener('click', async () => {
-            if (adminPasswordSaveBtn.disabled) return;
+            if (adminPasswordSaveBtn.disabled || adminPwSaveConfirmPending || adminPwSaveInProgress) return;
             if (!window.sb || !window.inigosyncProfile) return;
             const currentPassword = pwCurrentInput?.value;
             const newPassword = pwNewInput?.value;
@@ -3191,6 +3412,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (newPassword !== confirmPassword) {
                 window.InigoToast?.show('Passwords do not match.', true);
+                return;
+            }
+
+            const draftAtConfirmation = { currentPassword, newPassword, confirmPassword };
+            adminPwSaveConfirmPending = true;
+            const saveAccepted = await window.InigoOwnerUI?.confirm({
+                title: 'Save new password?',
+                message: 'Update your owner account password now?',
+                confirmLabel: 'Save password',
+            });
+            adminPwSaveConfirmPending = false;
+            if (!saveAccepted) return;
+            if (pwCurrentInput?.value !== draftAtConfirmation.currentPassword
+                || pwNewInput?.value !== draftAtConfirmation.newPassword
+                || pwConfirmInput?.value !== draftAtConfirmation.confirmPassword) {
+                window.InigoToast?.show('Your password draft changed while confirmation was open. Review it and confirm again before saving.', true);
                 return;
             }
 
@@ -3217,6 +3454,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 goToAdminPwStep(1);
                 return;
             }
+            if (pwCurrentInput?.value !== draftAtConfirmation.currentPassword
+                || pwNewInput?.value !== draftAtConfirmation.newPassword
+                || pwConfirmInput?.value !== draftAtConfirmation.confirmPassword) {
+                window.InigoToast?.show('Your password draft changed while it was being verified. Review it and save again.', true);
+                adminPwSaveInProgress = false;
+                renderAdminPwWizard();
+                return;
+            }
 
             try {
                 const { error } = await window.sb.auth.updateUser({ password: newPassword });
@@ -3238,20 +3483,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Account Settings — Cancel buttons. Profile discards in-progress edits
-    // back to the last-saved values; Password resets the wizard to step 1
-    // and clears every field (Revision A1, decision A9 — this button was
-    // kept from the pre-wizard markup rather than dropped, since the
-    // customer dashboard's own wizard has no exact equivalent to port).
+    // back to the last-saved values; Password's step-2 Cancel resets the
+    // wizard to step 1 and clears every field.
     // ------------------------------------------------------------------
+    let adminPasswordCancelPending = false;
     document.querySelectorAll('[data-admin-settings-cancel]').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const mode = btn.dataset.adminSettingsCancel;
-            if (mode === 'profile') {
-                if (window.inigosyncProfile) {
-                    renderAdminProfile(window.inigosyncProfile);
-                    paintOwnerDetails(window.inigosyncProfile);
+            if (mode === 'password') {
+                const hasDraft = Boolean(pwCurrentInput?.value || pwNewInput?.value || pwConfirmInput?.value);
+                if (hasDraft) {
+                    if (adminPasswordCancelPending) return;
+                    adminPasswordCancelPending = true;
+                    const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard password change?', message: 'Your unsaved password change will be lost.', confirmLabel: 'Discard changes', danger: true });
+                    adminPasswordCancelPending = false;
+                    if (!accepted) return;
                 }
-            } else if (mode === 'password') {
                 resetAdminPwWizard();
             }
         });
@@ -3473,6 +3720,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!accepted) return;
         const idsToSave = [...draftFeaturedReviewIds];
         savingFeaturedReviews = true;
+        if (reviewModal) reviewModal.inert = true;
         setFeaturedReviewStatus('Saving featured reviews…');
         try {
             const { error } = await window.sb.rpc('owner_save_featured_booking_reviews', { p_review_ids: idsToSave });
@@ -3485,6 +3733,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setFeaturedReviewStatus(error?.message || 'Featured reviews could not be saved. Try again.', true);
             console.error('[admin] featured review save failed', error);
         } finally {
+            if (reviewModal) reviewModal.inert = false;
             const finalMessage = reviewMessage?.textContent || '';
             const finalIsError = reviewMessage?.classList.contains('is-error') || false;
             savingFeaturedReviews = false;

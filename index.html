@@ -776,11 +776,11 @@
                              filter reads its cap from, but neither one stops a
                              letter being typed, so the JS filter is the actual
                              enforcement. -->
-                        <label class="auth-field">
-                            <span class="auth-label signup-phone-label">Mobile number (optional) <span id="signup-phone-status" data-signup-phone-availability-status role="status" aria-live="polite"></span></span>
-                            <input type="tel" name="mobile" placeholder="09XX XXX XXXX" autocomplete="tel"
+                        <div class="auth-field">
+                            <div class="phone-field-heading signup-phone-label"><label class="auth-label" for="signupMobile">Mobile number (optional)</label><span id="signup-phone-status" class="phone-field-status" data-signup-phone-availability-status role="status" aria-live="polite"></span></div>
+                            <input id="signupMobile" type="tel" name="mobile" placeholder="09XX XXX XXXX" autocomplete="tel"
                                    inputmode="numeric" maxlength="11" data-digits-only aria-describedby="signup-phone-status">
-                        </label>
+                        </div>
 
                         <label class="auth-checkbox">
                             <input type="checkbox" name="remember">
@@ -810,12 +810,11 @@
 
             <form class="auth-form" data-auth-panel="phone" novalidate>
                 <h2 class="auth-heading">Validate your mobile number</h2>
-                <p class="auth-tagline" data-signup-phone-description>Your account is ready. We check Philippine mobile format and whether the number is already linked to an account. This does not confirm ownership or guarantee reachability.</p>
-                <label class="auth-field">
-                    <span class="auth-label">Mobile number</span>
-                    <input type="tel" data-signup-phone-number aria-label="Mobile number to validate" readonly>
-                </label>
-                <p class="auth-tagline" data-signup-phone-status role="status" aria-live="polite"></p>
+                <p class="auth-tagline" data-signup-phone-description>A number is optional. The availability check does not confirm ownership.</p>
+                <div class="auth-field">
+                    <div class="phone-field-heading signup-phone-label"><label class="auth-label" for="signupPhoneNumber">Mobile number</label><span id="signup-phone-confirm-status" class="phone-field-status" data-signup-phone-status role="status" aria-live="polite">Ready to check</span></div>
+                    <input id="signupPhoneNumber" type="tel" data-signup-phone-number aria-describedby="signup-phone-confirm-status" readonly>
+                </div>
                 <button type="submit" class="auth-submit" data-signup-phone-validate>Validate and save</button>
                 <button type="button" class="auth-link" data-signup-phone-skip>Continue without a number</button>
             </form>

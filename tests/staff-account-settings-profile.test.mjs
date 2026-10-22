@@ -108,7 +108,9 @@ test('all staff dashboard confirmations use the accessible in-page alert dialog'
         'Save these personal information changes?',
         'Are you sure you want to save this new password?',
     ]) assert.ok(source.includes(message), `confirmation message exists for: ${message}`);
-    assert.equal((source.match(/await confirmStaffAction\(/g) || []).length, 4, 'all four staff confirmation flows await the custom dialog');
+    assert.ok((source.match(/await confirmStaffAction\(/g) || []).length >= 7, 'profile, payment, and account confirmation flows await the custom dialog');
+    assert.match(source, /await confirmStaffAction\('Discard your unsaved profile changes\?'/,
+        'profile dismissal confirms before discarding an edited draft');
     assert.match(source, /event\.key === 'Escape'[\s\S]*?closeStaffConfirm\(false\)/);
     assert.match(source, /event\.key === 'Tab'[\s\S]*?last\?\.focus\(\)/);
 });
@@ -121,8 +123,12 @@ test('emergency contact saves require current server format and availability con
     assert.match(css, /\.staff-phone-status\[data-state="neutral"\][\s\S]*?color:\s*var\(--color-ink-faint\)/);
     assert.match(source, /window\.sb\.functions\.invoke\('validate-contact-phone'[\s\S]*?body:\s*\{\s*phone:\s*localCheck\.normalized,\s*purpose:\s*'emergency'\s*\}/);
     assert.match(source, /state.warning = data.available === false/);
-    assert.match(source, /Emergency contacts may be shared with family; saving is allowed/);
+    assert.match(source, /Already saved · shared allowed/);
     assert.match(source, /setStaffEmergencyPhoneStatus\(state\.warning \? 'warning' : 'valid'/);
+    assert.match(source, /const proofIsFresh = state\.phase === 'valid'[\s\S]*?if \(proofIsFresh\) return true;/,
+        'a duplicate emergency contact remains valid to save when its availability proof is fresh');
+    assert.match(css, /\.staff-phone-status\[data-state="warning"\][\s\S]*?color:\s*#9a6700/,
+        'duplicate emergency contact status uses the warning color');
     assert.match(source, /Date\.now\(\) - state\.validatedAt < 4 \* 60 \* 1000/);
     assert.match(source, /function ensureStaffEmergencyPhoneValidated\(\)/);
     assert.equal((source.match(/if \(!ensureStaffEmergencyPhoneValidated\(\)\) return;/g) || []).length, 2,

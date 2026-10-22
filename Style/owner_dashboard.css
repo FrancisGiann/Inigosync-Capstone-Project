@@ -1005,7 +1005,22 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-profile-summary dd { margin: 0; overflow-wrap: anywhere; color: var(--color-ink); }
 .owner-personal-section > [data-admin-profile-edit] { align-self: flex-end; width: auto; min-width: 120px; margin-top: auto; padding-left: 22px; padding-right: 22px; }
 .owner-personal-section > [data-admin-profile-edit][hidden] { display: none; }
-.admin-modal-google-accounts { margin: 16px 0; }
+.admin-modal-google-accounts { margin: 22px 0 6px; padding: 18px 20px; border: 1px solid var(--color-line); border-radius: 14px; background: var(--color-bg-elevated); }
+.admin-google-accounts-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.admin-google-accounts-head h4 { margin: 0; color: var(--color-ink); font-family: var(--font-display); font-size: var(--fs-md); }
+.admin-google-accounts-head p { margin: 3px 0 0; color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.admin-google-link-btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex: none; min-height: 42px; padding: 9px 16px; border: 1px solid var(--color-primary); border-radius: 10px; background: var(--color-primary); color: #17120d; font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 700; cursor: pointer; transition: filter .2s, transform .2s; }
+.admin-google-link-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.admin-google-link-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.admin-google-link-btn:disabled { cursor: wait; opacity: .6; transform: none; }
+.admin-google-link-btn span { font-size: 20px; font-weight: 400; line-height: .7; }
+.admin-google-accounts-list { display: grid; gap: 8px; margin-top: 16px; }
+.admin-google-account { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 11px 12px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg-card); }
+.admin-google-account-check { display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--color-court-green); color: #fff; font-size: 13px; font-weight: 700; }
+.admin-google-account-email { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); font-size: var(--fs-sm); }
+.admin-google-account-badge { flex: none; margin-left: auto; color: var(--color-court-green); font-size: var(--fs-xs); font-weight: 700; }
+.admin-google-accounts-empty { margin: 0; color: var(--color-ink-faint); font-size: var(--fs-sm); }
+@media (max-width: 620px) { .admin-google-accounts-head { align-items: stretch; flex-direction: column; } .admin-google-link-btn { align-self: flex-start; } }
 @media (max-width: 680px) {
     .owner-account-card { grid-template-columns: minmax(0, 1fr); }
     .owner-photo-section { border-right: 0; border-bottom: 1px solid var(--color-line); padding-bottom: 24px; }
@@ -1302,9 +1317,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     flex-wrap: wrap;
 }
 
-/* Cancel sits at the far left (kept from the pre-wizard markup — see
-   Pages/owner_dashboard.html's own comment on this button); Go Back/Next/
-   Save Password stay grouped together on the right. */
+/* Cancel appears at the far left on step 2; Go Back and Save stay right. */
 .admin-wizard-nav .admin-wizard-cancel {
     margin-right: auto;
 }
@@ -1317,7 +1330,8 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-profile-card-info h3 { font-family: var(--font-display); font-size: var(--fs-lg); font-weight: 600; }
 .admin-profile-card-info p { color: var(--color-ink-faint); font-size: var(--fs-md); margin-top: 3px; }
 
-.admin-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.admin-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.admin-settings-grid > * { min-width: 0; }
 
 /* Profile Photo card (Revision A1, decision A9) — port of the customer
    dashboard's .dash-avatar-upload-* (Style/Dashboard.css) under admin-*
@@ -1703,7 +1717,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
    ========================================================================== */
 @media (max-width: 1080px) {
     .admin-stat-grid { grid-template-columns: repeat(2, 1fr); }
-    .admin-settings-grid { grid-template-columns: 1fr; }
+    .admin-settings-grid { grid-template-columns: minmax(0, 1fr); }
     /* .admin-court-grid/.admin-slide-grid no longer need a breakpoint here
        — both are repeat(auto-fill, minmax(260px,1fr)) now, so they adapt
        on their own at every width. */
@@ -1834,7 +1848,15 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-announcement-modal .admin-wizard-steps { width: 100%; }
 .owner-announcement-wizard-nav { justify-content: flex-end; flex-wrap: wrap; }
 .owner-announcement-wizard-nav [hidden] { display: none; }
-.owner-mobile-verification [data-admin-mobile-message] { min-height: 1.5em; margin-top: 7px; }
+.owner-mobile-verification [data-admin-mobile-message] { min-height: 1.5em; margin-top: 0; }
+.phone-field-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.phone-field-status { display: block; flex: 0 1 58%; min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.owner-mobile-verification .admin-form-label { flex: none; white-space: nowrap; }
+.owner-mobile-verification .phone-field-status { flex: 1 1 auto; }
+.phone-field-status[data-state="valid"],.phone-field-status[data-state="available"] { color: var(--color-court-green); }
+.phone-field-status[data-state="invalid"],.phone-field-status[data-state="in_use"],.phone-field-status[data-state="error"] { color: var(--color-alert); }
+.phone-field-status[data-state="warning"] { color: #9a6700; }
+.phone-field-status[data-state="checking"],.phone-field-status[data-state="neutral"] { color: var(--color-ink-faint); }
 .owner-mobile-verification [data-admin-mobile-message].is-error { color: var(--color-alert); }
 .owner-mobile-verification [data-admin-mobile-message][data-state="available"] { color: var(--color-court-green); }
 .owner-mobile-verification [data-admin-mobile-message][data-state="invalid"] { color: var(--color-alert); }

@@ -742,8 +742,18 @@ document.addEventListener('DOMContentLoaded', () => {
         feedbackDialog.focus();
     }
 
-    function closeFeedbackModal() {
+    let feedbackClosePending = false;
+    let feedbackSubmitPending = false;
+    function feedbackHasChanges() { return Boolean(feedbackMessageEl?.value.trim()) || feedbackRating !== null; }
+    async function closeFeedbackModal(force = false) {
         if (!feedbackIsOpen) return;
+        if (!force && feedbackHasChanges()) {
+            if (feedbackClosePending) return;
+            feedbackClosePending = true;
+            const accepted = await confirmSettingsChange('Discard your feedback draft?');
+            feedbackClosePending = false;
+            if (!accepted) return;
+        }
         feedbackIsOpen = false;
 
         feedbackOverlay.removeAttribute('data-open');
@@ -757,6 +767,9 @@ document.addEventListener('DOMContentLoaded', () => {
             feedbackLastFocused.focus();
         }
         feedbackLastFocused = null;
+        if (feedbackMessageEl) feedbackMessageEl.value = '';
+        feedbackRating = null;
+        paintFeedbackStars(null);
     }
 
     document.querySelectorAll('[data-dash-feedback-open]').forEach((btn) => {
@@ -764,7 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('[data-dash-feedback-close]').forEach((btn) => {
-        btn.addEventListener('click', closeFeedbackModal);
+        btn.addEventListener('click', () => closeFeedbackModal());
     });
 
     if (feedbackOverlay) {
@@ -777,11 +790,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && feedbackIsOpen) closeFeedbackModal();
+        if (e.key === 'Escape' && feedbackIsOpen && !e.defaultPrevented) { e.preventDefault(); closeFeedbackModal(); }
     });
 
     if (feedbackSubmitBtn) {
         feedbackSubmitBtn.addEventListener('click', async () => {
+            if (feedbackSubmitPending) return;
             const message = (feedbackMessageEl?.value || '').trim();
             if (!message) {
                 window.InigoToast?.show('Please enter a message before submitting.', true);
@@ -794,6 +808,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const originalLabel = feedbackSubmitBtn.textContent;
+            feedbackSubmitPending = true;
+            if (!await confirmSettingsChange('Submit this feedback?')) { feedbackSubmitPending = false; return; }
             feedbackSubmitBtn.disabled = true;
             feedbackSubmitBtn.textContent = 'Submitting…';
 
@@ -808,6 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 error = requestError;
             } finally {
                 feedbackSubmitBtn.disabled = false;
+                feedbackSubmitPending = false;
                 feedbackSubmitBtn.textContent = originalLabel;
             }
 
@@ -827,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (feedbackMessageEl) feedbackMessageEl.value = '';
             feedbackRating = null;
             paintFeedbackStars(null);
-            closeFeedbackModal();
+            closeFeedbackModal(true);
         });
     }
 
@@ -2620,23 +2637,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
     }
 
-    document.querySelectorAll('[data-booking-review-close]').forEach((button) => button.addEventListener('click', () => { if (bookingReviewModal) bookingReviewModal.hidden = true; activeReviewBookingId = null; }));
+    let bookingReviewClosePending = false;
+    let bookingReviewSubmitPending = false;
+    function bookingReviewHasChanges() {
+        return Boolean(document.querySelector('[data-booking-review-comment]')?.value.trim())
+            || (document.querySelector('[data-booking-review-rating]')?.value || '5') !== '5';
+    }
+    async function closeBookingReviewModal(force = false) {
+        if (!bookingReviewModal || bookingReviewModal.hidden) return;
+        if (!force && bookingReviewHasChanges()) {
+            if (bookingReviewClosePending) return;
+            bookingReviewClosePending = true;
+            const accepted = await confirmSettingsChange('Discard your review draft?');
+            bookingReviewClosePending = false;
+            if (!accepted) return;
+        }
+        bookingReviewModal.hidden = true;
+        activeReviewBookingId = null;
+    }
+    document.querySelectorAll('[data-booking-review-close]').forEach((button) => button.addEventListener('click', () => closeBookingReviewModal()));
+    bookingReviewModal?.addEventListener('click', event => { if (event.target === bookingReviewModal) closeBookingReviewModal(); });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && bookingReviewModal && !bookingReviewModal.hidden && !event.defaultPrevented) { event.preventDefault(); closeBookingReviewModal(); }
+    });
     document.querySelector('[data-booking-review-submit]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
-        if (!activeReviewBookingId || !window.sb) return;
+        if (!activeReviewBookingId || !window.sb || bookingReviewSubmitPending) return;
         const rating = Number(document.querySelector('[data-booking-review-rating]')?.value);
         const comment = document.querySelector('[data-booking-review-comment]')?.value?.trim() || null;
         if (!Number.isInteger(rating) || rating < 1 || rating > 5 || (comment && comment.length > 2000)) return;
+        bookingReviewSubmitPending = true;
+        if (!await confirmSettingsChange('Publish this booking review?')) { bookingReviewSubmitPending = false; return; }
         button.disabled = true;
         const { error } = await window.sb.from('booking_review').insert({ booking_id: Number(activeReviewBookingId), rating, comment });
         button.disabled = false;
+        bookingReviewSubmitPending = false;
         if (error) {
             console.error('[dashboard] review submit failed', error);
             window.InigoToast?.show(error.code === '23505' ? 'A review has already been submitted for this booking.' : (error.message || 'Could not publish your review.'), true);
             return;
         }
-        bookingReviewModal.hidden = true;
-        activeReviewBookingId = null;
+        await closeBookingReviewModal(true);
         window.InigoToast?.show('Your review is published. Thank you!');
         refreshMyBookings();
     });
@@ -3276,13 +3317,54 @@ document.addEventListener('DOMContentLoaded', () => {
             if (settingsEmergencyName) settingsEmergencyName.value = profile.emergency_contact_name || '';
             updateBirthdateAge(settingsBirthdate?.value || '');
             savedName = [settingsFirst?.value || '', settingsMiddle?.value || '', settingsLast?.value || ''];
+            personalEditBaseline = {
+                full_name: profile.full_name || '', birthdate: profile.birthdate || null,
+                gender: profile.gender || null, civil_status: profile.civil_status || null,
+                emergency_contact_name: profile.emergency_contact_name || null,
+                contact_num: profile.contact_num || '', emergency_contact_number: profile.emergency_contact_number || '',
+                email: profile.email || '',
+            };
             if (settingsEmail) settingsEmail.dataset.savedEmail = settingsEmail.value;
             if (personalModal) personalModal.hidden = false;
             personalDialog?.focus();
         }
     }
 
-    function cancelPersonalEditing() {
+    let personalEditBaseline = null;
+    function capturePersonalEditBaseline(profile = window.inigosyncProfile || {}) {
+        personalEditBaseline = {
+            full_name: profile.full_name || '', birthdate: profile.birthdate || null,
+            gender: profile.gender || null, civil_status: profile.civil_status || null,
+            emergency_contact_name: profile.emergency_contact_name || null,
+            contact_num: profile.contact_num || '', emergency_contact_number: profile.emergency_contact_number || '',
+            email: profile.email || '',
+        };
+    }
+    function personalDraftHasChanges() {
+        const profile = window.inigosyncProfile || {};
+        const baseline = personalEditBaseline || profile;
+        const first = settingsFirst?.value.trim() || '';
+        const middle = settingsMiddle?.value.trim() || '';
+        const last = settingsLast?.value.trim() || '';
+        return composeFullName({ first, middle, last }) !== (baseline.full_name || '')
+            || (settingsBirthdate?.value || null) !== (baseline.birthdate || null)
+            || (settingsGender?.value || null) !== (baseline.gender || null)
+            || (settingsCivilStatus?.value || null) !== (baseline.civil_status || null)
+            || (settingsEmergencyName?.value.trim() || null) !== (baseline.emergency_contact_name || null)
+            || (mobileInput?.value.trim() || '') !== (baseline.contact_num || '')
+            || (emergencyMobileInput?.value.trim() || '') !== (baseline.emergency_contact_number || '')
+            || (stagedEmailChange || '').toLowerCase() !== String(baseline.email || '').toLowerCase();
+    }
+
+    let personalClosePending = false;
+    async function cancelPersonalEditing() {
+        if (personalClosePending) return;
+        if (personalDraftHasChanges()) {
+            personalClosePending = true;
+            const accepted = await confirmSettingsChange('Discard your unsaved personal information changes?');
+            personalClosePending = false;
+            if (!accepted) return;
+        }
         const profile = window.inigosyncProfile || {};
         fillNameInputs(parseFullName(profile.full_name));
         if (settingsBirthdate) { settingsBirthdate.value = profile.birthdate || ''; delete settingsBirthdate.dataset.dirty; }
@@ -3293,14 +3375,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (emergencyMobileInput) { emergencyMobileInput.value = profile.emergency_contact_number || ''; delete emergencyMobileInput.dataset.dirty; }
         updateBirthdateAge(profile.birthdate || '');
         if (personalModal) personalModal.hidden = true;
+        if (!pendingOtpEmail) stagedEmailChange = '';
+        personalEditBaseline = null;
         personalReturnFocus?.focus?.();
         personalReturnFocus = null;
     }
 
     personalEditBtn?.addEventListener('click', () => setPersonalEditing(true));
     personalModal?.querySelectorAll('[data-dash-personal-close]').forEach(button => button.addEventListener('click', cancelPersonalEditing));
+    personalModal?.addEventListener('click', event => {
+        if (event.target === personalModal) cancelPersonalEditing();
+    });
     personalModal?.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.preventDefault(); cancelPersonalEditing(); }
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelPersonalEditing(); }
         if (event.key === 'Tab' && personalDialog) {
             const controls = Array.from(personalDialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)'));
             const first = controls[0], last = controls[controls.length - 1];
@@ -3367,10 +3454,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let emailProposalBaseline = '';
+    let emailProposalClosePending = false;
+    async function closeEmailProposalModal(force = false) {
+        if (!emailProposalModal || emailProposalModal.hidden) return;
+        const hasChanges = (emailProposalInput?.value.trim().toLowerCase() || '') !== emailProposalBaseline;
+        if (!force && hasChanges) {
+            if (emailProposalClosePending) return;
+            emailProposalClosePending = true;
+            const accepted = await confirmSettingsChange('Discard this email change draft?');
+            emailProposalClosePending = false;
+            if (!accepted) return;
+        }
+        emailAvailabilityRevision += 1;
+        emailAvailabilityController?.abort();
+        clearTimeout(emailAvailabilityTimer);
+        emailProposalModal.hidden = true;
+        emailEditBtn?.focus();
+    }
     emailEditBtn?.addEventListener('click', () => {
         emailAvailabilityRevision += 1;
         emailAvailabilityController?.abort();
         if (emailProposalInput) emailProposalInput.value = stagedEmailChange || '';
+        emailProposalBaseline = emailProposalInput?.value.trim().toLowerCase() || '';
         setEmailProposalStatus(stagedEmailChange ? 'Check this address again before staging.' : '');
         if (emailProposalSaveBtn) emailProposalSaveBtn.disabled = true;
         emailProposalModal.hidden = false;
@@ -3392,21 +3498,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 600);
         }
     });
-    emailProposalModal?.querySelectorAll('[data-dash-email-proposal-close]').forEach(button => button.addEventListener('click', () => {
-        emailAvailabilityRevision += 1;
-        emailAvailabilityController?.abort();
-        clearTimeout(emailAvailabilityTimer);
-        emailProposalModal.hidden = true;
-        emailEditBtn?.focus();
-    }));
+    emailProposalModal?.querySelectorAll('[data-dash-email-proposal-close]').forEach(button => button.addEventListener('click', () => closeEmailProposalModal()));
+    emailProposalModal?.addEventListener('click', event => { if (event.target === emailProposalModal) closeEmailProposalModal(); });
     emailProposalModal?.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             event.preventDefault();
-            emailAvailabilityRevision += 1;
-            emailAvailabilityController?.abort();
-            clearTimeout(emailAvailabilityTimer);
-            emailProposalModal.hidden = true;
-            emailEditBtn?.focus();
+            closeEmailProposalModal();
         } else if (event.key === 'Tab' && emailProposalDialog) {
             const controls = Array.from(emailProposalDialog.querySelectorAll('button:not(:disabled), input:not(:disabled)'));
             const first = controls[0], last = controls[controls.length - 1];
@@ -3419,6 +3516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const email = emailProposalInput?.value.trim().toLowerCase() || '';
         if (!await checkProposedEmail(email)) return;
         stagedEmailChange = email;
+        emailProposalBaseline = email;
         if (emailStagedStatus) {
             emailStagedStatus.textContent = `New email staged: ${email}. It is not saved until you confirm Save Changes and verify the code.`;
             emailStagedStatus.hidden = false;
@@ -3566,6 +3664,10 @@ document.addEventListener('DOMContentLoaded', () => {
             || (emergencyName || null) !== (profile.emergency_contact_name || null);
         const emailChanged = Boolean(stagedEmailChange) && stagedEmailChange.toLowerCase() !== String(profile.email || '').toLowerCase();
         if (!changed && !emailChanged) {
+            if (personalDraftHasChanges()) {
+                window.InigoToast?.show('Save or remove your mobile and emergency contact numbers with their separate buttons before closing.', true);
+                return;
+            }
             personalModal.hidden = true;
             personalEditBtn?.focus();
             return;
@@ -3590,6 +3692,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             invalidateCustomerAccountFieldsFetch(profile.id);
             Object.assign(profile, profileChanges, privateChanges);
+            capturePersonalEditBaseline(profile);
             [settingsBirthdate, settingsGender, settingsCivilStatus, settingsEmergencyName].filter(Boolean).forEach(input => { delete input.dataset.dirty; });
             renderProfile(profile);
         }
@@ -3613,9 +3716,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             window.InigoToast?.show('Your changes were saved. Verification codes were sent to both email addresses.');
         } else {
-            if (personalModal) personalModal.hidden = true;
-            personalEditBtn?.focus();
-            window.InigoToast?.show('Personal information updated.');
+            const phoneDraftRemains = (mobileInput?.value.trim() || '') !== (profile.contact_num || '')
+                || (emergencyMobileInput?.value.trim() || '') !== (profile.emergency_contact_number || '');
+            if (!phoneDraftRemains) {
+                if (personalModal) personalModal.hidden = true;
+                personalEditBtn?.focus();
+                personalEditBaseline = null;
+            }
+            window.InigoToast?.show(phoneDraftRemains
+                ? 'Personal information updated. Save or remove mobile and emergency contact numbers with their separate buttons.'
+                : 'Personal information updated.');
         }
         personalSaveBtn.disabled = false;
     });
@@ -3641,7 +3751,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function confirmSettingsChange(message = 'Are you sure you want to change?') {
         if (!confirmModal || !confirmDialog) return Promise.resolve(false);
-        if (pendingConfirm) closeSettingsConfirm(false);
+        if (pendingConfirm) return Promise.resolve(false);
         confirmReturnFocus = document.activeElement;
         confirmText.textContent = message;
         confirmModal.hidden = false;
@@ -3652,7 +3762,12 @@ document.addEventListener('DOMContentLoaded', () => {
     confirmModal?.querySelector('[data-dash-confirm-cancel]')?.addEventListener('click', () => closeSettingsConfirm(false));
     confirmModal?.querySelector('[data-dash-confirm-accept]')?.addEventListener('click', () => closeSettingsConfirm(true));
     confirmModal?.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.preventDefault(); closeSettingsConfirm(false); }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeSettingsConfirm(false);
+            return;
+        }
         if (event.key === 'Tab' && confirmDialog) {
             const controls = Array.from(confirmDialog.querySelectorAll('button:not(:disabled)'));
             const first = controls[0], last = controls[controls.length - 1];
@@ -3780,6 +3895,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!mobileStatus) return;
         mobileStatus.textContent = message;
         mobileStatus.classList.toggle('is-error', isError);
+        mobileStatus.dataset.state = isError ? 'invalid' : (/^(Valid|Saved)/.test(message) ? 'valid' : '');
     }
 
     function renderMobileStatus(profile) {
@@ -3791,9 +3907,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mobileRemoveBtn) mobileRemoveBtn.hidden = !savedNumber;
         if (mobileValidateBtn) mobileValidateBtn.hidden = true;
         if (mobileStatus && !mobileInput?.dataset.dirty) {
-            mobileStatus.textContent = !savedNumber
-                ? 'A contact number is optional. We check Philippine mobile format and whether it is already linked to an account.'
-                : 'Saved contact number. A new number is checked for Philippine format and availability before saving.';
+            mobileStatus.textContent = !savedNumber ? 'Optional · format and availability check' : 'Saved number';
+            mobileStatus.dataset.state = savedNumber ? 'valid' : '';
             mobileStatus.classList.remove('is-error');
         }
     }
@@ -3831,6 +3946,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function setPhoneStatus(status, message, error = false) {
         if (!status) return;
         status.textContent = message;
+        status.dataset.state = error ? 'invalid'
+            : /^Already saved/.test(message) ? 'warning'
+                : /^(Valid|Saved|Number removed)/.test(message) ? 'valid'
+                    : /^Checking/.test(message) ? 'checking' : '';
         status.classList.toggle('is-error', error);
         status.classList.toggle('is-warning', !error && status.dataset.state === 'warning');
         status.classList.toggle('is-success', !error && status.dataset.state === 'valid');
@@ -3850,7 +3969,7 @@ document.addEventListener('DOMContentLoaded', () => {
         input.setAttribute('aria-invalid', 'false');
         if (ui.status) ui.status.dataset.state = '';
         if (!raw) {
-            setPhoneStatus(ui.status, 'A contact number is optional. This check does not verify ownership.');
+            setPhoneStatus(ui.status, 'Optional · format check');
             return;
         }
         const check = window.validatePhMobile?.(raw);
@@ -3864,14 +3983,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (input.dataset.cachedValidNumber === check.normalized && Date.now() - cachedAt < 4 * 60 * 1000) {
             input.dataset.validatedNumber = check.normalized;
             if (ui.save) { ui.save.hidden = false; ui.save.disabled = false; }
-            setPhoneStatus(ui.status, 'Valid Philippine mobile number; available for this account.');
+            if (ui.status) ui.status.dataset.state = 'valid';
+            setPhoneStatus(ui.status, 'Valid · available');
             return;
         }
         if (!window.sb?.functions) {
-            setPhoneStatus(ui.status, 'Phone validation is unavailable. Please try again later.', true);
+            if (ui.status) ui.status.dataset.state = 'invalid';
+            setPhoneStatus(ui.status, 'Check unavailable · retry', true);
             return;
         }
-        setPhoneStatus(ui.status, 'Checking Philippine format and availability…');
+        if (ui.status) ui.status.dataset.state = 'checking';
+        setPhoneStatus(ui.status, 'Checking…');
         state.timer = setTimeout(async () => {
             const controller = new AbortController();
             state.controller = controller;
@@ -3898,7 +4020,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     input.dataset.cachedValidNumber = check.normalized;
                     input.dataset.cachedValidAt = String(Date.now());
                     if (ui.save) { ui.save.hidden = false; ui.save.disabled = false; }
-                    setPhoneStatus(ui.status, 'This number is already saved somewhere. Emergency contacts may be shared with family; saving is allowed.', false);
+                    setPhoneStatus(ui.status, 'Already saved · shared allowed');
                     return;
                 }
                 input.dataset.phoneValidation = 'valid';
@@ -3908,13 +4030,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 input.dataset.cachedValidAt = String(Date.now());
                 input.dataset.validatedNumber = check.normalized;
                 if (ui.save) { ui.save.hidden = false; ui.save.disabled = false; }
-                setPhoneStatus(ui.status, 'Valid Philippine mobile number and available.');
+                setPhoneStatus(ui.status, 'Valid · available');
             } catch (error) {
                 if (controller.signal.aborted || request !== state.request) return;
             input.dataset.phoneValidation = 'invalid';
             input.setAttribute('aria-invalid', 'true');
             if (ui.status) ui.status.dataset.state = 'invalid';
-            setPhoneStatus(ui.status, error.message || 'Could not check the number. Try again.', true);
+            setPhoneStatus(ui.status, error.message || 'Check failed · retry', true);
             }
         }, 600);
     }
@@ -3926,7 +4048,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const proofAge = Date.now() - Number(input.dataset.cachedValidAt || 0);
         if (!profile?.id || !check?.valid || input.dataset.validatedNumber !== check.normalized
             || input.dataset.cachedValidNumber !== check.normalized || proofAge >= 4 * 60 * 1000) {
-            setPhoneStatus(ui.status, 'Enter a number and wait for the automatic validation to finish.', true);
+            setPhoneStatus(ui.status, 'Wait for check to finish', true);
             input.focus();
             return;
         }
@@ -3951,7 +4073,7 @@ document.addEventListener('DOMContentLoaded', () => {
             delete input.dataset.cachedValidAt;
             renderProfile(profile);
             if (button) button.hidden = true;
-            setPhoneStatus(ui.status, 'Valid Philippine mobile number saved.');
+            setPhoneStatus(ui.status, 'Saved');
             window.InigoToast?.show('Validated number saved.');
         } catch (error) {
             setPhoneStatus(ui.status, error.message || 'Could not save the validated number.', true);
@@ -3979,7 +4101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (input) { input.value = ''; delete input.dataset.dirty; delete input.dataset.validatedNumber; delete input.dataset.cachedValidNumber; delete input.dataset.cachedValidAt; }
             renderProfile(profile);
-            setPhoneStatus(status, 'Number removed. You can add one later.');
+            setPhoneStatus(status, 'Number removed');
             window.InigoToast?.show('Number removed.');
         } catch (error) {
             setPhoneStatus(status, error.message || 'Could not remove the number.', true);
