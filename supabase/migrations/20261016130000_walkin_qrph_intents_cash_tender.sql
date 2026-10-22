@@ -2,11 +2,23 @@
 alter table public.app_settings add column if not exists qrph_enabled boolean not null default false;
 alter table public.payment add column if not exists cash_tendered_minor bigint;
 alter table public.payment add column if not exists cash_change_minor bigint;
-alter table public.payment add constraint payment_cash_change_nonnegative check (
-  (cash_tendered_minor is null and cash_change_minor is null) or
-  (cash_tendered_minor is not null and cash_change_minor is not null and payment_method='Cash'
-    and cash_tendered_minor>=base_minor and cash_change_minor=cash_tendered_minor-base_minor)
-);
+-- Production may already have this constraint from the original QRPH migration.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint
+    where conrelid = 'public.payment'::regclass
+      and conname = 'payment_cash_change_nonnegative'
+  ) then
+    alter table public.payment add constraint payment_cash_change_nonnegative check (
+      (cash_tendered_minor is null and cash_change_minor is null) or
+      (cash_tendered_minor is not null and cash_change_minor is not null and payment_method='Cash'
+        and cash_tendered_minor>=base_minor and cash_change_minor=cash_tendered_minor-base_minor)
+    );
+  end if;
+end;
+$$;
 alter table internal.paymongo_checkout_attempts add column if not exists qr_image_url text;
 alter table internal.paymongo_checkout_attempts add column if not exists qr_test_url text;
 alter table internal.paymongo_checkout_attempts drop constraint if exists paymongo_attempt_ready_fields;
