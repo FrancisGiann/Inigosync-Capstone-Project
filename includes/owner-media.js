@@ -69,7 +69,7 @@
 
     function formMarkup(slide, isNew) {
         const image = slide.image_url || '';
-        return `<form class="owner-media-form" data-media-form novalidate>
+        return `<form id="ownerMediaForm" class="owner-media-form" data-media-form novalidate>
             <div class="owner-media-preview-wrap"><div class="owner-media-preview" data-media-preview>${imageMarkup(image, slide.title || 'Featured slide', !image)}</div><button type="button" class="owner-photo-choice owner-media-replace" data-media-replace><span data-media-replace-label>${isNew ? 'Choose photo' : 'Replace photo'}</span></button><input class="admin-visually-hidden" type="file" accept="image/*" data-media-file><p class="owner-media-crop-hint">Choose an image, adjust the 16:9 crop, then save to stage it.</p></div>
             <div class="owner-media-fields">
                 <label class="admin-form-group"><span class="admin-form-label">Title</span><input required maxlength="120" type="text" class="admin-input" data-media-title value="${escape(slide.title || '')}"></label>
@@ -77,7 +77,6 @@
                 <label class="admin-form-group"><span class="admin-form-label">Tag <span class="admin-form-label-hint">(optional)</span></span><input maxlength="80" type="text" class="admin-input" data-media-tag value="${escape(slide.tag || '')}"></label>
                 <div class="admin-slide-publish-row"><span>Published</span><button type="button" class="admin-switch${slide.is_published !== false ? ' is-on' : ''}" data-media-published aria-label="Toggle published" aria-pressed="${slide.is_published !== false}"></button><span class="admin-form-hint">${isNew ? 'New slides start as drafts.' : 'Changes publish only after you save.'}</span></div>
             </div>
-            <div class="owner-media-actions">${isNew ? '' : '<button type="button" class="admin-btn-chip-danger" data-media-remove>Remove</button>'}<button type="submit" class="admin-btn-save" data-media-save>Save</button></div>
         </form>`;
     }
 
@@ -118,6 +117,8 @@
         previousFocus = document.activeElement;
         const heading = document.querySelector('[data-admin-slide-modal-title]');
         if (heading) heading.textContent = source ? 'Edit slide' : 'Add slide';
+        const removeButton = dialog.querySelector('[data-media-remove]');
+        if (removeButton) removeButton.hidden = !source;
         editor.innerHTML = formMarkup(original, !source);
         modal.hidden = false;
         modal.setAttribute('data-open', '');
@@ -172,7 +173,6 @@
             published.setAttribute('aria-pressed', String(next));
             published.classList.toggle('is-on', next);
         });
-        form.querySelector('[data-media-remove]')?.addEventListener('click', removeActiveSlide);
         form.addEventListener('submit', saveActiveSlide);
     }
 
@@ -215,7 +215,7 @@
         if (!activeDraft) return;
         const values = getValues();
         if (!values.title) { toast('Add a title before saving.', true); editor.querySelector('[data-media-title]').focus(); return; }
-        const button = editor.querySelector('[data-media-save]');
+        const button = dialog.querySelector('[data-media-save]');
         const wasNew = activeDraft.isNew;
         button.disabled = true;
         button.textContent = 'Saving…';
@@ -261,7 +261,7 @@
         const slide = activeDraft.original;
         const accepted = await confirm({ title: 'Remove slide?', message: `“${slide.title || 'Untitled slide'}” will be removed from the slideshow. This cannot be undone.`, confirmLabel: 'Remove slide', danger: true });
         if (!accepted) return;
-        const button = editor.querySelector('[data-media-remove]');
+        const button = dialog.querySelector('[data-media-remove]');
         button.disabled = true;
         const { data, error } = await window.sb.from('event').delete().eq('id', slide.id).select('id').maybeSingle();
         if (error) { button.disabled = false; toast(error.message || 'Could not remove the slide.', true); return; }
@@ -377,6 +377,7 @@
     }
 
     addButton?.addEventListener('click', () => openEditor(null));
+    dialog.querySelector('[data-media-remove]')?.addEventListener('click', removeActiveSlide);
     modal.querySelectorAll('[data-admin-slide-modal-close]').forEach((button) => button.addEventListener('click', () => closeEditor(false)));
     modal.addEventListener('click', (event) => { if (event.target === modal) closeEditor(false); });
     document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) { event.preventDefault(); closeEditor(false); } });

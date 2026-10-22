@@ -32,6 +32,36 @@
 // sortable/filterable list over the `feedback` table (C5).
 
 document.addEventListener('DOMContentLoaded', () => {
+    function renderOwnerPageNumbers(container, currentPage, pageCount, onPageChange) {
+        if (!container) return;
+        const pages = pageCount <= 7
+            ? Array.from({ length: pageCount }, (_, index) => index + 1)
+            : [1, ...(currentPage > 3 ? ['gap'] : []),
+                ...Array.from({ length: 3 }, (_, index) => currentPage - 1 + index).filter(page => page > 1 && page < pageCount),
+                ...(currentPage < pageCount - 2 ? ['gap'] : []), pageCount];
+        container.replaceChildren(...pages.map(page => {
+            if (page === 'gap') {
+                const gap = document.createElement('span');
+                gap.className = 'owner-page-gap';
+                gap.setAttribute('aria-hidden', 'true');
+                gap.textContent = '…';
+                return gap;
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'admin-btn-ghost owner-page-number';
+            button.textContent = String(page);
+            button.setAttribute('aria-label', `Page ${page}`);
+            if (page === currentPage) {
+                button.setAttribute('aria-current', 'page');
+                button.disabled = true;
+            } else {
+                button.addEventListener('click', () => onPageChange(page));
+            }
+            return button;
+        }));
+    }
+
     // ------------------------------------------------------------------
     // Panel switching (sidebar + topbar/profile shortcuts)
     // ------------------------------------------------------------------
@@ -40,25 +70,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitleEl = document.querySelector('[data-admin-subtitle]');
 
     const panelMeta = {
-        overview: { title: 'Booking Overview', subtitle: 'Reservation trends, staff activity, and business performance at a glance.' },
+        overview: { title: 'Booking Overview', subtitle: 'View booking trends and business activity.' },
         // Revision A2 (implementation_plan.md, decision B4) — "…and
         // configure payment settings" dropped now that Payment
         // Configuration is gone (see this file's own removal note below).
-        staff: { title: 'Staff Management', subtitle: 'Add, update, or remove staff accounts.' },
-        courts: { title: 'Court Listings', subtitle: 'Add new courts, update details, or activate/deactivate existing ones.' },
-        'booking-rules': { title: 'Business Hours', subtitle: 'Set shared opening hours and the no-show grace period.' },
-        media: { title: 'Media Manager', subtitle: "Whatever you upload here shows up on the website's home featured slideshow — both the landing page and the customer dashboard." },
-        payments: { title: 'Payment Configuration', subtitle: 'Set the deposit amount and payment methods for new bookings.' },
+        staff: { title: 'Staff Management', subtitle: 'Manage staff accounts and roles.' },
+        courts: { title: 'Court Listings', subtitle: 'Manage court listings and details.' },
+        'booking-rules': { title: 'Business Hours', subtitle: 'Set opening hours and booking rules.' },
+        media: { title: 'Media Manager', subtitle: 'Manage website images and slides.' },
+        payments: { title: 'Payment Configuration', subtitle: 'Set deposits and payment methods.' },
         // Revision A3 (implementation_plan.md, decision C5) — new tab, after
         // Media Manager in the sidebar.
-        feedback: { title: 'Feedbacks & Reviews', subtitle: '' },
-        announcement: { title: 'Announcement', subtitle: '' },
-        audit: { title: 'Audit Trail', subtitle: '' },
-        settings: { title: 'Account Settings', subtitle: '' },
+        feedback: { title: 'Feedbacks & Reviews', subtitle: 'Read customer ratings and reviews.' },
+        announcement: { title: 'Announcement', subtitle: 'Publish updates for customers and staff.' },
+        audit: { title: 'Audit Trail', subtitle: 'Review owner and staff activity.' },
+        settings: { title: 'Account Settings', subtitle: 'Manage your account details and password.' },
         // Revision A2, decision B2 — not in .admin-nav, only reachable from
         // the profile dropdown's "View Profile"; setActivePanel() below
         // still works unmodified since it just looks this key up.
-        profile: { title: 'Profile', subtitle: '' },
+        profile: { title: 'Profile', subtitle: 'View your account information.' },
     };
 
     function setActivePanel(name) {
@@ -78,8 +108,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const meta = panelMeta[name];
         if (meta && titleEl && subtitleEl) {
             titleEl.textContent = meta.title;
-            subtitleEl.textContent = '';
-            subtitleEl.hidden = true;
+            subtitleEl.textContent = meta.subtitle;
+            subtitleEl.hidden = !meta.subtitle;
         }
 
         // Feedbacks & Reviews and Audit Trail load when their panels open.
@@ -633,9 +663,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const staffStatusFilter = document.querySelector('[data-admin-staff-status-filter]');
     const staffPositionFilter = document.querySelector('[data-admin-staff-position-filter]');
     const staffPagination = document.querySelector('[data-admin-staff-pagination]');
-    const staffPageInfo = document.querySelector('[data-admin-staff-page-info]');
+    const staffCount = document.querySelector('[data-admin-staff-count]');
     const staffPagePrev = document.querySelector('[data-admin-staff-page-prev]');
     const staffPageNext = document.querySelector('[data-admin-staff-page-next]');
+    const staffPageNumbers = document.querySelector('[data-admin-staff-page-numbers]');
     const STAFF_PAGE_SIZE = 10;
     let staffProfiles = [];
     let staffPage = 1;
@@ -1036,9 +1067,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (staffPagination) {
             staffPagination.hidden = filtered.length <= STAFF_PAGE_SIZE;
-            if (staffPageInfo) staffPageInfo.textContent = `Page ${staffPage} of ${pageCount} · ${filtered.length} staff`;
+            if (staffCount) staffCount.textContent = `${filtered.length} staff`;
             if (staffPagePrev) staffPagePrev.disabled = staffPage <= 1;
             if (staffPageNext) staffPageNext.disabled = staffPage >= pageCount;
+            renderOwnerPageNumbers(staffPageNumbers, staffPage, pageCount, page => { staffPage = page; renderStaffDirectory(); });
         }
     }
 
@@ -1552,6 +1584,25 @@ document.addEventListener('DOMContentLoaded', () => {
         select.replaceChildren(...options);
     }
 
+    function updateBookingRuleClosingOptions(row, preferredClose = null) {
+        const open = row.querySelector('[data-owner-rules-open]');
+        const close = row.querySelector('[data-owner-rules-close]');
+        if (!open || !close) return;
+
+        const currentClose = preferredClose ?? close.value;
+        const options = [new Option('Select time', '')];
+        for (let hour = 0; hour < 24; hour += 1) {
+            const value = `${String(hour).padStart(2, '0')}:00`;
+            if (value > open.value) options.push(new Option(value, value));
+        }
+        close.replaceChildren(...options);
+        if (currentClose && currentClose > open.value) {
+            close.value = currentClose;
+        } else if (currentClose) {
+            close.value = options[1]?.value || '';
+        }
+    }
+
     bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-open],[data-owner-rules-close]')
         .forEach(initializeBookingRuleTimeSelect);
 
@@ -1634,6 +1685,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]').forEach(row => {
         row.querySelector('[data-owner-rules-closed]')?.addEventListener('change', () => setRuleDayClosed(row));
+        row.querySelector('[data-owner-rules-open]')?.addEventListener('change', () => updateBookingRuleClosingOptions(row));
     });
 
     async function loadBookingRules() {
@@ -1670,7 +1722,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const closed = row.querySelector('[data-owner-rules-closed]');
                 if (!day) throw new Error('The weekly schedule is missing one or more days.');
                 open.value = String(day.opens_at || '').slice(0, 5);
-                close.value = String(day.closes_at || '').slice(0, 5);
+                updateBookingRuleClosingOptions(row, String(day.closes_at || '').slice(0, 5));
                 closed.checked = day.is_closed === true;
                 setRuleDayClosed(row);
             });
@@ -1697,7 +1749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bookingRulesModal.setAttribute('data-open', '');
         }
         setBookingRulesEditing(true);
-        setBookingRulesMessage('Edit the weekly hours, effective date, or no-show grace period, then save Business Hours.');
+        setBookingRulesMessage('');
         bookingRulesEffective?.focus();
     });
 
@@ -1821,15 +1873,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // time means publish now; an explicit datetime is interpreted as Manila
     // wall time before the server validates and schedules it.
     const announcementForm = document.querySelector('[data-owner-announcement-form]');
+    const announcementModal = document.querySelector('[data-owner-announcement-modal]');
+    const announcementDialog = announcementForm;
     const announcementList = document.querySelector('[data-owner-announcement-list]');
     const announcementMessage = document.querySelector('[data-owner-announcement-message]');
     const announcementSubmit = document.querySelector('[data-owner-announcement-submit]');
     const announcementPages = document.querySelector('[data-owner-announcement-pages]');
-    const announcementPageLabel = document.querySelector('[data-owner-announcement-page]');
+    const announcementPageNumbers = document.querySelector('[data-owner-announcement-page-numbers]');
+    const announcementSearch = document.querySelector('[data-owner-announcement-search]');
+    const announcementStatus = document.querySelector('[data-owner-announcement-status]');
+    const announcementCountLabel = document.querySelector('[data-owner-announcement-count]');
+    const announcementNext = document.querySelector('[data-owner-announcement-wizard-next]');
+    const announcementBack = document.querySelector('[data-owner-announcement-back]');
+    const announcementSteps = [...document.querySelectorAll('[data-owner-announcement-step]')];
+    let announcementWizardStep = 1;
+    let announcementEditingId = null;
+    let announcementLastFocus = null;
+    let announcementModalHideTimer = null;
+    let announcementSaving = false;
     const ANNOUNCEMENT_PAGE_SIZE = 10;
     let announcementPage = 0;
     let announcementCount = 0;
     let announcementGeneration = 0;
+    let announcementSearchTimer = null;
     const audienceLabels = { customers: 'Customers', staff: 'Staff', both: 'Customers and staff' };
 
     function setAnnouncementMessage(message, isError = false) {
@@ -1844,28 +1910,142 @@ document.addEventListener('DOMContentLoaded', () => {
         return Number.isNaN(date.valueOf()) ? null : date.toISOString();
     }
 
+    function setAnnouncementWizardStep(step) {
+        announcementWizardStep = Math.min(3, Math.max(1, step));
+        announcementSteps.forEach(panel => {
+            const isActive = Number(panel.dataset.ownerAnnouncementStep) === announcementWizardStep;
+            panel.classList.toggle('is-active', isActive);
+            panel.hidden = !isActive;
+        });
+        document.querySelectorAll('[data-owner-announcement-indicator]').forEach(indicator => {
+            const index = Number(indicator.dataset.ownerAnnouncementIndicator);
+            indicator.classList.toggle('is-current', index === announcementWizardStep);
+            indicator.classList.toggle('is-done', index < announcementWizardStep);
+            if (index === announcementWizardStep) indicator.setAttribute('aria-current', 'step');
+            else indicator.removeAttribute('aria-current');
+        });
+        if (announcementBack) announcementBack.hidden = announcementWizardStep === 1;
+        if (announcementNext) announcementNext.hidden = announcementWizardStep === 3;
+        if (announcementSubmit) announcementSubmit.hidden = announcementWizardStep !== 3;
+    }
+
+    function openAnnouncementModal(item = null) {
+        if (!announcementModal || !announcementForm) return;
+        if (announcementModalHideTimer) { window.clearTimeout(announcementModalHideTimer); announcementModalHideTimer = null; }
+        announcementLastFocus = document.activeElement;
+        announcementForm.reset();
+        announcementEditingId = item?.id || null;
+        const heading = announcementForm.querySelector('[data-owner-announcement-modal-title]');
+        if (heading) heading.textContent = item ? 'Edit scheduled announcement' : 'Publish a new announcement';
+        if (announcementSubmit) announcementSubmit.textContent = item ? 'Save changes' : 'Publish announcement';
+        const title = announcementForm.querySelector('[data-owner-announcement-title]');
+        const body = announcementForm.querySelector('[data-owner-announcement-body]');
+        const audience = announcementForm.querySelector('[data-owner-announcement-audience]');
+        const publishTime = announcementForm.querySelector('[data-owner-announcement-publish-at]');
+        if (item) {
+            if (title) title.value = item.title || '';
+            if (body) body.value = item.body || '';
+            if (audience) audience.value = item.audience || 'both';
+            if (publishTime && item.publish_at) {
+                const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(item.publish_at));
+                const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+                publishTime.value = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+            }
+        }
+        const timeHint = announcementForm.querySelector('[data-owner-announcement-time-hint]');
+        if (timeHint) timeHint.textContent = item ? 'Choose a future date and time. Manila time is used.' : 'Leave blank to publish immediately.';
+        setAnnouncementWizardStep(1);
+        setAnnouncementMessage('');
+        announcementModal.hidden = false;
+        void announcementModal.offsetWidth;
+        announcementModal.setAttribute('data-open', '');
+        title?.focus();
+    }
+
+    function closeAnnouncementModal(force = false) {
+        if ((!force && announcementSaving) || !announcementModal || announcementModal.hidden) return;
+        announcementModal.removeAttribute('data-open');
+        if (announcementModalHideTimer) window.clearTimeout(announcementModalHideTimer);
+        announcementModalHideTimer = window.setTimeout(() => { announcementModal.hidden = true; announcementModalHideTimer = null; }, 250);
+        if (announcementLastFocus && document.contains(announcementLastFocus)) announcementLastFocus.focus();
+        announcementLastFocus = null;
+        announcementEditingId = null;
+    }
+
+    document.querySelector('[data-owner-announcement-new]')?.addEventListener('click', () => openAnnouncementModal());
+    document.querySelectorAll('[data-owner-announcement-close]').forEach(button => button.addEventListener('click', closeAnnouncementModal));
+    announcementModal?.addEventListener('mousedown', event => { if (event.target === announcementModal) announcementModal.dataset.backdropDown = 'true'; });
+    announcementModal?.addEventListener('click', event => {
+        if (event.target === announcementModal && announcementModal.dataset.backdropDown === 'true') closeAnnouncementModal();
+        delete announcementModal.dataset.backdropDown;
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && announcementModal && !announcementModal.hidden) closeAnnouncementModal(); });
+    announcementDialog?.addEventListener('keydown', event => {
+        if (event.key !== 'Tab') return;
+        const focusable = [...announcementDialog.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])')]
+            .filter(element => element.getClientRects().length > 0);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (event.shiftKey && (document.activeElement === first || !announcementDialog.contains(document.activeElement))) {
+            event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+        }
+    });
+    announcementNext?.addEventListener('click', () => {
+        if (announcementWizardStep === 1) {
+            const title = announcementForm.querySelector('[data-owner-announcement-title]');
+            const body = announcementForm.querySelector('[data-owner-announcement-body]');
+            if (!title.value.trim()) { title.setCustomValidity('Enter a title.'); title.reportValidity(); title.focus(); title.setCustomValidity(''); return; }
+            if (!body.value.trim()) { body.setCustomValidity('Enter a message.'); body.reportValidity(); body.focus(); body.setCustomValidity(''); return; }
+        }
+        setAnnouncementWizardStep(announcementWizardStep + 1);
+        announcementSteps[announcementWizardStep - 1]?.querySelector('input,select,textarea')?.focus();
+    });
+    announcementBack?.addEventListener('click', () => { setAnnouncementWizardStep(announcementWizardStep - 1); announcementSteps[announcementWizardStep - 1]?.querySelector('input,select,textarea')?.focus(); });
+
     async function loadOwnerAnnouncements() {
         if (!window.sb || !announcementList) return;
         const generation = ++announcementGeneration;
+        const search = announcementSearch?.value.trim() || '';
+        const status = announcementStatus?.value || '';
         announcementList.innerHTML = '<p class="admin-form-hint">Loading announcements…</p>';
         try {
-            const { data, error } = await window.sb.rpc('owner_list_announcements', {
+            const { data, error } = await window.sb.rpc('owner_search_announcements', {
                 p_offset: announcementPage * ANNOUNCEMENT_PAGE_SIZE,
                 p_limit: ANNOUNCEMENT_PAGE_SIZE,
+                p_search: search || null,
+                p_status: status || null,
             });
             if (generation !== announcementGeneration) return;
             if (error) throw error;
             const result = Array.isArray(data) ? data[0] : data;
             if (!result || !Array.isArray(result.rows)) throw new Error('The announcements response is incomplete.');
             announcementCount = Number(result.total_count) || 0;
+            const pageCount = Math.max(1, Math.ceil(announcementCount / ANNOUNCEMENT_PAGE_SIZE));
+            if (announcementPage >= pageCount) {
+                announcementPage = pageCount - 1;
+                loadOwnerAnnouncements();
+                return;
+            }
+            if (announcementCountLabel) {
+                announcementCountLabel.textContent = announcementCount === 1 ? '1 announcement' : `${announcementCount} announcements`;
+            }
             announcementList.innerHTML = result.rows.length ? result.rows.map(item => {
                 const publishDate = item.publish_at ? new Date(item.publish_at) : null;
                 const publishLabel = publishDate && !Number.isNaN(publishDate.valueOf()) ? formatActivityTime(publishDate.toISOString()) : 'Immediately';
                 const status = String(item.status || 'published').replace(/[_-]+/g, ' ');
-                return `<article class="owner-announcement-row"><div class="owner-announcement-row-head"><h5>${window.escapeHtml(item.title || 'Announcement')}</h5><span class="owner-announcement-status">${window.escapeHtml(status)}</span></div><p>${window.escapeHtml(item.body || '')}</p><div class="owner-announcement-row-meta"><span>${window.escapeHtml(audienceLabels[item.audience] || 'Audience')}</span><time datetime="${window.escapeHtml(item.publish_at || item.created_at || '')}">${window.escapeHtml(publishLabel)}</time></div></article>`;
-            }).join('') : '<p class="admin-form-hint">No announcements have been published or scheduled.</p>';
-            if (announcementPages) announcementPages.hidden = announcementCount <= ANNOUNCEMENT_PAGE_SIZE;
-            if (announcementPageLabel) announcementPageLabel.textContent = `Page ${announcementPage + 1} of ${Math.max(1, Math.ceil(announcementCount / ANNOUNCEMENT_PAGE_SIZE))}`;
+                const editAction = status === 'scheduled' ? `<button type="button" class="admin-btn-ghost" data-owner-announcement-edit="${window.escapeHtml(item.id)}">Edit scheduled announcement</button>` : '';
+                return `<article class="owner-announcement-row" data-announcement-id="${window.escapeHtml(item.id)}"><div class="owner-announcement-row-head"><h5>${window.escapeHtml(item.title || 'Announcement')}</h5><span class="owner-announcement-status">${window.escapeHtml(status)}</span></div><p>${window.escapeHtml(item.body || '')}</p><div class="owner-announcement-row-meta"><span>${window.escapeHtml(audienceLabels[item.audience] || 'Audience')}</span><time datetime="${window.escapeHtml(item.publish_at || item.created_at || '')}">${window.escapeHtml(publishLabel)}</time>${editAction}</div></article>`;
+            }).join('') : `<p class="admin-form-hint">${search || status ? 'No announcements match these filters.' : 'No announcements have been published or scheduled.'}</p>`;
+            announcementList.querySelectorAll('[data-owner-announcement-edit]').forEach(button => button.addEventListener('click', () => {
+                const item = result.rows.find(row => String(row.id) === button.dataset.ownerAnnouncementEdit);
+                if (item && item.status === 'scheduled' && new Date(item.publish_at) > new Date()) openAnnouncementModal(item);
+                else loadOwnerAnnouncements();
+            }));
+            if (announcementPages) announcementPages.hidden = pageCount <= 1;
+            renderOwnerPageNumbers(announcementPageNumbers, announcementPage + 1, pageCount, page => { announcementPage = page - 1; loadOwnerAnnouncements(); });
             const prev = document.querySelector('[data-owner-announcement-prev]');
             const next = document.querySelector('[data-owner-announcement-next]');
             if (prev) prev.disabled = announcementPage === 0;
@@ -1877,8 +2057,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function resetAnnouncementFilters() {
+        announcementPage = 0;
+        // Invalidate in-flight responses immediately, including during the
+        // search debounce window.
+        announcementGeneration += 1;
+        if (announcementSearchTimer) window.clearTimeout(announcementSearchTimer);
+        announcementSearchTimer = window.setTimeout(() => {
+            announcementSearchTimer = null;
+            loadOwnerAnnouncements();
+        }, 250);
+    }
+
+    announcementSearch?.addEventListener('input', resetAnnouncementFilters);
+    announcementStatus?.addEventListener('change', resetAnnouncementFilters);
+
     announcementForm?.addEventListener('submit', async event => {
         event.preventDefault();
+        if (announcementWizardStep < 3) { announcementNext?.click(); return; }
         if (!window.sb || !announcementSubmit) return;
         const title = document.querySelector('[data-owner-announcement-title]')?.value.trim() || '';
         const body = document.querySelector('[data-owner-announcement-body]')?.value.trim() || '';
@@ -1887,31 +2083,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const publishAt = localManilaDateTimeToIso(publishInput);
         if (!title || !body || !['customers', 'staff', 'both'].includes(audience)) { setAnnouncementMessage('Enter a title, message, and valid audience.', true); return; }
         if (publishInput && !publishAt) { setAnnouncementMessage('Choose a valid publication time.', true); return; }
+        if (announcementEditingId && (!publishAt || new Date(publishAt) <= new Date())) { setAnnouncementMessage('Scheduled announcements must remain set for a future time.', true); return; }
         announcementSubmit.disabled = true;
+        announcementSaving = true;
+        announcementForm.querySelectorAll('button, input, textarea, select').forEach(control => { control.disabled = true; });
         announcementSubmit.textContent = 'Publishing…';
-        setAnnouncementMessage(publishAt ? 'Scheduling announcement…' : 'Publishing announcement…');
+        setAnnouncementMessage(announcementEditingId ? 'Saving scheduled announcement…' : (publishAt ? 'Scheduling announcement…' : 'Publishing announcement…'));
         try {
-            const { error } = await window.sb.rpc('owner_publish_announcement', {
-                p_title: title,
-                p_body: body,
-                p_audience: audience,
-                p_publish_at: publishAt,
-            });
+            const { error } = announcementEditingId
+                ? await window.sb.rpc('owner_update_scheduled_announcement', { p_id: announcementEditingId, p_title: title, p_body: body, p_audience: audience, p_publish_at: publishAt })
+                : await window.sb.rpc('owner_publish_announcement', { p_title: title, p_body: body, p_audience: audience, p_publish_at: publishAt });
             if (error) throw error;
-            announcementForm.reset();
+            const wasEditing = Boolean(announcementEditingId);
+            closeAnnouncementModal(true);
             announcementPage = 0;
-            setAnnouncementMessage(publishAt ? 'Announcement scheduled.' : 'Announcement published.');
-            window.InigoToast?.show(publishAt ? 'Announcement scheduled.' : 'Announcement published.');
+            const successMessage = wasEditing ? 'Scheduled announcement updated.' : (publishAt ? 'Announcement scheduled.' : 'Announcement published.');
+            setAnnouncementMessage(successMessage);
+            window.InigoToast?.show(successMessage);
             await loadOwnerAnnouncements();
         } catch (error) {
             console.error('[admin] announcement could not be published', error);
             setAnnouncementMessage(error.message || 'The announcement could not be published. Try again.', true);
         } finally {
+            announcementSaving = false;
+            announcementForm.querySelectorAll('button, input, textarea, select').forEach(control => { control.disabled = false; });
             announcementSubmit.disabled = false;
-            announcementSubmit.textContent = 'Publish announcement';
+            announcementSubmit.textContent = announcementEditingId ? 'Save changes' : 'Publish announcement';
         }
     });
-    document.querySelector('[data-owner-announcement-refresh]')?.addEventListener('click', () => loadOwnerAnnouncements());
     document.querySelector('[data-owner-announcement-prev]')?.addEventListener('click', () => { if (announcementPage > 0) { announcementPage -= 1; loadOwnerAnnouncements(); } });
     document.querySelector('[data-owner-announcement-next]')?.addEventListener('click', () => { if ((announcementPage + 1) * ANNOUNCEMENT_PAGE_SIZE < announcementCount) { announcementPage += 1; loadOwnerAnnouncements(); } });
 
@@ -1919,42 +2118,239 @@ document.addEventListener('DOMContentLoaded', () => {
     const auditRows = document.querySelector('[data-owner-audit-rows]');
     const auditStatus = document.querySelector('[data-owner-audit-status]');
     const auditSearch = document.querySelector('[data-owner-audit-search]');
-    const auditDateTime = document.querySelector('[data-owner-audit-datetime]');
+    const auditDate = document.querySelector('[data-owner-audit-date]');
+    const auditFrom = document.querySelector('[data-owner-audit-from]');
+    const auditTo = document.querySelector('[data-owner-audit-to]');
+    const auditTimePickers = ['from', 'to'].map(kind => ({
+        kind,
+        input: document.querySelector(`[data-owner-audit-${kind}]`),
+        trigger: document.querySelector(`[data-owner-audit-time-trigger="${kind}"]`),
+        popover: document.querySelector(`[data-owner-audit-time-popover="${kind}"]`),
+    }));
     const auditRole = document.querySelector('[data-owner-audit-role]');
-    const auditDetailModal = document.querySelector('[data-owner-audit-detail-modal]');
-    const auditDetailDialog = document.querySelector('[data-owner-audit-detail-dialog]');
-    const auditDetailList = document.querySelector('[data-owner-audit-detail-list]');
-    const auditDetailTitle = document.querySelector('#ownerAuditDetailTitle');
     const auditPagination = document.querySelector('[data-owner-audit-pagination]');
-    const auditPageInfo = document.querySelector('[data-owner-audit-page-info]');
     const auditPrev = document.querySelector('[data-owner-audit-prev]');
     const auditNext = document.querySelector('[data-owner-audit-next]');
+    const auditPageNumbers = document.querySelector('[data-owner-audit-page-numbers]');
     const AUDIT_PAGE_SIZE = 25;
     let auditPage = 0;
     let auditGeneration = 0;
     let auditSearchTimer = null;
     let auditRefreshTimer = null;
     let auditRequestsInFlight = 0;
-    let auditDisplayedRows = [];
     const AUDIT_REFRESH_INTERVAL = 15000;
     const formatActivityTime = value => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
-    function auditDateTimeBoundaryIso(value, addMinute = false) {
-        if (!value) return null;
-        const date = new Date(`${value}:00+08:00`);
-        if (Number.isNaN(date.valueOf())) return null;
+    function auditManilaToday() {
+        const parts = new Intl.DateTimeFormat('en', {
+            timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(new Date());
+        const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+        return `${values.year}-${values.month}-${values.day}`;
+    }
+
+    function updateAuditDateMax() {
+        if (auditDate) auditDate.max = auditManilaToday();
+    }
+
+    function auditManilaBoundaryIso(dateValue, timeValue = '00:00', addMinute = false) {
+        const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue || '');
+        const timeParts = /^(\d{2}):(\d{2})$/.exec(timeValue || '');
+        if (!dateParts || !timeParts) return null;
+        const localValue = `${dateValue}T${timeValue}`;
+        const date = new Date(`${localValue}:00+08:00`);
+        const [year, month, day] = dateParts.slice(1).map(Number);
+        const [hour, minute] = timeParts.slice(1).map(Number);
+        const expectedTime = Date.UTC(year, month - 1, day, hour, minute) - (8 * 60 * 60 * 1000);
+        if (hour > 23 || minute > 59 || Number.isNaN(date.valueOf()) || date.valueOf() !== expectedTime) return null;
         if (addMinute) date.setUTCMinutes(date.getUTCMinutes() + 1);
         return date.toISOString();
+    }
+
+    function auditTimeLabel(value) {
+        if (!value) return '';
+        const [hour, minute] = value.split(':').map(Number);
+        return `${String(hour % 12 || 12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+    }
+
+    function auditTimeMinutes(value) {
+        return value ? Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5)) : 0;
+    }
+
+    function closeAuditTimePickers(returnFocus = false) {
+        auditTimePickers.forEach(({ trigger, popover }) => {
+            if (!popover || popover.hidden) return;
+            popover.hidden = true;
+            trigger?.setAttribute('aria-expanded', 'false');
+            if (returnFocus) trigger?.focus();
+        });
+    }
+
+    function renderAuditTimePicker(picker) {
+        const { kind, input, popover } = picker;
+        if (!input || !popover) return;
+        const minimum = kind === 'to' && auditFrom?.value ? auditTimeMinutes(auditFrom.value) : 0;
+        let chosen = input.value ? auditTimeMinutes(input.value) : (kind === 'to' && auditFrom?.value ? minimum : 0);
+        const hour24 = Math.floor(chosen / 60);
+        const minute = chosen % 60;
+        const hour12 = hour24 % 12 || 12;
+        const period = hour24 < 12 ? 'AM' : 'PM';
+        const hours = Array.from({ length: 12 }, (_, index) => index + 1).filter(hour => {
+            const h24 = (hour % 12) + (period === 'PM' ? 12 : 0);
+            return kind !== 'to' || h24 * 60 + 59 >= minimum;
+        });
+        const minutes = Array.from({ length: 60 }, (_, value) => value).filter(value => {
+            const absolute = hour24 * 60 + value;
+            return kind !== 'to' || absolute >= minimum;
+        });
+        const periods = ['AM', 'PM'].filter(candidate => kind !== 'to' || Array.from({ length: 12 }, (_, index) => index + 1).some(hour => {
+            const h24 = (hour % 12) + (candidate === 'PM' ? 12 : 0);
+            return h24 * 60 + 59 >= minimum;
+        }));
+        const column = (label, part, values, selected, text = value => String(value).padStart(2, '0')) => `<div class="owner-audit-time-column" role="group" aria-label="${label}">${values.map(value => `<button type="button" class="owner-audit-time-option" data-time-part="${part}" data-time-value="${value}" aria-pressed="${String(value) === String(selected)}" tabindex="0">${text(value)}</button>`).join('')}</div>`;
+        popover.innerHTML = `<div class="owner-audit-time-columns">${column('Hour', 'hour', hours, hour12)}${column('Minute', 'minute', minutes, minute)}${column('AM or PM', 'period', periods, period, value => value)}</div><button type="button" class="owner-audit-time-clear" data-time-clear>${kind === 'from' ? 'Clear start time' : 'End of day'}</button>`;
+        popover.querySelectorAll('[data-time-part]').forEach(button => button.addEventListener('click', () => {
+            const part = button.dataset.timePart;
+            const value = button.dataset.timeValue;
+            let nextHour = hour12;
+            let nextMinute = minute;
+            let nextPeriod = period;
+            if (part === 'hour') nextHour = Number(value);
+            if (part === 'minute') nextMinute = Number(value);
+            if (part === 'period') nextPeriod = value;
+            let nextHour24 = (nextHour % 12) + (nextPeriod === 'PM' ? 12 : 0);
+            let absolute = nextHour24 * 60 + nextMinute;
+            if (kind === 'to' && absolute < minimum) {
+                absolute = minimum;
+                nextHour24 = Math.floor(absolute / 60);
+                nextMinute = absolute % 60;
+                nextHour = nextHour24 % 12 || 12;
+                nextPeriod = nextHour24 < 12 ? 'AM' : 'PM';
+            }
+            input.value = `${String(nextHour24).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            renderAuditTimePicker(picker);
+            popover.querySelector(`[data-time-part="${part}"][data-time-value="${value}"]`)?.focus();
+        }));
+        popover.querySelector('[data-time-clear]')?.addEventListener('click', () => {
+            input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            closeAuditTimePickers(true);
+        });
+        popover.querySelectorAll('.owner-audit-time-column').forEach(col => col.addEventListener('keydown', event => {
+            if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+            const options = [...col.querySelectorAll('button')];
+            const current = options.indexOf(document.activeElement);
+            const offset = event.key === 'ArrowDown' ? 1 : -1;
+            options[(current + offset + options.length) % options.length]?.focus();
+            event.preventDefault();
+        }));
+    }
+
+    function updateAuditToConstraints() {
+        const selectedDate = auditDate?.value || '';
+        const hasValidDate = Boolean(auditManilaBoundaryIso(selectedDate));
+        auditTimePickers.forEach(picker => {
+            if (picker.input) picker.input.disabled = !hasValidDate;
+            if (picker.trigger) {
+                picker.trigger.disabled = !hasValidDate;
+                picker.trigger.textContent = picker.input?.value ? auditTimeLabel(picker.input.value) : (picker.kind === 'to' ? 'End of day' : 'Select time');
+            }
+            renderAuditTimePicker(picker);
+        });
+        if (!hasValidDate) closeAuditTimePickers();
+    }
+
+    auditTimePickers.forEach(picker => {
+        picker.trigger?.addEventListener('click', () => {
+            const opening = picker.popover?.hidden;
+            closeAuditTimePickers();
+            if (!opening || !picker.popover) return;
+            renderAuditTimePicker(picker);
+            picker.popover.hidden = false;
+            picker.trigger.setAttribute('aria-expanded', 'true');
+            picker.popover.style.left = '0px';
+            const bounds = picker.popover.getBoundingClientRect();
+            picker.popover.style.left = `${Math.min(0, window.innerWidth - bounds.right - 8)}px`;
+            picker.popover.classList.toggle('is-above', bounds.bottom > window.innerHeight && bounds.top - bounds.height > 8);
+            picker.popover.querySelector('[aria-pressed="true"]')?.focus();
+        });
+        picker.trigger?.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                picker.trigger.click();
+            }
+        });
+    });
+    document.addEventListener('pointerdown', event => {
+        if (!event.target.closest('.owner-audit-time-picker')) closeAuditTimePickers();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && auditTimePickers.some(picker => picker.popover && !picker.popover.hidden)) closeAuditTimePickers(true);
+    });
+
+    function auditDateRangeBounds() {
+        updateAuditDateMax();
+        const selectedDate = auditDate?.value || '';
+        const from = auditFrom?.value || '';
+        const to = auditTo?.value || '';
+        if (!selectedDate) return from || to ? null : { from: null, to: null };
+        if (selectedDate > auditManilaToday()) return null;
+        if (!auditManilaBoundaryIso(selectedDate)) return null;
+        if ((from && !auditManilaBoundaryIso(selectedDate, from)) || (to && !auditManilaBoundaryIso(selectedDate, to))) return null;
+        if (from && to && to < from) return null;
+        const nextDate = new Date(`${selectedDate}T00:00:00Z`);
+        nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+        const nextDateValue = nextDate.toISOString().slice(0, 10);
+        const fromIso = auditManilaBoundaryIso(selectedDate, from || '00:00');
+        const toIso = to
+            ? auditManilaBoundaryIso(selectedDate, to, true)
+            : auditManilaBoundaryIso(nextDateValue);
+        if (!toIso) return null;
+        return { from: fromIso, to: toIso };
     }
 
     function auditRoleLabel(value) {
         return ({ admin: 'Owner', staff: 'Staff', customer: 'Customer', system: 'System' })[value] || 'System';
     }
 
+    function auditSummary(item) {
+        const action = String(item.action || '').toLowerCase();
+        const details = item.details && typeof item.details === 'object' && !Array.isArray(item.details) ? item.details : {};
+        const detailText = value => value === null || value === undefined || typeof value === 'object' ? '' : String(value).trim();
+        const customer = detailText(details.customer);
+        const court = detailText(details.court || details.unit);
+        const method = detailText(details.method);
+        const context = [customer, court].filter(Boolean).join(' · ');
+        const eventSummaries = {
+            sign_in: 'Signed in to IñigoSync',
+            sign_out: 'Signed out of IñigoSync',
+            time_in: 'Customer arrived', checked_in: 'Customer arrived', booking_timed_in: 'Customer arrived', booking_checked_in: 'Customer arrived',
+            time_out: 'Customer exited', checked_out: 'Customer exited', booking_timed_out: 'Customer exited', booking_checked_out: 'Customer exited',
+            walkin_timed_out: 'Walk-in customer checked out',
+            unattended: 'Booking marked unattended', marked_unattended: 'Booking marked unattended',
+            recorded_booking: 'Booking recorded', booking_created: 'Booking recorded', booking_confirmed: 'Booking confirmed',
+            recorded_walk_in: 'Walk-in booking recorded', walkin_recorded: 'Walk-in booking recorded', walkin_created: 'Walk-in booking recorded',
+            collected_payment: 'Payment collected', payment_collected: 'Payment collected', payment_recorded: 'Payment recorded',
+            booking_declined: 'Booking declined', booking_status_changed: 'Booking status changed',
+        };
+        const event = eventSummaries[action] || humanizeStaffAction(item.action);
+
+        if (action === 'sign_in' || action === 'sign_out') return event;
+        const description = detailText(details.description);
+        if (description) return description;
+        const extra = [context, method ? `via ${method}` : ''].filter(Boolean).join(' · ');
+        const summary = detailText(item.summary);
+        const usefulSummary = summary && summary.toLowerCase() !== event.toLowerCase() && summary.toLowerCase() !== String(item.action || '').toLowerCase()
+            ? summary : '';
+        return [event, extra || description || usefulSummary].filter(Boolean).join(': ');
+    }
+
     function renderAuditTrailRows(rows) {
         if (!auditRows) return;
-        auditDisplayedRows = rows;
-        auditRows.innerHTML = rows.length ? rows.map((item, index) => {
+        auditRows.innerHTML = rows.length ? rows.map(item => {
             const amount = item.amount !== null && item.amount !== undefined && Number.isFinite(Number(item.amount))
                 ? `₱${Number(item.amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
             const cellValue = value => {
@@ -1967,6 +2363,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const actorName = item.actor_name || 'Deleted account';
             const role = auditRoleLabel(item.actor_role);
             const timeLabel = formatActivityTime(item.created_at);
+            const summary = auditSummary(item);
             return `<tr>
                 <td><code class="owner-audit-cell-value" title="${window.escapeHtml(eventId)}">${window.escapeHtml(eventId)}</code></td>
                 <td><time datetime="${window.escapeHtml(item.created_at || '')}" class="owner-audit-cell-value" title="${window.escapeHtml(timeLabel)}">${window.escapeHtml(timeLabel)}</time></td>
@@ -1974,62 +2371,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${cellValue(role)}</td>
                 <td>${cellValue(actorName)}</td>
                 <td>${cellValue(amount)}</td>
-                <td><button type="button" class="admin-btn-ghost owner-audit-summary-button" data-owner-audit-summary="${index}" aria-haspopup="dialog" aria-label="View detailed summary for event ${window.escapeHtml(eventId)}">View</button></td>
+                <td><span class="owner-audit-summary" title="${window.escapeHtml(summary)}">${window.escapeHtml(summary)}</span></td>
             </tr>`;
         }).join('') : '<tr><td colspan="7">No events match these filters.</td></tr>';
-    }
-
-    function openAuditEventDetails(index, trigger) {
-        const item = auditDisplayedRows[index];
-        if (!item || !auditDetailModal || !auditDetailList) return;
-        const amount = item.amount !== null && item.amount !== undefined && Number.isFinite(Number(item.amount))
-            ? `₱${Number(item.amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
-        const fields = [
-            ['Event ID', item.event_id || '—'],
-            ['Date & Time', formatActivityTime(item.created_at)],
-            ['Event', humanizeStaffAction(item.action)],
-            ['Role', auditRoleLabel(item.actor_role)],
-            ['Actor', item.actor_name || 'Deleted account'],
-            ['Amount', amount],
-        ];
-        const details = item.details && typeof item.details === 'object' && !Array.isArray(item.details) ? item.details : {};
-        const monetaryDetailKeys = new Set(['amount', 'total', 'paid', 'subtotal', 'base_amount', 'fee', 'gross_amount']);
-        for (const [key, value] of Object.entries(details)) {
-            if (value === null || value === undefined || value === '') continue;
-            const label = key.replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
-            const displayValue = monetaryDetailKeys.has(key) && Number.isFinite(Number(value))
-                ? `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : typeof value === 'object' ? JSON.stringify(value) : String(value);
-            fields.push([label, displayValue]);
-        }
-        if (!Object.keys(details).length && item.summary) fields.push(['Details', item.summary]);
-        auditDetailTitle.textContent = `${humanizeStaffAction(item.action)} · Event summary`;
-        auditDetailList.innerHTML = fields.map(([label, value]) => `<div><dt>${window.escapeHtml(label)}</dt><dd>${window.escapeHtml(value)}</dd></div>`).join('');
-        if (auditDetailDialog) auditDetailDialog._auditTrigger = trigger;
-        window.InigoOwnerUI?.open(auditDetailModal);
-    }
-
-    function closeAuditEventDetails() {
-        if (!auditDetailModal || auditDetailModal.hidden) return;
-        const trigger = auditDetailDialog?._auditTrigger;
-        window.InigoOwnerUI?.close(auditDetailModal);
-        if (trigger?.isConnected) trigger.focus();
     }
 
     async function loadAuditTrail({ silent = false } = {}) {
         if (!window.sb || !auditRows) return;
         const generation = ++auditGeneration;
+        const dateBounds = auditDateRangeBounds();
+        if (!dateBounds) {
+            auditRows.setAttribute('aria-busy', 'false');
+            auditPagination?.setAttribute('aria-busy', 'false');
+            if (auditStatus) auditStatus.textContent = 'Choose a valid time range on the selected date.';
+            if (auditRows) auditRows.innerHTML = '<tr><td colspan="7">Choose a valid date and time range.</td></tr>';
+            return;
+        }
         auditRequestsInFlight += 1;
         if (!silent) {
             auditRows.setAttribute('aria-busy', 'true');
             if (auditStatus) auditStatus.textContent = 'Loading audit trail…';
-            if (auditPagination) auditPagination.hidden = true;
+            auditPagination?.setAttribute('aria-busy', 'true');
         }
         try {
             const { data, error } = await window.sb.rpc('owner_audit_trail', {
                 p_search: auditSearch?.value.trim() || '',
-                p_from: auditDateTimeBoundaryIso(auditDateTime?.value),
-                p_to: auditDateTimeBoundaryIso(auditDateTime?.value, true),
+                p_from: dateBounds.from,
+                p_to: dateBounds.to,
                 p_actor_role: auditRole?.value || 'all',
                 p_offset: auditPage * AUDIT_PAGE_SIZE,
                 p_limit: AUDIT_PAGE_SIZE,
@@ -2042,9 +2410,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const pageCount = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
             if (auditStatus) auditStatus.textContent = `${total.toLocaleString()} ${total === 1 ? 'event' : 'events'} recorded`;
             if (auditPagination) auditPagination.hidden = total <= AUDIT_PAGE_SIZE;
-            if (auditPageInfo) auditPageInfo.textContent = `Page ${auditPage + 1} of ${pageCount}`;
             if (auditPrev) auditPrev.disabled = auditPage <= 0;
             if (auditNext) auditNext.disabled = auditPage + 1 >= pageCount;
+            renderOwnerPageNumbers(auditPageNumbers, auditPage + 1, pageCount, page => { auditPage = page - 1; loadAuditTrail(); });
         } catch (error) {
             if (generation !== auditGeneration) return;
             console.error('[admin] audit trail could not be loaded', error);
@@ -2054,7 +2422,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } finally {
             auditRequestsInFlight = Math.max(0, auditRequestsInFlight - 1);
-            if (!silent && generation === auditGeneration) auditRows.setAttribute('aria-busy', 'false');
+            if (!silent && generation === auditGeneration) {
+                auditRows.setAttribute('aria-busy', 'false');
+                auditPagination?.setAttribute('aria-busy', 'false');
+            }
         }
     }
 
@@ -2078,9 +2449,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (auditRefreshTimer === null) {
             auditRefreshTimer = window.setInterval(() => {
+                updateAuditDateMax();
                 if (isAuditPanelVisible() && auditRequestsInFlight === 0) loadAuditTrail({ silent: true });
             }, AUDIT_REFRESH_INTERVAL);
         }
+        updateAuditDateMax();
         loadAuditTrail();
     }
 
@@ -2095,20 +2468,21 @@ document.addEventListener('DOMContentLoaded', () => {
         window.clearTimeout(auditSearchTimer);
         auditSearchTimer = window.setTimeout(loadAuditTrail, 250);
     });
-    auditDateTime?.addEventListener('change', resetAuditPage);
+    updateAuditDateMax();
+    updateAuditToConstraints();
+    auditDate?.addEventListener('change', () => {
+        if (auditFrom) auditFrom.value = '';
+        if (auditTo) auditTo.value = '';
+        updateAuditToConstraints();
+        resetAuditPage();
+    });
+    auditFrom?.addEventListener('input', () => {
+        if (auditTo) auditTo.value = '';
+        updateAuditToConstraints();
+    });
+    auditFrom?.addEventListener('change', () => { updateAuditToConstraints(); resetAuditPage(); });
+    auditTo?.addEventListener('change', resetAuditPage);
     auditRole?.addEventListener('change', resetAuditPage);
-    auditRows?.addEventListener('click', event => {
-        const button = event.target.closest('[data-owner-audit-summary]');
-        if (button) openAuditEventDetails(Number(button.dataset.ownerAuditSummary), button);
-    });
-    document.querySelector('[data-owner-audit-detail-close]')?.addEventListener('click', closeAuditEventDetails);
-    auditDetailModal?.addEventListener('click', event => { if (event.target === auditDetailModal) closeAuditEventDetails(); });
-    document.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && auditDetailModal && !auditDetailModal.hidden) {
-            event.preventDefault();
-            closeAuditEventDetails();
-        }
-    });
     auditPrev?.addEventListener('click', () => { if (auditPage > 0) { auditPage -= 1; loadAuditTrail(); } });
     auditNext?.addEventListener('click', () => { auditPage += 1; loadAuditTrail(); });
     async function recordOwnerActivity(title, targetSection, detail = '') {
@@ -2327,8 +2701,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ownerMobileMessage.classList.remove('is-error');
             ownerMobileMessage.dataset.state = '';
         }
-        const removeMobileBtn = document.querySelector('[data-admin-mobile-remove]');
-        if (removeMobileBtn) removeMobileBtn.hidden = !profile.contact_num;
     }
 
     function formatOwnerPhoneValidationDate(value) {
@@ -2388,8 +2760,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     const adminProfileSaveBtn = document.querySelector('[data-admin-settings-save="profile"]');
-    const ownerMobileValidateBtn = document.querySelector('[data-admin-mobile-validate]');
-    const ownerMobileRemoveBtn = document.querySelector('[data-admin-mobile-remove]');
     const ownerMobileMessage = document.querySelector('[data-admin-mobile-message]');
     const ownerMobileInput = document.querySelector('[data-admin-settings-mobile]');
     let ownerMobileCheckTimer = null;
@@ -2446,14 +2816,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ownerMobileCheckPassed = true;
             ownerMobileCheckedAt = Date.now();
             ownerMobileRecentChecks.set(normalized, ownerMobileCheckedAt);
-            ownerMobileValidateBtn.disabled = false;
             ownerMobileInput.dataset.phoneAvailability = 'available';
             ownerMobileInput.setAttribute('aria-invalid', 'false');
-            setOwnerMobileMessage('Valid Philippine mobile number and available. Save number to add it to your profile.');
+            setOwnerMobileMessage('Valid Philippine mobile number and available. Select Save Changes to update your profile.');
         } catch (error) {
             if (requestId !== ownerMobileRequestId || !ownerMobileInputMatches(normalized)) return;
             ownerMobileCheckPassed = false;
-            ownerMobileValidateBtn.disabled = true;
             ownerMobileInput.dataset.phoneAvailability = 'invalid';
             ownerMobileInput.setAttribute('aria-invalid', 'true');
             console.error('[admin] contact number validation failed', error);
@@ -2467,7 +2835,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ownerMobileCheckedNumber = '';
         ownerMobileCheckPassed = false;
         ownerMobileCheckedAt = 0;
-        ownerMobileValidateBtn.disabled = true;
         ownerMobileInput.dataset.phoneAvailability = '';
         ownerMobileInput.setAttribute('aria-invalid', 'false');
         const raw = ownerMobileInput.value.trim();
@@ -2487,73 +2854,13 @@ document.addEventListener('DOMContentLoaded', () => {
             ownerMobileCheckedNumber = localCheck.normalized;
             ownerMobileCheckPassed = true;
             ownerMobileCheckedAt = recentCheckAt;
-            ownerMobileValidateBtn.disabled = false;
             ownerMobileInput.dataset.phoneAvailability = 'available';
             ownerMobileInput.setAttribute('aria-invalid', 'false');
-            setOwnerMobileMessage('Valid Philippine mobile number and available. Save number to add it to your profile.');
+            setOwnerMobileMessage('Valid Philippine mobile number and available. Select Save Changes to update your profile.');
             return;
         }
         setOwnerMobileMessage('Valid Philippine mobile format. Checking availability…');
         ownerMobileCheckTimer = setTimeout(() => checkOwnerMobile(localCheck.normalized, requestId), 700);
-    });
-
-    ownerMobileValidateBtn?.addEventListener('click', async () => {
-        if (!window.sb || !window.inigosyncProfile || !ownerMobileInput) return;
-        const check = window.validatePhMobile?.(ownerMobileInput.value || '');
-        if (!check?.valid || !ownerMobileCheckPassed || ownerMobileCheckedNumber !== check.normalized) {
-            setOwnerMobileMessage('Wait for a successful automatic status check before saving this number.', true);
-            return;
-        }
-        if (Date.now() - ownerMobileCheckedAt >= OWNER_PHONE_PROOF_MAX_AGE_MS) {
-            ownerMobileCheckPassed = false;
-            ownerMobileValidateBtn.disabled = true;
-            setOwnerMobileMessage('The status check expired. Checking the number again…');
-            checkOwnerMobile(check.normalized, ++ownerMobileRequestId);
-            return;
-        }
-        const currentCheck = window.validatePhMobile?.(window.inigosyncProfile.contact_num || '');
-        if (currentCheck?.valid && check.normalized === currentCheck.normalized && window.inigosyncProfile.contact_num_validated) {
-            setOwnerMobileMessage('This number is already saved.');
-            return;
-        }
-        ownerMobileValidateBtn.disabled = true;
-        try {
-            const { error: saveError } = await window.sb.from('profiles')
-                .update({ contact_num: `+63${check.normalized.slice(1)}` }).eq('id', window.inigosyncProfile.id);
-            if (saveError) throw saveError;
-            window.inigosyncProfile.contact_num = `+63${check.normalized.slice(1)}`;
-            window.inigosyncProfile.contact_num_validated = true;
-            window.inigosyncProfile.contact_num_validated_at = new Date().toISOString();
-            renderAdminProfile(window.inigosyncProfile);
-            paintOwnerDetails(window.inigosyncProfile);
-            recordOwnerActivity('Owner contact number validated', 'settings');
-            setOwnerMobileMessage('Saved after Philippine format and availability checks.');
-            window.InigoToast?.show('Contact number validated and saved.');
-        } catch (error) {
-            ownerMobileValidateBtn.disabled = false;
-            console.error('[admin] contact number save failed', error);
-            setOwnerMobileMessage(error.message || 'Could not save the number. Try again.', true);
-        }
-    });
-
-    ownerMobileRemoveBtn?.addEventListener('click', async () => {
-        if (!window.sb || !window.inigosyncProfile || !window.inigosyncProfile.contact_num) return;
-        ownerMobileRemoveBtn.disabled = true;
-        try {
-            const { error } = await window.sb.from('profiles').update({ contact_num: null }).eq('id', window.inigosyncProfile.id);
-            if (error) throw error;
-            window.inigosyncProfile.contact_num = null;
-            window.inigosyncProfile.contact_num_validated = false;
-            window.inigosyncProfile.contact_num_validated_at = null;
-            const mobileInput = document.querySelector('[data-admin-settings-mobile]');
-            if (mobileInput) mobileInput.value = '';
-            renderAdminProfile(window.inigosyncProfile);
-            paintOwnerDetails(window.inigosyncProfile);
-            setOwnerMobileMessage('Contact number removed. You can add one later.');
-            window.InigoToast?.show('Contact number removed.');
-        } catch (error) {
-            setOwnerMobileMessage(error.message || 'Could not remove the contact number.', true);
-        } finally { ownerMobileRemoveBtn.disabled = false; }
     });
 
     if (adminProfileSaveBtn) {
@@ -2600,9 +2907,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (mobileNeedsValidation && ownerMobileCheckPassed && ownerMobileCheckedNumber === requestedMobile && !mobileReadyToSave) {
                 ownerMobileCheckPassed = false;
-                ownerMobileValidateBtn.disabled = true;
                 setOwnerMobileMessage('The status check expired. Checking the number again…');
                 checkOwnerMobile(requestedMobile, ++ownerMobileRequestId);
+            }
+            if (mobileNeedsValidation && !mobileReadyToSave) {
+                if (mobileCheck.valid && ownerMobileInput?.dataset.phoneAvailability !== 'invalid') {
+                    setOwnerMobileMessage('Wait for the automatic number check to finish before saving.', true);
+                }
+                ownerMobileInput?.focus();
+                return;
             }
             const nameChanged = newName !== (window.inigosyncProfile.full_name || '');
             const detailsChanged = mobileNeedsRemoval || mobileReadyToSave
@@ -2610,11 +2923,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 || birthdate !== (window.inigosyncProfile.birthdate || null)
                 || gender !== (window.inigosyncProfile.gender || '');
             if (!nameChanged && !detailsChanged) {
-                if (mobileNeedsValidation) {
-                    setOwnerMobileMessage('Use Validate & save to check and save the new mobile number.', true);
-                    ownerMobileValidateBtn?.focus();
-                    return;
-                }
                 window.InigoToast?.show('Nothing to save.');
                 return;
             }
@@ -2643,13 +2951,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderAdminProfile(window.inigosyncProfile);
                 paintOwnerDetails(window.inigosyncProfile);
                 if (nameChanged || detailsChanged) recordOwnerActivity('Owner profile updated', 'settings');
-                if (mobileNeedsValidation) {
-                    setOwnerMobileMessage('Other profile details were saved. Wait for the automatic status check before saving the new number.', true);
-                    window.InigoToast?.show('Profile details saved. Check the new mobile number before saving it.');
-                } else {
-                    window.InigoToast?.show('Profile updated.');
-                    window.InigoOwnerUI.close(document.querySelector('[data-admin-settings-profile-modal]'));
-                }
+                window.InigoToast?.show('Profile updated.');
+                window.InigoOwnerUI.close(document.querySelector('[data-admin-settings-profile-modal]'));
             } catch (err) {
                 window.InigoToast?.show(err.message || 'Could not save your changes.', true);
             } finally {
@@ -2988,7 +3291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedFeaturedReviewIds = () => reviewModal && !reviewModal.hidden ? draftFeaturedReviewIds : savedFeaturedReviewIds;
     async function loadOwnerReviewBrowser(force = false) {
         if (!ownerReviewBrowser || !window.sb) return;
-        if (ownerReviewBrowserLoading || (!force && ownerReviewBrowserLoaded)) return;
+        if ((!force && ownerReviewBrowserLoading) || (!force && ownerReviewBrowserLoaded)) return;
         const request = ++ownerReviewBrowserRequest;
         ownerReviewBrowserLoading = true;
         ownerReviewBrowser.setAttribute('aria-busy', 'true');
@@ -3018,12 +3321,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }).join('') : '<p class="admin-form-hint">No customer reviews match this filter yet.</p>';
             const pages = Math.max(1, Math.ceil((count || 0) / REVIEW_PAGE_SIZE));
             if (ownerReviewBrowserPager) ownerReviewBrowserPager.hidden = (count || 0) <= REVIEW_PAGE_SIZE;
-            const info = document.querySelector('[data-owner-review-page-info]');
             const prev = document.querySelector('[data-owner-review-prev]');
             const next = document.querySelector('[data-owner-review-next]');
-            if (info) info.textContent = `Page ${ownerReviewBrowserPage + 1} of ${pages}`;
+            const pageNumbers = document.querySelector('[data-owner-review-page-numbers]');
             if (prev) prev.disabled = ownerReviewBrowserPage <= 0;
             if (next) next.disabled = ownerReviewBrowserPage + 1 >= pages;
+            renderOwnerPageNumbers(pageNumbers, ownerReviewBrowserPage + 1, pages, page => { ownerReviewBrowserPage = page - 1; loadOwnerReviewBrowser(true); });
             ownerReviewBrowserLoaded = true;
         } catch (error) {
             if (request !== ownerReviewBrowserRequest) return;
@@ -3079,12 +3382,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
         const pages = Math.max(1, Math.ceil(total / REVIEW_PAGE_SIZE));
         if (reviewPager) reviewPager.hidden = total <= REVIEW_PAGE_SIZE;
-        const info = document.querySelector('[data-admin-review-page-info]');
         const prev = document.querySelector('[data-admin-review-prev]');
         const next = document.querySelector('[data-admin-review-next]');
-        if (info) info.textContent = `Page ${reviewPage + 1} of ${pages}`;
+        const pageNumbers = document.querySelector('[data-admin-review-page-numbers]');
         if (prev) prev.disabled = reviewPage <= 0;
         if (next) next.disabled = reviewPage + 1 >= pages;
+        renderOwnerPageNumbers(pageNumbers, reviewPage + 1, pages, page => { reviewPage = page - 1; loadOwnerReviews(); });
     }
     function setFeaturedReviewStatus(message = '', isError = false) {
         if (reviewCount) {

@@ -458,8 +458,12 @@ body.dash-body::before {
 .dash-notif-row + .dash-notif-row { border-top: 1px solid var(--color-line); }
 .dash-notif-row.is-selected { background: rgba(244, 239, 230, 0.06); }
 .dash-notif-select-row { flex: 0 0 auto; width: 16px; height: 16px; margin: 12px 0 0 5px; accent-color: var(--color-primary); cursor: pointer; }
-.dash-notif-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.dash-notif-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .dash-notif-pagination[hidden] { display: none; }
+.dash-page-numbers { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; }
+.dash-notif-pagination .dash-page-number { min-width: 32px; min-height: 32px; padding: 4px 8px; }
+.dash-page-number[aria-current="page"] { background: var(--color-primary); color: #14110d; }
+.dash-page-gap { padding-inline: 2px; color: var(--color-ink-faint); }
 .dash-notif-pagination .dash-mini-btn { min-height: 32px; padding: 5px 9px; }
 
 /* R4-3 (implementation_plan.md, "Revision 4") — .dash-notif-item is now a
@@ -1790,7 +1794,7 @@ body.dash-body::before {
     color: var(--color-ink, #1f2a25);
     box-shadow: 0 24px 80px rgba(0, 0, 0, .32);
 }
-.dash-booking-dialog h2 { margin: 0 48px 18px 0; font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit); }
+.dash-booking-dialog h2 { margin: 0 48px 18px 0; padding-bottom: 14px; border-bottom: 1px solid var(--color-line); font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit); }
 .dash-booking-dialog .dash-modal-close { position: absolute; top: 14px; right: 14px; }
 .dash-booking-dialog .dash-book-step1-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; }
 .dash-booking-dialog .dash-court-media-lg { height: 290px; }
@@ -1840,7 +1844,7 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-book-fee-confirmation-modal { z-index: 1310; }
 .dash-book-cart-details-backdrop, .dash-book-payment-backdrop, .dash-book-fee-confirmation-backdrop { position: absolute; inset: 0; background: rgba(12, 20, 16, .68); }
 .dash-book-cart-details-dialog, .dash-book-payment-dialog, .dash-book-fee-confirmation-dialog { position: relative; z-index: 1; width: min(100%, 680px); max-height: min(90dvh, 820px); overflow: auto; padding: 26px; border: 1px solid var(--color-line); border-radius: 18px; background: var(--color-bg-card); color: var(--color-ink); box-shadow: 0 24px 80px rgba(0, 0, 0, .32); }
-.dash-book-cart-details-dialog h2, .dash-book-payment-dialog h2, .dash-book-fee-confirmation-dialog h2 { margin: 0 48px 18px 0; font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit); }
+.dash-book-cart-details-dialog h2, .dash-book-payment-dialog h2, .dash-book-fee-confirmation-dialog h2 { margin: 0 48px 18px 0; padding-bottom: 14px; border-bottom: 1px solid var(--color-line); font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit); }
 .dash-book-cart-details-list { display: grid; gap: 0; max-height: 42dvh; overflow: auto; margin: 14px 0; padding: 0; list-style: none; }
 .dash-book-cart-details-list li { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-top: 1px solid var(--color-line); }
 .dash-book-cart-details-item { min-width: 0; overflow-wrap: anywhere; }
@@ -2334,13 +2338,15 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     inset: 0;
     background: rgba(0, 0, 0, .68);
 }
-.dash-settings-dialog {
+.dash-settings-dialog:not(.dash-settings-confirm-dialog) {
     position: relative;
     z-index: 1;
     width: min(100%, 460px);
     max-height: min(90dvh, 720px);
-    overflow: auto;
-    padding: 26px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    padding: 0;
     border: 1px solid var(--color-line);
     border-radius: 18px;
     background: var(--color-bg-card);
@@ -2349,11 +2355,16 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 }
 .dash-personal-dialog { width: min(100%, 760px); }
 .dash-settings-confirm-dialog { z-index: 1410; width: min(100%, 430px); }
+.dash-settings-dialog-header { position: relative; padding: 26px 64px 16px 26px; border-bottom: 1px solid var(--color-line); }
+.dash-settings-dialog-header h2 { margin: 0; }
+.dash-settings-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 26px; }
+.dash-settings-dialog-footer { margin: 0; padding: 18px 26px 26px; border-top: 1px solid var(--color-line); background: var(--color-bg-card); }
 .dash-settings-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
 .dash-settings-dialog h2 {
     margin: 0 0 20px;
     font: 600 var(--fs-xl, 1.4rem)/1.2 var(--font-display, inherit);
 }
+.dash-settings-dialog .dash-settings-dialog-header h2 { margin-bottom: 0; }
 .dash-settings-dialog > .dash-avatar-upload-preview {
     margin: 0 auto 18px;
 }
@@ -2451,7 +2462,10 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 
 @media (max-width: 560px) {
     .dash-settings-modal { padding: 10px; }
-    .dash-settings-dialog { max-height: calc(100dvh - 20px); padding: 22px 16px; border-radius: 14px; }
+    .dash-settings-dialog:not(.dash-settings-confirm-dialog) { max-height: calc(100dvh - 20px); border-radius: 14px; }
+    .dash-settings-dialog-header { padding: 22px 58px 14px 16px; }
+    .dash-settings-dialog-body { padding: 0 16px; }
+    .dash-settings-dialog-footer { padding: 14px 16px max(16px, env(safe-area-inset-bottom)); }
     .dash-settings-dialog-actions > button { flex: 1 1 auto; }
     .dash-settings-summary { grid-template-columns: minmax(0, 1fr); }
     .dash-email-otp-row { gap: 6px; }
@@ -2697,7 +2711,9 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     font-family: var(--font-display);
     font-weight: 600;
     font-size: var(--fs-lg);
-    margin-bottom: 6px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-line);
     padding-right: 34px; /* clears the absolutely-positioned close button */
 }
 
@@ -2709,6 +2725,7 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 
 .dash-modal-close {
     position: absolute;
+    z-index: 2;
     top: 18px;
     right: 18px;
     width: 34px;
@@ -2723,6 +2740,8 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     cursor: pointer;
     transition: color 0.2s, border-color 0.2s;
 }
+
+.dash-modal > h2 { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--color-line); }
 
 .dash-modal-close svg {
     width: 16px;

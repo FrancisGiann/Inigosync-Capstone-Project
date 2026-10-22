@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffNotifSelectedLabel = document.querySelector('[data-staff-notif-selected]');
     const staffNotifMarkSelected = document.querySelector('[data-staff-notif-mark-selected]');
     const staffNotifPagination = document.querySelector('[data-staff-notif-pagination]');
-    const staffNotifPageLabel = document.querySelector('[data-staff-notif-page]');
+    const staffNotifPageNumbers = document.querySelector('[data-staff-notif-page-numbers]');
     const staffNotifPrev = document.querySelector('[data-staff-notif-prev]');
     const staffNotifNext = document.querySelector('[data-staff-notif-next]');
     const STAFF_NOTIF_LIMIT = 10;
@@ -214,6 +214,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     let staffNotifMarkSelectedInProgress = false;
     const selectedStaffNotifKeys = new Set();
     let staffNotifItems = [];
+
+    function renderStaffPageNumbers(container, currentPage, pageCount, onPageChange) {
+        if (!container || !window.InigoStaffPagination) return;
+        container.replaceChildren(...window.InigoStaffPagination.pageNumbers(currentPage, pageCount).map(page => {
+            if (page === 'gap') {
+                const gap = document.createElement('span');
+                gap.className = 'staff-page-gap';
+                gap.setAttribute('aria-hidden', 'true');
+                gap.textContent = '…';
+                return gap;
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'staff-mini-btn staff-page-number';
+            button.textContent = String(page);
+            button.setAttribute('aria-label', `Page ${page}`);
+            if (page === currentPage) {
+                button.setAttribute('aria-current', 'page');
+                button.disabled = true;
+            } else button.addEventListener('click', () => onPageChange(page));
+            return button;
+        }));
+    }
 
     function closeStaffNotifMenu() {
         staffNotif?.removeAttribute('data-open');
@@ -299,8 +322,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             staffNotifUnreadCount = Number(result.unread_count) || 0;
             if (staffNotifDot) staffNotifDot.hidden = staffNotifUnreadCount === 0;
             syncStaffNotificationSelection();
-            if (staffNotifPagination) staffNotifPagination.hidden = staffNotifTotalCount <= STAFF_NOTIF_LIMIT;
-            if (staffNotifPageLabel) staffNotifPageLabel.textContent = `Page ${staffNotifPage + 1} of ${Math.max(1, Math.ceil(staffNotifTotalCount / STAFF_NOTIF_LIMIT))}`;
+            const pageCount = Math.max(1, Math.ceil(staffNotifTotalCount / STAFF_NOTIF_LIMIT));
+            if (staffNotifPagination) staffNotifPagination.hidden = pageCount <= 1;
+            if (typeof staffNotifPageNumbers !== 'undefined' && staffNotifPageNumbers) renderStaffPageNumbers(staffNotifPageNumbers, staffNotifPage + 1, pageCount, page => { staffNotifPage = page - 1; loadStaffNotifications(); });
             if (staffNotifPrev) staffNotifPrev.disabled = staffNotifPage === 0;
             if (staffNotifNext) staffNotifNext.disabled = (staffNotifPage + 1) * STAFF_NOTIF_LIMIT >= staffNotifTotalCount;
         } catch (error) {
@@ -309,7 +333,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             staffNotifItems = [];
             staffNotifList.innerHTML = '<p class="staff-notif-empty">Notifications could not be loaded. Try again.</p>';
             if (staffNotifDot) staffNotifDot.hidden = true;
-            if (staffNotifPagination) staffNotifPagination.hidden = true;
         }
     }
 
@@ -3398,9 +3421,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const scheduleSearchInput = document.querySelector('[data-staff-schedule-search]');
     const scheduleSortSelect = document.querySelector('[data-staff-schedule-sort]');
     const schedulePagination = document.querySelector('[data-staff-schedule-pagination]');
-    const schedulePageIndicator = document.querySelector('[data-staff-schedule-page-indicator]');
     const schedulePreviousButton = document.querySelector('[data-staff-schedule-page-prev]');
     const scheduleNextButton = document.querySelector('[data-staff-schedule-page-next]');
+    const schedulePageNumbers = document.querySelector('[data-staff-schedule-page-numbers]');
     const SCHEDULE_PAGE_SIZE = 15;
 
     let scheduleActiveSport = 'all';
@@ -3544,9 +3567,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         schedulePage = Math.min(Math.max(schedulePage, 1), pageCount);
         if (schedulePagination) {
             schedulePagination.hidden = !scheduleDataOk || rows.length <= SCHEDULE_PAGE_SIZE;
-            if (schedulePageIndicator) schedulePageIndicator.textContent = `Page ${schedulePage} of ${pageCount}`;
             if (schedulePreviousButton) schedulePreviousButton.disabled = schedulePage <= 1;
             if (scheduleNextButton) scheduleNextButton.disabled = schedulePage >= pageCount;
+            renderStaffPageNumbers(schedulePageNumbers, schedulePage, pageCount, page => {
+                schedulePage = page;
+                renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
+            });
         }
 
         thead.innerHTML = `<tr><th>Court / Unit</th>${hours.map((h) => `<th>${window.escapeHtml(window.InigoBusinessHours.formatHourRangeLabelShort(h))}</th>`).join('')}</tr>`;

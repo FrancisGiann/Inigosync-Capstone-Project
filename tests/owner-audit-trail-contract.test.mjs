@@ -10,26 +10,43 @@ test('owner audit trail exposes only the requested filters and columns', () => {
   const auditPanel = html.match(/<section class="admin-panel" data-admin-panel="audit">([\s\S]*?)<\/section>/)?.[1];
   assert.ok(auditPanel, 'audit panel exists');
   assert.deepEqual(
-    [...auditPanel.matchAll(/data-owner-audit-(search|datetime|role)/g)].map(([, field]) => field),
-    ['search', 'datetime', 'role'],
+    [...auditPanel.matchAll(/data-owner-audit-(search|date|from|to|role)/g)].map(([, field]) => field),
+    ['search', 'date', 'from', 'to', 'role'],
   );
-  assert.doesNotMatch(auditPanel, /data-owner-audit-(?:from|to|category|actor)(?:\s|[=>])/);
+  assert.match(auditPanel, /type="date"[^>]*data-owner-audit-date/);
+  assert.match(auditPanel, /data-owner-audit-time-picker="from"/);
+  assert.match(auditPanel, /data-owner-audit-time-picker="to"/);
+  assert.equal([...auditPanel.matchAll(/data-owner-audit-time-trigger="(?:from|to)"/g)].length, 2);
+  assert.equal([...auditPanel.matchAll(/data-owner-audit-time-popover="(?:from|to)"/g)].length, 2);
+  assert.match(auditPanel, /Optional\. Leave From blank to start at midnight or To blank to include the rest of the day\./);
+  assert.doesNotMatch(auditPanel, /data-owner-audit-(?:category|actor)(?:\s|[=>])/);
   assert.deepEqual(
     [...auditPanel.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(([, label]) => label.replaceAll('&amp;', '&')),
     ['Event ID', 'Date & Time', 'Event', 'Role', 'Actor', 'Amount', 'Summary'],
   );
 });
 
-test('summary view is a keyboard accessible dialog and RPC date bounds use Manila time', () => {
-  assert.match(js, /data-owner-audit-summary="\$\{index\}"/);
-  assert.match(html, /data-owner-audit-detail-modal hidden/);
-  assert.match(html, /role="dialog" aria-modal="true" aria-labelledby="ownerAuditDetailTitle"/);
-  assert.match(js, /aria-label="View detailed summary for event \$\{window\.escapeHtml\(eventId\)\}"/);
-  assert.match(js, /window\.escapeHtml\(label\).*window\.escapeHtml\(value\)/);
-  assert.match(js, /new Date\(`\$\{value\}:00\+08:00`\)/);
+test('audit event summaries are inline and RPC date bounds use Manila time', () => {
+  assert.match(js, /function auditSummary\(item\)/);
+  assert.match(js, /class="owner-audit-summary" title="\$\{window\.escapeHtml\(summary\)\}"/);
+  assert.doesNotMatch(html, /data-owner-audit-detail-modal/);
+  assert.match(js, /new Date\(`\$\{localValue\}:00\+08:00`\)/);
+  assert.match(js, /timeZone: 'Asia\/Manila', year: 'numeric', month: '2-digit', day: '2-digit'/);
+  assert.match(js, /auditDate\.max = auditManilaToday\(\)/);
+  assert.match(js, /if \(selectedDate > auditManilaToday\(\)\) return null/);
+  assert.match(js, /updateAuditDateMax\(\);\s+if \(isAuditPanelVisible\(\)/);
   assert.match(js, /setUTCMinutes\(date\.getUTCMinutes\(\) \+ 1\)/);
-  assert.match(js, /p_from: auditDateTimeBoundaryIso\(auditDateTime\?\.value\)/);
-  assert.match(js, /p_to: auditDateTimeBoundaryIso\(auditDateTime\?\.value, true\)/);
+  assert.match(js, /if \(picker\.input\) picker\.input\.disabled = !hasValidDate/);
+  assert.match(js, /function renderAuditTimePicker\(picker\)/);
+  assert.match(js, /const minimum = kind === 'to' && auditFrom\?\.value \? auditTimeMinutes\(auditFrom\.value\) : 0/);
+  assert.match(js, /return kind !== 'to' \|\| absolute >= minimum/);
+  assert.match(js, /ArrowDown', 'ArrowUp'/);
+  assert.match(js, /event\.key === 'Escape'/);
+  assert.match(js, /auditTo\.value = ''/);
+  assert.match(js, /if \(from && to && to < from\) return null/);
+  assert.match(js, /const nextDateValue = nextDate\.toISOString\(\)\.slice\(0, 10\)/);
+  assert.match(js, /p_from: dateBounds\.from/);
+  assert.match(js, /p_to: dateBounds\.to/);
 });
 
 test('audit RPC keeps active-owner authorization, bounded paging, and narrow search', () => {

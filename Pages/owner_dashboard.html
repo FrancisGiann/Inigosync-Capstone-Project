@@ -68,12 +68,16 @@
         <p class="admin-role-tag">Owner Portal</p>
 
         <ul class="admin-nav">
+            <li class="admin-nav-section-label">Overview</li>
             <li>
                 <button type="button" class="admin-nav-link is-active" data-admin-nav="overview" aria-current="page">
                     <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 16l2.5-4 2.5 2.5L18 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     Booking Overview
                 </button>
             </li>
+
+            <li class="admin-nav-divider" aria-hidden="true"></li>
+            <li class="admin-nav-section-label">Business Management</li>
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="staff">
                     <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.4" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c1.2-3.6 4-5.6 6.5-5.6s5.3 2 6.5 5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M17 5v6M14 8h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -104,6 +108,9 @@
                     Payment Configuration
                 </button>
             </li>
+
+            <li class="admin-nav-divider" aria-hidden="true"></li>
+            <li class="admin-nav-section-label">Customer Engagement</li>
             <!-- Revision A3 (implementation_plan.md, decision C5) — new tab,
                  same star-based icon style as Style/Dashboard.css's own
                  feedback trigger; a chat-bubble/star combo was considered
@@ -115,16 +122,16 @@
                     Feedbacks &amp; Reviews
                 </button>
             </li>
+            <li><button type="button" class="admin-nav-link" data-admin-nav="announcement"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 13 4 0 10 5V6L8 11H4v2Zm4 0 1.5 6h3L10.5 13M18 9.5a4 4 0 0 1 0 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Announcement</button></li>
+
+            <li class="admin-nav-divider" aria-hidden="true"></li>
+            <li class="admin-nav-section-label">Administration</li>
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="audit">
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4.5h12a2 2 0 0 1 2 2v13H4v-13a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7"/><path d="M8 9h8M8 12.5h8M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                     Audit Trail
                 </button>
             </li>
-
-            <div class="admin-nav-divider"></div>
-
-            <li><button type="button" class="admin-nav-link" data-admin-nav="announcement"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 13 4 0 10 5V6L8 11H4v2Zm4 0 1.5 6h3L10.5 13M18 9.5a4 4 0 0 1 0 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Announcement</button></li>
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="settings">
                     <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
@@ -157,7 +164,7 @@
                 </button>
                 <div class="admin-topbar-title">
                     <h1 data-admin-title>Booking Overview</h1>
-                    <p data-admin-subtitle hidden></p>
+                    <p data-admin-subtitle>View booking trends and business activity.</p>
                 </div>
             </div>
 
@@ -378,7 +385,8 @@
                     </div>
                     <nav class="admin-staff-pagination" data-admin-staff-pagination aria-label="Staff list pages" hidden>
                         <button type="button" class="admin-btn-ghost" data-admin-staff-page-prev disabled>Previous</button>
-                        <span data-admin-staff-page-info aria-live="polite">Page 1 of 1</span>
+                        <span class="owner-page-numbers" data-admin-staff-page-numbers></span>
+                        <span data-admin-staff-count aria-live="polite">0 staff</span>
                         <button type="button" class="admin-btn-ghost" data-admin-staff-page-next disabled>Next</button>
                     </nav>
                 </div>
@@ -448,10 +456,10 @@
                     <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Business Hours</button></div>
                 </div>
                 <div class="admin-modal-overlay owner-rules-modal-overlay" data-owner-rules-modal hidden>
-                    <div class="admin-modal owner-rules-modal" role="dialog" aria-modal="true" aria-labelledby="ownerRulesModalTitle" tabindex="-1" data-owner-rules-dialog>
+                    <div class="admin-modal admin-edit-modal owner-rules-modal" role="dialog" aria-modal="true" aria-labelledby="ownerRulesModalTitle" tabindex="-1" data-owner-rules-dialog>
                         <button type="button" class="admin-modal-close" data-owner-rules-modal-close aria-label="Close Business Hours editor">×</button>
-                        <h3 id="ownerRulesModalTitle">Edit Business Hours</h3>
-                        <p class="admin-card-sub">Changes apply to shared availability from the effective date.</p>
+                        <header class="admin-modal-header"><h3 id="ownerRulesModalTitle">Edit Business Hours</h3><p class="admin-card-sub">Changes apply to shared availability from the effective date.</p></header>
+                        <div class="admin-modal-body">
                     <div class="owner-booking-rules-meta">
                         <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
                         <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required disabled><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
@@ -471,8 +479,11 @@
                             </tbody>
                         </table>
                     </div>
+                        </div>
+                        <footer class="admin-modal-footer">
                     <p class="owner-rules-message" data-owner-rules-message role="status" aria-live="polite"></p>
                     <div class="admin-form-actions owner-rules-actions"><button type="button" class="admin-btn-ghost" data-owner-rules-cancel hidden>Cancel</button><button type="button" class="admin-btn-save" data-owner-rules-save hidden>Save Business Hours</button></div>
+                        </footer>
                     </div>
                 </div>
             </section>
@@ -490,10 +501,10 @@
                     <div class="admin-form-actions"><button type="button" class="admin-btn-save" data-owner-payment-edit disabled>Edit payment settings</button></div>
                 </div>
                 <div class="admin-modal-overlay owner-payment-modal-overlay" data-owner-payment-modal hidden>
-                    <div class="admin-modal owner-payment-modal" role="dialog" aria-modal="true" aria-labelledby="ownerPaymentModalTitle" tabindex="-1" data-owner-payment-dialog>
+                    <div class="admin-modal admin-edit-modal owner-payment-modal" role="dialog" aria-modal="true" aria-labelledby="ownerPaymentModalTitle" tabindex="-1" data-owner-payment-dialog>
                         <button type="button" class="admin-modal-close" data-owner-payment-close aria-label="Close payment settings editor">×</button>
-                        <h3 id="ownerPaymentModalTitle">Edit payment settings</h3>
-                        <p class="admin-card-sub">Changes apply to new checkouts; existing bookings keep their agreed amount.</p>
+                        <header class="admin-modal-header"><h3 id="ownerPaymentModalTitle">Edit payment settings</h3><p class="admin-card-sub">Changes apply to new checkouts; existing bookings keep their agreed amount.</p></header>
+                        <div class="admin-modal-body">
                         <div class="owner-payment-config-grid">
                             <label class="admin-form-group owner-payment-percent"><span class="admin-form-label">Down payment</span><span class="owner-payment-percent-input"><input type="number" class="admin-input" min="0.01" max="99.99" step="0.01" inputmode="decimal" data-owner-payment-percent aria-describedby="ownerPaymentPercentHint"><span>%</span></span><span class="admin-form-hint" id="ownerPaymentPercentHint">Set the deposit percentage for new online bookings.</span></label>
                             <fieldset class="owner-payment-methods">
@@ -505,8 +516,11 @@
                                 <p class="admin-form-hint owner-payment-method-hint">Keep at least one online method enabled so customers can confirm bookings.</p>
                             </fieldset>
                         </div>
+                        </div>
+                        <footer class="admin-modal-footer">
                         <p class="owner-payment-config-message" data-owner-payment-editor-message role="status" aria-live="polite"></p>
                         <div class="admin-form-actions owner-payment-actions"><button type="button" class="admin-btn-ghost" data-owner-payment-cancel>Cancel</button><button type="button" class="admin-btn-save" data-owner-payment-save>Save payment settings</button></div>
+                        </footer>
                     </div>
                 </div>
             </section>
@@ -534,16 +548,16 @@
                         <div class="admin-review-list owner-review-browser-list" data-owner-review-list aria-live="polite" aria-busy="true"><p class="admin-form-hint">Loading reviews…</p></div>
                         <nav class="admin-review-pagination" data-owner-review-pagination aria-label="Customer review pages" hidden>
                             <button type="button" class="admin-btn-ghost" data-owner-review-prev disabled>Previous</button>
-                            <span data-owner-review-page-info aria-live="polite">Page 1 of 1</span>
+                            <span class="owner-page-numbers" data-owner-review-page-numbers></span>
                             <button type="button" class="admin-btn-ghost" data-owner-review-next disabled>Next</button>
                         </nav>
                     </section>
                 </div>
                 <div class="admin-modal-overlay owner-featured-review-overlay" data-featured-review-modal hidden>
-                    <div class="admin-modal owner-featured-review-modal" role="dialog" aria-modal="true" aria-labelledby="featuredReviewModalTitle" tabindex="-1" data-featured-review-dialog>
+                    <div class="admin-modal admin-edit-modal owner-featured-review-modal" role="dialog" aria-modal="true" aria-labelledby="featuredReviewModalTitle" tabindex="-1" data-featured-review-dialog>
                         <button type="button" class="admin-modal-close" data-featured-review-close aria-label="Close review chooser">×</button>
-                        <h3 id="featuredReviewModalTitle">Choose homepage reviews</h3>
-                        <p class="admin-card-sub">Select three reviews. Their numbers show the order on your landing page.</p>
+                        <header class="admin-modal-header"><h3 id="featuredReviewModalTitle">Choose homepage reviews</h3><p class="admin-card-sub">Select three reviews. Their numbers show the order on your landing page.</p></header>
+                        <div class="admin-modal-body">
                         <p class="owner-featured-review-count owner-featured-review-modal-count" data-featured-review-modal-count aria-live="polite">0 of 3 selected</p>
                         <div class="admin-review-filter" role="group" aria-label="Filter reviews by star rating">
                         <button type="button" class="admin-chip is-active" data-admin-review-rating="all" aria-pressed="true">All ratings</button>
@@ -558,11 +572,14 @@
                         </div>
                         <nav class="admin-review-pagination" data-admin-review-pagination aria-label="Review pages" hidden>
                         <button type="button" class="admin-btn-ghost" data-admin-review-prev disabled>Previous</button>
-                        <span data-admin-review-page-info aria-live="polite">Page 1 of 1</span>
+                        <span class="owner-page-numbers" data-admin-review-page-numbers></span>
                         <button type="button" class="admin-btn-ghost" data-admin-review-next disabled>Next</button>
                         </nav>
+                        </div>
+                        <footer class="admin-modal-footer">
                         <p class="owner-featured-review-modal-message" data-featured-review-modal-message role="status" aria-live="polite"></p>
                         <div class="admin-form-actions owner-featured-review-modal-actions"><button type="button" class="admin-btn-ghost" data-featured-review-cancel>Cancel</button><button type="button" class="admin-btn-save" data-featured-review-save disabled>Save selection</button></div>
+                        </footer>
                     </div>
                 </div>
             </section>
@@ -571,32 +588,59 @@
                  ============================================================ -->
             <section class="admin-panel" data-admin-panel="announcement">
                 <div class="admin-card owner-announcement-card">
-                    <div class="admin-card-head"><div><h3>Customer and staff announcements</h3><p class="admin-card-sub">Publish an update now or schedule it for a later time. Maintenance notices are published from the Court Listings editor.</p></div></div>
-                    <form class="owner-announcement-form" data-owner-announcement-form>
-                        <label class="admin-form-group"><span class="admin-form-label">Title</span><input type="text" class="admin-input" maxlength="120" autocomplete="off" data-owner-announcement-title required></label>
-                        <label class="admin-form-group"><span class="admin-form-label">Message</span><textarea class="admin-input" rows="4" maxlength="2000" data-owner-announcement-body required></textarea></label>
-                        <div class="owner-announcement-options">
-                            <label class="admin-form-group"><span class="admin-form-label">Audience</span><select class="admin-input" data-owner-announcement-audience><option value="both">Customers and staff</option><option value="customers">Customers only</option><option value="staff">Staff only</option></select></label>
-                            <label class="admin-form-group"><span class="admin-form-label">Publish time · Manila time</span><input type="datetime-local" class="admin-input" data-owner-announcement-publish-at><span class="admin-form-hint">Leave blank to publish immediately.</span></label>
+                    <div class="admin-card-head">
+                        <div class="owner-announcement-filters" aria-label="Filter announcements">
+                            <label class="admin-form-group owner-announcement-search"><span class="admin-form-label">Search announcements</span><input type="search" class="admin-input" maxlength="200" autocomplete="off" placeholder="Search title or message" data-owner-announcement-search></label>
+                            <label class="admin-form-group owner-announcement-status-filter"><span class="admin-form-label">Status</span><select class="admin-input" data-owner-announcement-status><option value="">All</option><option value="published">Published</option><option value="scheduled">Scheduled</option></select></label>
                         </div>
-                        <p class="owner-announcement-message" data-owner-announcement-message role="status" aria-live="polite"></p>
-                        <div class="admin-form-actions"><button type="submit" class="admin-btn-save" data-owner-announcement-submit>Publish announcement</button></div>
-                    </form>
+                        <button type="button" class="admin-btn-save" data-owner-announcement-new>Publish a new announcement</button>
+                    </div>
                     <div class="owner-announcement-list-wrap">
-                        <div class="owner-announcement-list-head"><h4>Published and scheduled</h4><button type="button" class="admin-btn-ghost" data-owner-announcement-refresh>Refresh</button></div>
+                        <div class="owner-announcement-list-head">
+                            <h4>Published and scheduled</h4>
+                        </div>
+                        <p class="owner-announcement-count" data-owner-announcement-count role="status" aria-live="polite"></p>
                         <div class="owner-announcement-list" data-owner-announcement-list aria-live="polite"><p class="admin-form-hint">Open Announcement to load announcements.</p></div>
-                        <nav class="owner-announcement-pages" aria-label="Announcement pages" data-owner-announcement-pages hidden><button type="button" class="admin-btn-ghost" data-owner-announcement-prev>Previous</button><span data-owner-announcement-page aria-live="polite"></span><button type="button" class="admin-btn-ghost" data-owner-announcement-next>Next</button></nav>
+                        <nav class="owner-announcement-pages" aria-label="Announcement pages" data-owner-announcement-pages hidden><button type="button" class="admin-btn-ghost" data-owner-announcement-prev>Previous</button><span class="owner-page-numbers" data-owner-announcement-page-numbers></span><button type="button" class="admin-btn-ghost" data-owner-announcement-next>Next</button></nav>
                     </div>
                 </div>
             </section>
+            <div class="admin-modal-overlay" data-owner-announcement-modal hidden>
+                <form class="admin-modal admin-edit-modal owner-announcement-modal" role="dialog" aria-modal="true" aria-labelledby="ownerAnnouncementModalTitle" tabindex="-1" data-owner-announcement-form>
+                    <button type="button" class="admin-modal-close" data-owner-announcement-close aria-label="Close announcement editor">×</button>
+                    <header class="admin-modal-header"><h3 id="ownerAnnouncementModalTitle" data-owner-announcement-modal-title>Publish a new announcement</h3><p class="admin-card-sub">Share an update with customers, staff, or both.</p></header>
+                    <div class="admin-modal-body">
+                        <div class="admin-wizard-steps" role="list" aria-label="Announcement steps" data-owner-announcement-steps>
+                            <div class="admin-wizard-step is-current" role="listitem" data-owner-announcement-indicator="1"><span class="admin-wizard-step-num">1</span><span class="admin-wizard-step-label">Content</span></div>
+                            <div class="admin-wizard-step" role="listitem" data-owner-announcement-indicator="2"><span class="admin-wizard-step-num">2</span><span class="admin-wizard-step-label">Audience</span></div>
+                            <div class="admin-wizard-step" role="listitem" data-owner-announcement-indicator="3"><span class="admin-wizard-step-num">3</span><span class="admin-wizard-step-label">Publish time</span></div>
+                        </div>
+                        <section class="admin-wizard-panel is-active" data-owner-announcement-step="1">
+                            <label class="admin-form-group"><span class="admin-form-label">Title</span><input type="text" class="admin-input" maxlength="120" autocomplete="off" data-owner-announcement-title required></label>
+                            <label class="admin-form-group"><span class="admin-form-label">Message</span><textarea class="admin-input" rows="4" maxlength="2000" data-owner-announcement-body required></textarea></label>
+                        </section>
+                        <section class="admin-wizard-panel" data-owner-announcement-step="2" hidden>
+                            <label class="admin-form-group"><span class="admin-form-label">Audience</span><select class="admin-input" data-owner-announcement-audience><option value="both">Customers and staff</option><option value="customers">Customers only</option><option value="staff">Staff only</option></select></label>
+                        </section>
+                        <section class="admin-wizard-panel" data-owner-announcement-step="3" hidden>
+                            <label class="admin-form-group"><span class="admin-form-label">Publish time · Manila time</span><input type="datetime-local" class="admin-input" data-owner-announcement-publish-at><span class="admin-form-hint" data-owner-announcement-time-hint>Leave blank to publish immediately.</span></label>
+                        </section>
+                        <p class="owner-announcement-message" data-owner-announcement-message role="status" aria-live="polite"></p>
+                    </div>
+                    <footer class="admin-modal-footer owner-announcement-wizard-nav">
+                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-owner-announcement-close>Cancel</button><button type="button" class="admin-btn-ghost" data-owner-announcement-back hidden>Go back</button><button type="button" class="admin-btn-save" data-owner-announcement-wizard-next>Next</button><button type="submit" class="admin-btn-save" data-owner-announcement-submit hidden>Publish announcement</button>
+                    </footer>
+                </form>
+            </div>
             <section class="admin-panel" data-admin-panel="audit">
                 <div class="admin-card owner-audit-card">
                     <div class="owner-audit-filters" aria-label="Audit trail filters">
                         <label class="admin-form-group"><span class="admin-form-label">Search Event ID or Actor name</span><input type="search" class="admin-input" maxlength="120" placeholder="Search event ID or actor name" data-owner-audit-search></label>
-                        <label class="admin-form-group"><span class="admin-form-label">Date and time · Manila time</span><input type="datetime-local" class="admin-input" data-owner-audit-datetime><span class="admin-form-hint">Matches events in the selected minute.</span></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Date</span><input type="date" class="admin-input" data-owner-audit-date></label>
+                        <label class="admin-form-group"><span class="admin-form-label">From · Manila time</span><span class="owner-audit-time-picker" data-owner-audit-time-picker="from"><input type="hidden" data-owner-audit-from disabled><button type="button" class="admin-input owner-audit-time-trigger" data-owner-audit-time-trigger="from" aria-label="From time, Manila time" aria-haspopup="dialog" aria-expanded="false" disabled>Select time</button><span class="owner-audit-time-popover" data-owner-audit-time-popover="from" role="dialog" aria-label="Choose From time" hidden></span></span></label>
+                        <label class="admin-form-group"><span class="admin-form-label">To · Manila time</span><span class="owner-audit-time-picker" data-owner-audit-time-picker="to"><input type="hidden" data-owner-audit-to disabled><button type="button" class="admin-input owner-audit-time-trigger" data-owner-audit-time-trigger="to" aria-label="To time, Manila time" aria-haspopup="dialog" aria-expanded="false" disabled>End of day</button><span class="owner-audit-time-popover" data-owner-audit-time-popover="to" role="dialog" aria-label="Choose To time" hidden></span></span></label>
                         <label class="admin-form-group"><span class="admin-form-label">Role</span><select class="admin-select" data-owner-audit-role><option value="all">All roles</option><option value="admin">Owner</option><option value="staff">Staff</option><option value="customer">Customer</option><option value="system">System</option></select></label>
                     </div>
-                    <p class="owner-audit-session-note">Sign-out entries record a sign-out action handled by IñigoSync. Closing a browser or tab cannot be reliably observed.</p>
                     <p class="owner-audit-status" data-owner-audit-status role="status" aria-live="polite">Open Audit Trail to load events.</p>
                     <div class="owner-audit-table-wrap" role="region" aria-label="Audit trail events" tabindex="0">
                     <table class="admin-table owner-audit-table">
@@ -606,17 +650,9 @@
                             <tbody data-owner-audit-rows><tr><td colspan="7">No events loaded.</td></tr></tbody>
                         </table>
                     </div>
-                    <nav class="owner-audit-pagination" data-owner-audit-pagination aria-label="Audit trail pages" hidden><button type="button" class="admin-btn-ghost" data-owner-audit-prev disabled>Previous</button><span data-owner-audit-page-info aria-live="polite">Page 1 of 1</span><button type="button" class="admin-btn-ghost" data-owner-audit-next disabled>Next</button></nav>
+                    <nav class="owner-audit-pagination" data-owner-audit-pagination aria-label="Audit trail pages" hidden><button type="button" class="admin-btn-ghost" data-owner-audit-prev disabled>Previous</button><span class="owner-page-numbers" data-owner-audit-page-numbers></span><button type="button" class="admin-btn-ghost" data-owner-audit-next disabled>Next</button></nav>
                 </div>
             </section>
-            <div class="admin-modal-overlay owner-audit-detail-overlay" data-owner-audit-detail-modal hidden>
-                <section class="admin-modal owner-audit-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="ownerAuditDetailTitle" aria-describedby="ownerAuditDetailDescription" tabindex="-1" data-owner-audit-detail-dialog>
-                    <button type="button" class="admin-modal-close" data-owner-audit-detail-close aria-label="Close event summary">×</button>
-                    <h3 id="ownerAuditDetailTitle">Event summary</h3>
-                    <p class="admin-card-sub" id="ownerAuditDetailDescription">Detailed information recorded for this event.</p>
-                    <dl class="owner-audit-detail-list" data-owner-audit-detail-list></dl>
-                </section>
-            </div>
             <section class="admin-panel" data-admin-panel="settings">
                 <div class="admin-card owner-account-card">
                     <section class="owner-photo-section" aria-label="Profile photo">
@@ -807,13 +843,13 @@
      is unchanged, so the existing invite/submit handler
      (data-admin-staff-submit) needed no logic changes. -->
 <div class="admin-modal-overlay" data-admin-staff-modal hidden>
-    <div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminStaffModalTitle" tabindex="-1" data-admin-staff-form data-admin-staff-dialog>
+    <div class="admin-modal admin-edit-modal" role="dialog" aria-modal="true" aria-labelledby="adminStaffModalTitle" tabindex="-1" data-admin-staff-form data-admin-staff-dialog>
         <button type="button" class="admin-modal-close" data-admin-staff-modal-close aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
 
-        <h3 id="adminStaffModalTitle">New Staff Account</h3>
-        <p class="admin-form-hint">Enter the staff member’s personal email and position. We’ll send their login email and a temporary password to that address. They’ll set a new password and enter their personal information when they first sign in.</p>
+        <header class="admin-modal-header"><h3 id="adminStaffModalTitle">New Staff Account</h3><p class="admin-form-hint">Enter the staff member’s personal email and position. We’ll send their login email and a temporary password to that address. They’ll set a new password and enter their personal information when they first sign in.</p></header>
+        <div class="admin-modal-body">
 
         <div class="admin-form-group">
             <span class="admin-form-label">Personal email address</span>
@@ -828,10 +864,11 @@
             </select>
         </div>
 
-        <div class="admin-form-actions">
+        </div>
+        <footer class="admin-form-actions admin-modal-footer">
             <button type="button" class="admin-btn-ghost" data-admin-staff-modal-close>Cancel</button>
             <button type="button" class="admin-btn-save" data-admin-staff-submit>Create Staff Account</button>
-        </div>
+        </footer>
     </div>
 </div>
 
@@ -849,15 +886,17 @@
      backdrop mousedown+click/×, focus-first-field) as the Add New Staff
      modal above. -->
 <div class="admin-modal-overlay" data-admin-staff-edit-modal hidden>
-    <div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="adminStaffEditModalTitle" tabindex="-1" data-admin-staff-edit-dialog>
+    <div class="admin-modal admin-edit-modal" role="dialog" aria-modal="true" aria-labelledby="adminStaffEditModalTitle" tabindex="-1" data-admin-staff-edit-dialog>
         <button type="button" class="admin-modal-close" data-admin-staff-edit-modal-close aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
 
-        <h3 id="adminStaffEditModalTitle" data-admin-staff-edit-modal-title>Staff Details</h3>
+        <header class="admin-modal-header"><h3 id="adminStaffEditModalTitle" data-admin-staff-edit-modal-title>Staff Details</h3>
         <!-- Age is derived from birthdate and never stored. -->
         <p class="admin-form-hint" data-admin-staff-edit-meta>—</p>
+        </header>
 
+        <div class="admin-modal-body">
         <dl class="admin-profile-dl owner-staff-details-view" data-admin-staff-details-view hidden>
             <div class="admin-profile-dl-row"><dt>Full name</dt><dd data-admin-staff-detail-name>—</dd></div>
             <div class="admin-profile-dl-row"><dt>Position</dt><dd data-admin-staff-detail-position>—</dd></div>
@@ -879,11 +918,12 @@
                 </select>
             </div>
         </div>
+        </div>
 
-        <div class="admin-form-actions">
+        <footer class="admin-form-actions admin-modal-footer">
             <button type="button" class="admin-btn-ghost" data-admin-staff-edit-modal-close>Close</button>
             <button type="button" class="admin-btn-save" data-admin-staff-edit-submit hidden>Save Position</button>
-        </div>
+        </footer>
     </div>
 </div>
 
@@ -972,21 +1012,27 @@
 <script src="../includes/imageTools.js"></script>
 
 <div class="admin-modal-overlay" data-admin-slide-modal hidden>
-    <div class="admin-modal admin-slide-modal owner-media-modal" role="dialog" aria-modal="true" aria-labelledby="ownerMediaModalTitle" tabindex="-1" data-admin-slide-dialog>
+    <div class="admin-modal admin-edit-modal admin-slide-modal owner-media-modal" role="dialog" aria-modal="true" aria-labelledby="ownerMediaModalTitle" tabindex="-1" data-admin-slide-dialog>
         <button type="button" class="admin-modal-close" data-admin-slide-modal-close aria-label="Close slide editor">×</button>
-        <h3 id="ownerMediaModalTitle" data-admin-slide-modal-title>Edit slide</h3>
-        <div data-admin-slide-editor></div>
+        <header class="admin-modal-header"><h3 id="ownerMediaModalTitle" data-admin-slide-modal-title>Edit slide</h3></header>
+        <div class="admin-modal-body" data-admin-slide-editor></div>
+        <footer class="admin-modal-footer owner-media-actions">
+            <button type="button" class="admin-btn-ghost" data-admin-slide-modal-close>Cancel</button>
+            <button type="button" class="admin-btn-chip-danger" data-media-remove hidden>Remove</button>
+            <button type="submit" class="admin-btn-save" data-media-save form="ownerMediaForm">Save</button>
+        </footer>
     </div>
 </div>
 
 <div class="admin-modal-overlay" data-admin-settings-profile-modal hidden>
-    <div class="admin-modal admin-account-modal" id="adminProfileEditDialog" role="dialog" aria-modal="true" aria-labelledby="adminPersonalInfoTitle" tabindex="-1">
+    <div class="admin-modal admin-edit-modal admin-account-modal" id="adminProfileEditDialog" role="dialog" aria-modal="true" aria-labelledby="adminPersonalInfoTitle" tabindex="-1">
         <button type="button" class="admin-modal-close" data-admin-settings-cancel="profile" aria-label="Close personal information editor">×</button>
-        <h3 id="adminPersonalInfoTitle">Edit Personal Information</h3>
+        <header class="admin-modal-header"><h3 id="adminPersonalInfoTitle">Edit Personal Information</h3></header>
+        <div class="admin-modal-body">
         <div class="admin-settings-grid">
             <label class="admin-form-group"><span class="admin-form-label">Full name</span><input type="text" class="admin-input" autocomplete="name" data-admin-settings-name></label>
             <div class="admin-form-group"><span class="admin-form-label">Email address</span><p class="admin-input admin-readonly-email" data-admin-settings-email>—</p><span class="admin-form-hint">Your sign-in email cannot be changed.</span></div>
-            <div class="admin-form-group owner-mobile-verification"><span class="admin-form-label">Mobile number · optional</span><div class="owner-mobile-edit-row"><input type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile><button type="button" class="admin-btn-secondary" data-admin-mobile-validate disabled>Save number</button><button type="button" class="admin-btn-secondary" data-admin-mobile-remove hidden>Remove</button></div><span class="admin-form-hint" id="adminOwnerMobileStatus" data-admin-mobile-message role="status">We check Philippine mobile format and whether the number is already linked to an account.</span></div>
+            <div class="admin-form-group owner-mobile-verification"><label class="admin-form-label" for="adminOwnerMobileInput">Mobile number · optional</label><input id="adminOwnerMobileInput" type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile><span class="admin-form-hint" id="adminOwnerMobileStatus" data-admin-mobile-message role="status">We check Philippine mobile format and whether the number is already linked to an account.</span></div>
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
@@ -995,10 +1041,11 @@
             <div><strong>Linked Google accounts</strong><div data-admin-linked-google-emails><p class="admin-form-hint">Loading linked accounts…</p></div></div>
             <button type="button" class="admin-btn-secondary" data-admin-link-google>Add Gmail address</button>
         </div>
-        <div class="admin-form-actions">
+        </div>
+        <footer class="admin-form-actions admin-modal-footer">
             <button type="button" class="admin-btn-ghost" data-admin-settings-cancel="profile">Cancel</button>
             <button type="button" class="admin-btn-save" data-admin-settings-save="profile">Save Changes</button>
-        </div>
+        </footer>
     </div>
 </div>
 

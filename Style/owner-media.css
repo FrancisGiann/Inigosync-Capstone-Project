@@ -29,7 +29,8 @@
 .owner-media-textarea { min-height: 92px; resize: vertical; padding-top: 10px; }
 .owner-media-form .admin-slide-publish-row { align-items: center; flex-wrap: wrap; gap: 10px; }
 .owner-media-form .admin-slide-publish-row .admin-form-hint { flex-basis: 100%; margin: 0; }
-.owner-media-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding-top: 16px; border-top: 1px solid var(--color-border, #ded9d1); }
+.owner-media-actions { display: flex; align-items: center; gap: 10px; }
+.owner-media-actions [hidden] { display: none; }
 .owner-media-actions-spacer { flex: 1; }
 .owner-media-actions [data-media-remove] { margin-right: auto; }
 .owner-media-actions button { min-height: 42px; }

@@ -39,7 +39,7 @@ test('owner picker uses an accessible modal and confirms changed selections at e
     assert.match(ownerScript, /owner_save_featured_booking_reviews/);
     assert.match(ownerScript, /review\.comment\.trim\(\)\.length > 0/);
     assert.match(ownerScript, /async function loadOwnerReviewBrowser\(force = false\)/);
-    assert.match(ownerScript, /ownerReviewBrowserLoading \|\| \(!force && ownerReviewBrowserLoaded\)/);
+    assert.match(ownerScript, /\(!force && ownerReviewBrowserLoading\) \|\| \(!force && ownerReviewBrowserLoaded\)/);
     assert.match(ownerScript, /event\.detail === 'feedback'[\s\S]*?loadOwnerReviewBrowser\(true\)/);
     assert.match(ownerScript, /from\('public_booking_reviews'\)\.select\('id,rating,comment,created_at', \{ count: 'exact' \}\)[\s\S]*?ownerReviewBrowserPage \* REVIEW_PAGE_SIZE/);
     assert.match(ownerScript, /No written comment/);

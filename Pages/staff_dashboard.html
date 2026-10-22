@@ -136,7 +136,7 @@
                             <button type="button" data-staff-notif-mark-selected disabled>Mark as read</button>
                         </div>
                         <div class="staff-notif-list" data-staff-notif-list><p class="staff-notif-empty">Open notifications to load updates.</p></div>
-                        <div class="staff-notif-pagination" data-staff-notif-pagination hidden><button type="button" class="staff-mini-btn" data-staff-notif-prev>Previous</button><span data-staff-notif-page aria-live="polite"></span><button type="button" class="staff-mini-btn" data-staff-notif-next>Next</button></div>
+                        <div class="staff-notif-pagination" data-staff-notif-pagination hidden><button type="button" class="staff-mini-btn" data-staff-notif-prev>Previous</button><span class="staff-page-numbers" data-staff-notif-page-numbers></span><button type="button" class="staff-mini-btn" data-staff-notif-next>Next</button></div>
                     </div>
                 </div>
 
@@ -485,7 +485,7 @@
                     </div>
                     <nav class="staff-schedule-pagination" data-staff-schedule-pagination aria-label="Court schedule pages" hidden>
                         <button type="button" class="staff-mini-btn" data-staff-schedule-page-prev disabled>Previous</button>
-                        <span data-staff-schedule-page-indicator aria-live="polite">Page 1 of 1</span>
+                        <span class="staff-page-numbers" data-staff-schedule-page-numbers></span>
                         <button type="button" class="staff-mini-btn" data-staff-schedule-page-next disabled>Next</button>
                     </nav>
                 </div>
@@ -741,8 +741,8 @@
                         <button type="button" class="staff-modal-close" data-staff-settings-profile-close aria-label="Close personal information editor">
                             <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                         </button>
-                        <h3 id="staffProfileModalTitle">Personal Information</h3>
-                        <p class="staff-form-hint">Full name, birthdate, and gender are managed by the owner. Contact details and emergency contact fields can be updated here.</p>
+                        <header class="staff-modal-header"><h3 id="staffProfileModalTitle">Personal Information</h3><p class="staff-form-hint">Full name, birthdate, and gender are managed by the owner. Contact details and emergency contact fields can be updated here.</p></header>
+                        <div class="staff-modal-body">
                         <div class="staff-form-row">
                             <div class="staff-form-group">
                                 <label class="staff-form-label" for="staff-settings-name">Full name</label>
@@ -792,7 +792,8 @@
                             </div>
                         </div>
                         <p class="staff-form-hint" data-staff-settings-details-hint hidden>Address, birthdate, gender, and emergency contact aren't available yet — ask the owner to run database update 018.</p>
-                        <div class="staff-form-actions">
+                        </div>
+                        <div class="staff-form-actions staff-modal-footer">
                             <button type="button" class="staff-btn-ghost" data-staff-settings-cancel="profile" hidden>Cancel</button>
                             <button type="button" class="staff-btn-primary" data-staff-settings-save="profile" hidden>Save Changes</button>
                         </div>

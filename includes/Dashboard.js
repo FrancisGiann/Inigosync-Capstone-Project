@@ -468,7 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const notifDot = document.querySelector('[data-dash-notif-dot]');
     const notifUnread = document.querySelector('[data-dash-notif-unread]');
     const notifPagination = document.querySelector('[data-dash-notif-pagination]');
-    const notifPageLabel = document.querySelector('[data-dash-notif-page]');
+    const notifPageNumbers = document.querySelector('[data-dash-notif-page-numbers]');
     const NOTIF_LIMIT = 10;
     let notifPage = 0;
     let notifTotalCount = 0;
@@ -478,6 +478,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const notifSelect = document.querySelector('[data-dash-notif-select]');
     const notifSelectedLabel = document.querySelector('[data-dash-notif-selected]');
     const notifMarkSelected = document.querySelector('[data-dash-notif-mark-selected]');
+
+    function renderCustomerPageNumbers(currentPage, pageCount) {
+        if (!notifPageNumbers) return;
+        const pages = pageCount <= 7
+            ? Array.from({ length: pageCount }, (_, index) => index + 1)
+            : [1, ...(currentPage > 3 ? ['gap'] : []),
+                ...Array.from({ length: 3 }, (_, index) => currentPage - 1 + index).filter(page => page > 1 && page < pageCount),
+                ...(currentPage < pageCount - 2 ? ['gap'] : []), pageCount];
+        notifPageNumbers.replaceChildren(...pages.map(page => {
+            if (page === 'gap') {
+                const gap = document.createElement('span');
+                gap.className = 'dash-page-gap';
+                gap.setAttribute('aria-hidden', 'true');
+                gap.textContent = '…';
+                return gap;
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dash-mini-btn dash-page-number';
+            button.textContent = String(page);
+            button.setAttribute('aria-label', `Page ${page}`);
+            if (page === currentPage) {
+                button.setAttribute('aria-current', 'page');
+                button.disabled = true;
+            } else button.addEventListener('click', () => { notifPage = page - 1; loadCustomerNotifications(); });
+            return button;
+        }));
+    }
 
     function syncCustomerNotificationSelection() {
         const checkboxes = notifList?.querySelectorAll('[data-dash-notif-select-row]') || [];
@@ -558,8 +586,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const unreadCount = Number(result.unread_count) || 0;
             if (notifUnread) notifUnread.textContent = unreadCount ? `${unreadCount} unread` : '';
             if (notifDot) notifDot.hidden = unreadCount === 0;
-            if (notifPagination) notifPagination.hidden = notifTotalCount <= NOTIF_LIMIT;
-            if (notifPageLabel) notifPageLabel.textContent = `Page ${notifPage + 1} of ${Math.max(1, Math.ceil(notifTotalCount / NOTIF_LIMIT))}`;
+            const pageCount = Math.max(1, Math.ceil(notifTotalCount / NOTIF_LIMIT));
+            if (notifPagination) notifPagination.hidden = pageCount <= 1;
+            renderCustomerPageNumbers(notifPage + 1, pageCount);
             const prev = document.querySelector('[data-dash-notif-prev]');
             const next = document.querySelector('[data-dash-notif-next]');
             if (prev) prev.disabled = notifPage === 0;

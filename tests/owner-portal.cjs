@@ -3,6 +3,23 @@
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
+async function chooseAuditTime(page, kind, value) {
+    const trigger = page.locator(`[data-owner-audit-time-trigger="${kind}"]`);
+    await trigger.click();
+    const popover = page.locator(`[data-owner-audit-time-popover="${kind}"]`);
+    if (!value) {
+        await popover.locator('[data-time-clear]').click();
+        return;
+    }
+    const [hour24, minute] = value.split(':').map(Number);
+    const period = hour24 < 12 ? 'AM' : 'PM';
+    const hour12 = hour24 % 12 || 12;
+    await popover.locator(`[data-time-part="period"][data-time-value="${period}"]`).click();
+    await popover.locator(`[data-time-part="hour"][data-time-value="${hour12}"]`).click();
+    await popover.locator(`[data-time-part="minute"][data-time-value="${minute}"]`).click();
+    await trigger.press('Escape');
+}
+
 const slides = [
     { id: '00000000-0000-4000-8000-000000000001', title: 'A very long featured tournament title that would otherwise push the card actions down and make its neighbors uneven', meta: 'First', tag: 'Event', image_url: null, display_order: 1, is_published: true, created_at: '2026-09-01T00:00:00Z' },
     { id: '00000000-0000-4000-8000-000000000002', title: 'Second slide', meta: 'Second', tag: null, image_url: null, display_order: 2, is_published: true, created_at: '2026-09-02T00:00:00Z' },
@@ -33,6 +50,7 @@ function fixture() {
     }));
     auditEvents.push({ event_id: 'owner-event-1', source: 'owner_activity', created_at: '2026-09-01T10:00:00Z', action: 'Owner profile updated', category: 'owner', actor_id: 'qa-owner', actor_name: 'QA Owner', actor_role: 'admin', target_type: 'settings', target_id: null, amount: null, summary: 'The owner updated their account settings.' });
     auditEvents.push({ event_id: 'session-event-1', source: 'customer_operational_events', created_at: '2026-09-02T10:00:00Z', action: 'sign_out', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-out observed' });
+    auditEvents.push({ event_id: 'session-event-2', source: 'customer_operational_events', created_at: '2026-09-02T11:00:00Z', action: 'sign_in', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-in observed' });
     const ownerRules = { timezone: 'Asia/Manila', rules: [{ effective_from: '2026-01-01', grace_minutes: 30, weekly_hours: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, opens_at: '08:00:00', closes_at: '22:00:00', is_closed: false })) }] };
     const state = window.__ownerQa = { calls: [], ownerActivityOrQueries: [], failReorder: false, failSeen: false, failFeaturedSelection: window.__ownerQaFailFeaturedSelection === true, phoneInUse: false };
     state.auditEvents = auditEvents;
@@ -369,7 +387,7 @@ async function verifyOwnerPaymentFlow(page) {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     const failures = [];
     try {
-        for (const width of process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_REVIEWS_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' || process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
+        for (const width of process.env.OWNER_QA_AUDIT_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_REVIEWS_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' || process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
             for (const theme of process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? ['light'] : ['light', 'dark']) {
                 const context = await browser.newContext({ viewport: { width, height: 900 }, timezoneId: 'Asia/Manila', reducedMotion: 'reduce' });
                 const page = await context.newPage();
@@ -436,7 +454,7 @@ async function verifyOwnerPaymentFlow(page) {
                         assert.equal(await page.locator('[data-owner-review-list] .owner-review-browser-item').count(), 10, 'one page contains at most ten reviews');
                         await page.locator('[data-owner-review-next]').click();
                         await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 1);
-                        assert.equal(await page.locator('[data-owner-review-page-info]').innerText(), 'Page 2 of 2', 'the eleventh review appears on page two');
+                        assert.equal(await page.locator('[data-owner-review-page-numbers] [aria-current="page"]').innerText(), '2', 'the eleventh review appears on page two');
                         await page.evaluate(() => { window.__ownerQa.tables.public_booking_reviews = window.__ownerQa.tables.public_booking_reviews.filter(review => !review.id.startsWith('page10-') && review.id !== 'page11'); });
                         await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
                         await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
@@ -568,6 +586,109 @@ async function verifyOwnerPaymentFlow(page) {
                         console.log(`PASS owner schedule ${width}px ${theme}`);
                         continue;
                     }
+                    if (process.env.OWNER_QA_AUDIT_ONLY === '1') {
+                        await page.locator('[data-admin-nav="audit"]').evaluate(el => el.click());
+                        await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.rpc === 'owner_audit_trail'));
+                        const auditDate = page.locator('[data-owner-audit-date]');
+                        const auditFrom = page.locator('[data-owner-audit-from]');
+                        const auditTo = page.locator('[data-owner-audit-to]');
+                        assert.equal(await page.locator('[data-owner-audit-date]').count(), 1, 'the filter has one date chooser');
+                        const manilaToday = await page.evaluate(() => {
+                            const parts = new Intl.DateTimeFormat('en', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+                            return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+                        });
+                        assert.equal(await auditDate.getAttribute('max'), `${manilaToday.year}-${manilaToday.month}-${manilaToday.day}`, 'the date picker maximum follows today in Manila');
+                        assert.equal(await page.locator('[data-owner-audit-time-picker="from"]').count(), 1);
+                        assert.equal(await page.locator('[data-owner-audit-time-picker="to"]').count(), 1);
+                        assert.equal(await page.locator('[data-owner-audit-time-trigger="from"]').getAttribute('class'), await page.locator('[data-owner-audit-time-trigger="to"]').getAttribute('class'), 'From and To use the same trigger styling');
+                        assert.equal(await auditFrom.isDisabled(), true, 'From stays disabled until a date is selected');
+                        assert.equal(await auditTo.isDisabled(), true, 'To stays disabled until a date is selected');
+                        let args = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1).args);
+                        assert.equal(args.p_from, null, 'an empty From remains unbounded');
+                        assert.equal(args.p_to, null, 'an empty To remains unbounded');
+                        const callsBeforeFutureDate = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').length);
+                        await page.evaluate(() => {
+                            const input = document.querySelector('[data-owner-audit-date]');
+                            const tomorrow = new Date(`${input.max}T00:00:00Z`);
+                            tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+                            input.value = tomorrow.toISOString().slice(0, 10);
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                        });
+                        await page.locator('[data-owner-audit-status]').getByText('Choose a valid time range on the selected date.').waitFor();
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').length), callsBeforeFutureDate, 'a programmatically entered future date never reaches the RPC');
+                        await auditDate.fill('2026-09-11');
+                        await page.waitForFunction(() => {
+                            const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                            return args?.p_from === '2026-09-10T16:00:00.000Z' && args?.p_to === '2026-09-11T16:00:00.000Z';
+                        });
+                        assert.equal(await auditFrom.isDisabled(), false, 'date selection enables From');
+                        assert.equal(await auditTo.isDisabled(), false, 'date selection enables To');
+                        await chooseAuditTime(page, 'from', '06:25');
+                        await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_from === '2026-09-10T22:25:00.000Z');
+                        await page.locator('[data-owner-audit-time-trigger="to"]').click();
+                        const toPicker = page.locator('[data-owner-audit-time-popover="to"]');
+                        assert.equal(await toPicker.locator('[data-time-part="hour"][data-time-value="5"]').count(), 0, 'To does not present 05 AM when From is 06:25');
+                        assert.equal(await toPicker.locator('[data-time-part="minute"][data-time-value="24"]').count(), 0, 'To does not present minute 24 while the selected hour is 06 AM');
+                        assert.equal(await toPicker.locator('[data-time-part="minute"][data-time-value="25"]').count(), 1, 'the same From minute remains selectable');
+                        assert.equal(await toPicker.locator('[data-time-part="minute"][data-time-value="59"]').count(), 1, 'the final minute of the selected hour remains selectable');
+                        const pickerBounds = await toPicker.boundingBox();
+                        const viewport = page.viewportSize();
+                        assert.ok(pickerBounds.x >= 0 && pickerBounds.x + pickerBounds.width <= viewport.width && pickerBounds.y >= 0 && pickerBounds.y + pickerBounds.height <= viewport.height, `${width}px time picker stays within the viewport: ${JSON.stringify({ pickerBounds, viewport })}`);
+                        await page.keyboard.press('ArrowDown');
+                        assert.equal(await page.evaluate(() => document.activeElement.dataset.timeValue), '7', 'ArrowDown moves through the focused hour column');
+                        await page.keyboard.press('Escape');
+                        assert.equal(await page.locator('[data-owner-audit-time-trigger="to"]').getAttribute('aria-expanded'), 'false', 'Escape closes the time popover');
+                        const screenshotDir = process.env.OWNER_QA_SCREENSHOT_DIR || require('node:os').tmpdir();
+                        require('node:fs').mkdirSync(screenshotDir, { recursive: true });
+                        await page.locator('[data-owner-audit-time-trigger="to"]').click();
+                        if (width === 1440) await page.screenshot({ path: require('node:path').join(screenshotDir, `owner-audit-time-picker-${theme}.png`), fullPage: false });
+                        await page.locator('[data-admin-title]').click();
+                        assert.equal(await page.locator('[data-owner-audit-time-trigger="to"]').getAttribute('aria-expanded'), 'false', 'outside click closes the time popover');
+                        await chooseAuditTime(page, 'to', '18:00');
+                        await page.waitForFunction(() => {
+                            const latest = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                            return latest?.p_from === '2026-09-10T22:25:00.000Z' && latest?.p_to === '2026-09-11T10:01:00.000Z';
+                        });
+                        await chooseAuditTime(page, 'from', '06:45');
+                        assert.equal(await auditTo.inputValue(), '', 'changing From clears the previous To value');
+                        await auditTo.evaluate(el => { el.value = '05:59'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+                        const callsBeforeInvalidTo = await page.evaluate(() => {
+                            const calls = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail');
+                            return { count: calls.length, args: calls.at(-1).args };
+                        });
+                        await page.locator('[data-owner-audit-status]').getByText('Choose a valid time range on the selected date.').waitFor();
+                        const callsAfterInvalidTo = await page.evaluate(() => {
+                            const calls = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail');
+                            return { count: calls.length, args: calls.at(-1).args };
+                        });
+                        assert.equal(callsAfterInvalidTo.count, callsBeforeInvalidTo.count, 'an invalid To value never reaches the RPC');
+                        assert.deepEqual(callsAfterInvalidTo.args, callsBeforeInvalidTo.args, 'an invalid To value leaves the previous valid RPC bounds unchanged');
+                        await auditDate.fill('2026-09-12');
+                        assert.equal(await auditFrom.inputValue(), '', 'changing the date clears From');
+                        assert.equal(await auditTo.inputValue(), '', 'changing the date clears To');
+                        await page.waitForFunction(() => {
+                            const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                            return args?.p_from === '2026-09-11T16:00:00.000Z' && args?.p_to === '2026-09-12T16:00:00.000Z';
+                        });
+                        await chooseAuditTime(page, 'from', '');
+                        await chooseAuditTime(page, 'to', '09:00');
+                        await page.waitForFunction(() => {
+                            const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                            return args?.p_from === '2026-09-11T16:00:00.000Z' && args?.p_to === '2026-09-12T01:01:00.000Z';
+                        });
+                        await chooseAuditTime(page, 'to', '');
+                        await page.waitForFunction(() => {
+                            const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                            return args?.p_from === '2026-09-11T16:00:00.000Z' && args?.p_to === '2026-09-12T16:00:00.000Z';
+                        });
+                        assert.equal(await page.evaluate(() => [...document.querySelectorAll('.owner-audit-filters input')].every(input => {
+                            const box = input.getBoundingClientRect();
+                            return box.left >= 0 && box.right <= innerWidth && input.scrollWidth <= input.clientWidth;
+                        })), true, `${width}px audit controls fit the viewport`);
+                        assert.deepEqual(errors, [], `${width}px audit filter flow has no uncaught page errors`);
+                        console.log(`PASS owner Audit Trail filters ${width}px ${theme}`);
+                        continue;
+                    }
                     if (process.env.OWNER_QA_COURTS_ONLY !== '1') {
                     assert.equal(await page.locator('[data-admin-slides] [data-media-card]').count(), 2);
                     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}/${theme} horizontal overflow on overview`);
@@ -678,13 +799,30 @@ async function verifyOwnerPaymentFlow(page) {
                     assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'Edit enables weekly hours');
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('40');
-                    const scheduleTimeOptions = await page.locator('[data-owner-rules-open], [data-owner-rules-close]').evaluateAll(selects => selects.map(select => ({
-                        tag: select.tagName,
-                        values: [...select.options].map(option => option.value).filter(Boolean),
-                    })));
-                    assert.ok(scheduleTimeOptions.every(({ tag, values }) => tag === 'SELECT'
-                        && values.length === 24 && values.every(value => /^\d{2}:00$/.test(value))),
-                    'every weekday schedule control only offers whole-hour values');
+                    const scheduleTimeOptions = await page.locator('[data-owner-rules-day]').evaluateAll(rows => rows.map(row => {
+                        const open = row.querySelector('[data-owner-rules-open]');
+                        const close = row.querySelector('[data-owner-rules-close]');
+                        return {
+                            openTag: open.tagName,
+                            openOptions: [...open.options].map(option => option.value).filter(Boolean),
+                            openingTime: open.value,
+                            closeTag: close.tagName,
+                            closeOptions: [...close.options].map(option => option.value).filter(Boolean),
+                        };
+                    }));
+                    assert.ok(scheduleTimeOptions.every(({ openTag, openOptions, openingTime, closeTag, closeOptions }) => openTag === 'SELECT'
+                        && closeTag === 'SELECT'
+                        && openOptions.length === 24 && openOptions.every(value => /^\d{2}:00$/.test(value))
+                        && closeOptions.every(value => /^\d{2}:00$/.test(value) && value > openingTime)),
+                    'opening controls offer whole hours and each closing control only offers later whole hours');
+                    const mondayOpen = page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]');
+                    const mondayClose = page.locator('[data-owner-rules-day="1"] [data-owner-rules-close]');
+                    const mondayOpeningTime = await mondayOpen.inputValue();
+                    await mondayOpen.selectOption('22:00');
+                    assert.deepEqual(await mondayClose.locator('option').evaluateAll(options => options.map(option => option.value)), ['', '23:00'],
+                        'closing options update immediately when opening time changes');
+                    assert.equal(await mondayClose.inputValue(), '23:00', 'an invalid closing selection moves to the earliest later option');
+                    await mondayOpen.selectOption(mondayOpeningTime);
                     await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').evaluate(select => { select.value = '09:30'; });
                     await page.locator('[data-owner-rules-save]').click();
                     assert.match(await page.locator('[data-owner-rules-message]').innerText(), /whole-hour.*:00/i, 'minute values are rejected before save');
@@ -694,12 +832,17 @@ async function verifyOwnerPaymentFlow(page) {
                     await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
                     await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
                     assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), true, 'declining schedule discard leaves edits intact');
+                    await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').selectOption('22:00');
+                    assert.deepEqual(await page.locator('[data-owner-rules-day="1"] [data-owner-rules-close] option').evaluateAll(options => options.map(option => option.value)), ['', '23:00'],
+                        'draft opening time filters the saved closing time before reload');
                     await page.locator('[data-owner-rules-cancel]').click();
                     await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
                     assert.equal(await page.locator('[data-owner-rules-modal]').isVisible(), false, 'Cancel closes schedule editor modal');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_get_booking_rules').length >= 2);
                     assert.equal(await page.locator('[data-owner-rules-effective]').inputValue(), await page.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())), 'Cancel reloads and discards draft values');
                     assert.equal(await page.locator('[data-owner-rules-grace]').inputValue(), '30');
+                    assert.equal(await page.locator('[data-owner-rules-day="1"] [data-owner-rules-close]').inputValue(), '22:00',
+                        'reloading rules restores the server closing time after it was filtered out by a draft opening time');
                     assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'Cancel leaves the main saved summary unchanged');
                     assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), false, 'Cancel does not expose draft values as a scheduled summary');
                     await page.locator('[data-owner-rules-edit]').click();
@@ -791,26 +934,26 @@ async function verifyOwnerPaymentFlow(page) {
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.avatar_url === null));
                     assert.equal(await page.locator('[data-admin-avatar-remove]').isVisible(), false, 'Remove Photo hides after the avatar is removed');
 
-                    // Owner mobile status is checked automatically after a complete PH number is entered, then saved explicitly.
+                    // Owner mobile status is checked automatically; profile Save Changes commits a checked number.
                     await page.locator('[data-admin-profile-edit]').click();
                     const ownerMobile = page.locator('[data-admin-settings-mobile]');
+                    assert.equal(await page.locator('[data-admin-mobile-validate], [data-admin-mobile-remove]').count(), 0, 'mobile field has no adjacent save or remove buttons');
                     await ownerMobile.fill('+63 917 123 4567');
-                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Save number to add'));
+                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Select Save Changes'));
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'one complete number triggers one debounced database check');
                     assert.deepEqual(await page.evaluate(() => window.__ownerQa.calls.find(call => call.function === 'validate-contact-phone').options.body), { phone: '09171234567' }, 'international input is normalized before the database check');
                     assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /format and available/);
-                    assert.equal(await page.locator('[data-admin-mobile-validate]').isEnabled(), true);
                     await ownerMobile.fill('09171234567');
-                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Save number to add'));
+                    await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('Select Save Changes'));
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'same normalized value in another format reuses its recent check');
-                    await page.locator('[data-admin-mobile-validate]').click();
+                    await page.locator('[data-admin-settings-save="profile"]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.table === 'profiles' && call.write === 'update' && call.payload.contact_num === '+639171234567'));
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.function === 'validate-contact-phone').length), 1, 'saving uses the completed check without a second lookup');
-                    assert.match(await page.locator('[data-admin-mobile-message]').innerText(), /format and availability checks/);
+                    await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
+                    await page.locator('[data-admin-profile-edit]').click();
                     await page.evaluate(() => window.__ownerQa.phoneInUse = true);
                     await ownerMobile.fill('09991234567');
                     await page.waitForFunction(() => document.querySelector('[data-admin-mobile-message]').textContent.includes('already in use by another account'));
-                    assert.equal(await page.locator('[data-admin-mobile-validate]').isEnabled(), false, 'a number in use by another account cannot be saved');
                     await page.locator('[data-admin-settings-cancel="profile"]').last().click();
                     await page.locator('[data-admin-settings-profile-modal]').waitFor({ state: 'hidden' });
 
@@ -872,7 +1015,7 @@ async function verifyOwnerPaymentFlow(page) {
                     const auditLayout = await page.locator('.owner-audit-filters').evaluate(el => {
                         const groups = [...el.querySelectorAll('.admin-form-group')].map(group => {
                             const label = group.querySelector('.admin-form-label').getBoundingClientRect();
-                            const control = group.querySelector('input, select').getBoundingClientRect();
+                            const control = (group.querySelector('[data-owner-audit-time-trigger]') || group.querySelector('input, select')).getBoundingClientRect();
                             const box = group.getBoundingClientRect();
                             return { row: Math.round(box.top), labelHeight: label.height, controlTop: control.top, controlWidth: control.width, groupWidth: box.width };
                         });
@@ -893,24 +1036,45 @@ async function verifyOwnerPaymentFlow(page) {
                     assert.ok(auditLongCells.every(cell => cell.title === cell.text), 'truncated audit IDs expose their full text in the title tooltip');
                     assert.deepEqual(await page.locator('.owner-audit-table thead th').allTextContents(), ['Event ID', 'Date & Time', 'Event', 'Role', 'Actor', 'Amount', 'Summary']);
                     // Auto refresh prepends one mocked event, so index 1 is the fixture's first reservation event.
-                    await page.locator('[data-owner-audit-summary="1"]').click();
-                    await page.locator('[data-owner-audit-detail-dialog]').getByText('Walk-in Customer', { exact: true }).waitFor();
-                    await page.locator('[data-owner-audit-detail-dialog]').getByText('complete event details', { exact: false }).waitFor();
-                    await page.keyboard.press('Escape');
-                    await page.locator('[data-owner-audit-detail-modal]').waitFor({ state: 'hidden' });
+                    assert.equal(await page.locator('.owner-audit-summary').nth(1).innerText(), 'Walk-in booking recorded: Walk-in Customer · Court 1', 'booking summaries explain the action and identify the customer and court');
+                    assert.equal(await page.locator('[data-owner-audit-summary]').count(), 0, 'audit summaries are plain text and have no View controls');
                     assert.equal(await page.locator('[data-owner-audit-rows] tr').count(), 25);
-                    assert.match(await page.locator('[data-owner-audit-page-info]').innerText(), /Page 1 of 2/);
+                    assert.equal(await page.locator('[data-owner-audit-page-numbers] [aria-current="page"]').innerText(), '1');
                     await page.locator('[data-owner-audit-next]').click();
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_offset === 25);
-                    assert.match(await page.locator('[data-owner-audit-page-info]').innerText(), /Page 2 of 2/);
+                    assert.equal(await page.locator('[data-owner-audit-page-numbers] [aria-current="page"]').innerText(), '2');
+                    assert.equal(await page.locator('[data-owner-audit-rows] tr').filter({ hasText: 'session-event-1' }).locator('.owner-audit-summary').innerText(), 'Signed out of IñigoSync', 'sign-out summary uses plain language');
+                    assert.equal(await page.locator('[data-owner-audit-rows] tr').filter({ hasText: 'session-event-2' }).locator('.owner-audit-summary').innerText(), 'Signed in to IñigoSync', 'sign-in summary uses plain language');
                     await page.locator('[data-owner-audit-role]').selectOption('staff');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_actor_role === 'staff');
-                    await page.locator('[data-owner-audit-datetime]').fill('2026-09-11T18:00');
+                    const auditDate = page.locator('[data-owner-audit-date]');
+                    const auditFrom = page.locator('[data-owner-audit-from]');
+                    const auditTo = page.locator('[data-owner-audit-to]');
+                    assert.equal(await auditFrom.isDisabled(), true, 'From stays disabled until a date is selected');
+                    assert.equal(await auditTo.isDisabled(), true, 'To stays disabled until a date is selected');
+                    await auditDate.fill('2026-09-11');
                     await page.waitForFunction(() => {
                         const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
-                        return args?.p_from === '2026-09-11T10:00:00.000Z' && args?.p_to === '2026-09-11T10:01:00.000Z';
+                        return args?.p_from === '2026-09-10T16:00:00.000Z' && args?.p_to === '2026-09-11T16:00:00.000Z';
+                    });
+                    await chooseAuditTime(page, 'from', '17:00');
+                    await page.waitForFunction(() => {
+                        const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                        return args?.p_from === '2026-09-11T09:00:00.000Z' && args?.p_to === '2026-09-11T16:00:00.000Z';
+                    });
+                    await chooseAuditTime(page, 'to', '18:00');
+                    await page.waitForFunction(() => {
+                        const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                        return args?.p_from === '2026-09-11T09:00:00.000Z' && args?.p_to === '2026-09-11T10:01:00.000Z';
                     });
                     assert.equal(await page.locator('[data-owner-audit-rows]').getByText('audit-31').count(), 1, 'the selected Manila minute includes the matching event');
+                    await chooseAuditTime(page, 'from', '17:30');
+                    assert.equal(await auditTo.inputValue(), '', 'changing From clears the previous To value');
+                    await chooseAuditTime(page, 'to', '18:00');
+                    await page.waitForFunction(() => {
+                        const args = window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args;
+                        return args?.p_from === '2026-09-11T09:30:00.000Z' && args?.p_to === '2026-09-11T10:01:00.000Z';
+                    });
                     await page.locator('[data-owner-audit-search]').fill('audit-31');
                     await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.rpc === 'owner_audit_trail').at(-1)?.args.p_search === 'audit-31');
                     assert.equal(await page.locator('[data-owner-audit-rows]').getByText('audit-31').count(), 1);

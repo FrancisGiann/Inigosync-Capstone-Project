@@ -150,7 +150,7 @@
                             <div class="dash-notif-list" data-dash-notif-list>
                                 <p class="dash-notif-empty">Loading…</p>
                             </div>
-                            <div class="dash-notif-pagination" data-dash-notif-pagination hidden><button type="button" class="dash-mini-btn" data-dash-notif-prev>Previous</button><span data-dash-notif-page aria-live="polite"></span><button type="button" class="dash-mini-btn" data-dash-notif-next>Next</button></div>
+                            <div class="dash-notif-pagination" data-dash-notif-pagination hidden><button type="button" class="dash-mini-btn" data-dash-notif-prev>Previous</button><span class="dash-page-numbers" data-dash-notif-page-numbers></span><button type="button" class="dash-mini-btn" data-dash-notif-next>Next</button></div>
                         </div>
                     </div>
 
@@ -631,7 +631,8 @@
                     <div class="dash-settings-modal" data-dash-personal-modal hidden>
                         <div class="dash-settings-modal-backdrop" data-dash-personal-close></div>
                         <section class="dash-settings-dialog dash-personal-dialog" id="dashPersonalEditDialog" role="dialog" aria-modal="true" aria-labelledby="dashPersonalEditTitle" tabindex="-1" data-dash-personal-dialog>
-                            <h2 id="dashPersonalEditTitle">Edit personal information</h2>
+                            <header class="dash-settings-dialog-header"><h2 id="dashPersonalEditTitle">Edit personal information</h2><button type="button" class="dash-modal-close" data-dash-personal-close aria-label="Close personal information editor">×</button></header>
+                            <div class="dash-settings-dialog-body">
                             <div class="dash-name-fields">
                                 <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsFirstName">First name</label><input id="dashSettingsFirstName" type="text" class="dash-input" placeholder="Juan" data-dash-settings-firstname></div>
                                 <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsMiddleName">Middle name <span class="dash-form-label-hint">(optional)</span></label><input id="dashSettingsMiddleName" type="text" class="dash-input" placeholder="Reyes" data-dash-settings-middlename></div>
@@ -683,7 +684,8 @@
                                     <span class="dash-mobile-status" data-dash-mobile-status role="status">A contact number is optional. We check Philippine mobile format and whether it is already linked to an account.</span>
                                 </div>
                             </div>
-                            <div class="dash-form-actions">
+                            </div>
+                            <div class="dash-form-actions dash-settings-dialog-footer">
                                 <button type="button" class="dash-btn-ghost" data-dash-personal-close>Cancel</button>
                                 <button type="button" class="dash-btn-save" data-dash-personal-save>Save Changes</button>
                             </div>
@@ -693,12 +695,14 @@
                     <div class="dash-settings-modal" data-dash-email-proposal-modal hidden>
                         <div class="dash-settings-modal-backdrop" data-dash-email-proposal-close></div>
                         <section class="dash-settings-dialog" id="dashEmailProposalDialog" role="dialog" aria-modal="true" aria-labelledby="dashEmailProposalTitle" aria-describedby="dashEmailProposalHint" tabindex="-1" data-dash-email-proposal-dialog>
-                            <h2 id="dashEmailProposalTitle">Change email address</h2>
+                            <header class="dash-settings-dialog-header"><h2 id="dashEmailProposalTitle">Change email address</h2><button type="button" class="dash-modal-close" data-dash-email-proposal-close aria-label="Close email change">×</button></header>
+                            <div class="dash-settings-dialog-body">
                             <p id="dashEmailProposalHint">Check the new address and stage it. A code is sent only after you confirm Save Changes.</p>
                             <label class="dash-form-label" for="dashEmailProposalInput">New email address</label>
                             <input type="email" class="dash-input" autocomplete="email" data-dash-email-proposal-input>
                             <span class="dash-mobile-status" role="status" data-dash-email-proposal-status></span>
-                            <div class="dash-settings-dialog-actions">
+                            </div>
+                            <div class="dash-settings-dialog-actions dash-settings-dialog-footer">
                                 <button type="button" class="dash-btn-ghost" data-dash-email-proposal-close>Cancel</button>
                                 <button type="button" class="dash-btn-save" data-dash-email-proposal-save disabled>Use Email</button>
                             </div>
@@ -708,7 +712,8 @@
                     <div class="dash-settings-modal" data-dash-email-otp-modal hidden>
                         <div class="dash-settings-modal-backdrop" data-dash-email-otp-close></div>
                         <section class="dash-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="dashEmailOtpTitle" aria-describedby="dashEmailOtpHint" tabindex="-1" data-dash-email-otp-dialog>
-                            <h2 id="dashEmailOtpTitle" data-dash-email-otp-title>Verify your current email</h2>
+                            <header class="dash-settings-dialog-header"><h2 id="dashEmailOtpTitle" data-dash-email-otp-title>Verify your current email</h2><button type="button" class="dash-modal-close" data-dash-email-otp-close aria-label="Close email verification">×</button></header>
+                            <div class="dash-settings-dialog-body">
                             <p id="dashEmailOtpHint" data-dash-email-otp-hint>Verify the current email first, then verify the new email address. Your current email stays saved until Supabase confirms both codes.</p>
                             <span class="dash-form-label">Verification code</span>
                             <div class="dash-email-otp-row" role="group" aria-label="6-digit verification code" data-dash-email-otp-row>
@@ -720,11 +725,12 @@
                                 <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="dash-email-otp-box" data-dash-email-otp-box aria-label="Digit 6">
                             </div>
                             <span class="dash-mobile-status" role="status" data-dash-email-otp-status></span>
-                            <div class="dash-settings-dialog-actions">
+                            <p class="dash-email-otp-resend">Didn't get the codes? <button type="button" class="dash-btn-ghost" data-dash-email-otp-resend>Resend codes</button> <span data-dash-email-otp-timer></span></p>
+                            </div>
+                            <div class="dash-settings-dialog-actions dash-settings-dialog-footer">
                                 <button type="button" class="dash-btn-ghost" data-dash-email-otp-close>Cancel</button>
                                 <button type="button" class="dash-btn-save" data-dash-email-otp-verify>Verify current code</button>
                             </div>
-                            <p class="dash-email-otp-resend">Didn't get the codes? <button type="button" class="dash-btn-ghost" data-dash-email-otp-resend>Resend codes</button> <span data-dash-email-otp-timer></span></p>
                         </section>
                     </div>
 

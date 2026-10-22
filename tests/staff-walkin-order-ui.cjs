@@ -1355,7 +1355,7 @@ function occupancyRow(hour, source = 'online') {
         await notificationsPage.locator('[data-staff-notif-next]').click();
         await notificationsPage.locator('[data-staff-notif-list]').getByText('Notice 11').waitFor();
         assert.equal(await notificationsPage.locator('[data-staff-notif-list] [data-staff-notif-select-row]').count(), 8, 'next page contains the remaining older notifications');
-        assert.equal(await notificationsPage.locator('[data-staff-notif-page]').innerText(), 'Page 2 of 2');
+        assert.equal(await notificationsPage.locator('[data-staff-notif-page-numbers] [aria-current="page"]').innerText(), '2');
         await notificationsPage.locator('[data-staff-notif-prev]').click();
         await notificationsPage.locator('[data-staff-notif-select-row="notice-1"]').waitFor();
         await notificationsContext.context.close();

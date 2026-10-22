@@ -415,8 +415,12 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-notif-selection select { width: 100%; min-width: 0; min-height: 34px; padding: 5px 8px; border: 1px solid var(--color-line); border-radius: 7px; background: var(--color-bg-elevated); color: var(--color-ink); font: 500 var(--fs-xs) var(--font-body); }
 .staff-notif-selection button { justify-self: end; min-height: 34px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--color-primary); font: 600 var(--fs-xs) var(--font-body); cursor: pointer; white-space: nowrap; }
 .staff-notif-selection button:disabled { opacity: .5; cursor: default; }
-.staff-notif-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.staff-notif-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .staff-notif-pagination[hidden] { display: none; }
+.staff-page-numbers { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; }
+.staff-notif-pagination .staff-page-number { min-width: 32px; min-height: 32px; padding: 4px 8px; }
+.staff-notif-pagination .staff-page-number[aria-current="page"],
+.staff-schedule-pagination .staff-page-number[aria-current="page"] { background: var(--color-primary); border-color: var(--color-primary); color: #14110d; opacity: 1; cursor: default; }
 .staff-notif-pagination .staff-mini-btn { min-height: 32px; padding: 5px 9px; }
 .staff-notif-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 3px; border-radius: 8px; }
 .staff-notif-row + .staff-notif-row { border-top: 1px solid var(--color-line); }
@@ -1499,17 +1503,28 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     margin-bottom: 18px;
     padding-right: 34px; /* clears the absolutely-positioned close button */
 }
+.staff-modal > h3 { padding-bottom: 14px; border-bottom: 1px solid var(--color-line); }
 
-.staff-profile-modal { box-sizing: border-box; width: min(720px, calc(100vw - 32px)); }
-.staff-profile-modal .staff-form-actions { justify-content: flex-end; }
+.staff-profile-modal { box-sizing: border-box; width: min(720px, calc(100vw - 32px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; padding: 0; }
+.staff-modal-header { padding: 26px 64px 18px 26px; border-bottom: 1px solid var(--color-line); }
+.staff-modal-header h3 { margin-top: 0; }
+.staff-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 26px; }
+.staff-modal-footer { justify-content: flex-end; margin: 0; padding: 18px 26px 26px; border-top: 1px solid var(--color-line); background: var(--color-bg-card); }
 .staff-profile-modal .staff-form-actions > button { min-width: 120px; }
 
 @media (max-width: 480px) {
     .staff-profile-summary { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 560px) {
+    .staff-profile-modal { max-height: calc(100dvh - 20px); }
+    .staff-modal-header { padding: 22px 58px 14px 16px; }
+    .staff-modal-body { padding: 0 16px; }
+    .staff-modal-footer { padding: 14px 16px max(16px, env(safe-area-inset-bottom)); }
+}
 
 .staff-modal-close {
     position: absolute;
+    z-index: 2;
     top: 16px;
     right: 16px;
     width: 34px;
@@ -1768,6 +1783,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 12px;
     padding: 14px 0 2px;
     color: var(--color-ink-faint);
@@ -1775,7 +1791,9 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 }
 .staff-schedule-pagination[hidden] { display: none; }
 .staff-schedule-pagination .staff-mini-btn { min-width: 88px; min-height: 36px; }
+.staff-schedule-pagination .staff-page-number { min-width: 36px; padding-inline: 8px; }
 .staff-schedule-pagination .staff-mini-btn:disabled { opacity: .45; cursor: not-allowed; }
+.staff-schedule-pagination .staff-page-number[aria-current="page"]:disabled { opacity: 1; cursor: default; }
 
 .staff-customer-mode { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
 .staff-customer-mode label { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border: 1px solid var(--color-line); border-radius: 999px; color: var(--color-ink-dim); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }

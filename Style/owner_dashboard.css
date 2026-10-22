@@ -158,8 +158,9 @@ body.admin-body {
     height: 21px;
 }
 
-.admin-shell.admin-sidebar-collapsed .admin-nav-divider {
-    margin: 12px 4px;
+@media (min-width: 861px) {
+    .admin-shell.admin-sidebar-collapsed .admin-nav-section-label { display: none; }
+    .admin-shell.admin-sidebar-collapsed .admin-nav-divider { margin: 12px 4px; }
 }
 
 .admin-shell.admin-sidebar-collapsed .admin-nav { order: 0; }
@@ -212,6 +213,18 @@ body.admin-body {
     gap: 4px;
 }
 
+.admin-nav-section-label {
+    padding: 0 14px 4px;
+    color: var(--color-ink-faint);
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
 .admin-nav-link {
     display: flex;
     align-items: center;
@@ -234,7 +247,7 @@ body.admin-body {
 .admin-nav-link:hover { background: color-mix(in srgb, var(--color-ink) 6%, transparent); color: var(--color-ink); }
 .admin-nav-link.is-active { background: var(--color-primary); color: #14110d; }
 
-.admin-nav-divider { height: 1px; background: var(--color-line); margin: 16px 6px; }
+.admin-nav-divider { height: 1px; background: var(--color-line); margin: 12px 6px 10px; }
 .admin-logout { color: var(--color-alert); }
 .admin-logout:hover { background: color-mix(in srgb, var(--color-alert) 12%, transparent); color: var(--color-alert); }
 .admin-sidebar-scrim { display: none; }
@@ -314,7 +327,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 
 .admin-topbar-title { min-width: 0; }
 .admin-topbar-title h1 { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-xl); }
-.admin-topbar-title p { font-size: var(--fs-md); color: var(--color-ink-faint); margin-top: 2px; }
+.admin-topbar-title p { font-size: var(--fs-sm); color: var(--color-ink-faint); margin-top: 3px; }
 .admin-topbar-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
 
 /* Theme toggle button — this file previously had no rules for it at all,
@@ -794,6 +807,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     display: flex;
     justify-content: flex-end;
     align-items: center;
+    flex-wrap: wrap;
     gap: 12px;
     margin-top: 18px;
     color: var(--color-ink-faint);
@@ -802,6 +816,10 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-staff-pagination[hidden] { display: none; }
 .admin-staff-pagination button { min-height: 38px; }
 .admin-staff-pagination button:disabled { opacity: 0.45; cursor: not-allowed; }
+.owner-page-numbers { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; }
+.owner-page-number { min-width: 38px; padding-inline: 10px; }
+.owner-page-number[aria-current="page"] { background: var(--color-primary); color: #14110d; opacity: 1; cursor: default; }
+.owner-page-gap { padding-inline: 2px; color: var(--color-ink-faint); }
 
 .admin-table-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .admin-staff-action-select { min-width: 126px; max-width: 190px; }
@@ -970,7 +988,8 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-review-item-head span { color: var(--color-primary); letter-spacing: .08em; }
 .admin-review-item p { margin: 10px 0 6px; color: var(--color-ink-dim); overflow-wrap: anywhere; }
 .admin-review-item time { color: var(--color-ink-faint); font-size: var(--fs-xs); }
-.admin-review-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; }
+.admin-review-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 14px; }
+.admin-review-pagination[hidden] { display: none; }
 .owner-account-card { display: grid; grid-template-columns: minmax(150px, .65fr) minmax(0, 2fr); gap: 28px; }
 .owner-photo-section { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 12px; border-right: 1px solid var(--color-line); }
 .owner-photo-section .admin-card-head { margin: 0; }
@@ -1067,9 +1086,11 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     margin-bottom: 18px;
     padding-right: 34px; /* clears the absolutely-positioned close button */
 }
+.admin-modal > h3 { padding-bottom: 14px; border-bottom: 1px solid var(--color-line); }
 
 .admin-modal-close {
     position: absolute;
+    z-index: 2;
     top: 18px;
     right: 18px;
     width: 34px;
@@ -1094,6 +1115,27 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     color: var(--color-ink);
     border-color: var(--color-primary);
 }
+
+/* Edit dialogs keep their title and actions in fixed rows while only the
+   form content scrolls. The ordinary modal shell remains available for
+   viewers and short confirmations. */
+.admin-modal.admin-edit-modal {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    box-sizing: border-box;
+    max-height: min(90vh, 900px);
+    overflow: hidden;
+    padding: 0;
+}
+.admin-modal-header { position: relative; padding: 28px 70px 18px 28px; border-bottom: 1px solid var(--color-line); }
+.admin-modal-header h3 { margin-top: 0; }
+.admin-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 28px 18px; }
+.admin-modal-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 0; padding: 14px 28px 24px; border-top: 1px solid var(--color-line); background: var(--color-bg-card); }
+.owner-rules-modal .admin-modal-footer,
+.owner-payment-modal .admin-modal-footer,
+.owner-featured-review-modal .admin-modal-footer { display: grid; gap: 10px; }
+.admin-modal-footer .admin-form-actions { margin: 0; }
+.admin-slide-modal .admin-modal-body { padding-bottom: 18px; }
 
 /* ==========================================================================
    Court modal — Photos section (Revision A2, implementation_plan.md,
@@ -1357,12 +1399,25 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-profile-stats { display: flex; gap: 18px; flex-wrap: wrap; }
 .admin-profile-stats .admin-stat-card { flex: 1 1 180px; }
 
-/* Audit Trail — only the three requested filters; the table scrolls on small screens. */
-.owner-audit-filters { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(220px, 1.5fr) minmax(150px, 1fr); gap: 12px; margin-bottom: 14px; }
+/* Audit Trail filters; the table scrolls on small screens. */
+.owner-audit-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(120px, 1fr)) minmax(150px, 1fr); gap: 12px; margin-bottom: 14px; }
 .owner-audit-filters .admin-form-group { min-width: 0; margin: 0; }
 .owner-audit-filters .admin-form-label { display: block; min-height: 1.3em; line-height: 1.3; }
 .owner-audit-filters .admin-input,
 .owner-audit-filters .admin-select { box-sizing: border-box; min-width: 0; }
+.owner-audit-time-picker { position: relative; display: block; }
+.owner-audit-time-trigger { display: block; width: 100%; text-align: left; cursor: pointer; }
+.owner-audit-time-trigger:disabled { cursor: not-allowed; }
+.owner-audit-time-popover { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: min(330px, calc(100vw - 32px)); padding: 10px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg-card); box-shadow: 0 12px 30px rgb(0 0 0 / 18%); }
+.owner-audit-time-popover[hidden] { display: none; }
+.owner-audit-time-popover.is-above { top: auto; bottom: calc(100% + 6px); }
+.owner-audit-time-columns { display: grid; grid-template-columns: 68px minmax(0, 1fr) 62px; gap: 8px; }
+.owner-audit-time-column { display: flex; flex-direction: column; max-height: min(240px, 42vh); min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border: 1px solid var(--color-line); border-radius: 8px; }
+.owner-audit-time-option, .owner-audit-time-clear { min-height: 34px; padding: 6px 8px; border: 0; background: transparent; color: var(--color-ink); font: inherit; cursor: pointer; }
+.owner-audit-time-option[aria-pressed="true"] { background: var(--color-primary); color: #14110d; font-weight: var(--fw-semibold); }
+.owner-audit-time-option:hover, .owner-audit-time-clear:hover { background: color-mix(in srgb, var(--color-primary) 14%, transparent); }
+.owner-audit-time-option:focus-visible, .owner-audit-time-clear:focus-visible, .owner-audit-time-trigger:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.owner-audit-time-clear { display: block; width: 100%; margin-top: 8px; border-radius: 7px; color: var(--color-ink-dim); text-align: center; }
 .owner-audit-session-note,
 .owner-audit-status { margin: 10px 0; color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.5; }
 .owner-audit-status { color: var(--color-ink-dim); font-weight: var(--fw-semibold); }
@@ -1377,24 +1432,21 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-audit-table .owner-audit-col-role { width: 90px; }
 .owner-audit-table .owner-audit-col-actor { width: 160px; }
 .owner-audit-table .owner-audit-col-amount { width: 110px; }
-.owner-audit-table .owner-audit-col-summary { width: 140px; }
+.owner-audit-table .owner-audit-col-summary { width: 260px; }
 .owner-audit-table .owner-audit-cell-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .owner-audit-table td:nth-child(1) code { font-size: var(--fs-xs); }
 .owner-audit-table td:nth-child(6) { white-space: nowrap; text-align: right; }
-.owner-audit-summary-button { min-height: 34px; }
-.owner-audit-detail-dialog { max-width: 720px; }
-.owner-audit-detail-dialog h3 { margin: 0 38px 6px 0; }
-.owner-audit-detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 0; }
-.owner-audit-detail-list > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-line); border-radius: 10px; }
-.owner-audit-detail-list dt { color: var(--color-ink-faint); font-size: var(--fs-xs); font-weight: var(--fw-semibold); }
-.owner-audit-detail-list dd { margin: 4px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.owner-audit-table .owner-audit-summary { display: block; overflow-wrap: anywhere; line-height: 1.4; }
 .owner-audit-caption { padding: 8px 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: left; }
-.owner-audit-pagination { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 16px; }
+.owner-audit-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .owner-audit-pagination[hidden] { display: none; }
+
+@media (max-width: 900px) {
+    .owner-audit-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (max-width: 600px) {
     .owner-audit-filters { grid-template-columns: 1fr; }
-    .owner-audit-detail-list { grid-template-columns: 1fr; }
 }
 
 /* ==========================================================================
@@ -1752,14 +1804,19 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-rules-table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--color-primary); }
 .owner-rules-table tr.is-closed th { color: var(--color-ink-faint); }
 .owner-rules-message,.owner-announcement-message { min-height: 1.5em; margin-top: 12px; color: var(--color-ink-dim); font-size: var(--fs-sm); }
+.owner-rules-message:empty { display: none; }
 .owner-rules-message.is-error,.owner-announcement-message.is-error { color: var(--color-alert); }
 .owner-announcement-card { margin-bottom: 20px; }
 .owner-announcement-form { display: grid; gap: 14px; }
 .owner-announcement-form textarea { min-height: 110px; resize: vertical; }
 .owner-announcement-options { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,1fr); gap: 16px; }
 .owner-announcement-list-wrap { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); }
-.owner-announcement-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.owner-announcement-list-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .owner-announcement-list-head h4 { font: 600 var(--fs-base) var(--font-display); }
+.owner-announcement-filters { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px); gap: 12px; align-items: end; flex: 1 1 420px; min-width: 0; }
+.owner-announcement-filters .admin-form-group { margin: 0; }
+.owner-announcement-card > .admin-card-head { align-items: flex-end; }
+.owner-announcement-count { min-height: 1.4em; margin: 0 0 10px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .owner-announcement-list { display: grid; gap: 9px; }
 .owner-announcement-row { min-width: 0; padding: 14px 16px; border: 1px solid var(--color-line); border-radius: 11px; background: var(--color-bg-elevated); }
 .owner-announcement-row-head,.owner-announcement-row-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -1768,11 +1825,15 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-announcement-row > p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink-dim); font-size: var(--fs-sm); line-height: 1.5; }
 .owner-announcement-row-meta { margin-top: 11px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .owner-announcement-status { flex: 0 0 auto; padding: 4px 8px; border-radius: 99px; background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-ink); font-size: var(--fs-xs); text-transform: capitalize; }
-.owner-announcement-pages { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.owner-announcement-pages { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .owner-announcement-pages[hidden] { display: none; }
-.owner-mobile-edit-row { display: flex; align-items: center; gap: 9px; }
-.owner-mobile-edit-row .admin-input { min-width: 0; flex: 1 1 auto; }
-.owner-mobile-edit-row .admin-btn-secondary { flex: 0 0 auto; }
+.owner-announcement-card > .admin-card-head > button { margin-left: auto; }
+.owner-announcement-row-meta > button { flex: 0 0 auto; }
+.owner-announcement-modal { width: min(680px, 100%); }
+.owner-announcement-modal .admin-modal-body { display: flex; flex-direction: column; gap: 16px; }
+.owner-announcement-modal .admin-wizard-steps { width: 100%; }
+.owner-announcement-wizard-nav { justify-content: flex-end; flex-wrap: wrap; }
+.owner-announcement-wizard-nav [hidden] { display: none; }
 .owner-mobile-verification [data-admin-mobile-message] { min-height: 1.5em; margin-top: 7px; }
 .owner-mobile-verification [data-admin-mobile-message].is-error { color: var(--color-alert); }
 .owner-mobile-verification [data-admin-mobile-message][data-state="available"] { color: var(--color-court-green); }
@@ -1786,13 +1847,17 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 [data-admin-staff-emergency-status][data-state="available"],[data-admin-staff-edit-emergency-status][data-state="available"] { color: var(--color-court-green); }
 [data-admin-staff-emergency-status][data-state="warning"],[data-admin-staff-edit-emergency-status][data-state="warning"] { color: #9a6700; }
 [data-admin-staff-emergency-status][data-state="invalid"],[data-admin-staff-edit-emergency-status][data-state="invalid"],[data-admin-staff-emergency-status][data-state="error"],[data-admin-staff-edit-emergency-status][data-state="error"] { color: var(--color-alert); }
-.owner-mobile-verification [data-admin-mobile-validate] { min-height: 42px; }
 
 @media (max-width: 640px) {
     .owner-booking-rules-meta,.owner-announcement-options { grid-template-columns: minmax(0,1fr); }
+    .owner-announcement-list-head { align-items: stretch; flex-direction: column; }
+    .owner-announcement-filters { grid-template-columns: minmax(0,1fr); }
     .owner-rules-saved-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .owner-mobile-edit-row { align-items: stretch; flex-direction: column; }
-    .owner-mobile-edit-row .admin-btn-secondary { align-self: flex-start; }
     .owner-rules-timezone { grid-column: auto; margin-top: 0; }
     .owner-announcement-row-head,.owner-announcement-row-meta { align-items: flex-start; flex-direction: column; }
+    .owner-announcement-card > .admin-card-head { align-items: stretch; }
+    .owner-announcement-card > .admin-card-head > .owner-announcement-filters { width: 100%; flex-basis: 100%; }
+    .owner-announcement-card > .admin-card-head > button { width: 100%; }
+    .owner-announcement-wizard-nav { justify-content: stretch; }
+    .owner-announcement-wizard-nav > button:not(.admin-wizard-cancel) { flex: 1 1 auto; }
 }

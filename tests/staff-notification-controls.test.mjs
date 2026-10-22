@@ -53,7 +53,7 @@ test('staff notification loader requests the selected page and updates paginatio
         staffNotifSelectedLabel: { textContent: '' },
         staffNotifMarkSelected: { disabled: false },
         staffNotifPagination: { hidden: false },
-        staffNotifPageLabel: { textContent: '' },
+        staffNotifPageNumbers: {},
         staffNotifPrev: { disabled: false },
         staffNotifNext: { disabled: false },
         staffNotifGeneration: 0,
@@ -65,6 +65,7 @@ test('staff notification loader requests the selected page and updates paginatio
         STAFF_NOTIF_LIMIT: 10,
         staffNotifMarkSelectedInProgress: false,
         syncStaffNotificationSelection() {},
+        renderStaffPageNumbers: (_container, currentPage, pageCount) => { context.renderedPage = { currentPage, pageCount }; },
         renderStaffNotification: item => `<div class="notice">${item.title}</div>`,
         window: {
             escapeHtml: value => String(value),
@@ -82,7 +83,7 @@ test('staff notification loader requests the selected page and updates paginatio
     assert.equal(calls[0].name, 'staff_list_notifications');
     assert.equal(calls[0].args.p_offset, 20);
     assert.equal(calls[0].args.p_limit, 10);
-    assert.equal(context.staffNotifPageLabel.textContent, 'Page 3 of 3');
+    assert.deepEqual(context.renderedPage, { currentPage: 3, pageCount: 3 });
     assert.equal(context.staffNotifPagination.hidden, false);
     assert.equal(context.staffNotifPrev.disabled, false);
     assert.equal(context.staffNotifNext.disabled, true);
