@@ -449,11 +449,13 @@
             <section class="admin-panel" data-admin-panel="booking-rules">
                 <div class="admin-card owner-booking-rules-card">
                     <div class="owner-booking-rules-summary">
-                        <dl class="owner-rules-saved-meta"><div><dt>Effective from</dt><dd data-owner-rules-saved-effective>Loading…</dd></div><div><dt>No-show grace period</dt><dd data-owner-rules-saved-grace>Loading…</dd></div></dl>
+                        <div class="owner-rules-summary-head">
+                            <dl class="owner-rules-saved-meta"><div><dt>Effective from</dt><dd data-owner-rules-saved-effective>Loading…</dd></div><div><dt>No-show grace period</dt><dd data-owner-rules-saved-grace>Loading…</dd></div></dl>
+                            <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Business Hours</button></div>
+                        </div>
                         <ul class="owner-rules-saved-week" data-owner-rules-saved-week aria-label="Current saved weekly hours"></ul>
                         <div class="owner-rules-upcoming" data-owner-rules-upcoming hidden><h4>Scheduled changes</h4><p>Effective from <strong data-owner-rules-upcoming-effective></strong> · <span data-owner-rules-upcoming-grace></span>-minute no-show grace period</p><ul class="owner-rules-saved-week" data-owner-rules-upcoming-week aria-label="Scheduled weekly hours"></ul></div>
                     </div>
-                    <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Business Hours</button></div>
                 </div>
                 <div class="admin-modal-overlay owner-rules-modal-overlay" data-owner-rules-modal hidden>
                     <div class="admin-modal admin-edit-modal owner-rules-modal" role="dialog" aria-modal="true" aria-labelledby="ownerRulesModalTitle" tabindex="-1" data-owner-rules-dialog>
@@ -628,7 +630,7 @@
                         <p class="owner-announcement-message" data-owner-announcement-message role="status" aria-live="polite"></p>
                     </div>
                     <footer class="admin-modal-footer owner-announcement-wizard-nav">
-                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-owner-announcement-close>Cancel</button><button type="button" class="admin-btn-ghost" data-owner-announcement-back hidden>Go back</button><button type="button" class="admin-btn-save" data-owner-announcement-wizard-next hidden>Next</button><button type="submit" class="admin-btn-save" data-owner-announcement-submit hidden>Publish announcement</button>
+                        <button type="button" class="admin-btn-ghost admin-wizard-cancel" data-owner-announcement-close data-owner-announcement-cancel>Cancel</button><button type="button" class="admin-btn-ghost" data-owner-announcement-back hidden>Go back</button><button type="button" class="admin-btn-save" data-owner-announcement-wizard-next disabled>Next</button><button type="submit" class="admin-btn-save" data-owner-announcement-submit hidden>Publish announcement</button>
                     </footer>
                 </form>
             </div>

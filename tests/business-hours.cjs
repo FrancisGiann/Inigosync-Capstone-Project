@@ -30,6 +30,7 @@ async function loadWithRpc(rpc) {
             '2026-09-28': { open_hour: 8, close_hour: 20 },
             '2026-09-29': { open_hour: 10, close_hour: 22 },
             '2026-09-30': { open_hour: 8, close_hour: 18 },
+            '2026-10-01': { open_hour: 1, close_hour: 24 },
         };
         return { data: { ...dayRules[args.p_date], is_closed: false, grace_minutes: 45, timezone: 'Asia/Manila' }, error: null };
     });
@@ -60,6 +61,11 @@ async function loadWithRpc(rpc) {
     assert.equal((await hours.getForDate('2026-09-28')).closeHour, 20, 'the selected date before a schedule change retains its 8 PM close');
     assert.equal((await hours.getForDate('2026-09-29')).closeHour, 22, 'the effective date can extend availability to 10 PM');
     assert.equal((await hours.getForDate('2026-09-30')).closeHour, 18, 'a later date can shorten availability to 6 PM');
+    assert.equal((await hours.getForDate('2026-10-01')).closeHour, 24, 'a midnight close is preserved as hour 24');
+    assert.equal(hours.formatHourLabel(24), '12:00 AM');
+    assert.equal(hours.formatHourLabelShort(24), '12 AM');
+    assert.equal(hours.formatHourRangeLabel(23), '11:00 PM – 12:00 AM');
+    assert.equal(hours.formatHourRangeLabelShort(23), '11 PM–12 AM');
 
     const offline = (await loadWithRpc(async () => ({ data: null, error: new Error('offline') }))).businessHours;
     const fallback = await offline.getForDate('2026-09-29');

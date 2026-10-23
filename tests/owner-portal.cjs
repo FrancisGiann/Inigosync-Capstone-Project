@@ -820,16 +820,24 @@ async function verifyOwnerPaymentFlow(page) {
                     }));
                     assert.ok(scheduleTimeOptions.every(({ openTag, openOptions, openingTime, closeTag, closeOptions }) => openTag === 'SELECT'
                         && closeTag === 'SELECT'
-                        && openOptions.length === 24 && openOptions.every(value => /^\d{2}:00$/.test(value))
+                        && openOptions.length === 23 && openOptions[0] === '01:00' && openOptions.at(-1) === '23:00'
+                        && openOptions.every(value => /^\d{2}:00$/.test(value))
                         && closeOptions.every(value => /^\d{2}:00$/.test(value) && value > openingTime)),
-                    'opening controls offer whole hours and each closing control only offers later whole hours');
+                    'opening controls offer 01:00–23:00 and each closing control only offers later whole hours');
+                    assert.equal(await page.locator('[data-owner-rules-day]').evaluateAll(rows => rows.every(row =>
+                        ['[data-owner-rules-open]', '[data-owner-rules-close]'].every(selector => {
+                            const option = row.querySelector(selector).options[0];
+                            return option.value === '' && option.disabled && option.hidden;
+                        }))), true, 'both empty-state placeholders are disabled and hidden from their dropdowns');
                     const mondayOpen = page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]');
                     const mondayClose = page.locator('[data-owner-rules-day="1"] [data-owner-rules-close]');
                     const mondayOpeningTime = await mondayOpen.inputValue();
                     await mondayOpen.selectOption('22:00');
-                    assert.deepEqual(await mondayClose.locator('option').evaluateAll(options => options.map(option => option.value)), ['', '23:00'],
+                    assert.deepEqual(await mondayClose.locator('option').evaluateAll(options => options.map(option => option.value)), ['', '23:00', '24:00'],
                         'closing options update immediately when opening time changes');
                     assert.equal(await mondayClose.inputValue(), '23:00', 'an invalid closing selection moves to the earliest later option');
+                    assert.equal(await mondayClose.locator('option').first().isDisabled(), true, 'empty-state placeholder is disabled');
+                    assert.equal(await mondayClose.locator('option').first().isHidden(), true, 'empty-state placeholder is hidden from the dropdown');
                     await mondayOpen.selectOption(mondayOpeningTime);
                     await page.locator('[data-owner-rules-day="1"] [data-owner-rules-open]').evaluate(select => { select.value = '09:30'; });
                     await page.locator('[data-owner-rules-save]').click();
@@ -859,7 +867,7 @@ async function verifyOwnerPaymentFlow(page) {
                     for (let weekday = 1; weekday <= 7; weekday += 1) {
                         const dayRow = page.locator(`[data-owner-rules-day="${weekday}"]`);
                         await dayRow.locator('[data-owner-rules-open]').selectOption(`${String(weekday + 8).padStart(2, '0')}:00`);
-                        await dayRow.locator('[data-owner-rules-close]').selectOption('22:00');
+                        await dayRow.locator('[data-owner-rules-close]').selectOption(weekday === 1 ? '24:00' : '22:00');
                     }
                     await page.evaluate(date => window.InigoBusinessHours.getForDate(date), futureScheduleDate);
                     const ruleReadCountBeforeSave = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'booking_rules_for_date').length);
@@ -878,8 +886,8 @@ async function verifyOwnerPaymentFlow(page) {
                     assert.equal(savedSchedule.p_grace_minutes, 45);
                     assert.equal(savedSchedule.p_weekly_hours.length, 7);
                     assert.deepEqual(savedSchedule.p_weekly_hours.map(day => [day.weekday, day.opens_at, day.closes_at]),
-                        Array.from({ length: 7 }, (_, index) => [index + 1, `${String(index + 9).padStart(2, '0')}:00`, '22:00']),
-                        'each weekday submits its own opening and closing hours');
+                        Array.from({ length: 7 }, (_, index) => [index + 1, `${String(index + 9).padStart(2, '0')}:00`, index === 0 ? '24:00' : '22:00']),
+                        'each weekday submits its own opening and closing hours, including a midnight close');
                     await page.evaluate(date => window.InigoBusinessHours.getForDate(date), futureScheduleDate);
                     assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.rpc === 'booking_rules_for_date').length),
                         ruleReadCountBeforeSave + 1, 'saving the schedule invalidates same-tab cached hours');
@@ -889,7 +897,7 @@ async function verifyOwnerPaymentFlow(page) {
                     assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), true, 'main card shows a future-dated saved schedule');
                     assert.equal(await page.locator('[data-owner-rules-upcoming-effective]').innerText(), futureScheduleDate, 'scheduled summary refreshes its effective date');
                     assert.equal(await page.locator('[data-owner-rules-upcoming-grace]').innerText(), '45', 'scheduled summary refreshes its grace period');
-                    assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–22:00/, 'scheduled summary refreshes its weekly hours');
+                    assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–24:00/, 'scheduled summary refreshes its midnight close');
 
                     // Profile modal must be visible, focusable, close, and restore focus.
                     await page.locator('[data-admin-nav="settings"]').first().evaluate(el => el.click());

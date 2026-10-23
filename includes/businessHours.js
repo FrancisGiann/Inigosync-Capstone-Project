@@ -127,8 +127,9 @@
     // "8:00 AM" / "6:00 PM" — the long form used by the customer dashboard
     // (Booking Step 2's From/To time pickers, the Overview peek widget).
     function formatHourLabel(hour) {
-        const period = hour >= 12 ? 'PM' : 'AM';
-        const hour12 = ((hour + 11) % 12) + 1;
+        const localHour = hour % 24;
+        const period = localHour >= 12 ? 'PM' : 'AM';
+        const hour12 = ((localHour + 11) % 12) + 1;
         return `${hour12}:00 ${period}`;
     }
 
@@ -136,8 +137,9 @@
     // narrower time-column labels. Same period/hour12 math as
     // formatHourLabel above, just without the ":00".
     function formatHourLabelShort(hour) {
-        const period = hour >= 12 ? 'PM' : 'AM';
-        const hour12 = ((hour + 11) % 12) + 1;
+        const localHour = hour % 24;
+        const period = localHour >= 12 ? 'PM' : 'AM';
+        const hour12 = ((localHour + 11) % 12) + 1;
         return `${hour12} ${period}`;
     }
 
@@ -153,19 +155,19 @@
         return `${formatHourLabel(hour)} – ${formatHourLabel(hour + 1)}`;
     }
 
-    // "8–9 AM" / "11 AM–12 PM" / "7–8 PM" (Revision 5, D2) — the compact
+    // "8–9 AM" / "11 AM–12 PM" / "11 PM–12 AM" (Revision 5, D2) — the compact
     // range form the Overview peek strip's pills use (renderOverviewSlotPill()
     // in includes/Dashboard.js), replacing that widget's old single
     // start-time-only label. The period (AM/PM) is printed ONCE, after the
     // end hour, whenever both ends share it ("8–9 AM") — printing it twice
     // ("8 AM–9 AM") would be redundant in a label this narrow. The one
-    // hour of the day that crosses noon (11 AM–12 PM) is the sole case
-    // where the two ends DON'T share a period, so both get their own,
-    // exactly like a normal range would read.
+    // hours that cross noon or midnight are the cases where the two ends
+    // DON'T share a period, so both get their own, exactly like a normal
+    // range would read.
     function formatHourRangeLabelShort(hour) {
         const startPeriod = hour >= 12 ? 'PM' : 'AM';
         const startHour12 = ((hour + 11) % 12) + 1;
-        const endHour = hour + 1;
+        const endHour = (hour + 1) % 24;
         const endPeriod = endHour >= 12 ? 'PM' : 'AM';
         const endHour12 = ((endHour + 11) % 12) + 1;
         const startPart = startPeriod === endPeriod ? `${startHour12}` : `${startHour12} ${startPeriod}`;

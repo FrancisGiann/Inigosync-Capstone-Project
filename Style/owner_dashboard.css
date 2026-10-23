@@ -1782,6 +1782,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     align-items: start;
     margin: 4px 0 20px;
 }
+.owner-rules-summary-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
 .owner-rules-saved-meta { display: flex; flex-wrap: wrap; gap: 12px 28px; }
 .owner-rules-saved-meta > div { display: grid; gap: 4px; }
 .owner-rules-saved-meta dt { color: var(--color-ink-faint); font-size: var(--fs-xs); }
@@ -1794,7 +1795,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-rules-upcoming[hidden] { display: none; }
 .owner-rules-upcoming h4 { font: 600 var(--fs-sm) var(--font-display); }
 .owner-rules-upcoming > p { margin-top: 5px; color: var(--color-ink-dim); font-size: var(--fs-xs); }
-.owner-rules-launch { justify-content: flex-end; margin-top: 22px; }
+.owner-rules-launch { margin: 0 0 0 auto; }
 .owner-rules-modal { width: min(900px, 100% - 24px); }
 .owner-rules-modal > .admin-card-sub { margin: -8px 0 18px; }
 .owner-rules-edit {
@@ -1843,6 +1844,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-announcement-pages[hidden] { display: none; }
 .owner-announcement-card > .admin-card-head > button { margin-left: auto; }
 .owner-announcement-row-meta > button { flex: 0 0 auto; }
+.owner-announcement-row-meta .owner-announcement-edit { color: var(--color-primary); }
 .owner-announcement-modal { width: min(680px, 100%); }
 .owner-announcement-modal .admin-modal-body { display: flex; flex-direction: column; gap: 16px; }
 .owner-announcement-modal .admin-wizard-steps { width: 100%; }

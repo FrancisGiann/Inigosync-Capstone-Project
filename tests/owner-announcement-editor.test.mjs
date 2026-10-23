@@ -21,6 +21,9 @@ test('announcement list is the panel entry point and creation opens a three-step
   assert.match(js, /timeZone: 'Asia\/Manila'/);
   assert.match(js, /panel\.hidden = !isActive/);
   assert.equal([...html.matchAll(/data-owner-announcement-wizard-next/g)].length, 1);
+  assert.match(html, /data-owner-announcement-wizard-next disabled>Next/);
+  assert.match(js, /announcementNext\.hidden = announcementWizardStep === 3;[\s\S]*?announcementNext\.disabled = announcementWizardStep === 1 && !hasAnnouncementContent\(\)/);
+  assert.match(js, /announcementNext\.disabled = !hasAnnouncementContent\(\)/);
   assert.match(js, /const announcementNext = document\.querySelector\('\[data-owner-announcement-wizard-next\]'\)/);
   assert.match(js, /announcementNext\?\.addEventListener\('click'/);
 });

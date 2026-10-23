@@ -1601,10 +1601,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let bookingRulesLoaded = false;
     let bookingRulesEditBaseline = null;
 
+    function bookingRulePlaceholderOption() {
+        const option = new Option('Select time', '', true, true);
+        option.disabled = true;
+        option.hidden = true;
+        return option;
+    }
+
     function initializeBookingRuleTimeSelect(select) {
         if (!select || select.tagName !== 'SELECT') return;
-        const options = [new Option('Select time', '')];
-        for (let hour = 0; hour < 24; hour += 1) {
+        const options = [bookingRulePlaceholderOption()];
+        for (let hour = 1; hour < 24; hour += 1) {
             const value = `${String(hour).padStart(2, '0')}:00`;
             options.push(new Option(value, value));
         }
@@ -1617,8 +1624,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!open || !close) return;
 
         const currentClose = preferredClose ?? close.value;
-        const options = [new Option('Select time', '')];
-        for (let hour = 0; hour < 24; hour += 1) {
+        const options = [bookingRulePlaceholderOption()];
+        for (let hour = 1; hour <= 24; hour += 1) {
             const value = `${String(hour).padStart(2, '0')}:00`;
             if (value > open.value) options.push(new Option(value, value));
         }
@@ -1921,6 +1928,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const announcementCountLabel = document.querySelector('[data-owner-announcement-count]');
     const announcementNext = document.querySelector('[data-owner-announcement-wizard-next]');
     const announcementBack = document.querySelector('[data-owner-announcement-back]');
+    const announcementCancel = document.querySelector('[data-owner-announcement-cancel]');
     const announcementSteps = [...document.querySelectorAll('[data-owner-announcement-step]')];
     let announcementWizardStep = 1;
     let announcementEditBaseline = '';
@@ -1975,13 +1983,17 @@ document.addEventListener('DOMContentLoaded', () => {
             else indicator.removeAttribute('aria-current');
         });
         if (announcementBack) announcementBack.hidden = announcementWizardStep === 1;
-        if (announcementNext) announcementNext.hidden = announcementWizardStep === 3 || (announcementWizardStep === 1 && !hasAnnouncementContent());
+        if (announcementCancel) announcementCancel.hidden = announcementWizardStep !== 1;
+        if (announcementNext) {
+            announcementNext.hidden = announcementWizardStep === 3;
+            announcementNext.disabled = announcementWizardStep === 1 && !hasAnnouncementContent();
+        }
         if (announcementSubmit) announcementSubmit.hidden = announcementWizardStep !== 3;
     }
 
     announcementForm?.querySelectorAll('[data-owner-announcement-title], [data-owner-announcement-body]').forEach(field => {
         field.addEventListener('input', () => {
-            if (announcementWizardStep === 1 && announcementNext) announcementNext.hidden = !hasAnnouncementContent();
+            if (announcementWizardStep === 1 && announcementNext) announcementNext.disabled = !hasAnnouncementContent();
         });
     });
 
@@ -2101,7 +2113,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const publishDate = item.publish_at ? new Date(item.publish_at) : null;
                 const publishLabel = publishDate && !Number.isNaN(publishDate.valueOf()) ? formatActivityTime(publishDate.toISOString()) : 'Immediately';
                 const status = String(item.status || 'published').replace(/[_-]+/g, ' ');
-                const editAction = status === 'scheduled' ? `<button type="button" class="admin-btn-ghost" data-owner-announcement-edit="${window.escapeHtml(item.id)}">Edit scheduled announcement</button>` : '';
+                const editAction = status === 'scheduled' ? `<button type="button" class="admin-btn-ghost owner-announcement-edit" data-owner-announcement-edit="${window.escapeHtml(item.id)}" aria-label="Edit scheduled announcement">Edit</button>` : '';
                 return `<article class="owner-announcement-row" data-announcement-id="${window.escapeHtml(item.id)}"><div class="owner-announcement-row-head"><h5>${window.escapeHtml(item.title || 'Announcement')}</h5><span class="owner-announcement-status">${window.escapeHtml(status)}</span></div><p>${window.escapeHtml(item.body || '')}</p><div class="owner-announcement-row-meta"><span>${window.escapeHtml(audienceLabels[item.audience] || 'Audience')}</span><time datetime="${window.escapeHtml(item.publish_at || item.created_at || '')}">${window.escapeHtml(publishLabel)}</time>${editAction}</div></article>`;
             }).join('') : `<p class="admin-form-hint">${search || status ? 'No announcements match these filters.' : 'No announcements have been published or scheduled.'}</p>`;
             announcementList.querySelectorAll('[data-owner-announcement-edit]').forEach(button => button.addEventListener('click', () => {

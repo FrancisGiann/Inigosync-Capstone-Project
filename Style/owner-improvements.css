@@ -8,6 +8,36 @@
 .owner-photo-section [data-admin-avatar-edit] { flex: none; width: auto; min-height: 40px; padding: 9px 22px; }
 .owner-personal-section { min-width: 0; }
 .admin-settings-readonly dd { overflow-wrap: anywhere; }
+
+/* Account Settings: give the profile card and its editor predictable room
+   on narrow screens without changing other owner portal panels. */
+@media (max-width: 680px) {
+    .admin-panel[data-admin-panel="settings"] .owner-account-card { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .admin-panel[data-admin-panel="settings"] .owner-photo-section { border-right: 0; border-bottom: 1px solid var(--color-line); padding: 8px 8px 22px; }
+    .admin-panel[data-admin-panel="settings"] .owner-profile-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+}
+
+@media (max-width: 480px) {
+    .admin-panel[data-admin-panel="settings"] .owner-account-card { gap: 18px; padding: 18px 16px; }
+    .admin-panel[data-admin-panel="settings"] .owner-profile-summary { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .admin-panel[data-admin-panel="settings"] .owner-personal-section > [data-admin-profile-edit] { align-self: stretch; width: 100%; min-height: 44px; }
+
+    .admin-account-modal .phone-field-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
+    .admin-account-modal .owner-mobile-verification .admin-form-label { white-space: normal; }
+    .admin-account-modal .phone-field-status { flex: none; overflow: visible; text-align: left; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+    .admin-account-modal .admin-modal-google-accounts { padding: 16px; }
+    .admin-account-modal .admin-google-link-btn { align-self: stretch; width: 100%; min-height: 44px; }
+    .admin-panel[data-admin-panel="settings"] .admin-wizard-nav > button { min-height: 44px; }
+}
+
+@media (max-width: 359px) {
+    .admin-panel[data-admin-panel="settings"] .admin-wizard-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .admin-panel[data-admin-panel="settings"] .admin-wizard-nav .admin-wizard-cancel { grid-column: 1 / -1; margin-right: 0; }
+    .admin-panel[data-admin-panel="settings"] .admin-wizard-nav [data-admin-pw-back] { grid-column: 1; }
+    .admin-panel[data-admin-panel="settings"] .admin-wizard-nav [data-admin-pw-next],
+    .admin-panel[data-admin-panel="settings"] .admin-wizard-nav [data-admin-settings-save="password"] { grid-column: 2; }
+}
+
 .owner-notifications-layout { display: block; width: 100%; }
 .owner-notification-list { display: grid; gap: 8px; }
 .owner-notification-row { display: grid; gap: 8px; text-align: left; padding: 16px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg-card); color: var(--color-ink); cursor: pointer; overflow-wrap: anywhere; }
