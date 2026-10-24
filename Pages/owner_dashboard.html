@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Owner Dashboard | IñigoSync</title>
     <meta name="robots" content="noindex, nofollow">
-    <link rel="icon" type="image/png" href="../assets/Logo/WebLogo.png">
-    <link rel="apple-touch-icon" href="../assets/Logo/WebLogo.png">
+    <link rel="icon" type="image/png" href="../assets/Logo/InigoSync-Emblem.png">
+    <link rel="apple-touch-icon" href="../assets/Logo/InigoSync-Emblem.png">
     <meta name="theme-color" content="#F57C00">
 
 <!-- Theme guard: set data-theme before stylesheets load to prevent flash.
@@ -15,8 +15,9 @@
 <script>
 (function() {
     const saved = localStorage.getItem('inigosync-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light') || 'dark';
+    const theme = saved === 'light' || saved === 'dark'
+        ? saved
+        : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.classList.add('inigo-auth-pending');
 })();
@@ -32,6 +33,7 @@
 <link rel="stylesheet" href="../Style/owner-courts.css">
 <link rel="stylesheet" href="../Style/owner-media.css">
 <link rel="stylesheet" href="../Style/Loading.css">
+<link rel="stylesheet" href="../Style/ThemeTokens.css">
 <script src="../includes/loadingOverlay.js"></script>
 
 <!-- Chart.js (CDN) — booking trend graph is configured in event/chart.js -->
@@ -62,8 +64,8 @@
              customer page's plain .logo-text class, which relies on
              Style/LandingPage.css rules this page never loads. -->
         <div class="admin-sidebar-brand">
-            <img src="../assets/Logo/WebLogo.png" alt="IñigoSync logo">
-            <div class="admin-logo-text">IñigoSync</div>
+            <span class="system-logo-mark" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt=""></span>
+            <img class="admin-logo-text" src="../assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" width="1931" height="814">
         </div>
         <p class="admin-role-tag">Owner Portal</p>
 
@@ -171,7 +173,7 @@
             <div class="admin-topbar-actions">
                 <div class="admin-clock"><span class="dot"></span><span data-admin-clock>Thu, Jul 16 · 9:00 AM</span></div>
 
-                <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false" style="margin-right: 8px;">
+                <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="5" class="sun-circle"/>
                         <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
@@ -792,6 +794,10 @@
                     <div class="admin-card-head"><h3>Account details</h3></div>
                     <dl class="admin-profile-dl">
                         <div class="admin-profile-dl-row">
+                            <dt>Full name</dt>
+                            <dd data-admin-profile-detail-name>—</dd>
+                        </div>
+                        <div class="admin-profile-dl-row">
                             <dt>Email</dt>
                             <dd data-admin-profile-email>—</dd>
                         </div>
@@ -804,12 +810,24 @@
                             <dd data-admin-profile-address>—</dd>
                         </div>
                         <div class="admin-profile-dl-row">
+                            <dt>Date of birth</dt>
+                            <dd data-admin-profile-detail-birthdate>—</dd>
+                        </div>
+                        <div class="admin-profile-dl-row">
                             <dt>Age</dt>
                             <dd data-admin-profile-age>—</dd>
                         </div>
                         <div class="admin-profile-dl-row">
                             <dt>Gender</dt>
                             <dd data-admin-profile-gender>—</dd>
+                        </div>
+                        <div class="admin-profile-dl-row">
+                            <dt>Civil status</dt>
+                            <dd data-admin-profile-detail-civil-status>—</dd>
+                        </div>
+                        <div class="admin-profile-dl-row">
+                            <dt>Status</dt>
+                            <dd><span class="admin-status" data-admin-profile-status>—</span></dd>
                         </div>
                         <div class="admin-profile-dl-row">
                             <dt>Member since</dt>

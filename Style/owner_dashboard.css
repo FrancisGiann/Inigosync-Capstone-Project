@@ -168,30 +168,25 @@ body.admin-body {
 .admin-sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     padding: 0 10px;
     margin-bottom: 6px;
 }
 
 /* Revision A1 (implementation_plan.md, decision A1) — the real logo image,
    replacing the "IS" text monogram (.admin-logo-dot, removed). Same
-   30x30/object-fit:contain sizing as the customer dashboard's own
+   full 44x44/object-fit:contain sizing as the other portal sidebars.
    .dash-sidebar-brand img (Style/Dashboard.css). */
 .admin-sidebar-brand img {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
     object-fit: contain;
-    flex-shrink: 0;
+    flex: 0 0 44px;
 }
 
 .admin-logo-text {
-    font-family: var(--font-display);
-    color: var(--color-primary);
-    font-size: var(--fs-lg);
-    /* Revision A2 (implementation_plan.md) — Oswald 700 steps down to
-       --fw-semibold (600); Sora renders heavier at the same weight. */
-    font-weight: var(--fw-semibold);
-    letter-spacing: 0.02em;
+    height: 64px;
+    max-width: min(165px, 42vw);
 }
 
 .admin-role-tag {
@@ -1753,7 +1748,24 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 
 @media (max-width: 640px) {
-    .admin-topbar { padding: 16px 18px; }
+    .admin-topbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "menu actions" "title title";
+        align-items: center;
+        column-gap: 12px;
+        row-gap: 12px;
+        padding: 12px 18px 16px;
+    }
+    .admin-topbar-left { display: contents; }
+    .admin-mobile-toggle { grid-area: menu; width: 44px; height: 44px; }
+    .admin-toggle-bar { left: 12px; }
+    .admin-topbar-title { grid-area: title; }
+    .admin-topbar-title h1 { line-height: 1.2; }
+    .admin-topbar-title p { line-height: 1.4; }
+    .admin-topbar-actions { grid-area: actions; width: auto; gap: 10px; flex-wrap: nowrap; }
+    .admin-topbar-actions .theme-toggle { width: 44px; height: 44px; }
+    .admin-profile-trigger { min-height: 44px; }
     .admin-content { padding: 22px 18px 50px; }
     .admin-stat-grid { grid-template-columns: 1fr 1fr; }
     .admin-profile-card { flex-direction: column; align-items: flex-start; }
@@ -1857,19 +1869,19 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-mobile-verification .phone-field-status { flex: 1 1 auto; }
 .phone-field-status[data-state="valid"],.phone-field-status[data-state="available"] { color: var(--color-court-green); }
 .phone-field-status[data-state="invalid"],.phone-field-status[data-state="in_use"],.phone-field-status[data-state="error"] { color: var(--color-alert); }
-.phone-field-status[data-state="warning"] { color: #9a6700; }
+.phone-field-status[data-state="warning"] { color: var(--color-warning-text); }
 .phone-field-status[data-state="checking"],.phone-field-status[data-state="neutral"] { color: var(--color-ink-faint); }
 .owner-mobile-verification [data-admin-mobile-message].is-error { color: var(--color-alert); }
 .owner-mobile-verification [data-admin-mobile-message][data-state="available"] { color: var(--color-court-green); }
 .owner-mobile-verification [data-admin-mobile-message][data-state="invalid"] { color: var(--color-alert); }
-.owner-mobile-verification [data-admin-mobile-message][data-state="warning"] { color: #9a6700; }
+.owner-mobile-verification [data-admin-mobile-message][data-state="warning"] { color: var(--color-warning-text); }
 [data-admin-settings-mobile][data-phone-availability="available"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
 [data-admin-settings-mobile][data-phone-availability="invalid"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }
 [data-admin-staff-emergency-number][data-phone-availability="available"],[data-admin-staff-edit-emergency-number][data-phone-availability="available"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
 [data-admin-staff-emergency-number][data-phone-availability="invalid"],[data-admin-staff-edit-emergency-number][data-phone-availability="invalid"],[data-admin-staff-emergency-number][data-phone-availability="error"],[data-admin-staff-edit-emergency-number][data-phone-availability="error"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }
 [data-admin-staff-emergency-number][data-phone-availability="warning"],[data-admin-staff-edit-emergency-number][data-phone-availability="warning"] { border-color: #b7791f; box-shadow: 0 0 0 1px #b7791f; }
 [data-admin-staff-emergency-status][data-state="available"],[data-admin-staff-edit-emergency-status][data-state="available"] { color: var(--color-court-green); }
-[data-admin-staff-emergency-status][data-state="warning"],[data-admin-staff-edit-emergency-status][data-state="warning"] { color: #9a6700; }
+[data-admin-staff-emergency-status][data-state="warning"],[data-admin-staff-edit-emergency-status][data-state="warning"] { color: var(--color-warning-text); }
 [data-admin-staff-emergency-status][data-state="invalid"],[data-admin-staff-edit-emergency-status][data-state="invalid"],[data-admin-staff-emergency-status][data-state="error"],[data-admin-staff-edit-emergency-status][data-state="error"] { color: var(--color-alert); }
 
 @media (max-width: 640px) {

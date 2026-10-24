@@ -316,10 +316,9 @@ a {
 }
 
 .site-nav .logo-text {
-    font-size: var(--fs-lg);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    height: 70px;
+    max-width: min(176px, 42vw);
+    object-fit: contain;
 }
 
 .site-nav-links ul {
@@ -833,37 +832,6 @@ nav ul li a.active {
     grid-template-columns: 1.4fr 1fr;
     gap: 60px;
     align-items: start;
-}
-
-.about-stats {
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-    border-left: 1px solid var(--border-soft);
-    padding-left: 32px;
-    transition: border-color 0.2s ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .about-stats {
-        transition: none;
-    }
-}
-
-.stat-number {
-    display: block;
-    font-family: var(--font-display);
-    font-size: var(--fs-3xl);
-    /* Revision A2 (implementation_plan.md) — Oswald 700 steps down to
-       --fw-semibold (600); Sora renders heavier at the same weight. */
-    font-weight: var(--fw-semibold);
-    color: var(--color-accent-text);
-    line-height: 1;
-}
-
-.stat-label {
-    font-size: var(--fs-md);
-    color: var(--color-ink-faint);
 }
 
 /* ==========================================================================
@@ -1658,15 +1626,6 @@ body.court-viewer-lock {
         grid-template-columns: 1fr;
     }
 
-    .about-stats {
-        flex-direction: row;
-        border-left: none;
-        border-top: 1px solid var(--border-soft);
-        padding-left: 0;
-        padding-top: 28px;
-        gap: 20px;
-        flex-wrap: wrap;
-    }
 
     .court-grid,
     .testimonial-grid {
@@ -1707,7 +1666,8 @@ body.court-viewer-lock {
     }
 
     .site-nav .logo-text {
-        font-size: var(--fs-lg);
+        height: 64px;
+        max-width: min(165px, 42vw);
     }
 
     .site-nav {
@@ -1786,7 +1746,8 @@ body.court-viewer-lock {
     }
 
     .nav-menu-brand .logo-text {
-        font-size: var(--fs-lg);
+        height: 64px;
+        max-width: min(165px, 42vw);
     }
 
     .nav-menu ul {
@@ -1884,10 +1845,6 @@ body.court-viewer-lock {
     .court-grid,
     .testimonial-grid {
         grid-template-columns: 1fr;
-    }
-
-    .about-stats {
-        flex-direction: column;
     }
 
     .court-viewer {

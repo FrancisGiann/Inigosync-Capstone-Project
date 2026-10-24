@@ -169,7 +169,7 @@ body.staff-body {
 .staff-sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     padding: 0 10px;
     margin-bottom: 6px;
 }
@@ -180,10 +180,10 @@ body.staff-body {
    still-harmless rule" convention Style/Dashboard.css already documents
    elsewhere) since nothing in this file's markup references it anymore. */
 .staff-sidebar-brand img {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
     object-fit: contain;
-    flex-shrink: 0;
+    flex: 0 0 44px;
 }
 
 .staff-logo-dot {
@@ -207,13 +207,8 @@ body.staff-body {
 }
 
 .staff-logo-text {
-    font-family: var(--font-display);
-    color: var(--color-primary);
-    font-size: var(--fs-lg);
-    /* Revision A2 (implementation_plan.md) — Oswald 700 steps down to
-       --fw-semibold (600); Sora renders heavier at the same weight. */
-    font-weight: var(--fw-semibold);
-    letter-spacing: 0.02em;
+    height: 64px;
+    max-width: min(165px, 42vw);
 }
 
 .staff-role-tag {
@@ -853,13 +848,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-phone-status[data-state="valid"] { color: var(--color-court-green); }
 .staff-phone-status[data-state="invalid"] { color: var(--color-alert); }
 .staff-phone-status[data-state="available"] { color: var(--color-court-green); }
-.staff-phone-status[data-state="warning"] { color: #9a6700; }
+.staff-phone-status[data-state="warning"] { color: var(--color-warning-text); }
 .staff-phone-status[data-state="neutral"] { color: var(--color-ink-faint); }
 .phone-field-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
 .phone-field-status { display: block; flex: 0 1 58%; min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0; text-transform: none; }
 .phone-field-status[data-state="valid"],.phone-field-status[data-state="available"] { color: var(--color-court-green); }
 .phone-field-status[data-state="invalid"],.phone-field-status[data-state="in_use"],.phone-field-status[data-state="error"] { color: var(--color-alert); }
-.phone-field-status[data-state="warning"] { color: #9a6700; }
+.phone-field-status[data-state="warning"] { color: var(--color-warning-text); }
 .phone-field-status[data-state="checking"],.phone-field-status[data-state="neutral"] { color: var(--color-ink-faint); }
 [data-staff-settings-mobile][data-phone-availability="available"],[data-staff-settings-emergency-number][data-validation-state="valid"] { border-color: var(--color-court-green); box-shadow: 0 0 0 1px var(--color-court-green); }
 [data-staff-settings-mobile][data-phone-availability="invalid"],[data-staff-settings-emergency-number][data-validation-state="invalid"] { border-color: var(--color-alert); box-shadow: 0 0 0 1px var(--color-alert); }

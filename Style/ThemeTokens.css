@@ -1,0 +1,302 @@
+/* IñigoSync shared semantic theme layer.
+   Loaded after each page's component styles so the portals share one palette. */
+html:root[data-theme] {
+    color-scheme: dark;
+    --surface-page: #090909;
+    --surface-band: #111111;
+    --surface-card: #191919;
+    --surface-card-hover: #242424;
+    --border-soft: rgba(255, 255, 255, .15);
+    --border-card: rgba(255, 255, 255, .23);
+    --shadow-card: 0 8px 24px rgba(0, 0, 0, .22);
+    --shadow-card-hover: 0 14px 34px rgba(0, 0, 0, .3);
+    --color-bg: var(--surface-page);
+    --color-bg-elevated: var(--surface-band);
+    --color-bg-card: var(--surface-card);
+    --color-line: var(--border-soft);
+    --color-ink: #ffffff;
+    --color-ink-dim: #d0d0d0;
+    --color-ink-faint: #b8b8b8;
+    --color-primary: #ff7900;
+    --color-primary-dim: #d95f00;
+    --color-accent-text: #ff9a4a;
+    --color-court-green: #55b982;
+    --color-alert: #ef7468;
+    --color-alert-text: #ff9990;
+    --color-warning-text: #f1c66b;
+    --color-focus: #ff9a4a;
+    --color-nav-bg: #090909;
+    --color-nav-shadow: 0 10px 30px rgba(0, 0, 0, .26);
+    --color-border: var(--border-soft);
+    --color-surface-2: var(--surface-band);
+    --color-surface: var(--surface-card);
+    --color-text: var(--color-ink);
+    --color-muted: var(--color-ink-dim);
+}
+
+html:root[data-theme="light"] {
+    color-scheme: light;
+    --surface-page: #ffffff;
+    --surface-band: #f4f4f4;
+    --surface-card: #ffffff;
+    --surface-card-hover: #fafafa;
+    --border-soft: rgba(0, 0, 0, .13);
+    --border-card: rgba(0, 0, 0, .2);
+    --shadow-card: 0 8px 24px rgba(30, 42, 45, .08);
+    --shadow-card-hover: 0 14px 34px rgba(30, 42, 45, .14);
+    --color-bg: var(--surface-page);
+    --color-bg-elevated: var(--surface-band);
+    --color-bg-card: var(--surface-card);
+    --color-line: var(--border-soft);
+    --color-ink: #111111;
+    --color-ink-dim: #505050;
+    --color-ink-faint: #5a5a5a;
+    --color-primary: #ff7900;
+    --color-primary-dim: #d95f00;
+    --color-accent-text: #b94700;
+    --color-court-green: #187346;
+    --color-alert: #b52e28;
+    --color-alert-text: #a92923;
+    --color-warning-text: #805300;
+    --color-focus: #b94700;
+    --color-nav-bg: #ffffff;
+    --color-nav-shadow: 0 10px 30px rgba(26, 38, 43, .12);
+    --color-border: var(--border-soft);
+    --color-surface-2: var(--surface-band);
+    --color-surface: var(--surface-card);
+    --color-text: var(--color-ink);
+    --color-muted: var(--color-ink-dim);
+}
+
+html:root[data-theme] body {
+    background-color: var(--surface-page);
+    color: var(--color-ink);
+}
+
+html:root[data-theme] :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
+}
+
+html:root[data-theme] .policy-header nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+}
+
+html:root[data-theme] .policy-theme-toggle {
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: var(--surface-card);
+    color: var(--color-ink);
+    font: 600 .875rem var(--font-body);
+    cursor: pointer;
+}
+
+html:root[data-theme] .policy-theme-toggle:hover {
+    border-color: var(--color-primary);
+    background: var(--surface-band);
+}
+
+html:root[data-theme] .staff-onboarding-theme {
+    position: fixed;
+    z-index: 2;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: var(--surface-card);
+    color: var(--color-ink);
+    font: 600 .875rem var(--font-body);
+    cursor: pointer;
+}
+
+/* The emblem is a circle with occasional faint pixels just outside its edge;
+   clipping it here keeps every system mark clean at every rendered size. */
+html:root[data-theme] .system-logo-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    overflow: hidden;
+    border-radius: 50%;
+}
+html:root[data-theme] .system-logo-mark img {
+    display: block;
+    width: 44px !important;
+    height: 44px !important;
+    max-width: none;
+    object-fit: contain;
+}
+
+html:root[data-theme] .logo-text,
+html:root[data-theme] .admin-logo-text,
+html:root[data-theme] .staff-logo-text {
+    display: block;
+    width: auto;
+    height: 64px;
+    max-width: min(165px, 42vw);
+    object-fit: contain;
+    flex: 0 1 auto;
+}
+
+html:root[data-theme] .walkin-payment-page {
+    background: var(--surface-page);
+    color: var(--color-ink);
+}
+
+html:root[data-theme] .walkin-payment-page main {
+    border-color: var(--border-card);
+    border-radius: 16px;
+    background: var(--surface-card);
+    box-shadow: var(--shadow-card);
+}
+
+html:root[data-theme] .walkin-payment-page p { color: var(--color-ink-dim); }
+html:root[data-theme] .walkin-payment-page .notice { background: color-mix(in srgb, var(--color-primary) 14%, var(--surface-card)); color: var(--color-ink); }
+html:root[data-theme] .walkin-payment-page a { color: var(--color-accent-text); }
+
+html:root[data-theme] .walkin-payment-theme {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--border-card);
+    border-radius: 999px;
+    background: var(--surface-card);
+    color: var(--color-ink);
+    font: 600 .875rem var(--font-body);
+    cursor: pointer;
+}
+
+html:root[data-theme] :is(.theme-toggle, .dash-sidebar-collapse, .staff-sidebar-collapse, .admin-sidebar-collapse,
+    .dash-btn-primary, .staff-btn-primary, .admin-btn-primary, .book-now, .cta-button:not(.secondary),
+    .auth-submit, .landing-booking-next, .landing-draft-continue) {
+    transition: background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+html:root[data-theme] :is(.dash-btn-primary, .staff-btn-primary, .admin-btn-primary, .book-now,
+    .cta-button:not(.secondary), .auth-submit, .landing-booking-next, .landing-draft-continue) {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #111;
+    font-weight: 700;
+}
+
+html:root[data-theme] :is(.dash-btn-primary, .staff-btn-primary, .admin-btn-primary, .book-now,
+    .cta-button:not(.secondary), .auth-submit, .landing-booking-next, .landing-draft-continue):hover:not(:disabled) {
+    background-color: #f07a41;
+    border-color: #f07a41;
+    color: #111;
+    box-shadow: 0 6px 18px rgba(229, 106, 46, .22);
+}
+
+html:root[data-theme] :is(button, a, input, select, textarea):disabled,
+html:root[data-theme] :is(button, a)[aria-disabled="true"] {
+    cursor: not-allowed;
+}
+
+html:root[data-theme] .logo-text,
+html:root[data-theme] .dash-sidebar-brand .logo-text,
+html:root[data-theme] .staff-logo-text,
+html:root[data-theme] .admin-logo-text {
+    color: var(--color-accent-text);
+    -webkit-text-stroke: 0;
+    text-shadow: none;
+}
+
+/* Shared portal components keep operational density while sharing a calmer
+   navigation, control, table, and dialog treatment across all three roles. */
+html:root[data-theme] body.dash-body::before {
+    background-color: var(--surface-page);
+    background-image: none;
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-sidebar, .staff-sidebar, .admin-sidebar) {
+    background: var(--surface-band);
+    border-color: var(--border-soft);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-topbar, .staff-topbar, .admin-topbar) {
+    background: color-mix(in srgb, var(--surface-card) 94%, transparent);
+    border-color: var(--border-soft);
+    backdrop-filter: blur(14px);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-card, .staff-card, .admin-card, .staff-stat-card, .admin-stat-card) {
+    border: 1px solid var(--border-card);
+    border-radius: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--shadow-card);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-nav-link, .staff-nav-link, .admin-nav-link):not(.is-active):hover {
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--surface-card));
+    color: var(--color-ink);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-nav-link, .staff-nav-link, .admin-nav-link).is-active {
+    border-radius: 10px;
+    background: var(--color-primary);
+    color: #111;
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(input, select, textarea, .dash-search, .staff-search, .admin-search) {
+    border-color: var(--border-card);
+    border-radius: 10px;
+    background-color: var(--surface-card);
+    color: var(--color-ink);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(input, select, textarea, .dash-search, .staff-search, .admin-search):focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 24%, transparent);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-table, .staff-table, .admin-table) th {
+    background: var(--surface-band);
+    color: var(--color-ink);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-table, .staff-table, .admin-table) td {
+    border-color: var(--border-soft);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-table, .staff-table, .admin-table) tbody tr:hover {
+    background: color-mix(in srgb, var(--color-primary) 7%, var(--surface-card));
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-modal, .staff-modal, .admin-modal) {
+    border-color: var(--border-card);
+    border-radius: 16px;
+    background: var(--surface-card);
+    box-shadow: 0 24px 72px rgba(0, 0, 0, .28);
+}
+
+html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-modal-overlay, .staff-modal-overlay, .admin-modal-overlay) {
+    background: rgba(6, 18, 25, .66);
+    backdrop-filter: blur(4px);
+}
+
+html[data-theme="light"] :is(.hero-scrim) {
+    /* Keep the photographic hero legible in both modes. */
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html:root[data-theme] *, html:root[data-theme] *::before, html:root[data-theme] *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+    }
+}

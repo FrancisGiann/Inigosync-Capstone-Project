@@ -24,7 +24,7 @@
         overlayEl.innerHTML = `
             <div class="inigo-loading-card">
                 <div class="inigo-loading-ring" aria-hidden="true">
-                    <img src="../assets/Logo/WebLogo.png" alt="" class="inigo-loading-logo">
+                    <img src="../assets/Logo/InigoSync-Emblem.png" alt="" class="inigo-loading-logo">
                 </div>
                 <p class="inigo-loading-text" data-inigo-loading-text></p>
             </div>

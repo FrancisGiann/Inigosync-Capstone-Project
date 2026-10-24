@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Staff Dashboard | IñigoSync</title>
     <meta name="robots" content="noindex, nofollow">
-    <link rel="icon" type="image/png" href="../assets/Logo/WebLogo.png">
-    <link rel="apple-touch-icon" href="../assets/Logo/WebLogo.png">
+    <link rel="icon" type="image/png" href="../assets/Logo/InigoSync-Emblem.png">
+    <link rel="apple-touch-icon" href="../assets/Logo/InigoSync-Emblem.png">
     <meta name="theme-color" content="#F57C00">
 
 <!-- Theme guard: set data-theme before stylesheets load to prevent flash.
@@ -15,8 +15,9 @@
 <script>
 (function() {
     const saved = localStorage.getItem('inigosync-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light') || 'dark';
+    const theme = saved === 'light' || saved === 'dark'
+        ? saved
+        : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.classList.add('inigo-auth-pending');
 })();
@@ -30,6 +31,7 @@
 <link rel="stylesheet" href="../Style/staff_dashboard.css">
 <link rel="stylesheet" href="../Style/paymentAcknowledgment.css">
 <link rel="stylesheet" href="../Style/Loading.css">
+<link rel="stylesheet" href="../Style/ThemeTokens.css">
 <script src="../includes/loadingOverlay.js"></script>
 </head>
 <body class="staff-body" data-required-role="staff">
@@ -49,8 +51,8 @@
              wordmark, replacing the "IS" text monogram (.staff-logo-dot),
              same treatment as the owner dashboard's own sidebar brand. -->
         <div class="staff-sidebar-brand">
-            <img src="../assets/Logo/WebLogo.png" alt="IñigoSync logo">
-            <div class="staff-logo-text">IñigoSync</div>
+            <span class="system-logo-mark" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt=""></span>
+            <img class="staff-logo-text" src="../assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" width="1931" height="814">
         </div>
         <p class="staff-role-tag">Staff Portal</p>
 

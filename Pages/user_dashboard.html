@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Dashboard | IñigoSync</title>
     <meta name="robots" content="noindex, nofollow">
-    <link rel="icon" type="image/png" href="../assets/Logo/WebLogo.png">
-    <link rel="apple-touch-icon" href="../assets/Logo/WebLogo.png">
+    <link rel="icon" type="image/png" href="../assets/Logo/InigoSync-Emblem.png">
+    <link rel="apple-touch-icon" href="../assets/Logo/InigoSync-Emblem.png">
     <meta name="theme-color" content="#F57C00">
 
     <!-- Theme guard: set data-theme before stylesheets load to prevent flash.
@@ -15,8 +15,9 @@
     <script>
     (function() {
         const saved = localStorage.getItem('inigosync-theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const theme = saved || (prefersDark ? 'dark' : 'light') || 'dark';
+        const theme = saved === 'light' || saved === 'dark'
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
         document.documentElement.setAttribute('data-theme', theme);
         document.documentElement.classList.add('inigo-auth-pending');
     })();
@@ -31,6 +32,7 @@
     <link rel="stylesheet" href="../Style/Dashboard.css">
     <link rel="stylesheet" href="../Style/paymentAcknowledgment.css">
     <link rel="stylesheet" href="../Style/Loading.css">
+    <link rel="stylesheet" href="../Style/ThemeTokens.css">
     <script src="../includes/loadingOverlay.js"></script>
 </head>
 <body class="dash-body" data-required-role="customer">
@@ -47,8 +49,8 @@
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="m14.5 5-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="dash-sidebar-brand">
-                <img src="../assets/Logo/WebLogo.png" alt="Iñigos logo">
-                <div class="logo-text">IñigoSync</div>
+                <span class="system-logo-mark" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt=""></span>
+                <img class="logo-text" src="../assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" width="1931" height="814">
             </div>
 
             <!-- Profile and sign-out are available in the avatar menu;

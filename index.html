@@ -13,8 +13,8 @@
     <meta name="robots" content="index, follow">
 
     <!-- Favicon -->
-    <link rel="icon" type="image/png" href="./assets/Logo/WebLogo.png">
-    <link rel="apple-touch-icon" href="./assets/Logo/WebLogo.png">
+    <link rel="icon" type="image/png" href="./assets/Logo/InigoSync-Emblem.png">
+    <link rel="apple-touch-icon" href="./assets/Logo/InigoSync-Emblem.png">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
@@ -22,7 +22,7 @@
     <meta property="og:title" content="IñigoSync — Book Courts at Iñigos Sports Center, Lucena City">
     <meta property="og:description" content="Book courts online at Iñigos Sports Center. Basketball, badminton, bowling, billiards and more — serving Lucena since 2011.">
     <meta property="og:url" content="https://inigossportcenter.com/">
-    <meta property="og:image" content="https://inigossportcenter.com/assets/Logo/WebLogo.png">
+    <meta property="og:image" content="https://inigossportcenter.com/assets/Logo/InigoSync-Emblem.png">
     <meta property="og:image:alt" content="IñigoSync logo">
     <meta property="og:locale" content="en_PH">
 
@@ -30,7 +30,7 @@
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="IñigoSync — Book Courts at Iñigos Sports Center">
     <meta name="twitter:description" content="Book courts online at Iñigos Sports Center, Lucena City. A variety of sports since 2011.">
-    <meta name="twitter:image" content="https://inigossportcenter.com/assets/Logo/WebLogo.png">
+    <meta name="twitter:image" content="https://inigossportcenter.com/assets/Logo/InigoSync-Emblem.png">
 
     <!-- Web App Manifest -->
     <link rel="manifest" href="./manifest.json">
@@ -40,8 +40,9 @@
     <script>
     (function() {
         const saved = localStorage.getItem('inigosync-theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const theme = saved || (prefersDark ? 'dark' : 'light') || 'dark';
+        const theme = saved === 'light' || saved === 'dark'
+            ? saved
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
         document.documentElement.setAttribute('data-theme', theme);
     })();
     </script>
@@ -56,6 +57,7 @@
     <link rel="stylesheet" href="./Style/Loading.css">
     <link rel="stylesheet" href="./Style/LandingNight.css">
     <link rel="stylesheet" href="./Style/LandingBooking.css">
+    <link rel="stylesheet" href="./Style/ThemeTokens.css">
 </head>
 <body class="landing-night">
     <a class="landing-skip" href="#courts">Skip to courts</a>
@@ -65,8 +67,8 @@
 
         <div class="site-nav-pill">
             <div class="logo-brand">
-                <img src="./assets/Logo/WebLogo.png" alt="IñigoSync logo" class="logo-image">
-                <div class="logo-text">IñigoSync</div>
+                <span class="system-logo-mark" aria-hidden="true"><img src="./assets/Logo/InigoSync-Emblem.png" alt="" class="logo-image"></span>
+                <img src="./assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" class="logo-text" width="1931" height="814">
             </div>
 
             <nav class="site-nav-links" aria-label="Primary">
@@ -107,8 +109,8 @@
         <nav class="nav-menu" id="landing-mobile-menu" aria-label="Mobile navigation" inert>
             <button type="button" class="drawer-close" data-menu-dismiss aria-label="Close menu">×</button>
             <div class="nav-menu-brand">
-                <img src="./assets/Logo/WebLogo.png" alt="IñigoSync logo" class="nav-menu-logo">
-                <div class="logo-text">IñigoSync</div>
+                <span class="system-logo-mark" aria-hidden="true"><img src="./assets/Logo/InigoSync-Emblem.png" alt="" class="nav-menu-logo"></span>
+                <img src="./assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" class="logo-text" width="1931" height="814">
             </div>
             <ul>
                 <li><a href="#home" class="active">Home</a></li>
@@ -136,13 +138,28 @@
                         <button type="button" class="cta-button" data-auth-open="login">Book a court</button>
                         <a href="#courts" class="cta-button secondary">Explore the courts</a>
                     </div>
-                    <div class="hero-stats" aria-label="Iñigos Sports Center facts">
-                        <div><strong data-sports-count>—</strong><span data-sports-label>Sports offered</span></div>
-                        <div><strong>2011</strong><span>Serving Lucena since</span></div>
-                        <div><strong>24/7</strong><span>Online booking access</span></div>
-                    </div>
                 </div>
             </div>
+            <section class="landing-facts" aria-label="Iñigos Sports Center facts">
+                <div class="section-inner hero-stats">
+                    <div>
+                        <svg class="facts-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M4.5 8.5c4 1 11 1 15 0M6 16c4-1 8-1 12 0M12 3.5v17"/></svg>
+                        <strong data-sports-count>—</strong><span data-sports-label>Sports offered</span>
+                    </div>
+                    <div>
+                        <svg class="facts-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M8 13h3M8 16h6"/></svg>
+                        <strong>2011</strong><span>Serving Lucena since</span>
+                    </div>
+                    <div>
+                        <svg class="facts-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2M5 4.5 3.5 6M19 4.5 20.5 6"/></svg>
+                        <strong>24/7</strong><span>Online booking access</span>
+                    </div>
+                    <div class="google-rating-fact" aria-label="Google rating, 4.4 out of 5" title="Google listing snapshot · Oct 24, 2026">
+                        <svg class="facts-icon google-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21.6 12.23c0-.7-.06-1.38-.18-2.03H12v3.84h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.24c1.9-1.75 2.98-4.33 2.98-7.33Z" fill="#4285F4" stroke="none"/><path d="M12 22c2.7 0 4.97-.9 6.62-2.44l-3.24-2.5c-.9.6-2.04.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H3.06v2.58A10 10 0 0 0 12 22Z" fill="#34A853" stroke="none"/><path d="M6.41 13.9a6 6 0 0 1 0-3.8V7.52H3.06a10 10 0 0 0 0 8.96l3.35-2.58Z" fill="#FBBC05" stroke="none"/><path d="M12 5.98c1.47 0 2.79.5 3.83 1.52l2.87-2.87C16.96 2.98 14.7 2 12 2a10 10 0 0 0-8.94 5.52l3.35 2.58C7.2 7.74 9.4 5.98 12 5.98Z" fill="#EA4335" stroke="none"/></svg>
+                        <span class="rating-value"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 2.8 2.8 5.7 6.3.9-4.55 4.44 1.08 6.27L12 17.15l-5.63 2.96 1.08-6.27L2.9 9.4l6.3-.9L12 2.8Z"/></svg><strong>4.4/5</strong></span><span>Google rating</span>
+                    </div>
+                </div>
+            </section>
         </section>
 
         <!-- FEATURED — current published event photos and captions from Supabase. -->
@@ -155,14 +172,18 @@
                 </div>
                 <div class="featured-showcase">
                     <div class="featured-venue-glow" aria-hidden="true"></div>
-                    <div class="featured-gallery" data-home-media role="group" aria-label="Featured event photos"></div>
-                    <div class="featured-caption-wrap">
-                        <div class="featured-copy-stack" data-home-copy-stack aria-live="polite"></div>
-                        <div class="featured-progress" role="group" aria-label="Featured event slideshow controls">
-                            <button type="button" class="hero-arrow hero-arrow-prev" data-home-prev aria-label="Previous featured event" hidden><span aria-hidden="true">←</span></button>
-                            <button type="button" class="hero-arrow hero-arrow-next" data-home-next aria-label="Next featured event" hidden><span aria-hidden="true">→</span></button>
-                            <button type="button" class="hero-pause" data-home-pause aria-label="Pause slideshow" aria-pressed="false">Pause</button>
-                            <div class="hero-dots" data-home-dots></div>
+                    <div class="featured-media-stage">
+                        <div class="featured-gallery" data-home-media role="group" aria-label="Featured event photos"></div>
+                        <div class="featured-arrows" role="group" aria-label="Featured event navigation">
+                            <button type="button" class="hero-arrow hero-arrow-prev" data-home-prev aria-label="Previous featured event" title="Previous featured event" hidden><span aria-hidden="true">←</span></button>
+                            <button type="button" class="hero-arrow hero-arrow-next" data-home-next aria-label="Next featured event" title="Next featured event" hidden><span aria-hidden="true">→</span></button>
+                        </div>
+                        <div class="featured-caption-wrap">
+                            <div class="featured-copy-stack" data-home-copy-stack aria-live="polite"></div>
+                            <div class="featured-progress" role="group" aria-label="Featured event slideshow controls">
+                                <button type="button" class="hero-pause" data-home-pause aria-label="Pause slideshow" title="Pause slideshow" aria-pressed="false"><svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg><svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14l11-7z"/></svg></button>
+                                <div class="hero-dots" data-home-dots role="group" aria-label="Choose featured event"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -184,17 +205,23 @@
              honestly marked Rate TBA. -->
         <section class="courts reveal" id="courts">
             <div class="section-inner">
-                <h2 class="section-title">Courts &amp; Pricing</h2>
-                <p class="body-text section-intro">
-                    Choose a sport to explore the courts, view venue photos, and find your next game.
-                </p>
-
-                <p class="content-status" data-courts-status role="status"></p>
+                <div class="courts-heading">
+                    <div>
+                        <p class="eyebrow">Find your court</p>
+                        <h2 class="section-title">Courts &amp; Pricing</h2>
+                    </div>
+                    <div class="courts-heading-copy">
+                        <p class="body-text section-intro">
+                            Choose a sport to explore the courts, view venue photos, and find your next game.
+                        </p>
+                        <p class="content-status" data-courts-status role="status"></p>
+                    </div>
+                </div>
                 <div class="court-grid" data-court-grid aria-busy="true"></div>
             </div>
         </section>
 
-        <!-- ABOUT — the Iñigos story + stats, then Feedback & Reviews. Both sit
+        <!-- ABOUT — the Iñigos story, then Feedback & Reviews. Both sit
              inside #about so the nav's "About" link covers everything between
              Courts & Pricing and the site footer. #about ends on Feedback & Reviews; the
              old "Ready to lock in your slot?" CTA band that used to close it out
@@ -207,31 +234,23 @@
              area, which a very tall section can fail to reach. Each sub-block
              carries .reveal instead. -->
         <section class="about" id="about">
-            <div class="section-inner about-grid reveal">
-                <div class="about-copy">
-                    <p class="eyebrow">Since 2011</p>
-                    <img class="about-business-logo" src="./assets/Logo/Logo.png" alt="Iñigos Sports Center" width="2400" height="987" loading="lazy">
-                    <h2 class="section-title">A place to play.<br>A place to come together.</h2>
-                    <p class="body-text">
-                        Iñigos Sports Center has hosted games, leagues, and walk-in play in Brgy. Bocohan
-                        for over a decade. With a range of sports to choose from, there's room for a
-                        friendly match, a new hobby, or a game with your regular crew.
-                    </p>
-                    <p class="body-text">From basketball and badminton to bowling and billiards, find your sport and make time for the people you play with. IñigoSync makes it easy to book your next visit online.</p>
-                </div>
-                <div class="about-stats">
-                    <div class="stat">
-                        <span class="stat-number" data-sports-count>—</span>
-                        <span class="stat-label" data-sports-label>Sports offered</span>
+            <div class="about-story-band">
+                <div class="section-inner about-grid reveal">
+                    <div class="about-copy">
+                        <p class="eyebrow">Since 2011</p>
+                        <img class="about-business-logo" src="./assets/Logo/Logo.png" alt="Iñigos Sports Center" width="2400" height="987" loading="lazy">
+                        <h2 class="section-title">A place to play.<br>A place to come together.</h2>
+                        <p class="body-text">
+                            Iñigos Sports Center has hosted games, leagues, and walk-in play in Brgy. Bocohan
+                            for over a decade. With a range of sports to choose from, there's room for a
+                            friendly match, a new hobby, or a game with your regular crew.
+                        </p>
+                        <p class="body-text">From basketball and badminton to bowling and billiards, find your sport and make time for the people you play with. IñigoSync makes it easy to book your next visit online.</p>
                     </div>
-                    <div class="stat">
-                        <span class="stat-number">2011</span>
-                        <span class="stat-label">Serving Lucena since</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-number">24/7</span>
-                        <span class="stat-label">Online booking access</span>
-                    </div>
+                    <figure class="about-photo">
+                        <img src="./assets/landing/featured-bg-light-landscape.jpg" alt="Exterior of Iñigos Sports Center in Lucena City" width="2752" height="1536" loading="lazy">
+                        <figcaption>Iñigos Sports Center · Brgy. Bocohan</figcaption>
+                    </figure>
                 </div>
             </div>
 
@@ -249,12 +268,26 @@
 
     </main>
 
+    <section class="landing-visit-cta" aria-labelledby="visit-cta-title">
+        <div class="section-inner landing-visit-cta-inner">
+            <div>
+                <p class="eyebrow">Plan your visit</p>
+                <h2 class="section-title" id="visit-cta-title">Visit Iñigos Sports Center.</h2>
+                <p class="body-text">Explore the courts and plan your visit to Iñigos Sports Center in Lucena City.</p>
+                <div class="landing-visit-cta-actions">
+                    <a class="cta-button" href="#courts">Explore courts</a>
+                    <button type="button" class="cta-button secondary" data-auth-open="login">Log In / Sign Up</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <footer class="site-footer">
         <div class="section-inner footer-inner">
             <div class="footer-brand">
                 <div class="footer-brand-main">
-                    <img src="./assets/Logo/WebLogo.png" alt="" class="logo-image" width="237" height="314" loading="lazy">
-                    <span class="logo-text">IñigoSync</span>
+                    <span class="system-logo-mark" aria-hidden="true"><img src="./assets/Logo/InigoSync-Emblem.png" alt="" class="logo-image" width="1254" height="1254" loading="lazy"></span>
+                    <img src="./assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" class="logo-text" width="1931" height="814" loading="lazy">
                 </div>
                 <p class="footer-tagline">Book courts, manage schedules, and stay connected with Iñigos Sports Center.</p>
             </div>
@@ -295,9 +328,10 @@
             <div class="footer-map-block" id="location">
                 <h2 class="section-title">See you at Iñigos.</h2>
                 <div class="footer-map-canvas">
+                <!-- Legacy Google Maps embed flag t=k selects satellite imagery; the CID pin and location remain unchanged. -->
                 <iframe
                     class="footer-map-frame"
-                    src="https://www.google.com/maps?cid=16628664884079723934&amp;ll=13.9626169,121.5803986&amp;z=17&amp;output=embed"
+                    src="https://www.google.com/maps?cid=16628664884079723934&amp;ll=13.9626169,121.5803986&amp;z=17&amp;output=embed&amp;t=k"
                     loading="lazy"
                     referrerpolicy="no-referrer-when-downgrade"
                     title="Iñigos Sports Center location"
@@ -491,20 +525,14 @@
                 <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
 
-            <!-- Brand lockup: the same WebLogo.png mark the navbar and footer
-                 use, then the wordmark with the strapline set under it, so the
-                 modal reads as part of the site rather than a bare form.
-                 Laid out side by side on purpose — it gives the mark/name/
-                 strapline hierarchy without making the card any taller than
-                 the plain two-line header it replaces.
-                 Decorative alt="": the wordmark beside it carries the name. -->
+            <!-- The transparent logo carries the complete lockup. -->
             <div class="auth-brand">
                 <div class="auth-brand-lockup">
                     <span class="auth-brand-mark">
-                        <img src="./assets/Logo/WebLogo.png" alt="" width="28" height="28">
+                        <img src="./assets/Logo/InigoSync-Emblem.png" alt="" width="64" height="64">
                     </span>
                     <span class="auth-brand-text">
-                        <span class="logo-text">IñigoSync</span>
+                        <img src="./assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" class="logo-text" width="1931" height="814">
                         <span class="auth-tagline">Book your court in a few taps.</span>
                     </span>
                 </div>
@@ -1038,8 +1066,8 @@
       "alternateName": ["Inigos Sports Center", "IñigoSync", "Inigo's Sports Center"],
       "description": "Sports center in Lucena City offering basketball, badminton, bowling, billiards, table tennis, swimming and more. Book courts online with IñigoSync.",
       "url": "https://inigossportcenter.com/",
-      "logo": "https://inigossportcenter.com/assets/Logo/WebLogo.png",
-      "image": "https://inigossportcenter.com/assets/Logo/WebLogo.png",
+      "logo": "https://inigossportcenter.com/assets/Logo/InigoSync-Emblem.png",
+      "image": "https://inigossportcenter.com/assets/Logo/InigoSync-Emblem.png",
       "telephone": "+639281546876",
       "email": "itsrosem8@gmail.com",
       "address": {

@@ -6,12 +6,17 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>Walk-in payment | IñigoSync</title>
-    <link rel="icon" type="image/png" href="../assets/Logo/WebLogo.png">
+    <script>(function(){const saved=localStorage.getItem('inigosync-theme');document.documentElement.dataset.theme=(saved==='light'||saved==='dark')?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');})();</script>
+    <link rel="stylesheet" href="../Style/ThemeTokens.css">
+    <link rel="icon" type="image/png" href="../assets/Logo/InigoSync-Emblem.png">
+    <link rel="apple-touch-icon" href="../assets/Logo/InigoSync-Emblem.png">
     <style>
         :root { color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #242019; background: #f8f5ef; }
         body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
         main { width: min(100%, 440px); padding: 32px; box-sizing: border-box; background: #fff; border: 1px solid #e5ddd1; border-radius: 16px; }
-        .brand { color: #a54d00; font-size: .85rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+        .brand { display: flex; align-items: center; gap: 9px; color: var(--color-accent-text); font-size: .85rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+        .brand-emblem { display: block; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; object-fit: cover; }
+        .brand-wordmark { display: block; width: auto; height: 52px; max-width: min(125px, 42vw); object-fit: contain; }
         h1 { margin: 18px 0 12px; font-size: clamp(1.55rem, 5vw, 2rem); line-height: 1.18; }
         p { margin: 0 0 12px; line-height: 1.55; color: #544d43; }
         .notice { margin-top: 22px; padding: 14px 16px; background: #fff3e5; border-left: 4px solid #db720e; border-radius: 4px; color: #352b1e; }
@@ -19,9 +24,10 @@
         a:focus-visible { outline: 3px solid #db720e; outline-offset: 4px; }
     </style>
 </head>
-<body>
+<body class="walkin-payment-page">
+    <button type="button" class="walkin-payment-theme" onclick="ThemeController.toggle()" aria-label="Toggle theme">Toggle theme</button>
     <main>
-        <div class="brand">IñigoSync · Walk-in</div>
+        <div class="brand"><img class="brand-emblem" src="../assets/Logo/InigoSync-Emblem.png" alt=""><img class="brand-wordmark" src="../assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" width="1931" height="814"><span>· Walk-in</span></div>
         <h1 id="payment-heading">Return to the front desk</h1>
         <p id="payment-message">Ask the staff to check your payment status before entering the court.</p>
         <p class="notice">Only a confirmed payment can issue your entry pass. Keep your PayMongo or GCash confirmation for reference.</p>
@@ -33,5 +39,6 @@
             document.getElementById('payment-message').textContent = 'Return to the front desk and ask the staff to help you try again.';
         }
     </script>
+    <script src="../includes/theme.js"></script>
 </body>
 </html>

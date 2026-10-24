@@ -2816,6 +2816,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (emailInput) emailInput.textContent = profile.email || '—';
         const fullNameEl = document.querySelector('[data-admin-profile-full-name]');
         if (fullNameEl) fullNameEl.textContent = profile.full_name || '—';
+        const detailNameEl = document.querySelector('[data-admin-profile-detail-name]');
+        if (detailNameEl) detailNameEl.textContent = profile.full_name || '—';
+        const statusEl = document.querySelector('[data-admin-profile-status]');
+        if (statusEl) {
+            const statusLabels = { active: 'Active', pending: 'Setup pending', disabled: 'Deactivated' };
+            const statusClasses = { active: 'active', pending: 'pending', disabled: 'inactive' };
+            statusEl.textContent = statusLabels[profile.status] || '—';
+            statusEl.classList.remove('active', 'pending', 'inactive');
+            if (statusClasses[profile.status]) statusEl.classList.add(statusClasses[profile.status]);
+        }
 
         // Revision A2, decision B2 — the Profile panel's Email/Mobile
         // definition-list rows. authGuard.js's own profiles select already
@@ -2849,6 +2859,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ['[data-admin-profile-gender]', profile.gender || '—'],
             ['[data-admin-profile-civil-status]', profile.civil_status || '—'],
             ['[data-admin-profile-birthdate]', profile.birthdate || '—'],
+            ['[data-admin-profile-detail-birthdate]', profile.birthdate || '—'],
+            ['[data-admin-profile-detail-civil-status]', profile.civil_status || '—'],
         ];
         values.forEach(([selector, value]) => {
             const target = document.querySelector(selector);

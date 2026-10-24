@@ -20,8 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
         pause.hidden = rows.length < 2;
         previous.hidden = next.hidden = rows.length < 2;
         pause.disabled = reduced.matches;
-        pause.textContent = stopped ? 'Play' : 'Pause';
-        pause.setAttribute('aria-label', stopped ? 'Play slideshow' : 'Pause slideshow');
+        const pauseLabel = stopped ? 'Play slideshow' : 'Pause slideshow';
+        pause.setAttribute('aria-label', pauseLabel);
+        pause.title = pauseLabel;
         pause.setAttribute('aria-pressed', String(stopped));
         copy.setAttribute('aria-live', stopped || rows.length < 2 ? 'polite' : 'off');
     }
@@ -68,6 +69,13 @@ document.addEventListener('DOMContentLoaded', () => {
             el.classList.toggle('is-active', i === index);
             el.setAttribute('aria-current', String(i === index));
         });
+        const activeDot = dots.querySelector('.hero-dot.is-active');
+        if (activeDot) {
+            const stripRect = dots.getBoundingClientRect();
+            const dotRect = activeDot.getBoundingClientRect();
+            if (dotRect.left < stripRect.left) dots.scrollLeft -= stripRect.left - dotRect.left;
+            else if (dotRect.right > stripRect.right) dots.scrollLeft += dotRect.right - stripRect.right;
+        }
         start();
     }
     function placeholder(i, position, note = 'Photo placeholder') {

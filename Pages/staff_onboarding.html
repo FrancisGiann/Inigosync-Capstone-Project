@@ -5,27 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#102a24">
     <title>Finish Staff Setup | InigoSync</title>
+    <link rel="icon" type="image/png" href="../assets/Logo/InigoSync-Emblem.png">
+    <link rel="apple-touch-icon" href="../assets/Logo/InigoSync-Emblem.png">
+    <script>(function(){const saved=localStorage.getItem('inigosync-theme');document.documentElement.dataset.theme=(saved==='light'||saved==='dark')?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');})();</script>
     <link rel="stylesheet" href="../Style/Auth.css">
+    <link rel="stylesheet" href="../Style/ThemeTokens.css">
     <style>
-        body.staff-onboarding { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:rgba(12,28,24,.96); color:#1c302b; font-family:Inter,system-ui,sans-serif; }
-        .staff-onboarding-card { width:min(100%,560px); max-height:calc(100vh - 48px); overflow:auto; padding:30px; border-radius:20px; background:#fff; box-shadow:0 24px 80px #0005; }
+        body.staff-onboarding { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:var(--surface-page); color:var(--color-ink); font-family:Inter,system-ui,sans-serif; }
+        .staff-onboarding-card { width:min(100%,560px); max-height:calc(100vh - 48px); overflow:auto; padding:30px; border:1px solid var(--border-card); border-radius:16px; background:var(--surface-card); color:var(--color-ink); box-shadow:var(--shadow-card); }
+        .staff-onboarding-brand { display:flex; align-items:center; gap:10px; margin-bottom:22px; }
+        .staff-onboarding-brand .system-logo-mark { width:44px; height:44px; flex:0 0 44px; }
+        .staff-onboarding-brand .system-logo-mark img { width:44px!important; height:44px!important; }
+        .staff-onboarding-wordmark { display:block; width:auto; height:64px; max-width:min(165px,42vw); object-fit:contain; }
         .staff-onboarding-card h1 { margin:0 0 8px; font-size:1.55rem; }
-        .staff-onboarding-card p { color:#61716c; line-height:1.5; }
+        .staff-onboarding-card p { color:var(--color-ink-dim); line-height:1.5; }
         .staff-onboarding-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
         .staff-onboarding-field { display:grid; gap:6px; margin:12px 0; }
         .staff-onboarding-field.full { grid-column:1/-1; }
         .staff-onboarding-field label { font-size:.9rem; font-weight:650; }
-        .staff-onboarding-field input,.staff-onboarding-field select,.staff-onboarding-field textarea { width:100%; box-sizing:border-box; border:1px solid #cbd6d1; border-radius:9px; padding:11px 12px; font:inherit; color:#1c302b; background:#fff; }
-        .staff-onboarding-rules { margin:4px 0; padding-left:20px; color:#61716c; font-size:.82rem; }
-        .staff-onboarding-error { min-height:1.4em; color:#a62d28!important; font-size:.9rem; }
-        .staff-onboarding-submit { width:100%; border:0; border-radius:10px; padding:13px; background:#12705a; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+        .staff-onboarding-field input,.staff-onboarding-field select,.staff-onboarding-field textarea { width:100%; box-sizing:border-box; border:1px solid var(--border-card); border-radius:10px; padding:11px 12px; font:inherit; color:var(--color-ink); background:var(--surface-card); }
+        .staff-onboarding-rules { margin:4px 0; padding-left:20px; color:var(--color-ink-dim); font-size:.82rem; }
+        .staff-onboarding-card p.staff-onboarding-error { min-height:1.4em; color:var(--color-alert-text); font-size:.9rem; }
+        .staff-onboarding-submit { width:100%; min-height:44px; border:0; border-radius:10px; padding:13px; background:var(--color-primary); color:#182a35; font:inherit; font-weight:700; cursor:pointer; }
         .staff-onboarding-submit:disabled { opacity:.65; cursor:wait; }
         [data-staff-onboarding-content] { display:none; }
         @media(max-width:560px) { .staff-onboarding-card { padding:22px; } .staff-onboarding-grid { grid-template-columns:1fr; } .staff-onboarding-field.full { grid-column:auto; } }
     </style>
 </head>
 <body class="staff-onboarding" data-required-role="staff" data-staff-onboarding-page>
+    <button type="button" class="staff-onboarding-theme" onclick="ThemeController.toggle()" aria-label="Toggle theme">Toggle theme</button>
     <main class="staff-onboarding-card" aria-labelledby="staffSetupTitle">
+        <a class="staff-onboarding-brand" href="../index.html" aria-label="IñigoSync home"><span class="system-logo-mark" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt=""></span><img class="staff-onboarding-wordmark" src="../assets/Logo/InigoSync-Wordmark.png" alt="" width="1931" height="814"></a>
         <div data-staff-onboarding-loading role="status">Checking your secure staff session…</div>
         <div data-staff-onboarding-content>
             <h1 id="staffSetupTitle">Finish setting up your account</h1>
@@ -73,5 +83,6 @@
     <script src="../includes/emailMfa.js"></script>
     <script src="../includes/authGuard.js"></script>
     <script src="../includes/staff_onboarding.js"></script>
+    <script src="../includes/theme.js"></script>
 </body>
 </html>

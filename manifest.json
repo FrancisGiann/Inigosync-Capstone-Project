@@ -4,12 +4,12 @@
   "description": "Book courts online at Iñigos Sports Center, Lucena City. Basketball, badminton, bowling, billiards & more.",
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#F57C00",
+  "theme_color": "#FF7900",
   "background_color": "#111111",
   "icons": [
     {
-      "src": "./assets/Logo/WebLogo.png",
-      "sizes": "512x512",
+      "src": "./assets/Logo/InigoSync-Emblem.png",
+      "sizes": "1254x1254",
       "type": "image/png",
       "purpose": "any"
     }

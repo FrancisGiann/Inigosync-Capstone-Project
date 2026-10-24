@@ -73,6 +73,7 @@
     height: 40px;
     object-fit: contain;
     border-radius: 50%;
+    overflow: hidden;
 }
 
 .inigo-loading-text {
