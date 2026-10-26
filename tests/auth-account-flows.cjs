@@ -6,6 +6,7 @@ const vm = require('node:vm');
 function mockClient(options) {
     const user = { id: options.userId || 'fixture-user', identities: [{ provider: 'email' }], app_metadata: { provider: options.provider || 'email' } };
     let authUserEmail = 'customer@example.test';
+    let emailMfaBeginCalls = 0;
     let currentEmailChangeOtp = '111111';
     let newEmailChangeOtp = '222222';
     let session = options.oauth || options.dashboard || sessionStorage.getItem('fixture-authenticated') === '1' ? { user } : null;
@@ -14,6 +15,7 @@ function mockClient(options) {
         calls.push({ kind, data }); sessionStorage.setItem('fixture-calls', JSON.stringify(calls));
     };
     if (options.oauth || options.oauthReturn) sessionStorage.setItem('inigosync-oauth-pending', '1');
+    if (options.oauthRememberDevice !== undefined) sessionStorage.setItem('inigosync-oauth-remember', options.oauthRememberDevice ? '1' : '0');
     const trustedKey = (role, userId = user.id) => `inigosync-trusted-device:${role}:${userId}`;
     window.InigoAuthStorage = {
         setRememberSession(remember) {
@@ -76,6 +78,7 @@ function mockClient(options) {
         },
         auth: {
             getSession: async () => {
+                if (options.sessionReadDelay) await new Promise(resolve => setTimeout(resolve, options.sessionReadDelay));
                 if (options.sessionReadError) {
                     window.InigoLoading?.show('Restoring session…');
                     throw new Error(options.sessionReadError);
@@ -127,6 +130,9 @@ function mockClient(options) {
                     currentEmailChangeOtp = '333333';
                     newEmailChangeOtp = '444444';
                 }
+                if (options.resendErrorCode) {
+                    return { error: { code: options.resendErrorCode, message: 'Too many emails have been sent to this email address.' } };
+                }
                 return {};
             },
             getUser: async () => { record('getUser'); return { data: { user: { ...user, email: authUserEmail } } }; },
@@ -139,8 +145,16 @@ function mockClient(options) {
                     const action = args?.body?.action;
                     if (action === 'begin') {
                         const trusted = options.trustedDeviceUserId === user.id && typeof args.body.device_secret === 'string';
+                        emailMfaBeginCalls += 1;
+                        if (options.emailMfaBeginError && emailMfaBeginCalls === 1) {
+                            return { data: null, error: { message: 'We could not send the verification code. Please wait a moment and try again.' } };
+                        }
+                        if (options.nativeEmailProof === true) {
+                            return { data: { verified: true, remembered: false }, error: null };
+                        }
+                        const resent = !(options.emailMfaNoSendOnResend && emailMfaBeginCalls > 1);
                         return { data: trusted ? { verified: true, remembered: true }
-                            : { verified: false, challenge_id: 'challenge-fixture', resent: true }, error: null };
+                            : { verified: false, challenge_id: 'challenge-fixture', resent }, error: null };
                     }
                     if (action === 'verify') {
                         record('emailMfaVerify', args.body);
@@ -195,6 +209,13 @@ function mockClient(options) {
             const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
             page.setDefaultTimeout(10000);
             await page.route(/^https:\/\//, r => r.abort());
+            if (options.oauthReturn) {
+                await page.addInitScript(() => {
+                    try {
+                        if (location.pathname.endsWith('/index.html')) sessionStorage.setItem('inigosync-oauth-pending', '1');
+                    } catch (_) { /* the initial about:blank document has no storage origin */ }
+                });
+            }
             await page.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify(options)})` }));
             await page.route('**/includes/landingPage.js', r => r.fulfill({ contentType: 'application/javascript', body: '' }));
             await page.route('https://elfsightcdn.com/**', r => r.abort());
@@ -219,6 +240,46 @@ function mockClient(options) {
             return page;
         }
         const calls = page => page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]'));
+        if (process.env.SIGNUP_MFA_RETRY_ONLY === '1') {
+            const page = await setup({ emailConfirmation: true, emailMfaBeginError: true });
+            await page.locator('.cta-buttons [data-auth-open]').click();
+            await page.locator('[role="tab"][data-auth-tab="signup"]').click();
+            const form = page.locator('[data-auth-panel="signup"]');
+            await form.locator('[name="email"]').fill('customer@example.test');
+            await form.locator('[name="password"]').fill('Fixture2026!');
+            await form.locator('[data-signup-next]').click();
+            await form.locator('[name="surname"]').fill('Tester');
+            await form.locator('[name="firstname"]').fill('Customer');
+            await form.locator('[name="terms"]').check();
+            await form.locator('button[type="submit"]').click();
+            for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await page.locator('[data-auth-panel="verify"] [data-verify-heading]').filter({ hasText: "Confirm it's you" }).waitFor();
+            await page.waitForFunction(() => {
+                const loading = document.querySelector('.inigo-loading-overlay');
+                return loading?.hidden === true && !loading.hasAttribute('data-open');
+            });
+            assert.equal(await page.locator('.inigo-loading-overlay').evaluate(el => el.hidden && !el.hasAttribute('data-open')), true,
+                'failed initial MFA delivery clears the blocking loading overlay');
+            for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+            await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await page.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent.includes('no sign-in code has been sent yet'));
+            assert.equal((await calls(page)).filter(call => call.kind === 'function' && call.data?.body?.action === 'verify').length, 0,
+                'the consumed signup code is not sent as an MFA verification attempt');
+            await page.evaluate(() => { document.querySelector('[data-otp-resend]').disabled = false; });
+            await page.locator('[data-otp-resend]').click();
+            await page.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent === 'A new sign-in code was sent. Check your inbox.');
+            assert.equal((await calls(page)).filter(call => call.kind === 'function' && call.data?.body?.action === 'begin').length, 2,
+                'Resend starts a fresh login-MFA challenge');
+            assert.equal((await calls(page)).filter(call => call.kind === 'resend').length, 0,
+                'Resend does not request another signup confirmation code');
+            for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill('123456'[i]);
+            await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+            await page.waitForURL('**/user_dashboard.html');
+            await page.close();
+            console.log('PASS failed signup MFA begin clears overlay, prevents stale-code verify, and retries with a fresh challenge');
+            return;
+        }
         async function runLogoutConfirmationTests() {
             const signOutDashboard = await setupDashboard();
             const customerLogoutButton = signOutDashboard.locator('[data-dash-logout]').first();
@@ -378,7 +439,9 @@ function mockClient(options) {
                 await page.close();
             }
 
-            const oauthProviderFailure = await setup({ oauthReturn: true, sessionReadError: 'Internal session lookup detail' });
+            const oauthProviderFailure = await setup({ oauthReturn: true, sessionReadError: 'Internal session lookup detail', sessionReadDelay: 500 });
+            assert.equal(await oauthProviderFailure.evaluate(() => document.documentElement.hasAttribute('data-auth-oauth-pending')), true,
+                'Google return loading is visible before session restoration completes');
             await oauthProviderFailure.locator('[data-auth-notice]').waitFor({ state: 'visible' });
             const oauthErrorText = await oauthProviderFailure.locator('[data-auth-notice]').innerText();
             assert.match(oauthErrorText, /could not complete that request/i);
@@ -445,6 +508,18 @@ function mockClient(options) {
                 await page.close();
             }
             console.log('PASS disabled/profile errors remain actionable, unknown Auth errors stay generic in OAuth/password flows, and persisted lockout uses a floating alert');
+            return;
+        }
+        if (process.env.OAUTH_RETURN_ONLY === '1') {
+            const page = await setup({ oauth: true, oauthReturn: true, provider: 'google', nativeEmailProof: true, sessionReadDelay: 1000 });
+            assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-auth-oauth-pending')), true,
+                'the loading state appears before the landing page can flash');
+            assert.match(await page.evaluate(() => getComputedStyle(document.documentElement, '::before').content), /Signing you in/);
+            await page.waitForURL('**/user_dashboard.html');
+            assert(!(await calls(page)).some(call => call.kind === 'emailMfaVerify'),
+                'OAuth native email proof continues directly without an app OTP prompt');
+            await page.close();
+            console.log('PASS Google return paints a pre-page loading state and routes directly to the dashboard');
             return;
         }
         if (process.env.PHONE_AVAILABILITY_ONLY === '1') {
@@ -617,6 +692,17 @@ function mockClient(options) {
             assert(await form.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')));
             assert(!(await calls(page)).some(c => ['emailCheck', 'signUp'].includes(c.kind)));
 
+            await form.locator('[name="email"]').fill('member@gamil.com');
+            await page.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'check_spelling');
+            assert.equal(await page.locator('[data-signup-email-status]').getAttribute('data-suggestion'), 'member@gmail.com');
+            await form.locator('[data-signup-next]').click();
+            assert.match(await page.locator('[data-auth-notice]').innerText(), /Did you mean member@gmail\.com\?/i,
+                'a Gmail transposition warns with the precise correction before signup proceeds');
+            assert(!(await calls(page)).some(c => c.kind === 'signUp'), 'a likely provider typo is never silently rewritten or submitted');
+
+            await form.locator('[name="email"]').fill('member@community-center.example');
+            await page.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'available');
+
             await form.locator('[name="email"]').fill('member@gmail.com');
             await page.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'available');
             await form.locator('[data-signup-next]').click();
@@ -727,20 +813,15 @@ function mockClient(options) {
             await trustedPage.close();
 
             for (const remember of [true, false]) {
-                const oauthPage = await browser.newPage();
-                oauthPage.setDefaultTimeout(10000);
-                await oauthPage.route(/^https:\/\//, r => r.abort());
-                await oauthPage.route('**/Config/supabaseClient.js', r => r.fulfill({ contentType: 'application/javascript', body: `(${mockClient})(${JSON.stringify({ oauth: true, role: 'customer' })})` }));
-                await oauthPage.route('**/*dashboard.html', r => r.fulfill({ contentType: 'text/html', body: '<h1>Dashboard fixture</h1>' }));
-                await oauthPage.addInitScript(value => sessionStorage.setItem('inigosync-oauth-remember', value ? '1' : '0'), remember);
-                await oauthPage.goto('http://127.0.0.1:4178/index.html', { waitUntil: 'domcontentloaded' });
-                await oauthPage.locator('[data-auth-panel="verify"].is-active').waitFor();
-                for (let i = 0; i < 6; i++) await oauthPage.locator('[data-otp-box]').nth(i).fill('123456'[i]);
-                await oauthPage.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+                const oauthPage = await setup({ oauth: true, role: 'customer', provider: 'google', nativeEmailProof: true, oauthRememberDevice: remember });
                 await oauthPage.waitForURL('**/user_dashboard.html');
-                assert.equal(Boolean(await oauthPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user'))), remember);
+                assert.equal(await oauthPage.evaluate(() => sessionStorage.getItem('fixture-oauth-splash-seen')), '1',
+                    'the OAuth return splash appears before the direct dashboard transition');
+                assert.equal(Boolean(await oauthPage.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:fixture-user'))), false,
+                    'native OAuth email proof does not create a remembered-email-MFA device');
                 assert.equal(await oauthPage.evaluate(() => sessionStorage.getItem('inigosync-session-only')), remember ? null : '1');
                 assert((await calls(oauthPage)).some(c => c.kind === 'rememberSessionChoice' && c.data.remember === remember));
+                assert(!(await calls(oauthPage)).some(c => c.kind === 'emailMfaVerify'), 'Google OAuth completes without the app email-OTP gate');
                 await oauthPage.close();
             }
 
@@ -1119,7 +1200,7 @@ function mockClient(options) {
         const typoForm = await firstStep(typo, 'kikooborza@gmail.comk');
         await typo.waitForFunction(() => document.querySelector('[data-signup-email-status]').dataset.state === 'check_spelling');
         assert.equal(await typo.locator('[data-signup-email-status]').innerText(), 'Check email spelling');
-        assert.equal(await typo.locator('[name="email"]').getAttribute('aria-invalid'), 'true');
+        assert.equal(await typoForm.locator('[name="email"]').getAttribute('aria-invalid'), 'true');
         await typoForm.locator('[data-signup-next]').click();
         assert(await typoForm.locator('[data-signup-step="1"]').evaluate(el => el.classList.contains('is-active')));
         assert.match(await typo.locator('[data-auth-notice]').innerText(), /possible provider-domain typo/i);
@@ -1167,7 +1248,7 @@ function mockClient(options) {
         }
         for (const [phoneMode, number, text, state] of [
             ['in_use', '09171234567', 'Already in use', 'in_use'],
-            ['available', '09981234567', 'Valid and available', 'available'],
+            ['available', '09981234567', 'Valid · available', 'available'],
         ]) {
             const page = await setup({ phoneMode });
             const form = await secondStep(page);
@@ -1222,8 +1303,8 @@ function mockClient(options) {
         await stalePhone.waitForFunction(() => JSON.parse(sessionStorage.getItem('fixture-calls') || '[]').some(c => c.kind === 'phoneCheck'));
         await stalePhoneForm.locator('[name="mobile"]').fill('09981234567');
         await stalePhone.waitForFunction(() => document.querySelector('[data-signup-phone-availability-status]').dataset.state === 'available');
-        await stalePhone.waitForTimeout(400);
-        assert.equal(await stalePhone.locator('[data-signup-phone-availability-status]').innerText(), 'Not found', 'a stale phone response cannot overwrite the current number result');
+        await stalePhone.waitForTimeout(1000);
+        assert.equal(await stalePhone.locator('[data-signup-phone-availability-status]').innerText(), 'Valid · available', 'a stale phone response cannot overwrite the current number result');
         await stalePhone.close();
         async function signup(page, phone = '', remember = false) {
             await page.locator('.cta-buttons [data-auth-open]').click();
@@ -1316,7 +1397,7 @@ function mockClient(options) {
         assert.equal(await lockoutError.innerText(), firstLockoutText, 'the fixed inline error is not reannounced as the timer counts down');
         await persistedLockout.close();
         const customer = await setup(
-            { oauth: true },
+            { oauth: true, provider: 'google', nativeEmailProof: true },
             'http://127.0.0.1:4178/index.html#access_token=fixture-access&refresh_token=fixture-refresh'
         );
         await customer.waitForURL('**/user_dashboard.html');
@@ -1377,37 +1458,44 @@ function mockClient(options) {
         await passwordLogin(rememberedLogin, 'login', true);
         await rememberedLogin.locator('[data-auth-panel="verify"].is-active').waitFor();
         let rememberedCalls = await calls(rememberedLogin);
-        assert(rememberedCalls.findIndex(c => c.kind === 'signOut') < rememberedCalls.findIndex(c => c.kind === 'emailOtp'), 'the password session is removed before the OTP is sent');
-        assert.equal(await rememberedLogin.evaluate(async () => (await sb.auth.getSession()).data.session), null, 'an unfinished OTP gate has no authenticated Supabase session');
+        assert(rememberedCalls.some(call => call.kind === 'function' && call.data?.body?.action === 'begin'), 'password login starts the server-bound email-MFA challenge');
+        assert.equal(rememberedCalls.some(call => call.kind === 'signOut'), false, 'the primary password session remains bound to the challenge');
+        assert.equal(Boolean(await rememberedLogin.evaluate(async () => (await sb.auth.getSession()).data.session)), true, 'the password session remains active while email proof is pending');
         for (let i = 0; i < 6; i++) await rememberedLogin.locator('[data-otp-box]').nth(i).fill(String(i + 1));
         await rememberedLogin.locator('[data-auth-panel="verify"] button[type="submit"]').click();
         await rememberedLogin.waitForURL('**/user_dashboard.html');
-        assert(await rememberedLogin.evaluate(() => InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer')));
+        assert((await calls(rememberedLogin)).some(call => call.kind === 'emailMfaVerify' && call.data?.remember === true),
+            'the server-bound MFA verification receives the selected Remember me choice');
         await rememberedLogin.close();
 
-        const trustedLogin = await setup({ role: 'customer' });
-        await trustedLogin.evaluate(() => InigoAuthStorage.rememberDevice('fixture-user', 'customer'));
+        const trustedLogin = await setup({ role: 'customer', trustedDeviceUserId: 'fixture-user' });
+        await trustedLogin.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', 'a'.repeat(64)));
         await passwordLogin(trustedLogin, 'login', true);
         await trustedLogin.waitForURL('**/user_dashboard.html');
-        assert(!(await calls(trustedLogin)).some(c => c.kind === 'emailOtp'), 'a checked, fresh same-account trust marker skips the repeat OTP');
+        assert(!(await calls(trustedLogin)).some(c => c.kind === 'emailMfaVerify'), 'a server-validated fresh same-account trust marker skips the repeat OTP');
         await trustedLogin.close();
 
-        const uncheckedLogin = await setup({ role: 'customer' });
-        await uncheckedLogin.evaluate(() => InigoAuthStorage.rememberDevice('fixture-user', 'customer'));
+        const uncheckedLogin = await setup({ role: 'customer', trustedDeviceUserId: 'fixture-user' });
+        await uncheckedLogin.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', 'b'.repeat(64)));
         await passwordLogin(uncheckedLogin);
-        await uncheckedLogin.locator('[data-auth-panel="verify"].is-active').waitFor();
-        assert((await calls(uncheckedLogin)).some(c => c.kind === 'emailOtp'), 'an unchecked fresh choice overrides earlier device trust');
-        assert.equal(await uncheckedLogin.evaluate(() => localStorage.getItem('inigosync-trusted-device:customer:fixture-user')), null);
-        await uncheckedLogin.locator('[data-auth-close]').click();
-        await uncheckedLogin.waitForFunction(() => document.querySelector('[data-auth-overlay]').hidden);
-        assert.equal(await uncheckedLogin.evaluate(async () => (await sb.auth.getSession()).data.session), null, 'cancelling the OTP gate leaves no active password session');
+        await uncheckedLogin.waitForURL('**/user_dashboard.html');
+        const uncheckedCalls = await calls(uncheckedLogin);
+        const uncheckedBegin = uncheckedCalls.find(call => call.kind === 'function' && call.data?.body?.action === 'begin');
+        assert.equal(uncheckedBegin?.data?.body?.remember, false, 'unchecked choice does not create new trust');
+        assert.equal(uncheckedBegin?.data?.body?.device_secret, 'b'.repeat(64), 'existing server-validated trust remains available when Remember me is unchecked');
+        assert(!(uncheckedCalls).some(call => call.kind === 'emailMfaVerify'));
         await uncheckedLogin.close();
 
         const otherAccount = await setup({ role: 'customer', userId: 'other-user' });
-        await otherAccount.evaluate(() => InigoAuthStorage.rememberDevice('fixture-user', 'customer'));
+        await otherAccount.evaluate(() => localStorage.setItem('inigosync-email-mfa-device:v1:fixture-user', 'c'.repeat(64)));
         await passwordLogin(otherAccount, 'login', true);
         await otherAccount.locator('[data-auth-panel="verify"].is-active').waitFor();
-        assert((await calls(otherAccount)).some(c => c.kind === 'emailOtp'), 'trust for another account cannot skip OTP');
+        const otherAccountBegin = (await calls(otherAccount)).find(call => call.kind === 'function' && call.data?.body?.action === 'begin');
+        assert.notEqual(otherAccountBegin?.data?.body?.device_secret, 'c'.repeat(64),
+            'a stored secret for another user is never presented as this user’s trust proof');
+        assert.equal(await otherAccount.evaluate(() => localStorage.getItem('inigosync-email-mfa-device:v1:other-user')),
+            otherAccountBegin?.data?.body?.device_secret,
+            'Remember me creates a distinct secret under the current account id');
         await otherAccount.close();
 
         for (const role of ['staff', 'admin']) {
@@ -1417,7 +1505,8 @@ function mockClient(options) {
             for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill(String(i + 1));
             await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
             await page.waitForURL(role === 'staff' ? '**/staff_dashboard.html' : '**/owner_dashboard.html');
-            assert(await page.evaluate(roleName => InigoAuthStorage.isDeviceTrusted('fixture-user', roleName), role), `${role} password login records role-specific trust`);
+            assert((await calls(page)).some(call => call.kind === 'emailMfaVerify' && call.data?.remember === true),
+                `${role} password login submits the selected Remember me choice to the server`);
             await page.close();
         }
 
@@ -1442,16 +1531,124 @@ function mockClient(options) {
             await page.close();
         }
 
-        const signupOtp = await setup({ emailConfirmation: true });
+        const signupOtp = await setup({ emailConfirmation: true, emailMfaNoSendOnResend: true });
         await signup(signupOtp, '', true);
+        await signupOtp.locator('[data-auth-panel="verify"].is-active').waitFor();
         assert.equal(await signupOtp.locator('[data-auth-panel="signup"] [name="remember"]').isChecked(), true);
         assert.equal(await signupOtp.locator('[data-auth-panel="verify"] [data-verify-heading]').innerText(), 'Verify your email', 'signup always keeps its first email confirmation step');
+        assert.match(await signupOtp.locator('[data-otp-timer]').innerText(), /^Resend available in (?:60|5\d)s$/, 'signup resend waits for Supabase Auth’s default per-email cooldown');
         assert((await calls(signupOtp)).some(c => c.kind === 'signUp'));
+        await signupOtp.evaluate(() => {
+            const resend = document.querySelector('[data-otp-resend]');
+            resend.disabled = false;
+            resend.click();
+        });
+        await signupOtp.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent === 'A new sign-up code was sent. Check your inbox.');
+        assert.match(await signupOtp.locator('[data-otp-timer]').innerText(), /^Resend available in (?:60|5\d)s$/, 'successful signup resend reports the request and restarts the full cooldown');
+        assert.equal(await signupOtp.locator('[data-otp-resend]').isDisabled(), true);
+        assert((await calls(signupOtp)).some(c => c.kind === 'resend' && c.data.type === 'signup'));
+        assert.equal((await calls(signupOtp)).find(call => call.kind === 'resend')?.data?.email, 'customer@example.test',
+            'signup resend targets the exact address shown for the pending confirmation');
+        for (let i = 0; i < 6; i++) await signupOtp.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await signupOtp.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await signupOtp.locator('[data-auth-panel="verify"] [data-verify-heading]').filter({hasText:"Confirm it's you"}).waitFor();
+        assert.match(await signupOtp.locator('[data-auth-notice]').innerText(), /email is confirmed.*separate 6-digit sign-in code/i, 'signup confirmation is clearly distinguished from the separate sign-in OTP');
+        assert((await calls(signupOtp)).some(c => c.kind === 'function' && c.data?.body?.action === 'begin'), 'signup confirmation continues through the required second email-verification gate');
+        await signupOtp.evaluate(() => {
+            const resend = document.querySelector('[data-otp-resend]');
+            resend.disabled = false;
+            resend.click();
+        });
+        await signupOtp.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent.includes('A sign-in code was sent recently'));
+        assert.match(await signupOtp.locator('[data-otp-timer]').innerText(), /^Resend available in (?:60|5\d)s$/, 'database-throttled sign-in resend keeps the full cooldown');
+        assert.equal(await signupOtp.locator('[data-otp-resend]').isDisabled(), true);
+        assert(!/A new sign-in code was sent/.test(await signupOtp.locator('[data-auth-notice]').innerText()), 'database-throttled post-signup MFA resend does not claim a new code was sent');
         for (let i = 0; i < 6; i++) await signupOtp.locator('[data-otp-box]').nth(i).fill(String(i + 1));
         await signupOtp.locator('[data-auth-panel="verify"] button[type="submit"]').click();
         await signupOtp.waitForURL('**/user_dashboard.html');
-        assert(await signupOtp.evaluate(() => InigoAuthStorage.isDeviceTrusted('fixture-user', 'customer')), 'confirmed signup honors its Remember me choice');
+        assert((await calls(signupOtp)).some(call => call.kind === 'rememberSessionChoice' && call.data?.remember === true),
+            'confirmed signup retains the selected Remember me session choice');
         await signupOtp.close();
+
+        const failedPostSignupMfa = await setup({ emailConfirmation: true, emailMfaBeginError: true });
+        await signup(failedPostSignupMfa);
+        await failedPostSignupMfa.locator('[data-auth-panel="verify"].is-active').waitFor();
+        for (let i = 0; i < 6; i++) await failedPostSignupMfa.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await failedPostSignupMfa.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await failedPostSignupMfa.locator('[data-auth-panel="verify"] [data-verify-heading]').filter({hasText:"Confirm it's you"}).waitFor();
+        assert.match(await failedPostSignupMfa.locator('[data-auth-notice]').innerText(), /email is confirmed, but we could not send the separate sign-in code/i);
+        assert.match(await failedPostSignupMfa.locator('[data-otp-timer]').innerText(), /^Resend available in (?:60|5\d)s$/);
+        await failedPostSignupMfa.waitForFunction(() => {
+            const loading = document.querySelector('.inigo-loading-overlay');
+            return loading?.hidden === true && !loading.hasAttribute('data-open');
+        });
+        assert.equal(await failedPostSignupMfa.locator('.inigo-loading-overlay').evaluate(el => el.hidden && !el.hasAttribute('data-open')), true,
+            'failed initial MFA delivery clears the blocking loading overlay so the retry UI is usable');
+        assert.equal((await calls(failedPostSignupMfa)).filter(call => call.kind === 'function' && call.data?.body?.action === 'begin').length, 1);
+        assert.equal(Boolean(await failedPostSignupMfa.evaluate(async () => (await sb.auth.getSession()).data.session)), true,
+            'the validated signup session is preserved for the second-step retry');
+        assert.equal((await calls(failedPostSignupMfa)).filter(call => call.kind === 'resend').length, 0,
+            'failed second-step delivery must not resend a consumed signup confirmation OTP');
+        assert.equal(await failedPostSignupMfa.url().includes('user_dashboard.html'), false,
+            'failed second-step delivery does not complete sign-in');
+        for (let i = 0; i < 6; i++) await failedPostSignupMfa.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await failedPostSignupMfa.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await failedPostSignupMfa.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent.includes('no sign-in code has been sent yet'));
+        assert.equal((await calls(failedPostSignupMfa)).filter(call => call.kind === 'function' && call.data?.body?.action === 'verify').length, 0,
+            'Verify cannot submit with an empty challenge id after a failed begin');
+        assert.equal((await calls(failedPostSignupMfa)).filter(call => call.kind === 'emailMfaVerify').length, 0,
+            'no code can be rejected against a nonexistent challenge');
+        await failedPostSignupMfa.evaluate(() => {
+            const resend = document.querySelector('[data-otp-resend]');
+            resend.disabled = false;
+        });
+        await failedPostSignupMfa.locator('[data-otp-resend]').click();
+        await failedPostSignupMfa.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent === 'A new sign-in code was sent. Check your inbox.');
+        assert.equal((await calls(failedPostSignupMfa)).filter(call => call.kind === 'function' && call.data?.body?.action === 'begin').length, 2,
+            'retry starts a fresh server-bound MFA challenge');
+        assert.equal((await calls(failedPostSignupMfa)).filter(call => call.kind === 'resend').length, 0);
+        for (let i = 0; i < 6; i++) await failedPostSignupMfa.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await failedPostSignupMfa.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await failedPostSignupMfa.waitForURL('**/user_dashboard.html');
+        await failedPostSignupMfa.close();
+
+        const confirmedSignupNativeProof = await setup({ emailConfirmation: true, nativeEmailProof: true });
+        await signup(confirmedSignupNativeProof);
+        await confirmedSignupNativeProof.locator('[data-auth-panel="verify"].is-active').waitFor();
+        for (let i = 0; i < 6; i++) await confirmedSignupNativeProof.locator('[data-otp-box]').nth(i).fill(String(i + 1));
+        await confirmedSignupNativeProof.locator('[data-auth-panel="verify"] button[type="submit"]').click();
+        await confirmedSignupNativeProof.waitForURL('**/user_dashboard.html');
+        assert.equal((await calls(confirmedSignupNativeProof)).filter(call => call.kind === 'function' && call.data?.body?.action === 'begin').length, 1);
+        assert(!(await calls(confirmedSignupNativeProof)).some(call => call.kind === 'emailMfaVerify'),
+            'the confirmed signup email code is not followed by a duplicate sign-in email code');
+        await confirmedSignupNativeProof.close();
+
+        const rateLimitedResend = await setup({ emailConfirmation: true, resendErrorCode: 'over_email_send_rate_limit' });
+        await signup(rateLimitedResend);
+        await rateLimitedResend.locator('[data-auth-panel="verify"].is-active').waitFor();
+        await rateLimitedResend.evaluate(() => {
+            const resend = document.querySelector('[data-otp-resend]');
+            resend.disabled = false;
+            resend.click();
+        });
+        await rateLimitedResend.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent.includes('Too many attempts'));
+        assert.match(await rateLimitedResend.locator('[data-otp-timer]').innerText(), /^Resend available in (?:60|5\d)s$/, 'rate-limited resend enforces a full wait before another request');
+        assert.equal(await rateLimitedResend.locator('[data-otp-resend]').isDisabled(), true);
+        await rateLimitedResend.close();
+
+        const throttledLoginResend = await setup({ emailMfaNoSendOnResend: true });
+        await passwordLogin(throttledLoginResend);
+        await throttledLoginResend.locator('[data-auth-panel="verify"].is-active').waitFor();
+        await throttledLoginResend.evaluate(() => {
+            const resend = document.querySelector('[data-otp-resend]');
+            resend.disabled = false;
+            resend.click();
+        });
+        await throttledLoginResend.waitForFunction(() => document.querySelector('[data-auth-notice]').textContent.includes('A code was sent recently'));
+        assert.match(await throttledLoginResend.locator('[data-otp-timer]').innerText(), /^Resend available in (?:60|5\d)s$/, 'database-throttled login resend does not claim a code was sent and enforces the full cooldown');
+        assert.equal(await throttledLoginResend.locator('[data-otp-resend]').isDisabled(), true);
+        assert.equal((await calls(throttledLoginResend)).filter(c => c.kind === 'function' && c.data?.body?.action === 'begin').length, 2);
+        await throttledLoginResend.close();
 
         const trustBoundary = await setup();
         const boundaryResult = await trustBoundary.evaluate(() => {

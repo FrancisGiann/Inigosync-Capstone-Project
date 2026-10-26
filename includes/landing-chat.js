@@ -42,16 +42,16 @@
 
     const ANSWERS = Object.freeze({
         booking: () => ({
-            text: 'Choose a court, date, and time from Book a Court. Before signing in, your selections are only a browser-tab draft; they do not reserve a court, and live availability is checked after you sign in or create an account. Then continue to review and payment.',
+            text: 'Choose one sport, court, date, and consecutive time range. Your selection stays in this browser tab and does not reserve a court. Log in or create a customer account before continuing to payment; availability and pricing are checked again after sign-in.',
             links: [LINKS.courts]
         }),
         sports: courtsAnswer,
         cart: () => ({
-            text: 'You can add up to eight court bookings to the draft cart on this page. Before sign-in the cart is saved only in this browser tab and is not a reservation. Sign in or create an account to recheck availability and continue with the combined checkout.',
+            text: 'The landing page handles one sport and court booking at a time. Select its date and one consecutive time range, then log in or create a customer account to continue. Your selection is not a reservation until availability is confirmed after sign-in.',
             links: [LINKS.courts]
         }),
         payment: () => ({
-            text: 'After you sign in, review the booking cart and choose the available downpayment or full-payment option. The current amount is shown before checkout; payment is completed through the secure PayMongo checkout. The remaining balance for a downpayment is due at check-in.',
+            text: 'You must log in or create a customer account before payment. After sign-in, review the booking and choose the available downpayment or full-payment option. PayMongo shows the amount before checkout; any remaining balance for a downpayment is due at check-in.',
             links: []
         }),
         records: () => ({

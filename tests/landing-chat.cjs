@@ -8,36 +8,29 @@ const courts = [
     { name: 'Bowling', rate: 'See rates by type' }
 ];
 
-const sports = answerQuestion('What sports are offered?', { courts });
-assert.match(sports.text, /currently lists 2 sports: Basketball, Bowling/);
-
-const prices = answerQuestion('How much does it cost?', { courts });
-assert.match(prices.text, /Basketball — ₱500\/hr/);
-assert.match(prices.text, /Bowling — See rates by type/);
+const sports = answerQuestion('sports', { courts });
+assert.match(sports.text, /Current sports and rates shown in Courts & Pricing \(2\): Basketball — ₱500\/hr; Bowling — See rates by type/);
 
 const updated = answerQuestion('sports', { courts: [...courts, { name: 'Badminton', rate: 'Rate TBA' }] });
-assert.match(updated.text, /currently lists 3 sports/);
+assert.match(updated.text, /\(3\)/);
 assert.match(updated.text, /Badminton/);
 
-const unavailable = answerQuestion('rates', { failed: true, courts });
+const unavailable = answerQuestion('sports', { failed: true, courts });
 assert.match(unavailable.text, /unavailable right now/);
 assert.doesNotMatch(unavailable.text, /Basketball|₱500/);
 
-const location = answerQuestion('Where can I find you?');
-assert.match(location.text, /Brgy\. Bocohan, Diversion Road, Lucena City/);
-assert.equal(location.links[1].href.startsWith('https://www.google.com/maps/dir/'), true);
+const location = answerQuestion('location');
+assert.match(location.text, /Brgy\. Bocohan, Lucena City, Quezon/);
+assert.equal(location.links[1].href, 'https://www.google.com/maps/dir/?api=1&destination=Inigo%27s%20Sports%20Center%20Lucena&destination_place_id=ChIJYWSThmFMvTMRnoWVEJzixOY');
 
-const booking = answerQuestion('How do I book a court?');
-assert.match(booking.text, /log in or create an account/);
+const booking = answerQuestion('booking');
+assert.match(booking.text, /Log in or create a customer account before continuing to payment/);
 assert.equal(booking.links[0].href, '#courts');
-assert.match(answerQuestion('Where can I book a court?').text, /log in or create an account/);
+assert.match(answerQuestion('cart').text, /one sport and court booking at a time/);
+assert.match(answerQuestion('payment').text, /You must log in or create a customer account before payment/);
 
-const hours = answerQuestion('What are your operating hours?');
-assert.match(hours.text, /can’t confirm current operating hours/);
-assert.deepEqual(hours.links.map(link => link.href), ['tel:+639281546876', 'mailto:itsrosem8@gmail.com']);
-
-const fallback = answerQuestion('Can you help with something else?');
-assert.match(fallback.text, /I can help with booking/);
+const fallback = answerQuestion('not-a-known-question');
+assert.match(fallback.text, /Choose a question below/);
 
 const landingHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const creditPage = path.join(__dirname, '..', 'Pages', 'asset-credits.html');

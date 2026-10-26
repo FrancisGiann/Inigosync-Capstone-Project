@@ -2125,8 +2125,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let payload;
         try { payload = JSON.parse(raw); } catch (_) { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); return; }
         const ageMs = Date.now() - Number(payload?.createdAt);
-        if (payload?.version !== 1 || !Array.isArray(payload.items) || !payload.items.length
-            || payload.items.length > 8 || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) {
+        if (payload?.version !== 1 || !Array.isArray(payload.items) || payload.items.length !== 1
+            || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) {
             sessionStorage.removeItem('inigosync:landing-booking-draft:v1');
             window.InigoToast?.show('The landing-page booking draft expired or could not be read. Please select the court times again.', true);
             return;
@@ -2141,6 +2141,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     || !Array.isArray(draft.hours) || !draft.hours.length
                     || draft.hours.some((hour) => !Number.isInteger(hour) || hour < 0 || hour > 23)) {
                     throw new Error('One of the draft selections is incomplete. Please select the court times again.');
+                }
+                if (window.InigoBookingSlots.groupConsecutiveHours(draft.hours).length !== 1) {
+                    throw new Error('Choose one consecutive time range for a single court booking.');
                 }
                 const parsedDraftDate = new Date(`${draft.date}T00:00:00Z`);
                 if (!Number.isFinite(parsedDraftDate.getTime()) || parsedDraftDate.toISOString().slice(0, 10) !== draft.date) {
@@ -2182,7 +2185,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const runs = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours);
                 runs.forEach((run) => staged.push(selectedBookingCartItem(run.startHour, run.endHourExclusive)));
             }
-            if (!staged.length || bookingCart.length + staged.length > 8) throw new Error('The customer cart can include up to eight booking ranges.');
+            if (staged.length !== 1) throw new Error('Choose one court booking at a time from the landing page.');
+            if (bookingCart.length + staged.length > 8) throw new Error('The customer cart can include up to eight booking ranges.');
             const combined = [...bookingCart, ...staged];
             for (let i = 0; i < combined.length; i += 1) {
                 if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
@@ -2198,7 +2202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSummary();
             renderBookingCart();
             setActivePanel('booking');
-            window.InigoToast?.show(`${staged.length} landing-page booking${staged.length === 1 ? '' : 's'} added to your customer cart. Review the rates and times before checkout.`);
+            window.InigoToast?.show('Your court booking is ready. Review the rate and time before continuing to payment.');
         } catch (error) {
             try { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); } catch (_) { /* storage may be disabled */ }
             window.InigoToast?.show(error.message || 'The landing-page draft could not be imported. Please review the court times.', true);

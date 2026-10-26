@@ -35,6 +35,7 @@
     }
 
     function show(message) {
+        document.documentElement?.removeAttribute('data-auth-oauth-pending');
         const el = ensureOverlay();
         if (textEl) textEl.textContent = message || 'Loading…';
 
@@ -51,6 +52,7 @@
     }
 
     function hide() {
+        document.documentElement?.removeAttribute('data-auth-oauth-pending');
         if (!visible || !overlayEl) return;
 
         const elapsed = Date.now() - shownAt;

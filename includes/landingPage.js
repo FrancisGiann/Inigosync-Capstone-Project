@@ -435,10 +435,10 @@ function renderCourtCard(court) {
 }
 
 // ============================================================================
-// Court viewer — ONE reusable modal for every court card.
+// Court booking dialog — ONE reusable modal for every sport card.
 //
-// Court cards are real <button>s (see renderCourtCard), so activation by
-// mouse, Enter and Space all arrive here as a plain click. The dialog:
+// Sport cards are real <button>s (see renderCourtCard), so activation by
+// mouse, Enter and Space all arrive here as a plain click. The unified dialog:
 //   • shows ONE unit's photo large — or, when that unit has no image_url (or
 //     the URL fails to load), the same honest .media-slot placeholder the grid
 //     uses plus a matching status line;
@@ -446,6 +446,7 @@ function renderCourtCard(court) {
 //     for that sport (resolveCourtUnits above), hidden entirely when a sport
 //     resolves to a single unit. Changing it swaps the photo and the unit
 //     label in place — the dialog stays open;
+//   • keeps the photo, unit selector, date/time controls and summary together;
 //   • closes on Escape, on a backdrop click and on the close button;
 //   • moves focus into the dialog on open and back to the invoking card on
 //     close, and traps Tab in between;
@@ -483,7 +484,6 @@ function createCourtViewer() {
     const photoEl = root.querySelector('[data-court-viewer-photo-status]');
     const closeBtn = root.querySelector('[data-court-viewer-close]');
     const backdrop = root.querySelector('[data-court-viewer-backdrop]');
-    const nextButton = root.querySelector('[data-landing-book-next]');
 
     if (!dialog || !mediaEl || !titleEl || !unitEl || !pickerEl
         || !pickerLabelEl || !selectEl || !noteEl || !bookEl || !rateEl || !photoEl) {
@@ -503,7 +503,6 @@ function createCourtViewer() {
     let lastFocused = null;
     let isOpen = false;
     let hideTimer = null;
-    let suppressReturnFocus = false;
 
     // Which sport is on screen, its resolved unit list, and a counter that
     // makes a late <img> error from a previously-selected unit a no-op
@@ -512,7 +511,6 @@ function createCourtViewer() {
     let activeVariant = null;
     let units = [];
     let mediaToken = 0;
-    let bookingInvoker = null;
 
     // Paints the media panel for one unit. An <img> that fails to load — a
     // typo'd or dead unit_images URL, which the owner types by hand — is
@@ -566,6 +564,11 @@ function createCourtViewer() {
         rateEl.textContent = scheduledText || (activeVariant.rate == null
             ? 'Rate TBA — please check with the front desk.'
             : formatUnitRate(activeVariant.rate, activeVariant.rateUnit));
+        document.dispatchEvent(new CustomEvent('inigo:landing-court-selection', { detail: {
+            court: activeCourt, listing: activeVariant, unit,
+            variantIndex: Math.max(0, (activeCourt.variants || [activeCourt]).indexOf(activeVariant)),
+            unitIndex: Math.min(Math.max(0, wanted), units.length - 1),
+        } }));
     }
 
     function chooseType(index, unitIndex = 0) {
@@ -607,7 +610,7 @@ function createCourtViewer() {
         }
 
         root.hidden = false;
-        document.body.classList.add('court-viewer-lock');
+        document.body.classList.add('court-viewer-lock', 'landing-booking-open');
         // Force a synchronous layout flush so the browser commits the
         // opacity:0 / display:flex state *before* [data-open] flips opacity
         // to 1. Batching both into one style recalc would skip the fade
@@ -619,7 +622,7 @@ function createCourtViewer() {
         isOpen = true;
         document.dispatchEvent(new CustomEvent('inigo:landing-court-open', { detail: { court } }));
         // The dialog carries tabindex="-1" and aria-labelledby, so focusing it
-        // announces the sport name before anything else.
+        // announces the booking dialog and selected sport.
         dialog.focus();
     }
 
@@ -628,7 +631,7 @@ function createCourtViewer() {
         isOpen = false;
 
         root.removeAttribute('data-open');
-        document.body.classList.remove('court-viewer-lock');
+        document.body.classList.remove('court-viewer-lock', 'landing-booking-open');
         // Invalidate any in-flight image so a load error arriving during the
         // fade-out cannot repaint a dialog that is on its way out.
         mediaToken++;
@@ -655,10 +658,9 @@ function createCourtViewer() {
 
         // Return focus to the card that opened this, if it's still in the DOM
         // (the grid re-renders only once per load, so it normally is).
-        if (!suppressReturnFocus && lastFocused && typeof lastFocused.focus === 'function' && document.contains(lastFocused)) {
+        if (lastFocused && typeof lastFocused.focus === 'function' && document.contains(lastFocused)) {
             lastFocused.focus();
         }
-        suppressReturnFocus = false;
         lastFocused = null;
     }
 
@@ -678,18 +680,6 @@ function createCourtViewer() {
         selectUnit(Number(selectEl.value));
     });
 
-    nextButton?.addEventListener('click', () => {
-        if (!activeCourt || !activeVariant || !units.length) return;
-        const variantIndex = Math.max(0, (activeCourt.variants || [activeCourt]).indexOf(activeVariant));
-        bookingInvoker = lastFocused;
-        document.dispatchEvent(new CustomEvent('inigo:landing-court-next', { detail: {
-            court: activeCourt, listing: activeVariant, unit: units[Number(selectEl.value)] || units[0], variantIndex,
-            unitIndex: Number(selectEl.value) || 0,
-        } }));
-        suppressReturnFocus = true;
-        close();
-    });
-
     document.addEventListener('keydown', (e) => {
         if (!isOpen) return;
 
@@ -697,8 +687,7 @@ function createCourtViewer() {
         // landing draft details and auth dialogs each manage their own focus
         // trap and Escape behavior, so the court viewer must stay open behind
         // them until the top dialog closes.
-        if (document.querySelector('[data-landing-draft-details-modal]:not([hidden])')
-            || document.querySelector('[data-auth-overlay][data-open]')) return;
+        if (document.querySelector('[data-auth-overlay][data-open]')) return;
 
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -735,16 +724,6 @@ function createCourtViewer() {
     });
 
     document.addEventListener('inigo:landing-booking-auth', close);
-    document.addEventListener('inigo:landing-booking-close', () => {
-        if (bookingInvoker && document.contains(bookingInvoker)) bookingInvoker.focus();
-        bookingInvoker = null;
-    });
-
-    document.addEventListener('inigo:landing-booking-back-to-court', (event) => {
-        const { court, variantIndex, unitIndex } = event.detail || {};
-        if (court) open(court, bookingInvoker || nextButton, variantIndex || 0, unitIndex || 0);
-    });
-
     return { open, close };
 }
 
@@ -992,7 +971,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 directionAnchor = previousY;
                 previousDirection = direction;
             }
-            const keepVisible = y < 96 || document.body.classList.contains('landing-menu-open') || siteNav.contains(document.activeElement);
+            const keepVisible = y < 96 || document.body.classList.contains('landing-menu-open') || !!siteNav.querySelector(':focus-visible');
             if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) siteNav.classList.remove('is-hidden');
             else if (direction > 0 && y - directionAnchor >= 12) siteNav.classList.add('is-hidden');
             previousY = y;

@@ -131,6 +131,23 @@ Deno.serve(async (req: Request) => {
     return json({ message: 'This account cannot complete email verification. Contact the front desk.' }, 403);
   }
 
+  if (action === 'begin') {
+    // OAuth and confirmed signup sessions may already prove control of the
+    // canonical account email. The database derives that proof from the exact
+    // live Auth session AMR, email confirmation, and eligible profile; never
+    // accept a browser flag or user_metadata claim for this decision. Password
+    // sessions still need the server-bound email MFA challenge below.
+    const { data: sessionAlreadyVerified, error: proofError } = await admin.rpc('email_mfa_check_session', {
+      p_user_id: userId,
+      p_session_id: sessionId,
+    });
+    if (proofError) {
+      console.error('[email-mfa] existing session proof check failed', proofError.message);
+      return json({ message: 'Email verification is temporarily unavailable.' }, 503);
+    }
+    if (sessionAlreadyVerified === true) return json({ verified: true, remembered: false });
+  }
+
   const remember = payload.remember === true;
   // An existing trusted-device secret can skip the email code regardless of
   // this login's checkbox. The checkbox only controls creating trust after

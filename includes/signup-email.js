@@ -14,6 +14,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const domain = email.slice(email.lastIndexOf('@') + 1);
         for (const common of commonDomains) {
             if (domain === common) continue;
+            if (domain.length === common.length) {
+                const mismatch = [];
+                for (let index = 0; index < domain.length; index++) {
+                    if (domain[index] !== common[index]) mismatch.push(index);
+                }
+                if (mismatch.length === 2 && mismatch[1] === mismatch[0] + 1
+                    && domain[mismatch[0]] === common[mismatch[1]]
+                    && domain[mismatch[1]] === common[mismatch[0]]) return `${email.slice(0, email.lastIndexOf('@') + 1)}${common}`;
+            }
             let i = 0, j = 0, edits = 0;
             while (i < domain.length && j < common.length) {
                 if (domain[i] === common[j]) { i++; j++; continue; }
@@ -23,21 +32,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 else { i++; j++; }
             }
             edits += (domain.length - i) + (common.length - j);
-            if (edits <= 1) return true;
+            if (edits <= 1) return `${email.slice(0, email.lastIndexOf('@') + 1)}${common}`;
         }
-        return false;
+        return null;
     }
     function paint(text, state = '') {
         status.textContent = text;
         status.dataset.state = state;
+        delete status.dataset.suggestion;
         field.dataset.availability = state;
     }
     async function check({ force = false } = {}) {
         const email = value(), version = revision;
         if (!email || field.validity.typeMismatch) return false;
-        if (likelyProviderTypo(email)) {
+        const suggestedEmail = likelyProviderTypo(email);
+        if (suggestedEmail) {
             if (version === revision && value() === email) {
                 paint('Check email spelling', 'check_spelling');
+                status.dataset.suggestion = suggestedEmail;
                 field.setAttribute('aria-invalid', 'true');
             }
             return false;

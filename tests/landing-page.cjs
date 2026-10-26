@@ -49,6 +49,84 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         await page.locator('[data-court-id="basketball"]').click();
         await page.waitForSelector('[data-court-viewer][data-open]');
         assert(courtRequests>initialRequests,'Viewer must refetch live courts');
+        assert.equal(await page.locator('[data-court-viewer-dialog]:visible').count(),1,'court and date/time controls share one dialog');
+        assert.equal(await page.locator('[data-landing-book-date]:visible').count(),1,'date selection is available as soon as a sport card opens');
+        assert.equal(await page.locator('[data-landing-book-next]').count(),0,'the separate Next step is removed');
+        assert.match(await page.locator('[data-booking-summary-court]').innerText(),/Basketball/);
+        assert.match(await page.locator('.landing-booking-footer').innerText(),/Cancel[\s\S]*Login \/ Sign up to continue/);
+        const desktopBookingLayout=await page.locator('[data-court-viewer-dialog]').evaluate(el=>{
+            const box=selector=>el.querySelector(selector).getBoundingClientRect();
+            return {dialog:el.getBoundingClientRect().toJSON(),footer:box('.landing-booking-footer').toJSON(),
+                contentOverflow:getComputedStyle(el.querySelector('.landing-booking-content')).overflowY,
+                courtOverflow:getComputedStyle(el.querySelector('.landing-booking-court-column')).overflowY,
+                detailOverflow:getComputedStyle(el.querySelector('.landing-booking-court-scroll')).overflowY,
+                mediaOutsideDetailScroller:!el.querySelector('.landing-booking-court-scroll').contains(el.querySelector('.court-viewer-media')),
+                mediaPinned:(()=>{
+                    const media=el.querySelector('.court-viewer-media');
+                    const scroller=el.querySelector('.landing-booking-court-scroll');
+                    const before=media.getBoundingClientRect().top;
+                    scroller.scrollTop=180;
+                    const after=media.getBoundingClientRect().top;
+                    scroller.scrollTop=0;
+                    return Math.abs(after-before)<1;
+                })(),
+                dateInsideCourt:el.querySelector('.landing-booking-court-column').contains(el.querySelector('.landing-booking-panel')),
+                summaryHasDate:el.querySelector('.landing-booking-summary').contains(el.querySelector('[data-landing-book-date]')),
+                courtRight:box('.landing-booking-court-column').right,summaryLeft:box('.landing-booking-summary').left};
+        });
+        assert(Math.abs(desktopBookingLayout.dialog.bottom-desktopBookingLayout.footer.bottom)<1,'booking footer stays attached to the dialog bottom');
+        assert(desktopBookingLayout.dialog.width>=1000,'desktop booking dialog keeps a generous horizontal footprint');
+        assert.equal(desktopBookingLayout.contentOverflow,'hidden','the fixed dialog content grid does not scroll');
+        assert.equal(desktopBookingLayout.courtOverflow,'hidden','the fixed photo column does not scroll as a whole');
+        assert.equal(desktopBookingLayout.detailOverflow,'auto','only the court details and date/time region scrolls');
+        assert.equal(desktopBookingLayout.mediaOutsideDetailScroller,true,'the court photo sits outside the detail scroller');
+        assert.equal(desktopBookingLayout.mediaPinned,true,'the court photo stays at the top while details scroll');
+        assert.equal(desktopBookingLayout.dateInsideCourt,true,'date and hourly choices sit under court details in the left column');
+        assert.equal(desktopBookingLayout.summaryHasDate,false,'the right column contains only the booking summary');
+        assert(desktopBookingLayout.summaryLeft>=desktopBookingLayout.courtRight,'booking summary is in a separate right column');
+        await page.setViewportSize({width:790,height:900});
+        const intermediateBookingLayout=await page.locator('[data-court-viewer-dialog]').evaluate(el=>({
+            contentDisplay:getComputedStyle(el.querySelector('.landing-booking-content')).display,
+            contentOverflow:getComputedStyle(el.querySelector('.landing-booking-content')).overflowY,
+            dialogWidth:el.getBoundingClientRect().width,
+            contentWidth:el.querySelector('.landing-booking-content').getBoundingClientRect().width,
+        }));
+        assert.equal(intermediateBookingLayout.contentDisplay,'flex','intermediate viewport stacks before the two columns become cramped');
+        assert.equal(intermediateBookingLayout.contentOverflow,'auto','intermediate stacked content remains reachable');
+        assert(intermediateBookingLayout.dialogWidth<=790 && intermediateBookingLayout.contentWidth>0,'intermediate booking layout stays inside its viewport');
+        await page.setViewportSize({width:390,height:844});
+        const mobileBookingLayout=await page.locator('[data-court-viewer-dialog]').evaluate(el=>({
+            width:el.getBoundingClientRect().width, viewport:innerWidth,
+            contentDisplay:getComputedStyle(el.querySelector('.landing-booking-content')).display,
+            courtDisplay:getComputedStyle(el.querySelector('.landing-booking-court-column')).display,
+            contentOverflow:getComputedStyle(el.querySelector('.landing-booking-content')).overflowY,
+            leftOverflow:getComputedStyle(el.querySelector('.landing-booking-court-column')).overflowY,
+            detailOverflow:getComputedStyle(el.querySelector('.landing-booking-court-scroll')).overflowY,
+            mediaPosition:getComputedStyle(el.querySelector('.court-viewer-media')).position,
+            mediaPinned:(()=>{
+                const content=el.querySelector('.landing-booking-content');
+                const media=el.querySelector('.court-viewer-media');
+                const contentTop=content.getBoundingClientRect().top;
+                content.scrollTop=140;
+                const after=media.getBoundingClientRect().top;
+                content.scrollTop=0;
+                return Math.abs(after-contentTop)<1;
+            })(),
+            summaryBelowCourt:el.querySelector('.landing-booking-summary').getBoundingClientRect().top>=el.querySelector('.landing-booking-court-column').getBoundingClientRect().bottom,
+            footerBottom:el.querySelector('.landing-booking-footer').getBoundingClientRect().bottom,
+            dialogBottom:el.getBoundingClientRect().bottom,
+        }));
+        assert(mobileBookingLayout.width<=mobileBookingLayout.viewport,'booking card fits the mobile viewport');
+        assert.equal(mobileBookingLayout.contentDisplay,'flex','mobile booking columns stack vertically');
+        assert.equal(mobileBookingLayout.courtDisplay,'flex','mobile layout retains court photo, selectors, and date/time');
+        assert.equal(mobileBookingLayout.contentOverflow,'auto','the stacked interior scrolls on mobile');
+        assert.equal(mobileBookingLayout.leftOverflow,'visible','mobile content has one interior scroll container');
+        assert.equal(mobileBookingLayout.detailOverflow,'visible','mobile detail content scrolls with the stacked booking content');
+        assert.equal(mobileBookingLayout.mediaPosition,'sticky','the photo pins at the top while the mobile court details scroll');
+        assert.equal(mobileBookingLayout.mediaPinned,true,'the mobile photo remains visible during a details scroll');
+        assert.equal(mobileBookingLayout.summaryBelowCourt,true,'mobile summary follows the court/date controls');
+        assert(Math.abs(mobileBookingLayout.dialogBottom-mobileBookingLayout.footerBottom)<1,'mobile footer stays fixed at the card bottom');
+        await page.setViewportSize({width:1440,height:1000});
         assert.equal(await page.locator('[data-court-viewer-media] img').count(),1,'shared sport cover appears in the court viewer');
         assert.match(await page.locator('[data-court-viewer-media] img').getAttribute('src'),/sports-covers\/basketball\.png/);
         assert.equal(await page.locator('[data-court-viewer-select] option').count(),2);
@@ -73,7 +151,7 @@ assert.equal(fallbackPickleball.quantity,10,'static fallback matches verified Pi
         assert.match(await page.locator('[data-court-viewer-book]').innerText(),/Lane 12/);
         await page.keyboard.press('Escape');
         await page.waitForFunction(()=>document.querySelector('[data-court-viewer]').hidden);
-        console.log('PASS separate Duckpin/Ten-Pin landing cards, rates, 8/12 lanes, lane selection and focus return');
+        console.log('PASS unified court/date dialog, separate Duckpin/Ten-Pin cards, rates, 8/12 lanes, lane selection and focus return');
         const partial = await page.evaluate(() => resolveCourtUnits({name:'Bowling — Duckpin',unit:'lanes',quantity:8,imageUrl:'general.jpg',unitImages:[{label:'Lane 3',imageUrl:'specific.jpg'}]}));
         assert.equal(partial.units.length,8);
         assert.equal(partial.units[0].specific,false);

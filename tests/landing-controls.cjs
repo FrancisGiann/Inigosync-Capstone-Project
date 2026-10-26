@@ -309,7 +309,10 @@ const browserPageErrors=[];
                         factsCardBackground:factsInner.backgroundColor,factsCardWidth:rect('.hero-stats').width,
                         factsCardHeight:rect('.hero-stats').height,
                         factsInnerRadius:factsInner.borderRadius,factsInnerShadow:factsInner.boxShadow,
+                        factsCardBorderWidth:factsInner.borderTopWidth,
                         factsIconCount:document.querySelectorAll('.landing-facts .facts-icon').length,
+                        googleMarkColors:[...document.querySelectorAll('.google-rating-fact .google-mark path')].map(path=>path.getAttribute('fill')),
+                        googleIconBorder:getComputedStyle(document.querySelector('.google-rating-fact .google-mark')).borderColor,
                         googleRating:document.querySelector('.google-rating-fact')?.innerText,
                         googleRatingLabel:document.querySelector('.google-rating-fact')?.getAttribute('aria-label'),
                         googleRatingTitle:document.querySelector('.google-rating-fact')?.title,
@@ -359,19 +362,21 @@ const browserPageErrors=[];
                 assert.equal(layout.factsLauncherOverlap,false,`Facts card must not collide with the help launcher at ${width}px in ${theme} mode`);
                 assert.equal(layout.factsBandBackground,'rgba(0, 0, 0, 0)',`Facts section backdrop should remain transparent at ${width}px in ${theme} mode`);
                 assert.equal(layout.factsBandWidth,width,`Facts band should span the viewport at ${width}px in ${theme} mode`);
-                assert.notEqual(layout.factsCardBackground,'rgba(0, 0, 0, 0)',`Facts need a contained elevated surface at ${width}px in ${theme} mode`);
+                assert.equal(layout.factsCardBackground,'rgba(0, 0, 0, 0)',`Facts surface should be transparent in ${theme} mode`);
                 assert(layout.factsCardWidth<width,`Facts surface must be contained at ${width}px in ${theme} mode`);
                 assert(layout.factsCardHeight>=(width<=768?120:104),`Home facts card should remain clearly readable at ${width}px in ${theme} mode`);
-                assert.equal(layout.factsInnerRadius,'10px',`Facts surface should have a restrained radius at ${width}px in ${theme} mode`);
-                assert.notEqual(layout.factsInnerShadow,'none',`Facts surface should be subtly elevated at ${width}px in ${theme} mode`);
+                assert.equal(layout.factsInnerRadius,'10px',`Facts surface should keep its existing corner radius at ${width}px in ${theme} mode`);
+                assert.equal(layout.factsCardBorderWidth,'0px',`Facts surface should have no outer border at ${width}px in ${theme} mode`);
+                assert.equal(layout.factsInnerShadow,'none',`Facts surface should have no outer shadow at ${width}px in ${theme} mode`);
                 assert.equal(layout.factsIconCount,4,`Show one simple icon for each of the four facts at ${width}px in ${theme} mode`);
+                assert.deepEqual(layout.googleMarkColors,['#4285F4','#34A853','#FBBC05','#EA4335'],'Google rating retains its multicolor G');
+                assert.equal(layout.googleIconBorder,'rgb(244, 123, 32)','Google G keeps the orange circular outline');
                 assert.match(layout.googleRating,/4\.4\/5[\s\S]*Google rating/);
                 assert.equal(layout.googleRatingLabel,'Google rating, 4.4 out of 5');
                 assert.equal(layout.googleRatingTitle,'Google listing snapshot · Oct 24, 2026');
                 assert.equal(layout.googleRatingLinks,0,'Google rating is a concise non-clickable snapshot tile');
                 assert.equal(layout.factsColumns,width<=768?1:4,`Facts use four columns on desktop and a stack on mobile at ${width}px`);
                 assert.equal(layout.aboutStatRows,0,`The three Home facts should not be repeated in About at ${width}px in ${theme} mode`);
-                assert(layout.factsCardHeight>= (width<=768?120:104),`The Home facts card should remain readable and substantial at ${width}px in ${theme} mode`);
                 assert.equal(layout.courtCardCount,3,`Court fixture should render all cards at ${width}px in ${theme} mode`);
                 assert.equal(layout.courtColumns,width<=560?1:width<=900?2:3,`Court cards should use consistent responsive columns at ${width}px in ${theme} mode`);
                 assert(Math.max(...layout.courtCardWidths)-Math.min(...layout.courtCardWidths)<1,`All sport cards should have the same width at ${width}px in ${theme} mode: ${layout.courtCardWidths}`);

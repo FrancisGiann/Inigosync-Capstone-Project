@@ -58,6 +58,46 @@
     <link rel="stylesheet" href="./Style/LandingNight.css">
     <link rel="stylesheet" href="./Style/LandingBooking.css">
     <link rel="stylesheet" href="./Style/ThemeTokens.css">
+    <style>
+        @keyframes inigo-auth-return-spin { to { transform: rotate(360deg); } }
+        html[data-auth-oauth-pending]::before {
+            content: 'Signing you in…';
+            position: fixed;
+            inset: 0;
+            z-index: 2147483647;
+            display: grid;
+            place-content: center;
+            padding-top: 112px;
+            box-sizing: border-box;
+            background: rgba(10, 8, 6, .96);
+            color: #f4efe6;
+            font: 600 16px/1.5 Inter, sans-serif;
+            text-align: center;
+        }
+        html[data-auth-oauth-pending]::after {
+            content: '';
+            position: fixed;
+            top: calc(50% - 38px);
+            left: calc(50% - 38px);
+            z-index: 2147483647;
+            width: 76px;
+            height: 76px;
+            box-sizing: border-box;
+            border: 3px solid rgba(244, 239, 230, .16);
+            border-top-color: #f57c00;
+            border-radius: 50%;
+            animation: inigo-auth-return-spin .9s linear infinite;
+        }
+    </style>
+    <script>
+        // Paint a lightweight return state before the landing page can flash
+        // while Supabase restores the Google session and validates the role.
+        try {
+            if (sessionStorage.getItem('inigosync-oauth-pending') === '1') {
+                document.documentElement.setAttribute('data-auth-oauth-pending', '');
+            }
+        } catch (_) { /* restricted storage falls through to normal auth UI */ }
+    </script>
 </head>
 <body class="landing-night">
     <a class="landing-skip" href="#courts">Skip to courts</a>
@@ -377,7 +417,7 @@
             <div class="landing-chat-prompts" role="group" aria-label="Frequently asked questions">
                 <button type="button" data-chat-question="booking">How do I book?</button>
                 <button type="button" data-chat-question="sports">Sports and rates</button>
-                <button type="button" data-chat-question="cart">Can I add multiple bookings?</button>
+                <button type="button" data-chat-question="cart">Can I book multiple courts at once?</button>
                 <button type="button" data-chat-question="payment">How does payment work?</button>
                 <button type="button" data-chat-question="records">Where are my bookings and receipts?</button>
                 <button type="button" data-chat-question="policy">Cancellation and check-in policy</button>
@@ -410,19 +450,25 @@
          (Volleyball) never shows it, and leaving it enabled while hidden
          would put an unfocusable element inside the dialog's Tab trap.
          ========================================================================== -->
-    <div class="court-viewer" id="courtViewer" data-court-viewer hidden>
+    <div class="court-viewer landing-booking-modal" id="courtViewer" data-court-viewer data-landing-booking-modal hidden>
         <div class="court-viewer-backdrop" data-court-viewer-backdrop></div>
 
-        <div class="court-viewer-dialog" role="dialog" aria-modal="true"
-             aria-labelledby="courtViewerTitle" tabindex="-1" data-court-viewer-dialog>
+        <section class="court-viewer-dialog landing-booking-dialog" role="dialog" aria-modal="true"
+             aria-labelledby="landingBookingTitle courtViewerTitle" tabindex="-1" data-court-viewer-dialog data-landing-booking-dialog>
 
-            <button type="button" class="court-viewer-close" data-court-viewer-close aria-label="Close">
+            <header class="landing-booking-header">
+                <h2 id="landingBookingTitle">Book a court</h2>
+                <button type="button" class="court-viewer-close landing-booking-close" data-court-viewer-close aria-label="Close booking dialog">
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            </button>
+                </button>
+            </header>
 
-            <div class="court-viewer-media" data-court-viewer-media></div>
+            <div class="landing-booking-content">
+              <div class="landing-booking-court-column">
+                <div class="court-viewer-media" data-court-viewer-media></div>
 
-            <div class="court-viewer-body">
+                <div class="landing-booking-court-scroll">
+                  <div class="court-viewer-body">
                 <!-- Which unit the photo above is of. Reuses the page-wide
                      .eyebrow treatment so it reads as a caption for the media
                      rather than competing with the sport name below it. -->
@@ -462,58 +508,35 @@
                 </div>
 
                 <p class="court-viewer-photo-status" data-court-viewer-photo-status></p>
-                <button class="landing-booking-next" type="button" data-landing-book-next>Next</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="landing-booking-modal" data-landing-booking-modal hidden>
-        <button class="landing-booking-backdrop" type="button" data-landing-booking-close aria-label="Close date and time selection"></button>
-        <section class="landing-booking-dialog" role="dialog" aria-modal="true" aria-labelledby="landingBookingTitle" tabindex="-1" data-landing-booking-dialog>
-            <button type="button" class="landing-booking-close" data-landing-booking-close aria-label="Close date and time selection">×</button>
-            <h2 id="landingBookingTitle">Choose a date and time</h2>
-            <p class="landing-booking-selected-court" data-landing-booking-selected-court></p>
-            <section class="landing-booking" data-landing-booking aria-label="Choose a booking time">
-                <label class="landing-booking-label" for="landingBookDate">Date</label>
-                <input class="landing-booking-date" id="landingBookDate" data-landing-book-date type="date">
-                <p class="landing-booking-status" data-landing-book-status role="status" aria-live="polite">Provisional hours only. Live availability is checked after sign in.</p>
-                <div class="landing-booking-slots" data-landing-book-slots role="group" aria-label="Available hourly times"></div>
-                <div class="landing-booking-dialog-actions">
-                    <button class="landing-booking-back" type="button" data-landing-book-back>Back</button>
-                    <button class="landing-booking-add" type="button" data-landing-book-add disabled>Add to Cart</button>
+                <section class="landing-booking-panel" data-landing-booking aria-label="Choose a booking time">
+                    <h3>Choose your date and time</h3>
+                    <label class="landing-booking-label" for="landingBookDate">Date</label>
+                    <input class="landing-booking-date" id="landingBookDate" data-landing-book-date type="date">
+                    <p class="landing-booking-status" data-landing-book-status role="status" aria-live="polite">Choose a court and date to see provisional hours.</p>
+                    <div class="landing-booking-slots" data-landing-book-slots role="group" aria-label="Available hourly times"></div>
+                </section>
+                  </div>
                 </div>
-            </section>
+              </div>
+
+              <aside class="landing-booking-summary" aria-label="Booking summary" aria-live="polite">
+                    <h3>Booking summary</h3>
+                    <p><span>Court</span><strong data-booking-summary-court>Select a court</strong></p>
+                    <p><span>Date</span><strong data-booking-summary-date>Choose a date</strong></p>
+                    <p><span>Time</span><strong data-booking-summary-time>Select hours</strong></p>
+                    <p><span>Estimated total</span><strong data-booking-summary-total>—</strong></p>
+              </aside>
+            </div>
+            <footer class="landing-booking-footer">
+                <p>Your selection is provisional until you sign in. Availability and pricing are checked before payment.</p>
+                <div>
+                    <button class="landing-booking-cancel" type="button" data-landing-book-cancel>Cancel</button>
+                    <button class="landing-booking-add" type="button" data-landing-book-continue disabled>Login / Sign up to continue</button>
+                </div>
+            </footer>
         </section>
     </div>
 
-    <section class="landing-draft-cart" data-landing-draft-cart aria-label="Draft booking cart" hidden>
-        <button class="landing-draft-cart-toggle" type="button" data-landing-draft-toggle aria-controls="landingDraftCartContent" aria-expanded="true" aria-label="Hide booking cart"><span aria-hidden="true">↓</span></button>
-        <div class="landing-draft-cart-content" id="landingDraftCartContent" data-landing-draft-content>
-            <div class="landing-draft-cart-head">
-                <strong data-landing-draft-count>0 bookings selected</strong>
-                <span><small>Estimated total</small><strong data-landing-draft-total>—</strong></span>
-            </div>
-            <div class="landing-draft-cart-preview" data-landing-draft-preview aria-live="polite"></div>
-            <p class="landing-draft-cart-note">Provisional draft only. Rates and live availability are confirmed after sign in.</p>
-            <div class="landing-draft-actions">
-                <button class="landing-draft-details" type="button" data-landing-draft-details>View details</button>
-                <button class="landing-draft-continue" type="button" data-landing-draft-continue>Login / Sign up to proceed payment</button>
-            </div>
-        </div>
-    </section>
-    <div class="landing-draft-details-modal" data-landing-draft-details-modal hidden>
-        <button class="landing-draft-details-backdrop" type="button" data-landing-draft-details-close aria-label="Close booking details"></button>
-        <section class="landing-draft-details-dialog" role="dialog" aria-modal="true" aria-labelledby="landingDraftDetailsTitle" tabindex="-1">
-            <button type="button" class="landing-draft-details-close" data-landing-draft-details-close aria-label="Close booking details">×</button>
-            <h2 id="landingDraftDetailsTitle">Booking details</h2>
-            <p class="landing-draft-details-count" data-landing-draft-details-count></p>
-            <ul data-landing-draft-items></ul>
-            <div class="landing-draft-details-total"><span>Estimated booking total</span><strong data-landing-draft-details-total>—</strong></div>
-            <p class="landing-draft-status" data-landing-draft-status role="status" aria-live="polite"></p>
-            <button class="landing-draft-continue" type="button" data-landing-draft-details-continue>Login / Sign up to proceed payment</button>
-            <button class="landing-draft-clear" type="button" data-landing-draft-clear>Clear draft cart</button>
-        </section>
-    </div>
 
     <!-- ==========================================================================
          AUTH MODAL — Login / Sign up / Verify OTP / Admin

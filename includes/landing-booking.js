@@ -2,30 +2,17 @@
 // Selections stay in this tab's browser storage until sign-in; this never creates a reservation.
 (function () {
     const HANDOFF_KEY = 'inigosync:landing-booking-draft:v1';
-    const MAX_ITEMS = 8;
-    const viewer = document.querySelector('[data-court-viewer]');
     const root = document.querySelector('[data-landing-booking-modal]');
-    if (!viewer || !root) return;
+    if (!root) return;
 
     const dateInput = root.querySelector('[data-landing-book-date]');
     const status = root.querySelector('[data-landing-book-status]');
     const slots = root.querySelector('[data-landing-book-slots]');
-    const addButton = root.querySelector('[data-landing-book-add]');
-    const selectedCourt = root.querySelector('[data-landing-booking-selected-court]');
-    const cart = document.querySelector('[data-landing-draft-cart]');
-    const cartToggle = document.querySelector('[data-landing-draft-toggle]');
-    const cartContent = document.querySelector('[data-landing-draft-content]');
-    const cartItems = document.querySelector('[data-landing-draft-items]');
-    const cartStatus = document.querySelector('[data-landing-draft-status]');
-    const continueButton = document.querySelector('[data-landing-draft-continue]');
-    const detailContinueButton = document.querySelector('[data-landing-draft-details-continue]');
-    const detailsModal = document.querySelector('[data-landing-draft-details-modal]');
-    const detailsDialog = detailsModal?.querySelector('[role="dialog"]');
-    const detailsCount = document.querySelector('[data-landing-draft-details-count]');
-    const detailsTotal = document.querySelector('[data-landing-draft-details-total]');
-    const cartCount = document.querySelector('[data-landing-draft-count]');
-    const cartTotal = document.querySelector('[data-landing-draft-total]');
-    const cartPreview = document.querySelector('[data-landing-draft-preview]');
+    const continueButton = root.querySelector('[data-landing-book-continue]');
+    const summaryCourt = root.querySelector('[data-booking-summary-court]');
+    const summaryDate = root.querySelector('[data-booking-summary-date]');
+    const summaryTime = root.querySelector('[data-booking-summary-time]');
+    const summaryTotal = root.querySelector('[data-booking-summary-total]');
     let activeCourt = null;
     let activeListing = null;
     let activeUnits = [];
@@ -36,25 +23,11 @@
     let draftItems = [];
     let draftCreatedAt = null;
     let refreshSeq = 0;
-    let detailsReturnFocus = null;
-    let cartExpanded = true;
-
-    function setCartExpanded(expanded) {
-        cartExpanded = expanded;
-        if (!cart || !cartToggle || !cartContent) return;
-        cart.dataset.collapsed = expanded ? 'false' : 'true';
-        cartToggle.setAttribute('aria-expanded', String(expanded));
-        cartToggle.setAttribute('aria-label', expanded ? 'Hide booking cart' : 'Show booking cart');
-        cartToggle.querySelector('[aria-hidden="true"]').textContent = expanded ? '↓' : '↑';
-        cartContent.inert = !expanded;
-        cartContent.setAttribute('aria-hidden', String(!expanded));
-    }
 
     function validRestoredDraft(payload) {
         const ageMs = Date.now() - Number(payload?.createdAt);
-        if (payload?.version !== 1 || !Array.isArray(payload.items) || !payload.items.length
-            || payload.items.length > MAX_ITEMS || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) return false;
-        let rangeCount = 0;
+        if (payload?.version !== 1 || !Array.isArray(payload.items) || payload.items.length !== 1
+            || !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) return false;
         for (const item of payload.items) {
             if (!item || typeof item.listingSlug !== 'string' || item.listingSlug.length > 120
                 || typeof item.court !== 'string' || item.court.length > 160
@@ -68,8 +41,7 @@
                     || item.resourceIds.some((id) => typeof id !== 'string' || id.length > 80)))) return false;
             const parsedDate = new Date(`${item.date}T00:00:00Z`);
             if (!Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== item.date) return false;
-            rangeCount += window.InigoBookingSlots.groupConsecutiveHours(item.hours).length;
-            if (rangeCount > MAX_ITEMS) return false;
+            if (window.InigoBookingSlots.groupConsecutiveHours(item.hours).length !== 1) return false;
         }
         return true;
     }
@@ -85,7 +57,6 @@
             }
             draftItems = payload.items.map((item) => ({ ...item, hours: [...new Set(item.hours)], resourceIds: item.resourceIds || [] }));
             draftCreatedAt = Number(payload.createdAt);
-            cartStatus.textContent = 'Browser-only draft restored. No reservation or payment has been created.';
         } catch (error) {
             try { sessionStorage.removeItem(HANDOFF_KEY); } catch (_) { /* storage may be disabled */ }
             console.warn('[landing booking] could not restore the tab draft', error);
@@ -99,10 +70,10 @@
         }
         draftCreatedAt = Date.now();
         try {
-            sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ version: 1, items: draftItems.slice(0, MAX_ITEMS), createdAt: draftCreatedAt }));
+            sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ version: 1, items: draftItems.slice(0, 1), createdAt: draftCreatedAt }));
             return true;
         } catch (error) {
-            cartStatus.textContent = 'This browser could not save the draft in this tab. No reservation has been created.';
+            setStatus('This browser could not save your booking in this tab. Please try again.', true);
             console.warn('[landing booking] could not save the tab draft', error);
             return false;
         }
@@ -122,9 +93,35 @@
         status.dataset.error = isError ? 'true' : 'false';
     }
 
+    function renderSummary() {
+        if (summaryCourt) summaryCourt.textContent = [activeListing?.name, selectedUnit?.label].filter(Boolean).join(' · ') || 'Select a court';
+        if (summaryDate) summaryDate.textContent = dateInput.value
+            ? new Date(`${dateInput.value}T00:00:00`).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+            : 'Choose a date';
+        const hours = [...selectedHours].sort((a, b) => a - b);
+        const ranges = window.InigoBookingSlots.groupConsecutiveHours(hours);
+        if (summaryTime) summaryTime.textContent = !hours.length ? 'Select hours'
+            : ranges.length !== 1 ? 'Choose consecutive hours'
+                : `${window.InigoBusinessHours.formatHourRangeLabelShort(hours[0]).split('–')[0].trim()} – ${window.InigoBusinessHours.formatHourRangeLabelShort(hours[hours.length - 1]).split('–').at(-1).trim()}`;
+        const dayRate = selectedUnit?.rateDay;
+        const nightRate = selectedUnit?.rateNight;
+        const unitRate = selectedUnit?.rateUnit || activeListing?.rateUnit || '/hr';
+        let hourlyRate = null;
+        if (unitRate === '/hr') {
+            if (typeof dayRate === 'number' && Number.isFinite(dayRate)
+                && (typeof nightRate !== 'number' || nightRate === dayRate)) hourlyRate = dayRate;
+            else if (typeof dayRate !== 'number' && typeof nightRate !== 'number'
+                && typeof activeListing?.rate === 'number' && Number.isFinite(activeListing.rate)) hourlyRate = activeListing.rate;
+        }
+        if (summaryTotal) summaryTotal.textContent = hourlyRate !== null && hours.length
+            ? `₱${(hourlyRate * hours.length).toLocaleString('en-PH', { maximumFractionDigits: 2 })} estimated`
+            : 'Confirmed after sign in';
+    }
+
     function renderSlots() {
         if (!slots) return;
-        addButton.disabled = true;
+        renderSummary();
+        continueButton.disabled = true;
         if (!activeListing || !dateInput.value) {
             slots.replaceChildren();
             setStatus('Choose a court and date to see provisional hours.');
@@ -136,22 +133,24 @@
             return;
         }
         const hours = window.InigoBusinessHours.hoursRange();
-        const available = hours.filter((hour) => !isDraftHour(hour)
-            && new Date(window.InigoBookingSlots.localDateHourToIso(dateInput.value, hour)).getTime() >= Date.now());
+        const available = hours.filter((hour) =>
+            new Date(window.InigoBookingSlots.localDateHourToIso(dateInput.value, hour)).getTime() >= Date.now());
         selectedHours = new Set([...selectedHours].filter((hour) => available.includes(hour)));
         slots.innerHTML = hours.map((hour) => {
             const isPast = new Date(window.InigoBookingSlots.localDateHourToIso(dateInput.value, hour)).getTime() < Date.now();
-            const inDraft = !isPast && isDraftHour(hour);
-            const disabled = isPast || inDraft;
+            const disabled = isPast;
             const selected = selectedHours.has(hour);
             const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
-            const suffix = isPast ? ' · Passed' : inDraft ? ' · In draft cart' : '';
-            return `<button type="button" class="landing-booking-slot" data-landing-slot="${hour}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}>${window.escapeHtml(label + suffix)}</button>`;
+            const time = `<span class="landing-booking-slot-time">${window.escapeHtml(label)}</span>`;
+            const state = isPast ? '<span class="landing-booking-slot-state">Passed</span>' : '';
+            return `<button type="button" class="landing-booking-slot" data-landing-slot="${hour}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}>${time}${state}</button>`;
         }).join('') || '<p>No bookable hours are configured for this date.</p>';
         const selectedCount = selectedHours.size;
-        setStatus(selectedCount ? `${selectedCount} provisional hour${selectedCount === 1 ? '' : 's'} selected. Live availability is checked after sign in.`
+        const oneRange = window.InigoBookingSlots.groupConsecutiveHours([...selectedHours]).length === 1;
+        setStatus(selectedCount && !oneRange ? 'Choose consecutive hours for one court booking.'
+            : selectedCount ? `${selectedCount} provisional hour${selectedCount === 1 ? '' : 's'} selected. Live availability is checked after sign in.`
             : 'Provisional hours only. Live availability and date-specific closures are checked after sign in.');
-        addButton.disabled = !selectedCount;
+        continueButton.disabled = !selectedCount || !oneRange;
     }
 
     async function refreshAvailability(_force = true, preserveSelection = false) {
@@ -180,81 +179,22 @@
         if (!resolved.length || !selectedUnit) {
             setStatus('This listing has no verified bookable inventory yet.', true);
         }
+        renderSummary();
         refreshAvailability();
     }
 
-    function renderCart() {
-        if (!cart || !cartItems) return;
-        cart.hidden = draftItems.length === 0;
-        const rangeCount = draftItems.reduce((count, item) => count + window.InigoBookingSlots.groupConsecutiveHours(item.hours).length, 0);
-        const hasHourlyRate = (item) => item.rateUnit === '/hr' && item.rate !== null && item.rate !== undefined
-            && item.rate !== '' && Number.isFinite(Number(item.rate));
-        const estimate = draftItems.every(hasHourlyRate)
-            ? draftItems.reduce((sum, item) => sum + Number(item.rate) * item.hours.length, 0)
-            : null;
-        const estimateLabel = estimate === null ? 'Rate TBA' : `₱${estimate.toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
-        if (cartCount) cartCount.textContent = `${rangeCount} booking${rangeCount === 1 ? '' : 's'} selected`;
-        if (cartTotal) cartTotal.textContent = estimateLabel;
-        if (detailsCount) detailsCount.textContent = `${rangeCount} booking${rangeCount === 1 ? '' : 's'} in this browser-only draft`;
-        if (detailsTotal) detailsTotal.textContent = estimateLabel;
-        if (cartPreview) cartPreview.innerHTML = draftItems.slice(0, 2).map((item) => `<span>${window.escapeHtml(item.court)} · ${window.escapeHtml(item.unit)} · ${window.escapeHtml(item.date)}</span>`).join('')
-            + (draftItems.length > 2 ? `<small>+ ${draftItems.length - 2} more</small>` : '');
-        cartItems.innerHTML = draftItems.map((item, index) => `<li><span class="landing-draft-item"><strong>${window.escapeHtml(item.court)} · ${window.escapeHtml(item.unit)}</strong><span>${window.escapeHtml(item.date)} · ${window.escapeHtml(item.hours.map((hour) => window.InigoBusinessHours.formatHourRangeLabelShort(hour)).join(', '))}</span><small>${hasHourlyRate(item) ? `₱${(Number(item.rate) * item.hours.length).toLocaleString('en-PH', { maximumFractionDigits: 2 })} estimated` : 'Rate TBA'}</small></span><button type="button" class="landing-draft-remove" data-landing-draft-remove="${index}">Remove</button></li>`).join('');
-        continueButton.disabled = draftItems.length === 0;
-        if (detailContinueButton) detailContinueButton.disabled = draftItems.length === 0;
-        if (!draftItems.length) cartStatus.textContent = '';
-    }
-
-    function closeDetails() {
-        if (!detailsModal || detailsModal.hidden) return;
-        detailsModal.hidden = true;
-        document.body?.classList.remove('landing-draft-details-open');
-        if (!document.querySelector('[data-auth-overlay][data-open]')) detailsReturnFocus?.focus?.();
-        detailsReturnFocus = null;
-    }
-
-    function openDetails(invoker) {
-        if (!detailsModal || !draftItems.length) return;
-        detailsReturnFocus = invoker || document.activeElement;
-        renderCart();
-        detailsModal.hidden = false;
-        document.body?.classList.add('landing-draft-details-open');
-        detailsDialog?.focus();
-    }
-
     function closeBookingPopup(restoreCourtFocus = true) {
-        root.hidden = true;
-        document.body?.classList.remove('landing-booking-open');
-        if (restoreCourtFocus) document.dispatchEvent(new CustomEvent('inigo:landing-booking-close'));
+        if (restoreCourtFocus) document.querySelector('[data-court-viewer-close]')?.click();
+        else {
+            root.hidden = true;
+            document.body?.classList.remove('landing-booking-open');
+        }
     }
 
     function continueToAuth() {
         if (!draftItems.length || !persistDraftItems()) return;
-        closeDetails();
         document.dispatchEvent(new CustomEvent('inigo:landing-booking-auth'));
         document.querySelector('[data-auth-open="login"]')?.click();
-    }
-
-    function cartConflict(item, existing) {
-        if (item.date !== existing.date) return false;
-        if (!item.hours.some((hour) => existing.hours.includes(hour))) return false;
-        const resources = new Set(item.resourceIds || []);
-        if (resources.size && (existing.resourceIds || []).some((id) => resources.has(id))) return true;
-        if (resources.size && (existing.resourceIds || []).length) return false;
-        if (item.listingSlug !== existing.listingSlug || item.unitId !== existing.unitId) return false;
-        return true;
-    }
-
-    function isDraftHour(hour) {
-        const unit = selectedUnit;
-        if (!unit) return false;
-        return draftItems.some((item) => cartConflict({
-            listingSlug: activeListing?.slug,
-            unitId: unit.id,
-            resourceIds: unit.resourceIds || [],
-            date: dateInput.value,
-            hours: [hour],
-        }, item));
     }
 
     dateInput?.addEventListener('change', () => {
@@ -268,20 +208,20 @@
         if (selectedHours.has(hour)) selectedHours.delete(hour); else selectedHours.add(hour);
         renderSlots();
     });
-    addButton?.addEventListener('click', async () => {
-        if (addButton.disabled || !activeListing || !window.InigoCourtsData) return;
+    continueButton?.addEventListener('click', async () => {
+        if (continueButton.disabled || !activeListing || !window.InigoCourtsData) return;
         const wantedHours = [...selectedHours].sort((a, b) => a - b);
         await refreshAvailability(true, true);
-        if (!rules || wantedHours.some((hour) => !selectedHours.has(hour)
+        if (!rules || window.InigoBookingSlots.groupConsecutiveHours(wantedHours).length !== 1 || wantedHours.some((hour) => !selectedHours.has(hour)
             || new Date(window.InigoBookingSlots.localDateHourToIso(dateInput.value, hour)).getTime() < Date.now())) {
-            setStatus('The selected date or hours are no longer valid. Choose the provisional hours again.', true);
+            setStatus('Choose one consecutive time range on a valid date before continuing.', true);
             return;
         }
         const listing = (window.__landingBookableCourts || []).find((court) => activeListing.slug
             ? court.slug === activeListing.slug : court.name === activeListing.name);
         const unit = selectedUnit;
         if (!listing?.id || !unit?.id) {
-            setStatus('This court needs verified inventory before it can be added to the booking cart.', true);
+            setStatus('This court needs verified inventory before it can be booked.', true);
             return;
         }
         const newItem = {
@@ -296,108 +236,29 @@
             rate: listing.rate,
             rateUnit: listing.rateUnit || '/hr',
         };
-        const runs = window.InigoBookingSlots.groupConsecutiveHours(wantedHours);
-        if (draftItems.reduce((count, item) => count + window.InigoBookingSlots.groupConsecutiveHours(item.hours).length, 0) + runs.length > MAX_ITEMS) {
-            setStatus('Your draft cart can include up to eight booking ranges.', true);
-            return;
-        }
-        if (draftItems.some((item) => cartConflict(newItem, item))) {
-            setStatus('A selected hour overlaps another draft on this court. Remove it or choose another time.', true);
-            return;
-        }
-        draftItems.push(newItem);
+        draftItems = [newItem];
         persistDraftItems();
-        selectedHours.clear();
-        renderSlots();
-        renderCart();
-        setCartExpanded(true);
-        cartStatus.textContent = 'Browser-only draft. No reservation or payment has been created; live availability is checked after sign in.';
-        root.hidden = true;
-        document.body?.classList.remove('landing-booking-open');
-        document.querySelector('[data-landing-draft-details]')?.focus();
+        continueToAuth();
     });
-    cartItems?.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-landing-draft-remove]');
-        if (!button) return;
-        draftItems.splice(Number(button.dataset.landingDraftRemove), 1);
-        persistDraftItems();
-        renderSlots();
-        renderCart();
-    });
-    document.querySelector('[data-landing-draft-details]')?.addEventListener('click', (event) => openDetails(event.currentTarget));
-    cartToggle?.addEventListener('click', () => setCartExpanded(!cartExpanded));
-    document.querySelectorAll('[data-landing-draft-details-close]').forEach((button) => button.addEventListener('click', closeDetails));
-    document.addEventListener('keydown', (event) => {
-        if (detailsModal?.hidden || document.querySelector('[data-auth-overlay][data-open]')) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            closeDetails();
-            return;
-        }
-        if (event.key !== 'Tab' || !detailsDialog) return;
-        const focusable = [...detailsDialog.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')];
-        if (!focusable.length) { event.preventDefault(); detailsDialog.focus(); return; }
-        const first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    });
-    document.querySelector('[data-landing-draft-clear]')?.addEventListener('click', () => {
-        draftItems = [];
-        persistDraftItems();
-        renderSlots();
-        renderCart();
-    });
-    continueButton?.addEventListener('click', continueToAuth);
-    detailContinueButton?.addEventListener('click', continueToAuth);
-    root.querySelector('[data-landing-book-back]')?.addEventListener('click', () => {
-        closeBookingPopup(false);
-        if (viewerSelection) document.dispatchEvent(new CustomEvent('inigo:landing-booking-back-to-court', { detail: viewerSelection }));
-    });
-    root.querySelectorAll('[data-landing-booking-close]').forEach((button) => button.addEventListener('click', () => {
-        closeBookingPopup();
-    }));
-    document.addEventListener('inigo:landing-court-next', (event) => {
+    document.addEventListener('inigo:landing-court-selection', (event) => {
         viewerSelection = event.detail || null;
         activeCourt = viewerSelection?.court || null;
         activeListing = viewerSelection?.listing || null;
         dateInput.min = today();
         if (!dateInput.value || dateInput.value < dateInput.min) dateInput.value = dateInput.min;
         updateListing();
-        selectedCourt.textContent = [activeListing?.name, viewerSelection?.unit?.label].filter(Boolean).join(' · ');
-        root.hidden = false;
-        document.body?.classList.add('landing-booking-open');
-        root.querySelector('[data-landing-booking-dialog]')?.focus();
+        renderSummary();
     });
-    document.addEventListener('keydown', (event) => {
-        if (root.hidden || document.querySelector('[data-landing-draft-details-modal]:not([hidden])')
-            || document.querySelector('[data-auth-overlay][data-open]')) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            closeBookingPopup();
-            return;
-        }
-        if (event.key !== 'Tab') return;
-        const dialog = root.querySelector('[data-landing-booking-dialog]');
-        const focusable = [...dialog.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')];
-        if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
-        const first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    });
+    root.querySelector('[data-landing-book-cancel]')?.addEventListener('click', () => closeBookingPopup());
     document.addEventListener('inigo:landing-court-open', (event) => { activeCourt = event.detail?.court || null; });
     document.addEventListener('inigo:landing-booking-auth', () => {
-        root.hidden = true;
-        document.body?.classList.remove('landing-booking-open');
+        closeBookingPopup(false);
     });
     document.addEventListener('inigo:landing-courts-data-ready', (event) => {
         window.__landingBookableCourts = event.detail?.courts || [];
         if (activeCourt) updateListing();
     });
 
-    setCartExpanded(true);
-    renderCart();
     window.InigoCourtsData?.getCourts().then((courts) => {
         window.__landingBookableCourts = courts || [];
         document.dispatchEvent(new CustomEvent('inigo:landing-courts-data-ready', { detail: { courts: window.__landingBookableCourts } }));

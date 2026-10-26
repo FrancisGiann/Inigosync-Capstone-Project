@@ -20,14 +20,14 @@ test('landing help offers fixed FAQ choices and no free-text form', () => {
     assert.match(html, /aria-label="Open help and frequently asked questions"/);
 });
 
-test('public booking and cart answers explain provisional guest selections', () => {
+test('public booking answers explain single provisional selections and required customer sign-in', () => {
     const booking = answerQuestion('booking').text;
     const cart = answerQuestion('cart').text;
-    assert.match(booking, /browser-tab draft/);
-    assert.match(booking, /do not reserve a court/);
-    assert.match(booking, /sign in or create an account/);
-    assert.match(cart, /up to eight/);
-    assert.match(cart, /not a reservation/);
+    assert.match(booking, /one sport, court, date, and consecutive time range/);
+    assert.match(booking, /does not reserve a court/);
+    assert.match(booking, /customer account before continuing to payment/);
+    assert.match(cart, /one sport and court booking at a time/);
+    assert.match(cart, /customer account to continue/);
 });
 
 test('sports answer uses current rates and handles unavailable listings', () => {
@@ -38,7 +38,7 @@ test('sports answer uses current rates and handles unavailable listings', () => 
 });
 
 test('payment, records, policy, and location answers use project facts', () => {
-    assert.match(answerQuestion('payment').text, /sign in/);
+    assert.match(answerQuestion('payment').text, /log in/);
     assert.match(answerQuestion('payment').text, /PayMongo/);
     assert.match(answerQuestion('records').text, /after you sign in/);
     assert.match(answerQuestion('records').text, /Receipts/);

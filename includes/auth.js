@@ -84,6 +84,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // out here is a mistyped address, and that is the panel that fixes it.
         recovery: { heading: 'Reset your password', backTab: 'forgot', backLabel: '← Use a different email' }
     };
+    // Supabase Auth allows one email send per user per 60 seconds by default
+    // for signup, recovery, and passwordless OTP endpoints. Keep the UI timer
+    // aligned so Resend cannot appear ready while Auth will still refuse it.
+    const OTP_RESEND_COOLDOWN_SECONDS = 60;
 
     // Timer for success notices. Error notices remain visible until dismissed.
     //
@@ -365,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return { session, profile };
     }
 
-    async function completeLogin(allowedRoles, verifySignupPhone = false, rememberDevice = null, emailAlreadyVerified = false) {
+    async function completeLogin(allowedRoles, verifySignupPhone = false, rememberDevice = null, emailAlreadyVerified = false, signupEmailConfirmed = false, signupFlow = false) {
         const { session, profile } = await validateLoginAccount(allowedRoles);
 
         // The server binds the email proof to this exact Auth session. A
@@ -373,10 +377,42 @@ document.addEventListener('DOMContentLoaded', () => {
         // validates its hash and inactivity expiry.
         if (!emailAlreadyVerified) {
             if (!window.InigoEmailMfa) throw new Error('Email verification is temporarily unavailable. Please reload and try again.');
-            const mfa = await window.InigoEmailMfa.begin({
-                userId: session.user.id,
-                remember: rememberDevice === true,
-            });
+            let mfa;
+            try {
+                mfa = await window.InigoEmailMfa.begin({
+                    userId: session.user.id,
+                    remember: rememberDevice === true,
+                });
+            } catch (error) {
+                // Signup confirmation consumes its OTP before this separate
+                // sign-in challenge starts. If email-MFA delivery fails, do
+                // not leave the user on the consumed signup-code panel where
+                // both Verify and Resend can only fail. Preserve the validated
+                // session and route into the retryable login-MFA stage instead.
+                if (!signupFlow) throw error;
+                if (window.InigoLoading) window.InigoLoading.hide();
+                openModal('login');
+                pendingLoginOtp = {
+                    userId: session.user.id,
+                    email: profile.email || session.user.email,
+                    allowedRoles,
+                    rememberDevice: rememberDevice === true,
+                    challengeId: null,
+                    verifySignupPhone,
+                    signupEmailConfirmed: true,
+                    codeSent: false,
+                };
+                setOtpPurpose('login');
+                const emailLabel = overlay.querySelector('[data-verify-email]');
+                if (emailLabel) emailLabel.textContent = pendingLoginOtp.email || 'your email';
+                setActivePanel('verify');
+                startOtpFlow();
+                startResendCountdown(OTP_RESEND_COOLDOWN_SECONDS);
+                setAuthNotice(signupEmailConfirmed
+                    ? 'Your email is confirmed, but we could not send the separate sign-in code. Please wait a minute, then choose Resend.'
+                    : 'Your account is created, but we could not send the sign-in code. Please wait a minute, then choose Resend.', true);
+                return;
+            }
             if (mfa.verified !== true) {
             // OAuth returns land with a closed modal. Open it before setting
             // pendingLoginOtp because switching panels intentionally cancels
@@ -389,6 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 rememberDevice: rememberDevice === true,
                 challengeId: mfa.challenge_id,
                 verifySignupPhone,
+                signupEmailConfirmed,
                 codeSent: mfa.resent !== false,
             };
             setOtpPurpose('login');
@@ -397,9 +434,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (emailLabel) emailLabel.textContent = pendingLoginOtp.email || 'your email';
             setActivePanel('verify');
             startOtpFlow();
-            setAuthNotice(pendingLoginOtp.codeSent
-                ? 'Enter the 6-digit code we emailed you to finish signing in.'
-                : 'A code was sent recently. Check your inbox or wait before requesting another.', false);
+            setAuthNotice(signupEmailConfirmed
+                ? (pendingLoginOtp.codeSent
+                    ? 'Your email is confirmed. Enter the separate 6-digit sign-in code we sent you to finish signing in.'
+                    : 'Your email is confirmed. A sign-in code was sent recently. Check your inbox or wait before requesting another.')
+                : (pendingLoginOtp.codeSent
+                    ? 'Enter the 6-digit code we emailed you to finish signing in.'
+                    : 'A code was sent recently. Check your inbox or wait before requesting another.'), false);
             return;
             }
         }
@@ -1632,7 +1673,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             : state === 'invalid'
                                 ? 'Enter a valid email address.'
                                 : state === 'check_spelling'
-                                    ? 'Check the email address for a possible provider-domain typo, then try again.'
+                                    ? (signupForm.querySelector('[data-signup-email-status]')?.dataset.suggestion
+                                        ? `This address looks like a typo. Did you mean ${signupForm.querySelector('[data-signup-email-status]').dataset.suggestion}?`
+                                        : 'Check the email address for a possible provider-domain typo, then try again.')
                                 : 'We could not check that email right now. Please try again shortly.';
                     setAuthNotice(message, true);
                 }
@@ -1931,7 +1974,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 : state === 'invalid'
                                     ? 'Enter a valid email address.'
                                     : state === 'check_spelling'
-                                        ? 'Check the email address for a possible provider-domain typo, then try again.'
+                                        ? (signupForm.querySelector('[data-signup-email-status]')?.dataset.suggestion
+                                            ? `This address looks like a typo. Did you mean ${signupForm.querySelector('[data-signup-email-status]').dataset.suggestion}?`
+                                            : 'Check the email address for a possible provider-domain typo, then try again.')
                                         : 'We could not check that email right now. Please try again shortly.';
                         setAuthNotice(message, true);
                         return;
@@ -1991,7 +2036,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     pendingSignupPhone = mobileCheck.normalized || '';
                     if (signUpData.session) {
-                        await completeLogin(['customer'], true, rememberDevice);
+                        await completeLogin(['customer'], true, rememberDevice, false, false, true);
                         return;
                     }
 
@@ -2011,7 +2056,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     // checks the code and binds proof to that existing session;
                     // signup confirmation below remains a separate first step.
                     if (otpPurpose === 'login') {
-                        if (code.length !== 6 || !pendingLoginOtp) {
+                        if (!pendingLoginOtp) {
+                            setAuthNotice('Enter the 6-digit code we emailed you.', true);
+                            return;
+                        }
+                        if (!pendingLoginOtp.challengeId) {
+                            setAuthNotice('Your email is confirmed, but no sign-in code has been sent yet. Wait for the resend timer, then choose Resend.', true);
+                            return;
+                        }
+                        if (code.length !== 6) {
                             setAuthNotice('Enter the 6-digit code we emailed you.', true);
                             return;
                         }
@@ -2104,7 +2157,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw error;
                     }
 
-                    await completeLogin(['customer'], true, signupForm?.elements.remember?.checked === true);
+                    pendingSignupEmail = '';
+                    setAuthNotice('Email confirmed. Finishing sign-in…', false);
+                    await completeLogin(['customer'], true, signupForm?.elements.remember?.checked === true, false, true, true);
 
                     return;
                 }
@@ -2254,7 +2309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         setAuthNotice('');
         if (otpBoxes[0]) otpBoxes[0].focus();
-        startResendCountdown(30);
+        startResendCountdown(OTP_RESEND_COOLDOWN_SECONDS);
     }
 
     function startResendCountdown(seconds) {
@@ -2360,14 +2415,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { error, resent } = await resendCode();
                 if (error) throw error;
                 if (otpPurpose === 'login' && resent === false) {
-                    setAuthNotice('A code was sent recently. Check your inbox or wait before requesting another.', false);
-                    startResendCountdown(60);
-                } else startResendCountdown(30);
+                    setAuthNotice(pendingLoginOtp?.signupEmailConfirmed
+                        ? 'Your email is confirmed. A sign-in code was sent recently. Check your inbox or wait before requesting another.'
+                        : 'A code was sent recently. Check your inbox or wait before requesting another.', false);
+                    startResendCountdown(OTP_RESEND_COOLDOWN_SECONDS);
+                } else {
+                    const resendNotice = otpPurpose === 'signup'
+                        ? 'A new sign-up code was sent. Check your inbox.'
+                        : otpPurpose === 'recovery'
+                            ? "If that email is registered, we've sent a new reset code. Check your inbox."
+                            : 'A new sign-in code was sent. Check your inbox.';
+                    setAuthNotice(resendNotice, false);
+                    startResendCountdown(OTP_RESEND_COOLDOWN_SECONDS);
+                }
             } catch (err) {
                 // Re-enabled rather than left dead, so a rate-limited or
-                // failed resend can be retried once the wait is over.
+                // failed resend can be retried once the wait is over. Auth's
+                // per-email cooldown is 60s by default, so preserve that wait
+                // after a 429 instead of inviting another too-early request.
                 setAuthNotice(friendlyAuthError(err), true);
-                otpResendBtn.disabled = false;
+                if (['over_email_send_rate_limit', 'over_request_rate_limit'].includes(err?.code) || err?.status === 429) {
+                    startResendCountdown(OTP_RESEND_COOLDOWN_SECONDS);
+                } else otpResendBtn.disabled = false;
             } finally {
                 if (window.InigoLoading) window.InigoLoading.hide();
             }
