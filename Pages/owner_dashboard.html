@@ -173,23 +173,8 @@
             <div class="admin-topbar-actions">
                 <div class="admin-clock"><span class="dot"></span><span data-admin-clock>Thu, Jul 16 · 9:00 AM</span></div>
 
-                <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="5" class="sun-circle"/>
-                        <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
-                        <line x1="12" y1="21" x2="12" y2="23" class="sun-line"/>
-                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" class="sun-line"/>
-                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" class="sun-line"/>
-                        <line x1="1" y1="12" x2="3" y2="12" class="sun-line"/>
-                        <line x1="21" y1="12" x2="23" y2="12" class="sun-line"/>
-                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" class="sun-line"/>
-                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" class="sun-line"/>
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
-                    </svg>
-                </button>
-
                 <div class="admin-profile" data-admin-profile>
-                    <button type="button" class="admin-profile-trigger" data-admin-profile-trigger>
+                    <button type="button" class="admin-profile-trigger" data-admin-profile-trigger aria-haspopup="true" aria-expanded="false" aria-controls="adminProfileMenu">
                         <div class="admin-avatar">RD</div>
                         <div class="admin-profile-name">
                             <strong data-admin-profile-name>Rosalinda Driz</strong>
@@ -198,7 +183,7 @@
                         <svg class="admin-caret" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
 
-                    <div class="admin-profile-menu">
+                    <div class="admin-profile-menu" id="adminProfileMenu">
                         <!-- Revision A2 (implementation_plan.md, decision B2)
                              — opens data-admin-panel="profile" below, a
                              panel that (like the customer dashboard's own
@@ -212,6 +197,25 @@
                             <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="14" rx="2.4" stroke="currentColor" stroke-width="1.7"/><circle cx="9.5" cy="11" r="2" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 16c.6-1.5 1.7-2.3 3-2.3s2.4.8 3 2.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M14.5 9.5h3M14.5 12.5h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
                             View Profile
                         </button>
+                        <div class="theme-menu-item">
+                            <span>Theme</span>
+                            <button type="button" class="theme-toggle" data-theme-toggle role="switch" aria-label="Light theme" aria-checked="false">
+                                <span class="theme-toggle-thumb">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="5" class="sun-circle"/>
+                                        <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
+                                        <line x1="12" y1="21" x2="12" y2="23" class="sun-line"/>
+                                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" class="sun-line"/>
+                                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" class="sun-line"/>
+                                        <line x1="1" y1="12" x2="3" y2="12" class="sun-line"/>
+                                        <line x1="21" y1="12" x2="23" y2="12" class="sun-line"/>
+                                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" class="sun-line"/>
+                                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" class="sun-line"/>
+                                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
+                                    </svg>
+                                </span>
+                            </button>
+                        </div>
                         <button type="button" class="admin-logout" data-admin-logout>
                             <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             Log Out

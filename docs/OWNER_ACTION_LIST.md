@@ -100,29 +100,48 @@ because browser JavaScript only runs while somebody has a tab open:
 
 ---
 
-## C. Create a free PayMongo test account *(blocks Phase 5 — Payment Automation)*
+## C. PayMongo test checkout in the existing project
 
-**Why it's blocked:** it's an account in your name, and the secret key must never
-touch this repo.
+**Current state:** the current Supabase project has matching PayMongo test credentials, and the PayMongo TEST webhook points to it. Keep the test key out of this repo.
 
 **What to do:**
 1. Sign up at <https://dashboard.paymongo.com/signup> (free; no business
    documents needed while you stay in **Test Mode**).
-2. Stay in **Test Mode** — the toggle is in the dashboard. No real money moves.
-3. Go to **Developers → API Keys**. You'll see two test keys:
-   - **Public key** (`pk_test_…`) — safe to share with me; it goes in frontend code.
+2. Stay in **Test Mode** — the toggle is in the dashboard. Card and e-wallet
+   authorizations are simulated. QR Ph test codes can still be real-payable,
+   so customer Hosted Checkout offers QR Ph only for an exactly ₱1 full-payment
+   booking test. Confirm the displayed total before scanning or paying.
+3. Use the existing Supabase project `xrlwtnwamboucihsamrr` and existing
+   database. No separate test project or schema migration is needed. Card and
+   wallet test payments create no real charge, but their signed webhooks will
+   mark reservations paid in this database. Treat those reservations as
+   simulated/uncollected. PayMongo warns that a test QR can move real funds.
+4. Go to **Developers → API Keys**. Use the matching test keys:
+   - **Public key** (`pk_test_…`) — keep it only as a Supabase Edge Function
+     secret; QR Ph flows use it server-side.
    - **Secret key** (`sk_test_…`) — **never send this to me and never put it in
-     the repo.** You'll set it as a Supabase Edge Function secret yourself:
+     the repo.** The current project already has the configured test key; if it
+     needs rotation, update its Edge Function secret yourself:
      ```
      supabase secrets set PAYMONGO_SECRET_KEY=sk_test_xxx
      ```
 
-**What unblocks:** the e-wallet payment flow (GCash/Maya in test mode), real
-receipt/invoice generation, and the live payment loading phase — i.e. the
-Payment Automation objective, which currently has **no code at all**.
+   Keep `PAYMONGO_PUBLIC_KEY` and `PAYMONGO_WEBHOOK_SECRET` matched to the same
+   PayMongo TEST account. The TEST webhook must point to
+   `https://xrlwtnwamboucihsamrr.supabase.co/functions/v1/paymongo-webhook`.
+   The shared secret selects mode for other PayMongo Edge Functions too; while
+   it is `sk_test_`, live PayMongo charges cannot be created or verified.
 
-**Test payments:** PayMongo's test mode provides simulated GCash/card flows that
-always succeed or fail on demand — ideal for a defense demo, and no real funds.
+**What works:** customer checkout with simulated Card, GCash, Maya, and GrabPay
+payments records paid reservations in the existing database without collecting
+money. Restore matching live credentials and webhook before accepting real
+payments. QR Ph needs a verified simulator path before being added to test
+Hosted Checkout under a no-real-money requirement.
+
+**Test payments:** PayMongo provides simulated card and e-wallet authorization
+flows. Test-mode QR Ph codes may be real-payable: never scan or pay one; the
+existing staff QR flow only exposes a simulator when PayMongo returns a trusted
+simulator URL.
 
 ---
 

@@ -317,7 +317,10 @@ function resolveCourtUnits(court) {
             specific,
         };
     });
-    return { pickerLabel: 'Choose a ' + noun.toLowerCase(), units };
+    // Landing has a presentation-specific resolver for merged listings, but
+    // uses the same comparator as customer, staff, and schedule unit pickers.
+    const sortUnits = window.InigoCourtsData?.sortCourtUnits;
+    return { pickerLabel: 'Choose a ' + noun.toLowerCase(), units: sortUnits ? sortUnits(units) : units };
 }
 
 function normalizeEventFromDb(row) {

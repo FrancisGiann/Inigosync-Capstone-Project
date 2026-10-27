@@ -96,19 +96,19 @@ body.admin-body {
     align-items: center;
     justify-content: center;
     position: absolute;
-    top: 22px;
+    top: 30px;
     right: 12px;
-    border: 1px solid var(--color-line);
+    border: 1px solid var(--color-primary);
     border-radius: 9px;
-    background: var(--color-bg-card);
-    color: var(--color-ink);
+    background: var(--color-primary);
+    color: #14110d;
     cursor: pointer;
     transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
 .admin-sidebar-collapse:hover {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+    background: var(--color-primary-dim);
+    border-color: var(--color-primary-dim);
     color: #14110d;
 }
 
@@ -127,9 +127,9 @@ body.admin-body {
 }
 
 .admin-shell.admin-sidebar-collapsed .admin-sidebar-collapse {
-    /* Straddle the 82px sidebar edge beside the 30px logo. */
+    /* Sit beside the circular emblem and straddle the 82px sidebar edge. */
     position: fixed;
-    top: 23px;
+    top: 30px;
     left: 64px;
     z-index: 2;
     transform: rotate(180deg);
@@ -182,6 +182,13 @@ body.admin-body {
     height: 44px;
     object-fit: contain;
     flex: 0 0 44px;
+}
+
+/* Reserve room for the top-right toggle so the wordmark ends before it. */
+html:root[data-theme] .admin-sidebar-brand .admin-logo-text {
+    width: 118px;
+    height: auto;
+    max-width: 118px;
 }
 
 .admin-logo-text {
@@ -448,6 +455,27 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     text-align: left; cursor: pointer;
 }
 .admin-profile-menu button:hover { background: color-mix(in srgb, var(--color-ink) 6%, transparent); color: var(--color-ink); }
+.admin-profile-menu button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.admin-profile-menu .theme-menu-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 40px; padding: 8px 12px; color: var(--color-ink-dim);
+    font-family: var(--font-body); font-size: var(--fs-md); font-weight: 600;
+}
+.admin-profile-menu button.theme-toggle {
+    position: relative; flex: 0 0 42px; width: 42px; height: 24px; min-height: 24px;
+    justify-content: flex-start; padding: 2px; border: 1px solid var(--color-line);
+    border-radius: 999px; background: var(--color-bg); color: var(--color-ink);
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.admin-profile-menu button.theme-toggle:hover { background: var(--color-bg); border-color: var(--color-primary); }
+.admin-profile-menu button.theme-toggle[aria-checked="true"] { background: var(--color-primary); border-color: var(--color-primary); }
+.theme-toggle-thumb {
+    position: absolute; top: 2px; left: 2px; display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; background: var(--color-ink);
+    color: var(--color-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24); transition: transform 0.18s ease;
+}
+.theme-toggle[aria-checked="true"] .theme-toggle-thumb { transform: translateX(18px); }
+.admin-profile-menu .theme-toggle-thumb svg { width: 12px; height: 12px; }
 .admin-profile-menu button.admin-logout:hover { background: color-mix(in srgb, var(--color-alert) 12%, transparent); }
 .admin-profile-menu svg { width: 16px; height: 16px; flex-shrink: 0; }
 
@@ -1738,7 +1766,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 
 /* Topbar wrap (decision B5-f) — below this, the title block (mobile
-   toggle + h1/subtitle) and the actions row (clock/theme/profile)
+   toggle + h1/subtitle) and the actions row (clock/profile)
    no longer fit on one line; each becomes its own full-width row instead
    of forcing a horizontal scrollbar. */
 @media (max-width: 768px) {
@@ -1764,7 +1792,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     .admin-topbar-title h1 { line-height: 1.2; }
     .admin-topbar-title p { line-height: 1.4; }
     .admin-topbar-actions { grid-area: actions; width: auto; gap: 10px; flex-wrap: nowrap; }
-    .admin-topbar-actions .theme-toggle { width: 44px; height: 44px; }
+    .admin-topbar-actions > .theme-toggle { width: 44px; height: 44px; }
     .admin-profile-trigger { min-height: 44px; }
     .admin-content { padding: 22px 18px 50px; }
     .admin-stat-grid { grid-template-columns: 1fr 1fr; }

@@ -4,22 +4,44 @@ Customer bookings now start with a short physical-court hold. The browser sends 
 
 ## Required server configuration
 
-Set these as Supabase Edge Function secrets for project `xrlwtnwamboucihsamrr`:
+Set these as Supabase Edge Function secrets in the existing Supabase project
+`xrlwtnwamboucihsamrr`. This project remains the app's database in test mode;
+no test database or schema migration is required. Test payments are simulated,
+but the existing signed webhook will record them as paid and confirm
+reservations in this database. Those records do not represent collected money.
 
 | Secret | Purpose |
 | --- | --- |
-| `PAYMONGO_SECRET_KEY` | PayMongo test secret key while validating checkout; use the corresponding live key only during a deliberate production launch. |
-| `PAYMONGO_PUBLIC_KEY` | Matching PayMongo publishable key used server-side to create and attach the QR Ph payment method. |
-| `PAYMONGO_WEBHOOK_SECRET` | Signing secret for the webhook in the same PayMongo mode. |
-| `APP_BASE_URL` | Exact origin of the customer and staff pages. Use a public HTTPS origin for a live deployment. A localhost origin is suitable only for local checkout tests. |
+| `PAYMONGO_SECRET_KEY` | Use the PayMongo `sk_test_` key for sandbox operation or `sk_live_` for live operation. This key is project-wide and selects the mode for all PayMongo Edge Functions that use it. |
+| `PAYMONGO_PUBLIC_KEY` | Matching key for the selected mode, used server-side by QR Ph payment flows. |
+| `PAYMONGO_WEBHOOK_SECRET` | Signing secret for the webhook registered in the selected PayMongo mode and pointed at this project's `/functions/v1/paymongo-webhook`. |
+| `APP_BASE_URL` | Exact HTTPS origin of the customer and staff pages. |
 
 Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Edge Functions. Keep all provider and service-role credentials off the browser, repository, and owner settings page. The owner page changes the deposit percentage and enabled payment methods in `app_settings`; it only **reports** PayMongo connection, webhook, and last confirmed payment status.
 
 The expiry worker's shared token is generated in Supabase Vault by migration `20260926170234_enable_checkout_expiry_cron.sql`. The scheduled job sends that token to `paymongo-expire-checkouts`; the worker validates it through a service-only database function. Do not copy the token into frontend code or a second secret.
 
+## Test-mode checkout in the existing project
+
+Customer booking checkout expands to `card`, `gcash`, `paymaya` (Maya), and `grab_pay` (GrabPay) only when this function reads an `sk_test_` key. It also offers `qrph` for a cart whose saved booking total and full-payment charge are both exactly ₱1 (100 centavos). PayMongo may add a processing fee to the final customer total. PayMongo says its test QR codes can still accept real money, so scanning and paying this QR is a real-money experiment even though the API key is in test mode. With an `sk_live_` key, checkout continues to use only the owner-enabled Card, GCash, and QR Ph methods. Staff walk-in, staff balance, and payment-health flows keep their existing method lists.
+
+**Observed sandbox behavior (2026-10-27):** in the PayMongo TEST dashboard, two one-time Payment Links (₱1 and ₱1,300) each showed only QR Ph in customer checkout; both links were archived after inspection. The TEST Payment Methods settings page also stated that managing payment methods is unavailable in test mode. A provider-level V2 Checkout Session probe accepted the requested methods (HTTP 200, `livemode: false`) and its hosted page rendered QR Ph, Card, GCash, GrabPay, and Maya, but not ShopeePay. No payment was made, and the unpaid session was expired. ShopeePay is unavailable in this TEST account and is omitted. This probe did not test reservation settlement. The temporary `Inigosync Test` Supabase project used for the provider probe was deleted; the app uses only the original project.
+
+The Edge Function configuration has one `PAYMONGO_SECRET_KEY`, shared by the customer checkout, webhook, expiry worker, and other PayMongo flows. Switching it to `sk_test_` puts those provider calls into test mode; while it is set, live PayMongo transactions cannot be created or verified by these functions. Keep the existing `PAYMONGO_WEBHOOK_SECRET` matched to an enabled TEST webhook at this project's `/functions/v1/paymongo-webhook` before starting checkout. The `paymongo-checkout` code retains the live owner-enabled method list when it reads an `sk_live_` key and expands only customer booking checkout when it reads `sk_test_`. A signed simulated test payment will be recorded as paid and confirm the reservation in the existing database without collecting money. Treat that database as sandbox data until the live credentials and webhook are restored together.
+
+**End-to-end check (2026-10-27):** through the signed-in live customer site, a Basketball Court 2 slot for Nov 15, 2026, 8–9 AM created PayMongo test Checkout Session `cs_c2609e8034930eeedfcec605`. The hosted page displayed Card plus distinct GCash, GrabPay, and Maya choices, with no QR Ph. The customer authorized a GCash test payment for a ₱650 downpayment plus the displayed ₱16.67 processing fee. PayMongo delivered `checkout_session.payment.paid`; checkout attempt `5571d929-60fd-4dc7-b2be-71b38b021880` and its booking intent became `paid` in the existing Supabase project. Booking #66 appeared as **CONFIRMED** in My Bookings and payment acknowledgement `PA-20261027-0000038` appeared in Receipts. This is a real slot reservation backed by a simulated payment; no money was collected. The other three methods were visually verified as choices, but their authorization and callbacks were not run.
+
+**₱1 QR Ph check (2026-10-27):** a Basketball Court 1 full-payment cart for Nov 16, 2026, 8–9 AM created test attempt `ae0176ed-e694-4119-81ab-52af372f6159`. Its saved total and charge are both ₱1; its Hosted Checkout listed QR Ph, Card, GCash, GrabPay, and Maya. Selecting QR Ph displayed ₱1.00 subtotal, ₱0.02 fee, and **₱1.02 total**. The QR screen supplied a PayMongo **Simulate Payment** link, and that destination displayed a **QRPH Test Payment Page** offering Authorize, Fail, and Expire for ₱1.02. PayMongo later displayed **QRPh Payment Received**. The signed callback marked the checkout attempt and intent paid in the existing Supabase project, with ₱1.02 gross, ₱0.02 fee, and ₱1.00 net, and confirmed booking #67.
+
+The customer confirmed that the successful QR Ph checkout used **Authorize Test Payment** in PayMongo's simulator. A separate ₱1 Basketball Court 1 cart for Nov 16, 2026, 9–10 AM (`6a7e0ed6-2be6-4d70-9bd6-a443706d9d87`) displayed a second QR with ₱1.02 total, but the customer reported that scanning it with an e-wallet failed. At inspection, that second checkout remained `ready` without a PayMongo payment ID or paid webhook, so it did not create a confirmed booking. The wallet's rejection reason was not captured. The simulator result is the verified capstone demo path.
+
+ShopeePay is not requested by test-mode customer checkout. The limited ₱1 QR Ph option is an explicitly authorized real-money test; it is unavailable for larger or deposit-only bookings. The payer must confirm the hosted checkout's displayed total before scanning and paying. A PayMongo test QR may process a real transaction, and the signed webhook/booking outcome must be checked after payment rather than assumed from the redirect.
+
+PayMongo's current Hosted Checkout API uses `paymaya` and `grab_pay` as the API values for Maya and GrabPay. Its test guide says wallet authorization is simulated through the PayMongo test page. PayMongo also warns that test-mode QR Ph codes are real QR codes: do not scan or pay them; use a returned test simulator URL when available. See [PayMongo testing](https://docs.paymongo.com/docs/payment-acceptance-testing), [Hosted Checkout](https://docs.paymongo.com/docs/payment-channels-hosted-checkout), and [e-wallet payment types](https://docs.paymongo.com/docs/payment-acceptance-e-wallets).
+
 ## Webhook and payment behavior
 
-Register a PayMongo endpoint at `https://xrlwtnwamboucihsamrr.supabase.co/functions/v1/paymongo-webhook` for both `checkout_session.payment.paid` and `payment.paid`, then set its signing secret above. The handler verifies the raw-body signature, test/live mode, PHP gross amount, and provider session/payment intent, and deduplicates the event. `paymongo-webhook` and the cron worker have Supabase JWT verification disabled because they use separate signed authentication. Customer and staff checkout functions require an authenticated Supabase JWT.
+Register a PayMongo endpoint for both `checkout_session.payment.paid` and `payment.paid` at `https://xrlwtnwamboucihsamrr.supabase.co/functions/v1/paymongo-webhook`. Use the PayMongo TEST endpoint/signing secret while running in sandbox mode, and switch the endpoint and secret back together before live payments. The handler verifies the raw-body signature, test/live mode, PHP gross amount, and provider session/payment intent, and deduplicates the event. `paymongo-webhook` and the cron worker have Supabase JWT verification disabled because they use separate signed authentication. Customer and staff checkout functions require an authenticated Supabase JWT.
 
 The default deposit is 50%; the owner may change it and enable Cash, Card, GCash, and QR Ph independently. At least one online method must stay enabled. New checkouts snapshot their total and deposit charge, so later settings or court-rate edits cannot reprice them. Bowling uses `/set`: each set costs one set rate and reserves one hour on the selected lane.
 

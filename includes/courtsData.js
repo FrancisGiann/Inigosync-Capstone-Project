@@ -173,6 +173,21 @@
         return word.charAt(0).toUpperCase() + word.slice(1);
     }
 
+    // Natural, stable unit ordering shared by dashboard and landing surfaces.
+    // The ID tie-break keeps duplicate/case-equivalent labels deterministic
+    // across database fetch order while returning the original unit objects.
+    const unitLabelCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+    function compareCourtUnits(a, b) {
+        const byLabel = unitLabelCollator.compare(String(a?.label || ''), String(b?.label || ''));
+        if (byLabel) return byLabel;
+        const aId = String(a?.id || '');
+        const bId = String(b?.id || '');
+        return aId < bId ? -1 : aId > bId ? 1 : 0;
+    }
+    function sortCourtUnits(units) {
+        return (Array.isArray(units) ? units : []).slice().sort(compareCourtUnits);
+    }
+
     // Returns { pickerLabel, units } where units is [{ label, imageUrl }, …].
     // A sport that resolves to fewer than two units gets no combobox at all
     // — a one-item <select> is a dead control, not a choice (same rule
@@ -186,7 +201,7 @@
         if (Array.isArray(court.bookableUnits)) {
             return {
                 pickerLabel: `Choose a ${noun.toLowerCase()}`,
-                units: court.bookableUnits.map((entry) => ({
+                units: sortCourtUnits(court.bookableUnits.map((entry) => ({
                     id: entry.id,
                     label: entry.label,
                     resourceIds: Array.isArray(entry.resourceIds) ? entry.resourceIds.slice() : [],
@@ -195,7 +210,7 @@
                     rateDay: entry.rateDay === null || entry.rateDay === undefined ? null : Number(entry.rateDay),
                     rateNight: entry.rateNight === null || entry.rateNight === undefined ? null : Number(entry.rateNight),
                     rateUnit: entry.rateUnit || '/hr',
-                })),
+                }))),
             };
         }
 
@@ -203,11 +218,11 @@
         if (fromImages.length > 0) {
             return {
                 pickerLabel: `Choose a ${noun.toLowerCase()}`,
-                units: fromImages.map((entry, i) => ({
+                units: sortCourtUnits(fromImages.map((entry, i) => ({
                     id: null,
                     label: entry.label || `${noun} ${i + 1}`,
                     imageUrl: entry.imageUrl,
-                })),
+                }))),
             };
         }
 
@@ -226,7 +241,7 @@
             units.push({ id: null, label: null, imageUrl: court.imageUrl });
         }
 
-        return { pickerLabel: `Choose a ${noun.toLowerCase()}`, units };
+        return { pickerLabel: `Choose a ${noun.toLowerCase()}`, units: sortCourtUnits(units) };
     }
 
     // URL-safe slug for a NEW court's `slug` column (text, not null,
@@ -483,6 +498,8 @@
         monogramFor,
         slugify,
         resolveCourtUnits,
+        compareCourtUnits,
+        sortCourtUnits,
         rateHint,
     };
 })();

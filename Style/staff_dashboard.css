@@ -88,23 +88,23 @@ body.staff-body {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--color-line);
+    border: 1px solid var(--color-primary);
     border-radius: 9px;
-    background: var(--color-bg-card);
-    color: var(--color-ink);
+    background: var(--color-primary);
+    color: #14110d;
     cursor: pointer;
     transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
 .staff-sidebar-collapse:hover {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
+    background: var(--color-primary-dim);
+    border-color: var(--color-primary-dim);
     color: #14110d;
 }
 
 .staff-sidebar-collapse {
     position: absolute;
-    top: 22px;
+    top: 30px;
     right: 12px;
 }
 .staff-sidebar-collapse:focus-visible {
@@ -122,9 +122,9 @@ body.staff-body {
 }
 
 .staff-shell.staff-sidebar-collapsed .staff-sidebar-collapse {
-    /* Straddle the 82px sidebar edge beside the 30px logo. */
+    /* Sit beside the circular emblem and straddle the 82px sidebar edge. */
     position: fixed;
-    top: 23px;
+    top: 30px;
     left: 64px;
     z-index: 2;
     transform: rotate(180deg);
@@ -184,6 +184,13 @@ body.staff-body {
     height: 44px;
     object-fit: contain;
     flex: 0 0 44px;
+}
+
+/* Reserve room for the top-right toggle so the wordmark ends before it. */
+html:root[data-theme] .staff-sidebar-brand .staff-logo-text {
+    width: 118px;
+    height: auto;
+    max-width: 118px;
 }
 
 .staff-logo-dot {
@@ -506,6 +513,27 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 }
 
 .staff-profile-menu button:hover { background: rgba(244, 239, 230, 0.06); color: var(--color-ink); }
+.staff-profile-menu button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.staff-profile-menu .theme-menu-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 40px; padding: 8px 12px; color: var(--color-ink-dim);
+    font-family: var(--font-body); font-size: var(--fs-md); font-weight: 600;
+}
+.staff-profile-menu button.theme-toggle {
+    position: relative; flex: 0 0 42px; width: 42px; height: 24px; min-height: 24px;
+    justify-content: flex-start; padding: 2px; border: 1px solid var(--color-line);
+    border-radius: 999px; background: var(--color-bg); color: var(--color-ink);
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.staff-profile-menu button.theme-toggle:hover { background: var(--color-bg); border-color: var(--color-primary); }
+.staff-profile-menu button.theme-toggle[aria-checked="true"] { background: var(--color-primary); border-color: var(--color-primary); }
+.theme-toggle-thumb {
+    position: absolute; top: 2px; left: 2px; display: flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%; background: var(--color-ink);
+    color: var(--color-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24); transition: transform 0.18s ease;
+}
+.theme-toggle[aria-checked="true"] .theme-toggle-thumb { transform: translateX(18px); }
+.staff-profile-menu .theme-toggle-thumb svg { width: 12px; height: 12px; }
 
 .staff-profile-menu button.staff-logout:hover { background: rgba(214, 72, 47, 0.12); }
 

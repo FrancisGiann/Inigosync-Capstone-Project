@@ -77,7 +77,8 @@ Deno.serve(async (req: Request) => {
     return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);
   const { data: settings, error: settingsError } = await admin.from("app_settings")
     .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
-  const methods = settingsError ? [] : enabledPaymongoMethods(settings);
+  const testMode = secretKey.startsWith("sk_test_");
+  const methods = settingsError ? [] : enabledPaymongoMethods(settings, { testMode });
   if (!methods.length) return json({ message: "Online payment settings are unavailable." }, 503, origin);
 
   let prepared: any;
@@ -119,9 +120,15 @@ Deno.serve(async (req: Request) => {
   const cancel = new URL("/Pages/user_dashboard.html", base);
   cancel.searchParams.set("paymongo", "cancelled"); cancel.searchParams.set("attempt", id);
   const reference = id.replaceAll("-", "");
+  // Sandbox QR Ph can accept real funds. Expose it only for the requested
+  // one-peso, full-payment cart so other test bookings cannot present a QR.
+  const onePesoQrTest = testMode && Array.isArray(body.items)
+    && attempt.payment_option === "full" && Number(attempt.amount_minor) === 100
+    && Number(attempt.total_minor) === 100;
   const checkoutAttributes = {
     line_items: [{ name: label, amount: Number(attempt.amount_minor), currency: "PHP", quantity: 1 }],
-    payment_method_types: methods, success_url: success.toString(), cancel_url: cancel.toString(),
+    payment_method_types: onePesoQrTest ? [...methods, "qrph"] : methods,
+    success_url: success.toString(), cancel_url: cancel.toString(),
     reference_number: reference, description: `IñigoSync reservation ${reference.slice(0, 12)}`,
     pass_on_fees: true, send_email_receipt: false,
   };

@@ -226,8 +226,60 @@ test('Escape declining booking-review Save does not open a discard prompt or clo
 });
 
 test('dashboard presentation controls remain scoped and remove obsolete overview/search actions', () => {
-    assert.match(css, /\.dash-hero-image\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
-    assert.match(css, /\.dash-hero-image\s*\{[^}]*object-fit:\s*contain/s);
+    assert.match(css, /\.dash-hero-image\s*\{[^}]*height:\s*185px;[^}]*object-fit:\s*contain/s);
+    assert.match(css, /\.dash-hero-image\s*\{[^}]*width:\s*100%;[^}]*height:\s*185px;[^}]*object-fit:\s*contain/s);
+    assert.match(css, /\.dash-hero-scrim\s*\{[^}]*height:\s*163px;[^}]*overflow:\s*hidden/s);
+    assert.match(css, /\.dash-hero-title\s*\{[^}]*-webkit-line-clamp:\s*2/s);
+    assert.match(css, /\.dash-hero-title\s*\{[^}]*line-height:\s*1\.2;[^}]*min-height:\s*2\.4em/s);
+    assert.match(css, /\.dash-hero\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;/s);
+    assert.match(css, /\.dash-hero\s*\{[^}]*margin-inline:\s*0;/s, 'featured carousel aligns to the same full-width content row as availability and reservations');
+    assert.match(html, /dash-overview-lower[\s\S]*?data-dash-availability[\s\S]*?data-dash-upcoming-list/);
+    assert.match(html, /<dialog[^>]*data-dash-availability-dialog[^>]*aria-labelledby=/);
+    const availabilityDialog = html.match(/<dialog[^>]*data-dash-availability-dialog[\s\S]*?<\/dialog>/)?.[0] || '';
+    assert.doesNotMatch(availabilityDialog, /Court listing|data-dash-availability-court/);
+    assert.match(html, /dash-availability-card[\s\S]*?dash-card-head[\s\S]*?data-dash-availability-date/);
+    assert.match(html, /data-dash-availability-photo/);
+    assert.match(html, /data-dash-availability-unit/);
+    assert.match(html, /data-dash-availability-selected-date/);
+    assert.match(html, /data-dash-availability-change-date[^>]*aria-label="Change availability date">Change date/);
+    assert.doesNotMatch(html.match(/<dialog[^>]*data-dash-availability-dialog[\s\S]*?<\/dialog>/)?.[0] || '', /data-dash-availability-date/);
+    assert.match(html, /data-dash-availability-slots[^>]*role="list"/);
+    assert.match(css, /\.dash-availability-dialog\s*\{[^}]*position:\s*fixed;[^}]*top:\s*50%;[^}]*left:\s*50%;[^}]*transform:\s*translate\(-50%,\s*-50%\);[^}]*overflow:\s*auto/s);
+    assert.match(css, /\.dash-availability-dialog-head\s*\{[^}]*position:\s*sticky;[^}]*top:\s*-26px/);
+    assert.match(css, /\.dash-availability-dialog-head\s*\{[^}]*background:\s*var\(--color-bg-card\)/);
+    assert.match(css, /\.dash-hero\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*box-sizing:\s*border-box/s);
+    assert.match(css, /\.dash-hero-slide\s*\{[^}]*flex:\s*0\s+0\s+calc\(\(100%\s*-\s*36px\)\s*\/\s*3\);[^}]*box-sizing:\s*border-box/s);
+    assert.match(css, /\.dash-availability-unit-picker\s*\{[^}]*background:\s*var\(--color-bg-elevated\)/);
+    assert.match(css, /\.dash-availability-slots-area\s*\{[^}]*background:\s*var\(--color-bg-elevated\)/);
+    assert.match(css, /\.dash-availability-live-status\s*\{[^}]*color:\s*var\(--color-ink-dim\)/s);
+    assert.match(css, /\.dash-availability-slot\.is-available span\s*\{[^}]*color:\s*var\(--color-court-green\)/);
+    assert.match(css, /\.dash-availability-slot:not\(\.is-available\) span\s*\{[^}]*color:\s*var\(--color-alert-text\)/);
+    assert.match(dashboard, /data-dash-availability-open/);
+    assert.match(dashboard, /sportCover\(coverCourt\.sportSlug \|\| group\.key\)/);
+    assert.match(dashboard, /fetchDayOccupancy\(court\.name, date\)/);
+    assert.match(dashboard, /const today = todayDateInputValue\(\);\s*availabilityDateInput\.min = today;\s*if \(!availabilityDateInput\.value \|\| availabilityDateInput\.value < today\) availabilityDateInput\.value = today;/);
+    assert.match(dashboard, /courtUnitsOverlap\(row\.court_unit, selectedUnit\.label\)/);
+    assert.match(dashboard, /data-dash-availability-unit/);
+    assert.match(dashboard, /overviewAvailabilityEntries = courts\.flatMap/);
+    assert.match(dashboard, /multipleListings \? `\$\{court\.name\}\$\{duplicateNameSuffix\} · \$\{unit\.label\}` : unit\.label/);
+    assert.match(dashboard, /const selectedEntry = overviewAvailabilityEntries\[Number\(availabilityUnitSelect\.value\)\]/);
+    assert.match(dashboard, /if \(!res \|\| res\.error \|\| !Array\.isArray\(res\.data\)\)/);
+    assert.match(dashboard, /The facility is closed on this date\. Use Change date to choose another date/);
+    assert.match(dashboard, /availabilityReturnFocus = availabilityDateInput;\s*availabilityDialog\.close\(\)/);
+    assert.match(dashboard, /if \(date < today\) \{\s*availabilityDateInput\.value = today/);
+    assert.match(dashboard, /Active sports could not be loaded[\s\S]*?data-dash-availability-retry/);
+    assert.match(html, /data-dash-hero-prev[\s\S]*?data-dash-hero-next/);
+    assert.match(html, /data-dash-hero-pause[^>]*aria-label="Pause slideshow"/);
+    assert.match(dashboard, /setTimeout\(\(\) => moveHeroNext\(true\), 5000\)/);
+    assert.match(dashboard, /const multiple = heroContainer\.children\.length > 1;[\s\S]*?heroPause\.hidden = !multiple;[\s\S]*?heroPause\.disabled = !multiple/);
+    assert.match(dashboard, /heroPause\?\.addEventListener\('click'/);
+    assert.match(dashboard, /heroPause\.innerHTML = paused[\s\S]*?Play slideshow/);
+    assert.match(dashboard, /court_occupancy[\s\S]*?data-dash-availability/);
+    assert.match(dashboard, /inventoryLoadFailed/);
+    assert.match(dashboard, /date !== todayDateInputValue\(\)[\s\S]*?localDateHourToIso\(date, hour\)\)\.getTime\(\) >= Date\.now\(\)/);
+    assert.match(css, /\.dash-overview-lower\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.8fr\)/s);
+    assert.match(css, /\.dash-availability-card,[\s\S]*?min-height:\s*360px/);
+    assert.match(css, /\.dash-hero-container, \.dash-hero-slide, \.dash-hero-arrow, \.dash-hero-pause\s*\{\s*transition:\s*none/s);
     assert.doesNotMatch(html, /Book this slot|Search notifications|data-dash-notif-search|Review on Google/);
     assert.doesNotMatch(html, /data-dash-panel="overview"[\s\S]*?Courts section/);
     assert.match(dashboard, /dashTopbar\.classList\.add\('is-hidden'\)/);
@@ -235,4 +287,29 @@ test('dashboard presentation controls remain scoped and remove obsolete overview
     assert.match(css, /prefers-reduced-motion/);
     assert.doesNotMatch(ownerHtml, /data-owner-direct-feedback|Direct customer feedback/);
     assert.match(ownerHtml, /data-featured-review-save/);
+});
+
+test('availability court-number picker aggregates listings with unique labels and retained context', () => {
+    const renderStart = dashboard.indexOf('function renderOverviewAvailabilityUnits(group) {');
+    const renderEnd = dashboard.indexOf('\n    function openOverviewAvailability', renderStart);
+    assert(renderStart >= 0 && renderEnd > renderStart);
+    const availabilityUnitSelect = { innerHTML: '', disabled: false };
+    const first = { id: 'duckpin-id', name: 'Bowling', units: [{ label: 'Lane 1' }, { label: 'Lane 2' }] };
+    const second = { id: 'tenpin-id', name: 'Bowling', units: [{ label: 'Lane 1' }] };
+    const context = {
+        availabilityUnitSelect,
+        overviewAvailabilityEntries: [],
+        window: {
+            InigoCourtsData: { resolveCourtUnits: (court) => ({ units: court.units }) },
+            escapeHtml: (value) => String(value),
+        },
+    };
+    runInNewContext(`${dashboard.slice(renderStart, renderEnd)}\nglobalThis.render = renderOverviewAvailabilityUnits;`, context);
+    context.render({ courts: [first, second] });
+    assert.match(availabilityUnitSelect.innerHTML, /Bowling \(duckpin-id\) · Lane 1/);
+    assert.match(availabilityUnitSelect.innerHTML, /Bowling \(tenpin-id\) · Lane 1/);
+    assert.equal(context.overviewAvailabilityEntries.length, 3);
+    assert.equal(context.overviewAvailabilityEntries[0].court, first);
+    assert.equal(context.overviewAvailabilityEntries[2].court, second);
+    assert.equal(availabilityUnitSelect.disabled, false);
 });

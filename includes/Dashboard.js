@@ -1,7 +1,7 @@
 // IñigoSync — Customer Dashboard controller
 // Handles: sidebar/topbar panel switching, mobile sidebar toggle, profile
-// dropdown, the notifications dropdown, the feedback modal, the 3-step
-// Book a Court wizard (with its dynamic court preview image), time-slot and
+// dropdown, the notifications dropdown, the feedback modal, the 5-step
+// Book a Court flow, time-slot and
 // payment-option selection with a live summary recalculation, My Bookings (no
 // cancellation), the Receipts panel's payment acknowledgment list + filters,
 // Account Settings' name-part fields, and the 2-step Change Password
@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 'courts' removed (§1/D1) — the standalone Courts panel is gone;
         // its content now lives inside 'overview' (§4/D2), which already has
         // its own entry above.
-        booking: { title: 'Book a Court', subtitle: 'Choose courts and times, then review your cart.' },
+        booking: { title: 'Book a Court', subtitle: 'Choose a sport, court, and time, then review your bookings.' },
         bookings: { title: 'My Bookings', subtitle: "Track the status of every reservation you've made." },
         receipts: { title: 'Receipts', subtitle: 'View your booking payments and walk-in payments linked to your account.' },
         profile: { title: 'My Profile', subtitle: 'Your personal details and booking history at a glance.' },
@@ -72,10 +72,10 @@ document.addEventListener('DOMContentLoaded', () => {
             panel.classList.toggle('is-active', panel.dataset.dashPanel === name);
         });
 
-        // Entering the Book a Court panel always starts the guided flow at
-        // Step 1 so a prior partial visit is never resumed unexpectedly.
+        // Resume at the booking summary when selections are ready; otherwise
+        // start the guided selection flow at its first step.
         if (name === 'booking') {
-            goToBookStep(1);
+            goToBookStep(bookingCart?.length ? 4 : 1);
             if (bookingState.court && bookingState.date) refreshTimePickers(true);
         }
         if (typeof renderBookingCart === 'function') renderBookingCart();
@@ -184,6 +184,25 @@ document.addEventListener('DOMContentLoaded', () => {
         let directionAnchor = previousY;
         let previousDirection = 0;
         let syncPending = false;
+        const setDashTopbarHidden = (hidden) => {
+            if (hidden) {
+                // A focused control or open dropdown must not be left inside
+                // a bar that is moving out of view. The menus remain fully
+                // usable until a downward scroll reaches the hide threshold.
+                closeProfileMenu();
+                closeNotifMenu();
+                const activeElement = document.activeElement;
+                if (dashTopbar.contains(activeElement)) activeElement.blur?.();
+                dashTopbar.classList.add('is-hidden');
+                dashTopbar.setAttribute('aria-hidden', 'true');
+                dashTopbar.setAttribute('inert', '');
+                return;
+            }
+
+            dashTopbar.classList.remove('is-hidden');
+            dashTopbar.removeAttribute('aria-hidden');
+            dashTopbar.removeAttribute('inert');
+        };
         const syncDashTopbar = () => {
             syncPending = false;
             const y = Math.max(0, window.scrollY);
@@ -192,10 +211,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 directionAnchor = previousY;
                 previousDirection = direction;
             }
-            const keepVisible = y < 96 || document.body.classList.contains('dash-sidebar-open')
-                || dashTopbar.contains(document.activeElement);
-            if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) dashTopbar.classList.remove('is-hidden');
-            else if (direction > 0 && y - directionAnchor >= 12) dashTopbar.classList.add('is-hidden');
+            const keepVisible = y < 96 || document.body.classList.contains('dash-sidebar-open');
+            if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) setDashTopbarHidden(false);
+            else if (direction > 0 && y - directionAnchor >= 12) setDashTopbarHidden(true);
             previousY = y;
         };
         window.addEventListener('scroll', () => {
@@ -204,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.requestAnimationFrame(syncDashTopbar);
             }
         }, { passive: true });
-        dashTopbar.addEventListener('focusin', () => dashTopbar.classList.remove('is-hidden'));
+        dashTopbar.addEventListener('focusin', () => setDashTopbarHidden(false));
         dashTopbar.addEventListener('focusout', () => window.requestAnimationFrame(syncDashTopbar));
         new MutationObserver(syncDashTopbar).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     }
@@ -227,98 +245,113 @@ document.addEventListener('DOMContentLoaded', () => {
     // already in Pages/user_dashboard.html are the no-JS/fetch-failed/
     // zero-rows fallback: wireHeroCarousel() below runs against whatever is
     // in the DOM at the time it's called, static or fetched, with the exact
-    // same dot/auto-advance/pause-on-hover behaviour either way.
+    // same looping track/auto-advance/reduced-motion behaviour either way.
     // ------------------------------------------------------------------
     const heroEl = document.querySelector('[data-dash-hero]');
 
     if (heroEl) {
         const heroContainer = heroEl.querySelector('.dash-hero-container');
-        const heroDotsContainer = heroEl.querySelector('.dash-hero-dots');
         const heroPrevious = heroEl.querySelector('[data-dash-hero-prev]');
         const heroNext = heroEl.querySelector('[data-dash-hero-next]');
         const heroPause = heroEl.querySelector('[data-dash-hero-pause]');
         const heroReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
         const heroHoverCapable = window.matchMedia('(hover: hover)');
 
-        let heroIndex = 0;
         let heroTimer = null;
-        let heroPaused = false;
+        let heroAnimating = false;
+        let heroPaused = heroReducedMotion.matches;
 
-        // Re-queried on every call rather than captured once at parse time —
-        // renderHeroSlidesFromEvents() below may have just replaced
-        // heroContainer/heroDotsContainer's entire innerHTML with real data,
-        // and this is only ever wired up ONCE regardless of which content
-        // (static fallback or fetched) ends up in the DOM (see
-        // loadHeroSlides() at the bottom of this block), so there's no risk
-        // of double-registering the hover/focus listeners below.
+        // Slides are cards in a horizontal track. Rotate the first card to the
+        // end after its leftward transition so the carousel loops without
+        // cloning event content or changing the published event order.
         function wireHeroCarousel() {
-            const heroSlides = heroEl.querySelectorAll('[data-dash-hero-slide]');
-            const heroDots = heroEl.querySelectorAll('[data-dash-hero-dot]');
-            if (heroSlides.length === 0) return;
+            if (!heroContainer || heroContainer.children.length === 0) return;
 
             function clearHeroAutoplay() {
-                if (heroTimer) clearInterval(heroTimer);
+                if (heroTimer) clearTimeout(heroTimer);
                 heroTimer = null;
-            }
-
-            function syncHeroControls() {
-                const multiple = heroSlides.length > 1;
-                if (heroPrevious) heroPrevious.hidden = !multiple;
-                if (heroNext) heroNext.hidden = !multiple;
-                if (heroPause) {
-                    heroPause.hidden = !multiple;
-                    heroPause.disabled = heroReducedMotion.matches;
-                    const stopped = heroPaused || heroReducedMotion.matches;
-                    heroPause.textContent = stopped ? 'Play' : 'Pause';
-                    heroPause.setAttribute('aria-label', stopped ? 'Play slideshow' : 'Pause slideshow');
-                    heroPause.setAttribute('aria-pressed', String(stopped));
-                }
-                heroEl.setAttribute('aria-live', heroPaused || heroReducedMotion.matches || !multiple ? 'polite' : 'off');
             }
 
             function startHeroAutoplay() {
                 clearHeroAutoplay();
-                if (heroPaused || heroReducedMotion.matches || document.hidden || heroSlides.length < 2
+                if (heroPaused || heroReducedMotion.matches || document.hidden || heroContainer.children.length < 2
                     || heroEl.contains(document.activeElement)
                     || (heroHoverCapable.matches && heroEl.matches(':hover'))) return;
-                heroTimer = setInterval(() => updateHeroSlide(heroIndex + 1, true), 5000);
+                heroTimer = setTimeout(() => moveHeroNext(true), 5000);
             }
 
-            function updateHeroSlide(newIndex, skipTimer = false) {
-                if (newIndex >= heroSlides.length) newIndex = 0;
-                if (newIndex < 0) newIndex = heroSlides.length - 1;
-
-                heroSlides.forEach((slide, index) => {
-                    slide.classList.toggle('is-active', index === newIndex);
-                    slide.setAttribute('aria-hidden', String(index !== newIndex));
-                });
-                heroDots.forEach((d) => {
-                    d.classList.remove('is-active');
-                    d.setAttribute('aria-current', 'false');
-                });
-
-                heroDots[newIndex]?.classList.add('is-active');
-                heroDots[newIndex]?.setAttribute('aria-current', 'true');
-
-                heroIndex = newIndex;
-
-                if (!skipTimer) startHeroAutoplay();
+            function syncHeroPauseButton() {
+                if (!heroPause) return;
+                const multiple = heroContainer.children.length > 1;
+                const paused = heroPaused || heroReducedMotion.matches || !multiple;
+                heroPause.hidden = !multiple;
+                heroPause.innerHTML = paused
+                    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z"/></svg>'
+                    : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>';
+                heroPause.setAttribute('aria-label', paused ? 'Play slideshow' : 'Pause slideshow');
+                heroPause.setAttribute('aria-pressed', String(paused));
+                heroPause.disabled = !multiple || heroReducedMotion.matches;
             }
 
-            heroDots.forEach((dot, index) => {
-                dot.addEventListener('click', () => updateHeroSlide(index));
-            });
-            heroPrevious?.addEventListener('click', () => updateHeroSlide(heroIndex - 1));
-            heroNext?.addEventListener('click', () => updateHeroSlide(heroIndex + 1));
+            function distanceForOneCard() {
+                const slide = heroContainer.firstElementChild;
+                if (!slide) return 0;
+                const gap = parseFloat(getComputedStyle(heroContainer).columnGap) || 0;
+                return slide.getBoundingClientRect().width + gap;
+            }
+
+            function moveHeroNext(automatic = false) {
+                if (heroAnimating || heroContainer.children.length < 2) return;
+                heroAnimating = true;
+                heroContainer.style.transitionDuration = automatic ? '' : '420ms';
+                heroContainer.style.transform = `translateX(-${distanceForOneCard()}px)`;
+                const finish = () => {
+                    heroContainer.removeEventListener('transitionend', finish);
+                    heroContainer.append(heroContainer.firstElementChild);
+                    heroContainer.style.transition = 'none';
+                    heroContainer.style.transform = 'translateX(0)';
+                    void heroContainer.offsetHeight;
+                    heroContainer.style.removeProperty('transition');
+                    heroContainer.style.removeProperty('transition-duration');
+                    heroAnimating = false;
+                    startHeroAutoplay();
+                };
+                heroContainer.addEventListener('transitionend', finish, { once: true });
+                window.setTimeout(() => { if (heroAnimating) finish(); }, 750);
+            }
+
+            function moveHeroPrevious() {
+                if (heroAnimating || heroContainer.children.length < 2) return;
+                clearHeroAutoplay();
+                heroAnimating = true;
+                heroContainer.style.transition = 'none';
+                heroContainer.prepend(heroContainer.lastElementChild);
+                heroContainer.style.transform = `translateX(-${distanceForOneCard()}px)`;
+                void heroContainer.offsetHeight;
+                heroContainer.style.removeProperty('transition');
+                heroContainer.style.transform = 'translateX(0)';
+                const finish = () => { heroAnimating = false; startHeroAutoplay(); };
+                heroContainer.addEventListener('transitionend', finish, { once: true });
+                window.setTimeout(() => { if (heroAnimating) finish(); }, 750);
+            }
+
+            if (heroPrevious) heroPrevious.hidden = heroContainer.children.length < 2;
+            if (heroNext) heroNext.hidden = heroContainer.children.length < 2;
+            syncHeroPauseButton();
+            heroPrevious?.addEventListener('click', moveHeroPrevious);
+            heroNext?.addEventListener('click', () => moveHeroNext(false));
             heroPause?.addEventListener('click', () => {
+                if (heroReducedMotion.matches) return;
                 heroPaused = !heroPaused;
-                syncHeroControls();
-                startHeroAutoplay();
+                syncHeroPauseButton();
+                if (heroPaused) clearHeroAutoplay();
+                else startHeroAutoplay();
             });
             heroEl.addEventListener('keydown', (event) => {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                 event.preventDefault();
-                updateHeroSlide(heroIndex + (event.key === 'ArrowRight' ? 1 : -1));
+                if (event.key === 'ArrowRight') moveHeroNext(false);
+                else moveHeroPrevious();
             });
 
             heroEl.addEventListener('mouseenter', clearHeroAutoplay);
@@ -334,12 +367,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 else startHeroAutoplay();
             });
             heroReducedMotion.addEventListener('change', () => {
-                syncHeroControls();
+                if (heroReducedMotion.matches) heroPaused = true;
+                syncHeroPauseButton();
                 startHeroAutoplay();
             });
 
-            updateHeroSlide(0, true);
-            syncHeroControls();
             startHeroAutoplay();
         }
 
@@ -360,10 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function renderHeroSlidesFromEvents(events) {
-            if (!heroContainer || !heroDotsContainer) return;
-
+            if (!heroContainer) return;
             heroContainer.innerHTML = events.map((ev, i) => {
-                const activeClass = i === 0 ? ' is-active' : '';
                 const title = window.escapeHtml(ev.title || '');
                 const tag = window.escapeHtml(ev.tag || 'Featured');
                 const meta = window.escapeHtml(ev.meta || '');
@@ -371,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `<img src="${window.escapeHtml(ev.image_url)}" alt="${title}" class="dash-hero-image" loading="${i === 0 ? 'eager' : 'lazy'}">`
                     : `<div class="dash-hero-image" aria-hidden="true" style="background: linear-gradient(135deg, var(--color-bg-elevated), var(--color-bg-card));"></div>`;
                 return `
-                    <article class="dash-hero-slide${activeClass}" data-dash-hero-slide="${i}">
+                    <article class="dash-hero-slide" data-dash-hero-slide="${i}">
                         ${media}
                         <div class="dash-hero-scrim">
                             <div class="dash-hero-text">
@@ -384,10 +414,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }).join('');
 
-            heroDotsContainer.innerHTML = events.map((_, i) => {
-                const activeClass = i === 0 ? ' is-active' : '';
-                return `<button type="button" class="dash-hero-dot${activeClass}" data-dash-hero-dot="${i}" aria-label="Slide ${i + 1}" aria-current="${i === 0 ? 'true' : 'false'}"></button>`;
-            }).join('');
         }
 
 
@@ -427,6 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeProfileMenu() {
         if (profile) profile.removeAttribute('data-open');
+        if (profileTrigger) profileTrigger.setAttribute('aria-expanded', 'false');
     }
 
     if (profileTrigger && profile) {
@@ -442,8 +469,10 @@ document.addEventListener('DOMContentLoaded', () => {
             closeNotifMenu();
             if (isOpen) {
                 profile.removeAttribute('data-open');
+                profileTrigger.setAttribute('aria-expanded', 'false');
             } else {
                 profile.setAttribute('data-open', '');
+                profileTrigger.setAttribute('aria-expanded', 'true');
             }
         });
 
@@ -851,14 +880,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
 
     // Theme toggle — includes/theme.js manages the data-theme attribute
-    // and persistence; this just wires the topbar button to it and keeps
+    // and persistence; this just wires the profile-menu switch to it and keeps
     // the sun/moon icon in sync.
     // ------------------------------------------------------------------
     const themeToggleBtn = document.querySelector('[data-theme-toggle]');
     function syncThemeToggleUI(theme) {
         if (!themeToggleBtn) return;
         const isLight = theme === 'light';
-        themeToggleBtn.setAttribute('aria-pressed', String(isLight));
+        themeToggleBtn.setAttribute('aria-checked', String(isLight));
         themeToggleBtn.querySelectorAll('.sun-circle, .sun-line').forEach((el) => {
             el.style.display = isLight ? 'none' : '';
         });
@@ -915,7 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookSelect = document.querySelector('[data-dash-book-select]');
     const bookDate = document.querySelector('[data-dash-book-date]');
     const bookSportGrid = document.querySelector('[data-dash-book-sports]');
-    const bookCourtChoice = document.querySelector('[data-dash-book-court-choice]');
+    const bookCourtGrid = document.querySelector('[data-dash-book-courts]');
     const bookingModal = document.querySelector('[data-dash-booking-modal]');
     const bookingDialog = bookingModal?.querySelector('[role="dialog"]');
     const bookingCartBar = document.querySelector('[data-dash-book-cart-bar]');
@@ -934,6 +963,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingPaymentDialog = bookingPaymentModal?.querySelector('[role="dialog"]');
     const bookingFeeConfirmation = document.querySelector('[data-dash-book-fee-confirmation]');
     const bookingFeeConfirmationDialog = bookingFeeConfirmation?.querySelector('[role="dialog"]');
+    const bookingRemoveConfirmation = document.querySelector('[data-dash-book-remove-confirmation]');
+    const bookingRemoveConfirmationDialog = bookingRemoveConfirmation?.querySelector('[role="alertdialog"]');
+    const bookingRemoveConfirmationDescription = bookingRemoveConfirmation?.querySelector('[data-dash-book-remove-description]');
     const bookingFeeContinue = document.querySelector('[data-dash-book-fee-continue]');
     const bookingFeeQuestion = document.querySelector('[data-dash-book-fee-question]');
     const bookingNavButton = document.querySelector('[data-dash-nav="booking"]');
@@ -987,17 +1019,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const summaryPayment = document.querySelector('[data-dash-summary-payment]');
     const summaryTotal = document.querySelector('[data-dash-summary-total]');
+    const summaryGross = document.querySelector('[data-dash-summary-gross]');
 
-    // The booking panel switches between court choices and cart review;
-    // court/date/time selection itself lives in the dialog below.
+    // Customer booking steps remain inline: sport, court, schedule, summary.
     const bookStepPanels = document.querySelectorAll('[data-dash-book-step]');
 
-    // Step 1's dynamic court preview uses the shared img/placeholder helper
-    // and resolved inventory-unit data. See paintBookPreview() below.
-    const bookPreviewMedia = document.querySelector('[data-dash-book-preview-media]');
+    // Step 2's compact preview uses the chosen inventory unit's image.
     const bookUnitWrap = document.querySelector('[data-dash-book-unit-wrap]');
     const bookUnitLabel = document.querySelector('[data-dash-book-unit-label]');
     const bookUnitSelect = document.querySelector('[data-dash-book-unit-select]');
+    const bookUnitPreview = document.querySelector('[data-dash-book-unit-preview]');
+    const bookUnitPreviewMedia = document.querySelector('[data-dash-book-unit-preview-media]');
+    const bookUnitPreviewCaption = document.querySelector('[data-dash-book-unit-preview-caption]');
 
     // Court and rate start empty until window.InigoCourtsData.getCourts() resolves
     // below (populateBookSelect). Every court's rate is NULL in the live DB
@@ -1037,6 +1070,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const bookingCart = [];
     let bookingCartSeq = 0;
+    let bookingSummaryBackKey = null;
+    let editingBookingCartKey = null;
+    let addingBookingFromSummary = false;
+    let plainSummaryBackMode = false;
     let bookingCartSaving = false;
     let landingDraftProfileReady = window.inigosyncProfile?.role === 'customer';
     let landingDraftCourtDataReady = false;
@@ -1073,17 +1110,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ONE place that keeps bookingState.unit in sync (Part 3/D3) — every
     // caller below (bookSelect's court change, the unit <select>'s own
     // change, and populateBookSelect()'s initial paint) always goes through
-    // here, so Step 2's per-unit availability check can never see a stale
-    // unit.
+    // here, so availability and checkout use the selected unit even when
+    // this optional visual preview has not mounted.
     function paintBookPreview(court, unitIndexOverride) {
-        if (!bookPreviewMedia) return;
-
         if (!court) {
-            bookPreviewMedia.innerHTML = '<span class="dash-court-monogram" aria-hidden="true">?<small class="dash-court-photo-soon">Select a court to preview it</small></span>';
+            bookSelectedUnitIndex = 0;
+            if (bookUnitPreviewMedia) bookUnitPreviewMedia.innerHTML = '<span class="dash-court-monogram" aria-hidden="true">?<small class="dash-court-photo-soon">Choose a court to preview it</small></span>';
+            if (bookUnitPreviewCaption) bookUnitPreviewCaption.textContent = 'Choose a court to preview it.';
             if (bookUnitWrap) bookUnitWrap.hidden = true;
-            if (bookUnitSelect) bookUnitSelect.innerHTML = '';
+            if (bookUnitSelect) { bookUnitSelect.innerHTML = '<option value="">Choose a court</option>'; bookUnitSelect.disabled = true; }
+            if (bookUnitPreview) bookUnitPreview.hidden = !bookingState.sportSlug;
             bookingState.unit = null;
             bookingState.unitId = null;
+            bookingState.rateDay = null;
+            bookingState.rateNight = null;
+            bookingState.rate = null;
+            bookingState.rateUnit = '/hr';
             return;
         }
 
@@ -1091,43 +1133,71 @@ document.addEventListener('DOMContentLoaded', () => {
             ? window.InigoCourtsData.resolveCourtUnits(court)
             : { pickerLabel: '', units: [{ label: null, imageUrl: court.imageUrl }] };
         const units = resolved.units.length ? resolved.units : [{ label: null, imageUrl: court.imageUrl }];
-        const hasChoice = units.length > 1;
-
-        const index = Math.min(Math.max(0, unitIndexOverride !== undefined ? unitIndexOverride : bookSelectedUnitIndex), units.length - 1);
-        bookSelectedUnitIndex = index;
-        const unit = units[index];
+        const hasExplicitUnit = Number.isInteger(unitIndexOverride) && unitIndexOverride >= 0 && unitIndexOverride < units.length;
+        const index = hasExplicitUnit ? unitIndexOverride : -1;
+        bookSelectedUnitIndex = Math.max(0, index);
+        const unit = hasExplicitUnit ? units[index] : null;
         // Null only in the rare "quantity 0, no unit_images" fallback (see
         // window.InigoCourtsData.resolveCourtUnits()) — a real data gap, not
         // an error; fetchDayOccupancy()/the insert below both treat a null
         // unit as "nothing to disambiguate", same as a legacy pre-Part-3
         // booking.
-        bookingState.unit = unit.label;
-        bookingState.unitId = unit.id || null;
-        bookingState.rateDay = unit.rateDay ?? null;
-        bookingState.rateNight = unit.rateNight ?? null;
-        bookingState.rateUnit = (typeof unit.rateDay === 'number' || typeof unit.rateNight === 'number') ? (unit.rateUnit || court.rateUnit || '/hr') : (court.rateUnit || '/hr');
-        bookingState.rate = unit.rate ?? court.rate ?? null;
+        bookingState.unit = unit?.label || null;
+        bookingState.unitId = unit?.id || null;
+        bookingState.rateDay = unit?.rateDay ?? null;
+        bookingState.rateNight = unit?.rateNight ?? null;
+        bookingState.rateUnit = unit && (typeof unit.rateDay === 'number' || typeof unit.rateNight === 'number') ? (unit.rateUnit || court.rateUnit || '/hr') : (court.rateUnit || '/hr');
+        bookingState.rate = unit ? (unit.rate ?? court.rate ?? null) : null;
 
         const monogram = window.InigoCourtsData ? window.InigoCourtsData.monogramFor(court.sportSlug, court.name) : '?';
-        const alt = unit.label ? `${court.name} — ${unit.label}` : court.name;
-        bookPreviewMedia.innerHTML = courtPhotoMarkup(unit, monogram, alt);
+        const alt = unit?.label ? `${court.name} — ${unit.label}` : court.name;
+        if (bookUnitPreview) bookUnitPreview.hidden = false;
+        if (bookUnitPreviewMedia) bookUnitPreviewMedia.innerHTML = unit
+            ? courtPhotoMarkup(unit, monogram, alt)
+            : '<span class="dash-court-monogram" aria-hidden="true">?<small class="dash-court-photo-soon">Choose a court to preview it</small></span>';
+        if (bookUnitPreviewCaption) {
+            if (!unit) {
+                bookUnitPreviewCaption.textContent = 'Choose a court to preview it.';
+            } else {
+                const sportName = String(bookingState.sport || court.sportName || '').trim();
+                const listingName = String(court.name || '').trim();
+                const labels = sportName && sportName.toLocaleLowerCase() !== listingName.toLocaleLowerCase()
+                    ? [sportName, listingName] : [listingName || sportName];
+                if (unit.label) labels.push(unit.label);
+                const rateUnit = unit.rateUnit || court.rateUnit || '/hr';
+                const formatRate = (value) => `₱${Number(value).toLocaleString('en-PH', { maximumFractionDigits: 2 })}${rateUnit}`;
+                const dayRate = unit.rateDay;
+                const nightRate = unit.rateNight;
+                let rateLabel = '';
+                if (typeof dayRate === 'number' && Number.isFinite(dayRate)
+                    && typeof nightRate === 'number' && Number.isFinite(nightRate)) {
+                    rateLabel = dayRate === nightRate ? formatRate(dayRate) : `${formatRate(dayRate)} day · ${formatRate(nightRate)} night`;
+                } else if (typeof unit.rate === 'number' && Number.isFinite(unit.rate)) {
+                    rateLabel = formatRate(unit.rate);
+                } else if (typeof court.rate === 'number' && Number.isFinite(court.rate)) {
+                    rateLabel = formatRate(court.rate);
+                }
+                bookUnitPreviewCaption.textContent = `${labels.filter(Boolean).join(' · ')}${rateLabel ? ` · ${rateLabel}` : ''}`;
+            }
+        }
 
         // Same broken-photo-URL fallback as paintOverviewCourtMedia() below
         // — a typo'd unit_images URL degrades to the placeholder instead of
         // a broken-image icon.
-        const img = bookPreviewMedia.querySelector('img[data-dash-book-photo]');
+        const img = bookUnitPreviewMedia?.querySelector('img[data-dash-book-photo]');
         if (img) {
             img.addEventListener('error', () => {
                 img.remove();
-                bookPreviewMedia.insertAdjacentHTML('afterbegin', courtPhotoMarkup({ imageUrl: null }, monogram, alt));
+                bookUnitPreviewMedia.insertAdjacentHTML('afterbegin', courtPhotoMarkup({ imageUrl: null }, monogram, alt));
             }, { once: true });
         }
 
-        if (bookUnitWrap) bookUnitWrap.hidden = !hasChoice;
         if (bookUnitLabel) bookUnitLabel.textContent = resolved.pickerLabel || 'Choose a unit';
         if (bookUnitSelect) {
-            bookUnitSelect.innerHTML = units.map((u, i) => `<option value="${i}"${i === index ? ' selected' : ''}>${window.escapeHtml(u.label || `${court.name} ${i + 1}`)}</option>`).join('');
+            bookUnitSelect.innerHTML = '<option value="">Choose a court</option>' + units.map((u, i) => `<option value="${i}"${i === index ? ' selected' : ''}${u.id ? '' : ' disabled'}>${window.escapeHtml(u.label || `${court.name} ${i + 1}`)}${u.id ? '' : ' — unavailable online'}</option>`).join('');
+            bookUnitSelect.disabled = false;
         }
+        if (bookUnitWrap) bookUnitWrap.hidden = false;
     }
 
     // Looks up bookingState.court's full record and repaints the preview
@@ -1136,7 +1206,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // never fall out of sync with bookingState.
     function syncBookPreviewFromState() {
         bookSelectedUnitIndex = 0;
-        paintBookPreview(findBookCourt(bookingState.court), 0);
+        paintBookPreview(findBookCourt(bookingState.court));
     }
 
     if (bookUnitSelect) {
@@ -1145,7 +1215,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!court) return;
             // A different unit can have entirely different availability,
             // so clear selected hours and reload occupancy for that unit.
-            paintBookPreview(court, Number(bookUnitSelect.value) || 0);
+            paintBookPreview(court, bookUnitSelect.value === '' ? undefined : Number(bookUnitSelect.value));
             resetTimeSelectionAndRender();
             updateSummary();
         });
@@ -1203,20 +1273,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderBookWizard() {
         bookStepPanels.forEach((panel) => {
-            panel.classList.toggle('is-active', Number(panel.dataset.dashBookStep) === bookWizardStep);
+            const active = Number(panel.dataset.dashBookStep) === bookWizardStep;
+            panel.classList.toggle('is-active', active);
+            panel.hidden = !active;
+        });
+        document.querySelectorAll('[data-dash-book-progress-step]').forEach((step) => {
+            const stepNumber = Number(step.dataset.dashBookProgressStep);
+            step.classList.toggle('is-current', stepNumber === bookWizardStep);
+            step.classList.toggle('is-complete', stepNumber < bookWizardStep);
+            if (stepNumber === bookWizardStep) step.setAttribute('aria-current', 'step');
+            else step.removeAttribute('aria-current');
+        });
+        const selectedCourt = findBookCourt(bookingState.court);
+        const scheduleSummary = document.querySelector('[data-dash-book-schedule-summary]');
+        if (scheduleSummary) {
+            if (!selectedCourt) scheduleSummary.textContent = 'Choose a court, unit, and date first.';
+            else {
+                const sportName = String(bookingState.sport || '').trim();
+                const listingName = String(selectedCourt.name || '').trim();
+                const courtLabel = sportName && sportName.toLocaleLowerCase() !== listingName.toLocaleLowerCase()
+                    ? `${sportName} · ${listingName}` : (listingName || sportName);
+                scheduleSummary.textContent = `${courtLabel}${bookingState.unit ? ` · ${bookingState.unit}` : ''} · ${formatDate(bookingState.date)}`;
+            }
+        }
+        const nextCourtButton = document.querySelector('[data-dash-book-next="3"]');
+        if (nextCourtButton) nextCourtButton.disabled = !bookingState.court || !bookingState.unitId;
+        const nextSportButton = document.querySelector('[data-dash-book-sport-next]');
+        if (nextSportButton) nextSportButton.disabled = !bookingState.sportSlug;
+        const paymentNextButton = document.querySelector('[data-dash-book-payment-next]');
+        if (paymentNextButton) paymentNextButton.disabled = !bookingCart.length || bookingCartSaving;
+        document.querySelectorAll('[data-dash-book-edit-cancel]').forEach((button) => {
+            button.hidden = !editingBookingCartKey && !(addingBookingFromSummary && bookingCart.length);
+            button.textContent = editingBookingCartKey ? 'Cancel edit' : 'Back to summary';
         });
     }
 
     function goToBookStep(step) {
-        if (step === 3) {
-            openBookingPayment();
-            return;
-        }
-        if (bookingPaymentModal && !bookingPaymentModal.hidden) closeBookingPayment(false);
-        bookWizardStep = 1;
+        const nextStep = Number(step);
+        if (!Number.isInteger(nextStep) || nextStep < 1 || nextStep > 5) return;
+        const movingBackward = nextStep < bookWizardStep;
+        if (!movingBackward && nextStep === 2 && !bookingState.sportSlug) return;
+        if (!movingBackward && nextStep === 4 && !bookingCart.length) return;
+        if (!movingBackward && nextStep === 3 && (!bookingState.court || !bookingState.unitId)) return;
+        if (nextStep === 4) plainSummaryBackMode = false;
+        bookWizardStep = nextStep;
         renderBookWizard();
         updateSummary();
-        if (bookAddButton) bookAddButton.hidden = !bookingModal || bookingModal.hidden;
         if (bookSubmit) bookSubmit.disabled = !bookingCart.length || bookingCartSaving;
         renderBookingCart();
     }
@@ -1330,6 +1432,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     bookingFeeConfirmation?.addEventListener('keydown', (event) => handleBookingDialogKeydown(event, bookingFeeConfirmationDialog, closeBookingFeeConfirmation));
     document.querySelector('[data-dash-book-new]')?.addEventListener('click', () => {
+        editingBookingCartKey = null;
+        addingBookingFromSummary = true;
         bookingState.sportSlug = '';
         bookingState.court = '';
         bookingState.sport = '';
@@ -1339,12 +1443,66 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingState.selectedHours = [];
         bookSelect.value = '';
         bookSelect.disabled = true;
-        if (bookCourtChoice) bookCourtChoice.hidden = true;
         paintBookPreview(null);
         renderSportChoices();
         resetTimeSelectionAndRender();
         goToBookStep(1);
     });
+
+    async function editBookingCartItem(key, returnStep = 1) {
+        if (bookingCartSaving) return;
+        const item = bookingCart.find((candidate) => candidate.key === key);
+        const court = item && bookCourtsCache.find((candidate) => String(candidate.id) === String(item.listingId));
+        const unit = court && window.InigoCourtsData.resolveCourtUnits(court).units.find((candidate) => String(candidate.id) === String(item.unitId));
+        if (!item || !court || !unit) {
+            window.InigoToast?.show('This court unit is no longer listed. Remove this booking or refresh the page.', true);
+            return;
+        }
+        editingBookingCartKey = key;
+        addingBookingFromSummary = false;
+        if (bookAddButton) bookAddButton.textContent = 'Save changes';
+        bookingState.sportSlug = bookSportChoiceKey(court);
+        renderSportChoices();
+        const sportRadio = [...(bookSportGrid?.querySelectorAll('.dash-book-sport-radio') || [])]
+            .find((radio) => radio.value === bookingState.sportSlug);
+        if (sportRadio) sportRadio.checked = true;
+        const courts = bookCourtsCache.filter((candidate) => bookSportChoiceKey(candidate) === bookingState.sportSlug);
+        bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((candidate) => {
+            const label = candidate.name;
+            return `<option value="${window.escapeHtml(candidate.name)}" data-rate="${candidate.rate !== null ? window.escapeHtml(String(candidate.rate)) : ''}" data-rate-unit="${window.escapeHtml(candidate.rateUnit || '/hr')}" data-sport="${window.escapeHtml(candidate.sportName || candidate.name)}">${window.escapeHtml(label)}</option>`;
+        }).join('');
+        bookSelect.disabled = false;
+        renderCourtChoices(courts);
+        if (!selectBookCourtUnit(court.name, unit.id)) {
+            editingBookingCartKey = null;
+            if (bookAddButton) bookAddButton.textContent = 'Review booking';
+            window.InigoToast?.show('This court unit could not be selected. Please try again.', true);
+            updateSummary();
+            return;
+        }
+        bookingState.date = item.date;
+        if (bookDate) bookDate.value = item.date;
+        bookingState.startHour = item.startHour;
+        bookingState.endHour = item.endHour;
+        bookingState.selectedHours = Array.from({ length: item.hours }, (_, index) => item.startHour + index);
+        await refreshTimePickers(true);
+        goToBookStep(returnStep);
+        updateSummary();
+        document.querySelector(`[data-dash-book-step="${returnStep}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    function cancelBookingCartEdit() {
+        if ((!editingBookingCartKey && !(addingBookingFromSummary && bookingCart.length)) || bookingCartSaving) return;
+        editingBookingCartKey = null;
+        addingBookingFromSummary = false;
+        if (bookAddButton) bookAddButton.textContent = 'Review booking';
+        bookingState.selectedHours = [];
+        bookingState.startHour = null;
+        bookingState.endHour = null;
+        updateSummary();
+        goToBookStep(4);
+    }
+    document.querySelectorAll('[data-dash-book-edit-cancel]').forEach((button) => button.addEventListener('click', cancelBookingCartEdit));
 
     function formatDate(value) {
         if (!value) return '—';
@@ -1428,7 +1586,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // Step 2 — hourly slot availability from booking_rules_for_date and
+    // Step 3 — hourly slot availability from booking_rules_for_date and
     // court_occupancy. Selection is fail-closed and checkout revalidates.
     //
     // RLS CAVEAT — direct booking-table SELECT policies stay unchanged. The
@@ -1471,11 +1629,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return { ok: false, rows: [] };
         }
 
-        if (res.error) {
-            console.error('[dashboard] failed to load occupancy for the time pickers', res.error);
+        if (!res || res.error || !Array.isArray(res.data)) {
+            console.error('[dashboard] failed to load occupancy for the time pickers', res?.error || 'Invalid occupancy response');
             return { ok: false, rows: [] };
         }
-        return { ok: true, rows: (res.data || []).filter((row) => sameCourtName(row.courts, courtName)) };
+        const rows = res.data.filter((row) => sameCourtName(row?.courts, courtName));
+        const validRows = rows.every((row) => {
+            const start = new Date(row?.time_date);
+            if (!row || Number.isNaN(start.getTime())) return false;
+            if (row.end_at && Number.isNaN(new Date(row.end_at).getTime())) return false;
+            const minutes = Number(row.duration_minutes);
+            return Boolean(row.end_at) || row.duration_minutes == null || !Number.isFinite(minutes) || minutes > 0;
+        });
+        return validRows ? { ok: true, rows } : { ok: false, rows: [] };
     }
 
     function sameCourtName(a, b) {
@@ -1576,10 +1742,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'available';
     }
 
+    function isSlotHourInBookingCart(hour) {
+        const court = findBookCourt(bookingState.court);
+        const unitId = String(bookingState.unitId || '');
+        if (!unitId) return false;
+        return bookingCart.some((item) => {
+            const startHour = Number(item.startHour);
+            const endHour = Number(item.endHour);
+            if (item.key === editingBookingCartKey || item.date !== bookingState.date
+                || !item.unitId || String(item.unitId) !== unitId
+                || !Number.isFinite(startHour) || !Number.isFinite(endHour)
+                || startHour > hour || endHour < hour) return false;
+            return court
+                ? String(item.listingId || '') === String(court.id || '')
+                : sameCourtName(item.court, bookingState.court);
+        });
+    }
+
     function renderTimePickers() {
         if (!bookSlotsGrid) return;
         const clear = () => { bookingState.selectedHours = []; bookingState.startHour = null; bookingState.endHour = null; };
-        if (!bookingState.court || !bookingState.date) {
+        if (!bookingState.court || !bookingState.unitId || !bookingState.date) {
             bookSlotsGrid.innerHTML = '';
             if (bookSlotStatus) bookSlotStatus.textContent = 'Select a court and date to check availability.';
             clear();
@@ -1606,28 +1789,33 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const hours = bookingHoursRange();
-        const available = new Set(hours.filter((hour) => slotHourStatus(hour) === 'available'));
+        const available = new Set(hours.filter((hour) => slotHourStatus(hour) === 'available' && !isSlotHourInBookingCart(hour)));
         bookingState.selectedHours = bookingState.selectedHours.filter((hour) => available.has(hour));
         bookSlotsGrid.innerHTML = hours.map((hour) => {
-            const status = slotHourStatus(hour);
+            const serverStatus = slotHourStatus(hour);
+            const status = serverStatus === 'available' && isSlotHourInBookingCart(hour) ? 'in-cart' : serverStatus;
             const disabled = status !== 'available';
             const selected = bookingState.selectedHours.includes(hour);
             const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
-            const statusLabel = status === 'booked' ? ' · Booked' : status === 'past' ? ' · Passed' : '';
-            return `<button type="button" class="dash-book-slot${selected ? ' is-selected' : ''}" data-dash-book-slot="${hour}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}>${window.escapeHtml(label)}${statusLabel}</button>`;
+            const statusLabel = selected ? 'Selected' : status === 'available' ? 'Available' : status === 'in-cart' ? 'In summary' : status === 'booked' ? 'Booked' : 'Elapsed';
+            return `<button type="button" class="dash-book-slot is-${status}${selected ? ' is-selected' : ''}" data-dash-book-slot="${hour}" aria-label="${window.escapeHtml(label)}, ${statusLabel}${disabled ? ', unavailable' : ''}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}><span class="dash-book-slot-time">${window.escapeHtml(label)}</span><span class="dash-book-slot-state" aria-hidden="true">${statusLabel}</span></button>`;
         }).join('') || '<p class="dash-res-state">No bookable hours are configured for this date.</p>';
         if (bookSlotStatus) {
             bookSlotStatus.textContent = bookingState.selectedHours.length
-                ? `${bookingState.selectedHours.length} hour${bookingState.selectedHours.length === 1 ? '' : 's'} selected. Gaps create separate cart items.`
-                : 'Choose one or more available hours. Booked and elapsed times cannot be selected.';
+                ? `${bookingState.selectedHours.length} hour${bookingState.selectedHours.length === 1 ? '' : 's'} selected. Gaps create separate bookings.`
+                : 'Choose available hours. Booked, elapsed, and times already in your summary cannot be selected.';
         }
-        if (bookAddButton) bookAddButton.disabled = !bookingState.selectedHours.length || bookingCartSaving || slotGridLoading;
+        if (bookAddButton) {
+            const canReturnToSummary = plainSummaryBackMode && bookingCart.length > 0;
+            bookAddButton.disabled = bookingCartSaving || (!canReturnToSummary
+                && (!bookingState.unitId || !bookingState.selectedHours.length || slotGridLoading));
+        }
     }
 
     async function refreshTimePickers(forceRules = false) {
         if (!bookSlotsGrid) return;
         const mySeq = ++slotGridRequestSeq;
-        if (!bookingState.court || !bookingState.date) { slotGridLoading = false; renderTimePickers(); return; }
+        if (!bookingState.court || !bookingState.unitId || !bookingState.date) { slotGridLoading = false; renderTimePickers(); return; }
         slotGridLoading = true;
         bookSlotsGrid.innerHTML = '';
         if (bookSlotStatus) bookSlotStatus.textContent = 'Checking availability…';
@@ -1669,24 +1857,274 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshTimePickers();
     }
 
+    // Overview availability is a read-only sport-card and date-specific slot
+    // viewer. It uses the same authoritative opening rules and occupancy RPC
+    // as booking, but keeps all selections inside its dialog; opening it never
+    // changes booking wizard/cart state.
+    const overviewAvailability = document.querySelector('[data-dash-availability]');
+    const availabilityDialog = document.querySelector('[data-dash-availability-dialog]');
+    const availabilityDialogTitle = document.querySelector('[data-dash-availability-sport-title]');
+    const availabilityUnitSelect = document.querySelector('[data-dash-availability-unit]');
+    const availabilityUnitPhoto = document.querySelector('[data-dash-availability-photo]');
+    const availabilityDateInput = document.querySelector('[data-dash-availability-date]');
+    const availabilityStatus = document.querySelector('[data-dash-availability-status]');
+    const availabilitySlots = document.querySelector('[data-dash-availability-slots]');
+    const availabilitySelectedDate = document.querySelector('[data-dash-availability-selected-date]');
+    if (availabilityDateInput) {
+        const today = todayDateInputValue();
+        availabilityDateInput.min = today;
+        if (!availabilityDateInput.value || availabilityDateInput.value < today) availabilityDateInput.value = today;
+    }
+    let overviewAvailabilityGroups = new Map();
+    let overviewAvailabilityEntries = [];
+    let overviewAvailabilityRequest = 0;
+    let availabilityReturnFocus = null;
+
+    function overviewHourLabel(hour) {
+        return window.InigoBusinessHours.formatHourRangeLabelShort(hour);
+    }
+
+    function renderOverviewAvailabilityCards(courts = bookCourtsCache) {
+        if (!overviewAvailability) return;
+        const groups = new Map();
+        (courts || []).filter((court) => court.isActive !== false).forEach((court) => {
+            const key = bookSportChoiceKey(court);
+            const group = groups.get(key) || {
+                key,
+                name: isBowlingVariant(court) || sportKey(court) === 'bowling' ? court.name : court.sportName || court.name,
+                courts: [],
+            };
+            group.courts.push(court);
+            groups.set(key, group);
+        });
+        overviewAvailabilityGroups = groups;
+        overviewAvailability.innerHTML = [...groups.values()].map((group) => {
+            const coverCourt = group.courts.find((court) => court.imageUrl)
+                || group.courts.find((court) => window.InigoCourtsData.resolveCourtUnits(court).units.some((unit) => unit.imageUrl))
+                || group.courts[0];
+            const coverUnit = window.InigoCourtsData.resolveCourtUnits(coverCourt).units.find((unit) => unit.imageUrl);
+            const rawImage = coverCourt.imageUrl || coverUnit?.imageUrl || window.InigoVisuals?.sportCover(coverCourt.sportSlug || group.key);
+            const coverUrl = rawImage && window.InigoVisuals?.venuePhoto(rawImage);
+            const photo = coverUrl
+                ? `<img src="${window.escapeHtml(coverUrl)}" alt="" loading="lazy">`
+                : `<span class="dash-court-monogram" aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(coverCourt.sportSlug || group.key, group.name))}</span>`;
+            return `<article class="dash-availability-item"><button type="button" class="dash-availability-sport" data-dash-availability-open="${window.escapeHtml(group.key)}" aria-haspopup="dialog" aria-controls="dashAvailabilityDialog"><span class="dash-availability-photo">${photo}</span><span class="dash-availability-name">${window.escapeHtml(group.name)}</span><span class="dash-availability-action">View courts and times <span aria-hidden="true">→</span></span></button></article>`;
+        }).join('') || '<p class="dash-res-state">No active sports are listed.</p>';
+    }
+
+    function showOverviewAvailabilityLoadError() {
+        if (overviewAvailability) {
+            overviewAvailability.innerHTML = '<div class="dash-availability-load-error"><p class="dash-res-state">Active sports could not be loaded.</p><button type="button" class="dash-link-btn" data-dash-availability-retry>Try again</button></div>';
+        }
+    }
+
+    async function refreshOverviewAvailability() {
+        if (!availabilityDialog?.open || !availabilityUnitSelect || !availabilityDateInput || !availabilitySlots || !availabilityStatus) return;
+        const request = ++overviewAvailabilityRequest;
+        const selectedEntry = overviewAvailabilityEntries[Number(availabilityUnitSelect.value)];
+        const court = selectedEntry?.court;
+        let date = availabilityDateInput.value;
+        availabilitySelectedDate.textContent = date ? new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : '';
+        if (!court || !date) {
+            availabilityStatus.textContent = 'Choose a court and date to check live slots.';
+            availabilitySlots.innerHTML = '';
+            availabilityUnitPhoto.innerHTML = '';
+            return;
+        }
+        const today = todayDateInputValue();
+        if (date < today) {
+            availabilityDateInput.value = today;
+            date = today;
+        }
+        availabilitySlots.innerHTML = '';
+        availabilityStatus.textContent = 'Checking live availability…';
+        const selectedUnit = selectedEntry?.unit;
+        availabilitySelectedDate.textContent = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+        const rawPhoto = selectedUnit?.imageUrl || court.imageUrl || window.InigoVisuals?.sportCover(court.sportSlug || sportKey(court));
+        const photoUrl = rawPhoto && window.InigoVisuals?.venuePhoto(rawPhoto);
+        const rateUnit = selectedUnit?.rateUnit || court.rateUnit || '/hr';
+        const formatAvailabilityRate = (value) => `₱${Number(value).toLocaleString('en-PH', { maximumFractionDigits: 2 })}${rateUnit}`;
+        const validRate = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+        let rateCaption = 'Rate to be confirmed';
+        const dayRate = selectedUnit?.rateDay;
+        const nightRate = selectedUnit?.rateNight;
+        if (validRate(dayRate) && validRate(nightRate)) {
+            rateCaption = dayRate === nightRate
+                ? formatAvailabilityRate(dayRate)
+                : `${formatAvailabilityRate(dayRate)} day · ${formatAvailabilityRate(nightRate)} night`;
+        } else if (validRate(dayRate)) {
+            rateCaption = formatAvailabilityRate(dayRate);
+        } else if (validRate(nightRate)) {
+            rateCaption = `${formatAvailabilityRate(nightRate)} night`;
+        } else if (validRate(court.rate)) {
+            rateCaption = formatAvailabilityRate(court.rate);
+        }
+        availabilityUnitPhoto.innerHTML = photoUrl
+            ? `<img src="${window.escapeHtml(photoUrl)}" alt="${window.escapeHtml(selectedUnit?.label || court.name)}" loading="eager"><span class="dash-availability-photo-label">${window.escapeHtml(rateCaption)}</span>`
+            : `<div class="dash-availability-photo-fallback"><span class="dash-court-monogram" aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(court.sportSlug || sportKey(court), selectedUnit?.label || court.name))}</span><span>${window.escapeHtml(rateCaption)}</span></div>`;
+        const availabilityImage = availabilityUnitPhoto.querySelector('img');
+        availabilityImage?.addEventListener('error', () => {
+            if (!availabilityImage.isConnected) return;
+            const label = selectedUnit?.label || court.name;
+            availabilityUnitPhoto.innerHTML = `<div class="dash-availability-photo-fallback" aria-label="${window.escapeHtml(label)} image"><span class="dash-court-monogram" aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(court.sportSlug || sportKey(court), label))}</span><span>${window.escapeHtml(rateCaption)}</span></div>`;
+        }, { once: true });
+        if (court.inventoryLoadFailed || !window.InigoCourtsData || !window.sb?.rpc
+            || !window.InigoBusinessHours?.getForDate || !window.InigoBookingSlots) {
+            availabilityStatus.textContent = 'Verified court inventory is unavailable. Use Change date to choose another date, or try again later.';
+            return;
+        }
+        if (!selectedUnit) {
+            availabilityStatus.textContent = 'A specific court number could not be verified for this sport.';
+            return;
+        }
+        let rules;
+        let occupancy;
+        try {
+            [rules, occupancy] = await Promise.all([
+                window.InigoBusinessHours.getForDate(date, { force: true }),
+                fetchDayOccupancy(court.name, date),
+            ]);
+        } catch (_) {
+            if (request === overviewAvailabilityRequest) availabilityStatus.textContent = 'Live availability could not be verified. Use Change date to choose another date, or try again later.';
+            return;
+        }
+        if (request !== overviewAvailabilityRequest || !availabilityDialog.open) return;
+        if (!rules?.authoritative || !occupancy?.ok || !Array.isArray(occupancy?.rows)) {
+            availabilityStatus.textContent = 'Live availability could not be verified. Use Change date to choose another date, or try again later.';
+            return;
+        }
+        if (rules.isClosed) {
+            availabilityStatus.textContent = 'The facility is closed on this date. Use Change date to choose another date.';
+            return;
+        }
+
+        const openHour = Number(rules.openHour);
+        const closeHour = Number(rules.closeHour);
+        if (!Number.isInteger(openHour) || !Number.isInteger(closeHour) || closeHour <= openHour) {
+            availabilityStatus.textContent = 'Opening hours could not be verified for this date. Use Change date to choose another date.';
+            return;
+        }
+        const hours = Array.from({ length: closeHour - openHour }, (_, i) => openHour + i)
+            .filter((hour) => date !== todayDateInputValue()
+                || new Date(window.InigoBookingSlots.localDateHourToIso(date, hour)).getTime() >= Date.now());
+        if (!hours.length) {
+            availabilityStatus.textContent = 'There are no future bookable hours on this date. Use Change date to choose another date.';
+            return;
+        }
+        const rows = occupancy.rows;
+        const slotRows = hours.map((hour) => {
+            const start = new Date(window.InigoBookingSlots.localDateHourToIso(date, hour));
+            const end = new Date(start.getTime() + 60 * 60 * 1000);
+            const isAvailable = !rows.some((row) =>
+                courtUnitsOverlap(row.court_unit, selectedUnit.label)
+                && bookingWindowsOverlap(bookingTimeWindow(row), { start, end }));
+            const label = isAvailable ? 'Available' : 'Unavailable';
+            return `<div class="dash-availability-slot${isAvailable ? ' is-available' : ''}" role="listitem"><strong>${window.escapeHtml(overviewHourLabel(hour))}</strong><span>${window.escapeHtml(label)}</span></div>`;
+        });
+        availabilitySlots.innerHTML = slotRows.join('');
+        availabilityStatus.textContent = `Live hourly availability for ${selectedUnit.label}. Times use the venue’s current opening hours.`;
+    }
+
+    function renderOverviewAvailabilityUnits(group) {
+        if (!availabilityUnitSelect) return;
+        const courts = group?.courts || [];
+        const listingNameCounts = new Map();
+        courts.forEach((court) => listingNameCounts.set(court.name, (listingNameCounts.get(court.name) || 0) + 1));
+        overviewAvailabilityEntries = courts.flatMap((court, listingIndex) => {
+            const units = window.InigoCourtsData?.resolveCourtUnits(court).units || [];
+            const duplicateNameSuffix = listingNameCounts.get(court.name) > 1
+                ? ` (${court.id || `listing ${listingIndex + 1}`})` : '';
+            return units.filter((unit) => unit.label).map((unit) => ({ court, unit, duplicateNameSuffix }));
+        });
+        const multipleListings = new Set(courts.map((court) => String(court.id || court.name))).size > 1;
+        availabilityUnitSelect.innerHTML = overviewAvailabilityEntries.map(({ court, unit, duplicateNameSuffix }, index) => {
+            const label = multipleListings ? `${court.name}${duplicateNameSuffix} · ${unit.label}` : unit.label;
+            return `<option value="${index}">${window.escapeHtml(label)}</option>`;
+        }).join('');
+        availabilityUnitSelect.disabled = !overviewAvailabilityEntries.length;
+    }
+
+    function openOverviewAvailability(sportKey, opener) {
+        const group = overviewAvailabilityGroups.get(sportKey);
+        if (!group || !availabilityDialog || !availabilityUnitSelect || !availabilityDateInput) return;
+        availabilityReturnFocus = opener;
+        availabilityDialog.dataset.sportKey = sportKey;
+        if (availabilityDialogTitle) availabilityDialogTitle.textContent = group.name;
+        const today = todayDateInputValue();
+        availabilityDateInput.min = today;
+        if (!availabilityDateInput.value || availabilityDateInput.value < today) availabilityDateInput.value = today;
+        renderOverviewAvailabilityUnits(group);
+        if (!availabilityDialog.open) availabilityDialog.showModal();
+        availabilityUnitSelect.focus();
+        refreshOverviewAvailability();
+    }
+
+    overviewAvailability?.addEventListener('click', (event) => {
+        const retryButton = event.target.closest('[data-dash-availability-retry]');
+        if (retryButton) {
+            if (!window.InigoCourtsData?.getCourts) {
+                showOverviewAvailabilityLoadError();
+                return;
+            }
+            retryButton.disabled = true;
+            retryButton.textContent = 'Loading…';
+            window.InigoCourtsData.getCourts({ force: true }).then((courts) => {
+                renderOverviewAvailabilityCards(courts);
+            }).catch((error) => {
+                console.error('[dashboard] could not reload customer availability sports', error);
+                showOverviewAvailabilityLoadError();
+            });
+            return;
+        }
+        const button = event.target.closest('[data-dash-availability-open]');
+        if (button) openOverviewAvailability(button.dataset.dashAvailabilityOpen, button);
+    });
+    availabilityUnitSelect?.addEventListener('change', refreshOverviewAvailability);
+    availabilityDateInput?.addEventListener('change', refreshOverviewAvailability);
+    availabilityDialog?.querySelector('[data-dash-availability-change-date]')?.addEventListener('click', () => {
+        availabilityReturnFocus = availabilityDateInput;
+        availabilityDialog.close();
+    });
+    availabilityDialog?.querySelectorAll('[data-dash-availability-close]').forEach((button) => {
+        button.addEventListener('click', () => availabilityDialog.close());
+    });
+    availabilityDialog?.addEventListener('click', (event) => {
+        if (event.target === availabilityDialog) availabilityDialog.close();
+    });
+    availabilityDialog?.addEventListener('close', () => {
+        overviewAvailabilityRequest += 1;
+        availabilityReturnFocus?.focus();
+        availabilityReturnFocus = null;
+    });
+
     function updateSummary() {
         const pct = bookingState.downpaymentPct;
         const gross = bookingCart.reduce((sum, item) => sum + (Number.isFinite(item.estimatedTotal) ? item.estimatedTotal : 0), 0);
-        const amount = gross > 0 ? gross * (bookingState.paymentType === 'full' ? 1 : pct / 100) : null;
+        const verifiedGross = bookingCart.length > 0 && bookingCart.every((item) => Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0);
+        const amount = verifiedGross && gross > 0 ? (bookingState.paymentType === 'full'
+            ? gross : bookingCart.reduce((sum, item) => sum + (Number.isFinite(item.estimatedTotal)
+                ? Math.round(item.estimatedTotal * pct) / 100 : 0), 0)) : null;
+        const bookingGross = document.querySelector('[data-dash-booking-gross]');
+        if (bookingGross) bookingGross.textContent = verifiedGross ? `₱${gross.toFixed(2)}` : 'Rate to be confirmed';
         if (summaryPayment) summaryPayment.textContent = bookingState.paymentType === 'full'
-            ? 'Full payment preference' : `Downpayment preference (${pct}%)`;
+            ? 'Full payment' : `Downpayment (${pct}%)`;
+        if (summaryGross) summaryGross.textContent = verifiedGross ? `₱${gross.toFixed(2)}` : 'Rate to be confirmed';
         if (summaryTotal) summaryTotal.textContent = amount !== null ? `₱${amount.toFixed(2)}` : '—';
         if (downpaymentDesc) downpaymentDesc.textContent = `Pay ${pct}% securely now; pay the remaining balance at check-in.`;
         if (bookSubmit) {
             const ready = bookingCart.length > 0 && bookingCart.length <= 8
                 && bookingCart.every((item) => item.listingId && item.unitId && Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0);
             bookSubmit.disabled = !ready || bookingCartSaving;
-            bookSubmit.textContent = bookingCartSaving ? 'Opening secure checkout…' : 'Book and pay securely';
+            bookSubmit.textContent = bookingCartSaving ? 'Opening secure checkout…' : 'Continue to PayMongo';
             if (paymentModeHint) paymentModeHint.textContent = bookingCart.length && !ready
-                ? 'Every court needs verified inventory and a confirmed rate before online checkout.'
-                : 'When online checkout is available, payment is processed through PayMongo after cart review.';
+                ? 'Every booking needs an available court unit and a confirmed rate before online checkout.'
+                : 'Payment is processed securely through PayMongo after review.';
         }
-        if (bookAddButton) bookAddButton.disabled = !bookingState.selectedHours.length || bookingCart.length >= 8 || bookingCartSaving || slotGridLoading;
+        if (bookAddButton) {
+            const canReturnToSummary = plainSummaryBackMode && bookingCart.length > 0;
+            bookAddButton.disabled = bookingCartSaving || (!canReturnToSummary && (!bookingState.unitId
+                || !bookingState.selectedHours.length || (bookingCart.length >= 8 && !editingBookingCartKey) || slotGridLoading));
+        }
         renderBookWizard();
         renderBookingCart();
     }
@@ -1705,7 +2143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSummary();
     });
 
-    function selectedBookingCartItem(startHour, endHourExclusive) {
+    function selectedBookingCartItem(startHour, endHourExclusive, key = null) {
         const court = findBookCourt(bookingState.court);
         const units = court && window.InigoCourtsData ? window.InigoCourtsData.resolveCourtUnits(court).units : [];
         const selectedUnit = units.find((unit) => bookingState.unitId && String(unit.id) === String(bookingState.unitId));
@@ -1719,7 +2157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? (typeof bookingState.rateDay === 'number' ? bookingState.rateDay * hours : null)
             : bookingHourlyAmount(hours);
         return {
-            key: `item-${++bookingCartSeq}`,
+            key: key || `item-${++bookingCartSeq}`,
             court: bookingState.court,
             sport: bookingState.sport || bookingState.court,
             listingId: (court || {}).id || null,
@@ -1733,6 +2171,9 @@ document.addEventListener('DOMContentLoaded', () => {
             endIso,
             hours,
             rateUnit: bookingState.rateUnit,
+            rateDay: bookingState.rateDay ?? bookingState.rate,
+            rateNight: bookingState.rateNight,
+            nightRateStartsAt: bookingState.nightRateStartsAt,
             rateQuantity: bookingState.rateUnit === '/set' ? hours : 1,
             paymentType: 'downpayment',
             estimatedTotal: total,
@@ -1750,6 +2191,53 @@ document.addEventListener('DOMContentLoaded', () => {
             && courtUnitsOverlap(a.unit, b.unit);
     }
 
+    function bookingItemRateBreakdown(item) {
+        if (!Number.isFinite(item.estimatedTotal) || item.estimatedTotal <= 0) return 'Rate to be confirmed';
+        if (item.rateUnit === '/set') return `${item.hours} set${item.hours === 1 ? '' : 's'} × ₱${Number(item.rateDay).toFixed(2)} per set`;
+        if (typeof item.rateDay !== 'number' || !Number.isFinite(item.rateDay)) return 'Rate to be confirmed';
+        const cutoffMatch = /^([0-2]\d):([0-5]\d)/.exec(String(item.nightRateStartsAt || ''));
+        const cutoff = cutoffMatch ? Number(cutoffMatch[1]) * 60 + Number(cutoffMatch[2]) : null;
+        let dayHours = 0;
+        let nightHours = 0;
+        for (let hour = item.startHour; hour <= item.endHour; hour += 1) {
+            if (typeof item.rateNight !== 'number' || item.rateNight === item.rateDay || cutoff === null || (hour + 1) * 60 <= cutoff) dayHours += 1;
+            else if (hour * 60 >= cutoff) nightHours += 1;
+            else { dayHours += (cutoff - hour * 60) / 60; nightHours += ((hour + 1) * 60 - cutoff) / 60; }
+        }
+        const parts = [];
+        if (dayHours) parts.push(`${dayHours}h day × ₱${Number(item.rateDay).toFixed(2)}/hr`);
+        if (nightHours) parts.push(`${nightHours}h night × ₱${Number(item.rateNight).toFixed(2)}/hr`);
+        return parts.join(' + ') || 'Rate to be confirmed';
+    }
+
+    function quoteCartItem(item) {
+        const hours = item.endHour - item.startHour + 1;
+        if (hours <= 0 || typeof item.rateDay !== 'number' || !Number.isFinite(item.rateDay)) return null;
+        if (item.rateUnit === '/set') return Math.round(item.rateDay * hours * 100) / 100;
+        if (item.rateUnit !== '/hr') return null;
+        const match = /^([0-2]\d):([0-5]\d)/.exec(String(item.nightRateStartsAt || ''));
+        const cutoff = match ? Number(match[1]) * 60 + Number(match[2]) : null;
+        let total = 0;
+        for (let hour = item.startHour; hour <= item.endHour; hour += 1) {
+            const start = hour * 60;
+            const end = start + 60;
+            if (typeof item.rateNight !== 'number' || item.rateNight === item.rateDay || cutoff === null || end <= cutoff) total += item.rateDay;
+            else if (start >= cutoff) total += item.rateNight;
+            else total += (cutoff - start) / 60 * item.rateDay + (end - cutoff) / 60 * item.rateNight;
+        }
+        return Math.round(total * 100) / 100;
+    }
+
+    function applyCurrentUnitPricing(item, unit, court, nightRateStartsAt) {
+        item.rateDay = unit?.rateDay ?? (typeof court?.rate === 'number' && Number.isFinite(court.rate) ? court.rate : null);
+        item.rateNight = unit?.rateNight ?? null;
+        item.rateUnit = unit && (typeof unit.rateDay === 'number' || typeof unit.rateNight === 'number')
+            ? (unit.rateUnit || court.rateUnit || '/hr') : (court.rateUnit || '/hr');
+        item.nightRateStartsAt = nightRateStartsAt || null;
+        item.estimatedTotal = quoteCartItem(item);
+        item.resourceIds = unit?.resourceIds || [];
+    }
+
     function renderBookingCart() {
         if (!bookCartPanel || !bookCartItemsEl) return;
         bookCartPanel.hidden = false;
@@ -1758,10 +2246,10 @@ document.addEventListener('DOMContentLoaded', () => {
         bookCartItemsEl.innerHTML = bookingCart.map((item) => {
             const unit = item.unit ? ` · ${item.unit}` : '';
             const time = `${window.InigoBusinessHours.formatHourLabel(item.startHour)} – ${window.InigoBusinessHours.formatHourLabel(item.endHour + 1)}`;
-            const estimate = Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0 ? ` · ₱${item.estimatedTotal.toFixed(2)}` : ' · Rate TBA';
+            const estimate = Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0 ? `₱${item.estimatedTotal.toFixed(2)}` : 'Rate to be confirmed';
             const courtLabel = String(item.sport).toLocaleLowerCase() === String(item.court).toLocaleLowerCase()
                 ? item.court + unit : `${item.sport} · ${item.court}${unit}`;
-            return `<li><span><strong>${window.escapeHtml(courtLabel)}</strong><br>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}${estimate}</span><button type="button" class="dash-btn-ghost" data-dash-book-cart-remove="${window.escapeHtml(item.key)}" aria-label="Remove ${window.escapeHtml(courtLabel)} booking"${bookingCartSaving ? ' disabled' : ''}>Remove</button></li>`;
+            return `<li class="dash-book-cart-item"><div class="dash-book-cart-item-info"><strong>${window.escapeHtml(courtLabel)}</strong><span>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)} · ${item.hours} hour${item.hours === 1 ? '' : 's'}</span><span>${window.escapeHtml(bookingItemRateBreakdown(item))}</span><strong>${window.escapeHtml(estimate)}</strong></div><div class="dash-book-cart-item-actions"><button type="button" class="dash-btn-ghost" data-dash-book-cart-edit="${window.escapeHtml(item.key)}" aria-label="Edit ${window.escapeHtml(courtLabel)} booking"${bookingCartSaving ? ' disabled' : ''}>Edit</button><button type="button" class="dash-btn-ghost" data-dash-book-cart-remove="${window.escapeHtml(item.key)}" aria-label="Remove ${window.escapeHtml(courtLabel)} booking"${bookingCartSaving ? ' disabled' : ''}>Remove</button></div></li>`;
         }).join('');
         if (bookingCartBar) {
             const hasVerifiedTotals = bookingCart.length > 0 && bookingCart.every((item) => Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0);
@@ -1802,9 +2290,91 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingCart.splice(index, 1);
         const emptiedDetails = !bookingCart.length && bookingCartDetailsModal && !bookingCartDetailsModal.hidden;
         if (emptiedDetails) closeBookingCartDetails(false);
-        updateSummary();
-        if (emptiedDetails) bookingNavButton?.focus({ preventScroll: true });
+        if (!bookingCart.length) {
+            editingBookingCartKey = null;
+            addingBookingFromSummary = false;
+            plainSummaryBackMode = false;
+            bookingSummaryBackKey = null;
+            bookingState.sportSlug = '';
+            bookingState.court = '';
+            bookingState.sport = '';
+            bookingState.rate = null;
+            bookingState.unit = null;
+            bookingState.unitId = null;
+            bookingState.selectedHours = [];
+            bookingState.startHour = null;
+            bookingState.endHour = null;
+            if (bookAddButton) bookAddButton.textContent = 'Review booking';
+            if (bookSelect) {
+                bookSelect.value = '';
+                bookSelect.disabled = true;
+            }
+            paintBookPreview(null);
+            renderSportChoices();
+            resetTimeSelectionAndRender();
+            goToBookStep(1);
+            const firstSport = bookSportGrid?.querySelector('[data-dash-book-sport]');
+            if (firstSport) firstSport.focus({ preventScroll: true });
+            else bookingNavButton?.focus({ preventScroll: true });
+        } else {
+            updateSummary();
+            if (emptiedDetails) bookingNavButton?.focus({ preventScroll: true });
+        }
     }
+
+    let pendingBookingCartRemoval = null;
+
+    function closeBookingCartRemoveConfirmation(restoreFocus = true) {
+        if (!bookingRemoveConfirmation || bookingRemoveConfirmation.hidden) return;
+        bookingRemoveConfirmation.hidden = true;
+        const pending = pendingBookingCartRemoval;
+        pendingBookingCartRemoval = null;
+        if (restoreFocus) {
+            const target = pending?.button;
+            if (target?.isConnected && !target.disabled && target.getClientRects().length) target.focus({ preventScroll: true });
+            else if (pending?.source === 'details' && !bookingCartDetailsModal?.hidden) bookingCartDetailsDialog?.focus({ preventScroll: true });
+            else bookingNavButton?.focus({ preventScroll: true });
+        }
+    }
+
+    function requestBookingCartItemRemoval(key, button) {
+        if (bookingCartSaving || !bookingRemoveConfirmation || !bookingRemoveConfirmationDialog || pendingBookingCartRemoval) return;
+        const item = bookingCart.find((entry) => entry.key === key);
+        if (!item) return;
+        const source = bookingCartDetailsList?.contains(button) ? 'details' : 'summary';
+        const removeButtons = source === 'details'
+            ? bookingCartDetailsList?.querySelectorAll('[data-dash-book-cart-remove]')
+            : bookCartItemsEl?.querySelectorAll('[data-dash-book-cart-remove]');
+        const rowIndex = removeButtons ? Array.from(removeButtons).indexOf(button) : 0;
+        const courtLabel = String(item.sport).toLocaleLowerCase() === String(item.court).toLocaleLowerCase()
+            ? item.court : `${item.sport} · ${item.court}`;
+        const unit = item.unit ? ` · ${item.unit}` : '';
+        const time = `${window.InigoBusinessHours.formatHourLabel(item.startHour)}–${window.InigoBusinessHours.formatHourLabel(item.endHour + 1)}`;
+        bookingRemoveConfirmationDescription.textContent = `Remove ${courtLabel}${unit} on ${formatDate(item.date)} at ${time} from your booking?`;
+        pendingBookingCartRemoval = { key, button, source, rowIndex };
+        bookingRemoveConfirmation.hidden = false;
+        bookingRemoveConfirmation.querySelector('[data-dash-book-remove-cancel]')?.focus({ preventScroll: true });
+    }
+
+    bookingRemoveConfirmation?.addEventListener('click', (event) => {
+        if (event.target.closest('[data-dash-book-remove-cancel]') || event.target === bookingRemoveConfirmation) {
+            closeBookingCartRemoveConfirmation();
+            return;
+        }
+        if (!event.target.closest('[data-dash-book-remove-confirm]')) return;
+        const pending = pendingBookingCartRemoval;
+        closeBookingCartRemoveConfirmation(false);
+        if (!pending) return;
+        removeBookingCartItem(pending.key);
+        if (pending.source === 'details' && !bookingCartDetailsModal?.hidden) {
+            const remaining = bookingCartDetailsList?.querySelectorAll('[data-dash-book-cart-remove]') || [];
+            if (remaining.length) remaining[Math.min(pending.rowIndex, remaining.length - 1)].focus({ preventScroll: true });
+        } else if (pending.source === 'summary') {
+            const remaining = bookCartItemsEl?.querySelectorAll('[data-dash-book-cart-remove]') || [];
+            if (remaining.length) remaining[Math.min(pending.rowIndex, remaining.length - 1)].focus({ preventScroll: true });
+        }
+    });
+    bookingRemoveConfirmation?.addEventListener('keydown', (event) => handleBookingDialogKeydown(event, bookingRemoveConfirmationDialog, closeBookingCartRemoveConfirmation));
 
     async function submitBookingCart() {
         if (bookingCartSaving || !window.sb || !window.inigosyncProfile) return;
@@ -1832,6 +2402,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bookSubmit) { bookSubmit.disabled = true; bookSubmit.textContent = 'Opening secure checkout…'; }
         renderBookingCart();
         try {
+            if (!window.InigoCourtsData?.getCourts) throw new Error('Current court rates could not be checked. Refresh the page and try again.');
+            const [currentCourts, settings] = await Promise.all([
+                window.InigoCourtsData.getCourts({ force: true }),
+                window.InigoAppSettings?.getSettings ? window.InigoAppSettings.getSettings({ force: true }) : Promise.resolve(null),
+            ]);
+            bookCourtsCache = currentCourts;
+            const paymentRuleChanged = Boolean(settings && settings.downpaymentPct !== bookingState.downpaymentPct);
+            if (settings) bookingState.downpaymentPct = settings.downpaymentPct;
+            const currentCutoff = settings?.nightRateStartsAt || null;
+            let ratesChanged = false;
+            const rateMissing = [];
+            for (const item of items) {
+                const court = currentCourts.find((candidate) => String(candidate.id) === String(item.listingId));
+                const unit = court && window.InigoCourtsData.resolveCourtUnits(court).units.find((candidate) => String(candidate.id) === String(item.unitId));
+                if (!court || !unit) { rateMissing.push(item); continue; }
+                const previous = `${item.rateDay}|${item.rateNight}|${item.rateUnit}|${item.nightRateStartsAt}|${item.estimatedTotal}`;
+                applyCurrentUnitPricing(item, unit, court, currentCutoff);
+                const next = `${item.rateDay}|${item.rateNight}|${item.rateUnit}|${item.nightRateStartsAt}|${item.estimatedTotal}`;
+                if (previous !== next) ratesChanged = true;
+                const cartIndex = bookingCart.findIndex((candidate) => candidate.key === item.key);
+                if (cartIndex >= 0) bookingCart[cartIndex] = { ...item };
+            }
+            if (rateMissing.length) {
+                window.InigoToast?.show('A selected court or unit is no longer available. Review your bookings and try again.', true);
+                return;
+            }
+            if (ratesChanged || paymentRuleChanged || items.some((item) => !Number.isFinite(item.estimatedTotal) || item.estimatedTotal <= 0)) {
+                window.InigoToast?.show('Current rates or payment settings were refreshed. Review the updated total before checkout.', true);
+                updateSummary();
+                return;
+            }
             const rulesByDate = new Map();
             await Promise.all([...new Set(items.map((item) => item.date))].map(async (date) => {
                 rulesByDate.set(date, await window.InigoBusinessHours.getForDate(date, { force: true }));
@@ -1844,6 +2445,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     resetTimeSelectionAndRender();
                     updateSummary();
                 }
+                return;
+            }
+            const occupancyByDateAndCourt = new Map();
+            const occupancyQueries = [...new Map(items.map((item) => [`${item.date}|${item.court}`, item])).values()];
+            await Promise.all(occupancyQueries.map(async (item) => {
+                occupancyByDateAndCourt.set(`${item.date}|${item.court}`, await fetchDayOccupancy(item.court, item.date));
+            }));
+            if ([...occupancyByDateAndCourt.values()].some((result) => !result.ok)) {
+                window.InigoToast?.show('Live availability could not be verified. Review your bookings and try again.', true);
+                return;
+            }
+            const occupiedItem = items.find((item) => {
+                const result = occupancyByDateAndCourt.get(`${item.date}|${item.court}`);
+                return result.rows.some((row) => {
+                    if (!sameCourtName(row.courts, item.court) || !courtUnitsOverlap(row.court_unit, item.unit)) return false;
+                    return bookingWindowsOverlap(bookingTimeWindow(row), {
+                        start: new Date(item.startIso), end: new Date(item.endIso),
+                    });
+                });
+            });
+            if (occupiedItem) {
+                window.InigoToast?.show(`Availability changed for ${occupiedItem.court} on ${formatDate(occupiedItem.date)}. Choose another time before checkout.`, true);
                 return;
             }
             const { data, error } = await window.sb.functions.invoke('paymongo-checkout', {
@@ -1876,8 +2499,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (bookAddButton) {
         bookAddButton.addEventListener('click', async () => {
-            if (bookingCartSaving || slotGridLoading || !bookingState.selectedHours.length) return;
+            if (plainSummaryBackMode && !bookingState.selectedHours.length && bookingCart.length) {
+                // Back returned to the existing cart. Review booking takes
+                // the user forward without adding or editing a cart item.
+                goToBookStep(4);
+                return;
+            }
+            if (bookingCartSaving || slotGridLoading || !bookingState.court || !bookingState.unitId || !bookingState.date || !bookingState.selectedHours.length) return;
             const selectedHours = [...bookingState.selectedHours];
+            try {
+                const currentCourts = await window.InigoCourtsData.getCourts({ force: true });
+                bookCourtsCache = currentCourts;
+                const court = currentCourts.find((candidate) => String(candidate.name) === String(bookingState.court));
+                const unitIndex = court && window.InigoCourtsData.resolveCourtUnits(court).units.findIndex((unit) => String(unit.id) === String(bookingState.unitId));
+                if (!court || unitIndex < 0) throw new Error('The selected court unit is no longer available. Choose another court.');
+                const settings = window.InigoAppSettings?.getSettings ? await window.InigoAppSettings.getSettings({ force: true }) : null;
+                if (settings) {
+                    bookingState.nightRateStartsAt = settings.nightRateStartsAt || null;
+                    bookingState.downpaymentPct = settings.downpaymentPct;
+                }
+                paintBookPreview(court, unitIndex);
+                renderCourtChoices(currentCourts.filter((candidate) => bookSportChoiceKey(candidate) === bookingState.sportSlug));
+            } catch (error) {
+                window.InigoToast?.show(error.message || 'Current court rates could not be checked. Please try again.', true);
+                return;
+            }
             await refreshTimePickers(true);
             if (!bookingRules?.authoritative || !slotGridBookings.ok || !slotGridWalkins.ok) {
                 window.InigoToast?.show('Hours and live availability could not be verified. Please retry before adding times.', true);
@@ -1888,49 +2534,103 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const runs = window.InigoBookingSlots.groupConsecutiveHours(selectedHours);
-            if (bookingCart.length + runs.length > 8) {
-                window.InigoToast?.show('A cart can include up to eight booking items. Remove an item or select fewer separate time ranges.', true);
+            if ((bookingCart.length - (editingBookingCartKey ? 1 : 0)) + runs.length > 8) {
+                window.InigoToast?.show('One checkout can include up to eight bookings. Choose fewer separate time ranges.', true);
+                return;
+            }
+            if (editingBookingCartKey && runs.length !== 1) {
+                window.InigoToast?.show('An edited booking must use one continuous time range. Cancel and add separate ranges as new bookings.', true);
                 return;
             }
             const additions = runs.map((run) => {
                 bookingState.startHour = run.startHour;
                 bookingState.endHour = run.endHourExclusive - 1;
-                return selectedBookingCartItem(run.startHour, run.endHourExclusive);
+                return selectedBookingCartItem(run.startHour, run.endHourExclusive, editingBookingCartKey);
             });
-            const combined = [...bookingCart, ...additions];
+            const combined = [...bookingCart.filter((item) => item.key !== editingBookingCartKey), ...additions];
             for (let i = 0; i < combined.length; i += 1) {
                 if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
                     window.InigoToast?.show('Two items use the same physical court at overlapping times.', true);
                     return;
                 }
             }
-            bookingCart.push(...additions);
+            if (editingBookingCartKey) {
+                const index = bookingCart.findIndex((item) => item.key === editingBookingCartKey);
+                if (index < 0) return;
+                bookingCart[index] = additions[0];
+                editingBookingCartKey = null;
+                if (bookAddButton) bookAddButton.textContent = 'Review booking';
+            } else bookingCart.push(...additions);
+            bookingSummaryBackKey = additions[additions.length - 1]?.key || null;
+            addingBookingFromSummary = false;
+            plainSummaryBackMode = false;
             bookingState.selectedHours = [];
             bookingState.startHour = null;
             bookingState.endHour = null;
             renderTimePickers();
             updateSummary();
-            closeBookingModal();
-            goToBookStep(1);
-            window.InigoToast?.show(`${runs.length} time range${runs.length === 1 ? '' : 's'} added to your cart.`);
+            goToBookStep(4);
         });
     }
+
+    function restoreBookingCartSelection(item) {
+        if (!item) return false;
+        const court = bookCourtsCache.find((candidate) => String(candidate.id) === String(item.listingId));
+        const unit = court && window.InigoCourtsData.resolveCourtUnits(court).units
+            .find((candidate) => String(candidate.id) === String(item.unitId));
+        if (!court || !unit) return false;
+
+        bookingState.sportSlug = bookSportChoiceKey(court);
+        renderSportChoices();
+        const sportRadio = [...(bookSportGrid?.querySelectorAll('.dash-book-sport-radio') || [])]
+            .find((radio) => radio.value === bookingState.sportSlug);
+        if (sportRadio) sportRadio.checked = true;
+        const courts = bookCourtsCache.filter((candidate) => bookSportChoiceKey(candidate) === bookingState.sportSlug);
+        bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((candidate) => {
+            const label = candidate.name;
+            return `<option value="${window.escapeHtml(candidate.name)}" data-rate="${candidate.rate !== null ? window.escapeHtml(String(candidate.rate)) : ''}" data-rate-unit="${window.escapeHtml(candidate.rateUnit || '/hr')}" data-sport="${window.escapeHtml(candidate.sportName || candidate.name)}">${window.escapeHtml(label)}</option>`;
+        }).join('');
+        bookSelect.disabled = false;
+        renderCourtChoices(courts);
+        if (!selectBookCourtUnit(court.name, unit.id)) return false;
+        bookingState.date = item.date;
+        if (bookDate) bookDate.value = item.date;
+        // Keep the previous court and date available for navigation, but do
+        // not restore cart hours: this is a plain return, not an edit draft.
+        bookingState.selectedHours = [];
+        bookingState.startHour = null;
+        bookingState.endHour = null;
+        refreshTimePickers(true);
+        return true;
+    }
+
+    document.querySelectorAll('[data-dash-book-next], [data-dash-book-back]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (button.dataset.dashBookBack === '3' && bookingCart.length) {
+                // Add another sport or court clears the transient selection.
+                // Restore the most recent item's court context for navigation,
+                // without entering edit mode or restoring its selected hours.
+                const returnItem = bookingCart.find((item) => item.key === bookingSummaryBackKey)
+                    || bookingCart[bookingCart.length - 1];
+                plainSummaryBackMode = true;
+                if (!bookingState.court || !bookingState.unitId) restoreBookingCartSelection(returnItem);
+            }
+            goToBookStep(button.dataset.dashBookNext || button.dataset.dashBookBack);
+        });
+    });
     if (bookCartItemsEl) {
         bookCartItemsEl.addEventListener('click', (event) => {
+            const editButton = event.target.closest('[data-dash-book-cart-edit]');
+            if (editButton) { editBookingCartItem(editButton.dataset.dashBookCartEdit); return; }
             const button = event.target.closest('[data-dash-book-cart-remove]');
             if (!button) return;
-            removeBookingCartItem(button.dataset.dashBookCartRemove);
+            requestBookingCartItemRemoval(button.dataset.dashBookCartRemove, button);
         });
     }
     bookingCartDetailsList?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-dash-book-cart-remove]');
         if (!button) return;
-        const rowIndex = Array.from(bookingCartDetailsList.querySelectorAll('[data-dash-book-cart-remove]')).indexOf(button);
-        removeBookingCartItem(button.dataset.dashBookCartRemove);
-        const remainingRemoveButtons = bookingCartDetailsList.querySelectorAll('[data-dash-book-cart-remove]');
-        if (!bookingCartDetailsModal?.hidden && remainingRemoveButtons.length) {
-            remainingRemoveButtons[Math.min(rowIndex, remainingRemoveButtons.length - 1)].focus({ preventScroll: true });
-        }
+        requestBookingCartItemRemoval(button.dataset.dashBookCartRemove, button);
     });
     if (bookSubmit) {
         bookSubmit.addEventListener('click', () => {
@@ -1958,7 +2658,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function refreshVisibleBookingAvailability() {
         const bookingPanel = document.querySelector('[data-dash-panel="booking"]');
         if (document.visibilityState !== 'visible' || !bookingPanel?.classList.contains('is-active')
-            || !bookingState.court || !bookingState.date) return;
+            || !bookingState.court || !bookingState.unitId || !bookingState.date) return;
         const today = todayDateInputValue();
         if (bookDate) bookDate.min = today;
         if (bookingState.date < today) {
@@ -1985,7 +2685,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InigoAppSettings.getSettings().then((settings) => {
             bookingState.downpaymentPct = settings.downpaymentPct;
             bookingState.nightRateStartsAt = settings.nightRateStartsAt || null;
-            if (paymentModeHint) paymentModeHint.textContent = 'When online checkout is available, payment is processed through PayMongo after cart review.';
+            if (paymentModeHint) paymentModeHint.textContent = 'Payment is processed securely through PayMongo after review.';
             updateSummary();
             refreshMyBookings();
             landingDraftSettingsReady = true;
@@ -2047,22 +2747,78 @@ document.addEventListener('DOMContentLoaded', () => {
             const image = coverUrl
                 ? `<img src="${window.escapeHtml(coverUrl)}" alt="" loading="lazy">`
                 : `<span class="dash-court-monogram" aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(sport.key, sport.name))}</span>`;
-            return `<button type="button" class="dash-book-sport-card${bookingState.sportSlug === sport.key ? ' is-selected' : ''}" data-dash-book-sport="${window.escapeHtml(sport.key)}" aria-pressed="${bookingState.sportSlug === sport.key}"><span class="dash-book-sport-photo">${image}</span><span class="dash-book-sport-name">${window.escapeHtml(sport.name)}</span></button>`;
+            const selected = bookingState.sportSlug === sport.key;
+            return `<label class="dash-book-sport-card${selected ? ' is-selected' : ''}"><input class="dash-book-sport-radio" type="radio" name="dash-book-sport" value="${window.escapeHtml(sport.key)}" data-dash-book-sport="${window.escapeHtml(sport.key)}" aria-label="${window.escapeHtml(sport.name)}"${selected ? ' checked' : ''}><span class="dash-book-sport-photo">${image}</span><span class="dash-book-sport-name">${window.escapeHtml(sport.name)}</span></label>`;
         }).join('') || '<p class="dash-res-state">No courts with verified inventory are available for booking.</p>';
+        const nextSportButton = document.querySelector('[data-dash-book-sport-next]');
+        if (nextSportButton) nextSportButton.disabled = !bookingState.sportSlug;
     }
 
-    if (bookSportGrid) bookSportGrid.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-dash-book-sport]');
-        if (!button) return;
-        if (bookWizardStep === 3) goToBookStep(1);
+    function renderCourtChoices(courts) {
+        if (!bookCourtGrid) return;
+        const formatRate = (value, unit) => `₱${Number(value).toLocaleString('en-PH', { maximumFractionDigits: 2 })}${unit || '/hr'}`;
+        const unitsFor = (court) => window.InigoCourtsData.resolveCourtUnits(court).units;
+        bookCourtGrid.innerHTML = courts.flatMap((court) => unitsFor(court).map((unit, unitIndex) => {
+            const selected = bookingState.court === court.name && bookingState.unitId != null
+                && String(bookingState.unitId) === String(unit.id);
+            const unitRate = unit.rateUnit || court.rateUnit || '/hr';
+            let rate = '';
+            if (typeof unit.rateDay === 'number' && Number.isFinite(unit.rateDay)
+                && typeof unit.rateNight === 'number' && Number.isFinite(unit.rateNight)) {
+                rate = unit.rateDay === unit.rateNight
+                    ? formatRate(unit.rateDay, unitRate)
+                    : `${formatRate(unit.rateDay, unitRate)} day · ${formatRate(unit.rateNight, unitRate)} night`;
+            } else if (typeof unit.rateDay === 'number' && Number.isFinite(unit.rateDay)) {
+                rate = formatRate(unit.rateDay, unitRate);
+            } else if (typeof unit.rateNight === 'number' && Number.isFinite(unit.rateNight)) {
+                rate = formatRate(unit.rateNight, unitRate);
+            } else if (typeof court.rate === 'number' && Number.isFinite(court.rate)) {
+                rate = formatRate(court.rate, court.rateUnit);
+            }
+            const photo = courtPhotoMarkup(unit, window.InigoCourtsData.monogramFor(sportKey(court), court.name), `${court.name} — ${unit.label || `Unit ${unitIndex + 1}`}`);
+            const rating = Number.isFinite(court.rating) && court.rating >= 0 && court.rating <= 5
+                ? `<span class="dash-book-court-rating" aria-label="Listing rating ${court.rating.toFixed(1)} out of 5"><span aria-hidden="true">★</span> ${court.rating.toFixed(1)}<small>listing rating</small></span>`
+                : '';
+            const available = Boolean(unit.id);
+            const disabled = available ? '' : ' disabled';
+            const unavailable = available ? '' : '<span class="dash-book-court-details">Online booking unavailable</span>';
+            return `<label class="dash-book-court-card${selected ? ' is-selected' : ''}" data-dash-book-court-card="${window.escapeHtml(court.name)}" data-dash-book-unit-index="${unitIndex}" data-dash-book-unit-id="${window.escapeHtml(unit.id || '')}"><input class="dash-book-court-radio" type="radio" name="dash-book-court-unit" value="${window.escapeHtml(unit.id || '')}" aria-label="${window.escapeHtml(unit.label || `${court.name} ${unitIndex + 1}`)}${rate ? `, ${window.escapeHtml(rate)}` : ''}"${selected ? ' checked' : ''}${disabled}><span class="dash-book-court-photo">${photo}</span><span class="dash-book-court-body"><span class="dash-book-court-heading"><span class="dash-book-court-name">${window.escapeHtml(unit.label || `${court.name} ${unitIndex + 1}`)}</span>${rating}</span>${rate ? `<span class="dash-book-court-rate">${window.escapeHtml(rate)}</span>` : '<span class="dash-book-court-rate">Rate to be confirmed</span>'}${court.description ? `<span class="dash-book-court-details">${window.escapeHtml(court.description)}</span>` : ''}${unavailable}</span></label>`;
+        })).join('') || '<p class="dash-res-state">No bookable court units are available for this sport.</p>';
+    }
+
+    function selectBookCourtUnit(courtName, unitId) {
+        if (!bookSelect || !bookUnitSelect) return false;
+        const court = findBookCourt(courtName);
+        if (!court || unitId === '') return false;
+        const units = window.InigoCourtsData.resolveCourtUnits(court).units;
+        const unitIndex = units.findIndex((unit) => unit.id && String(unit.id) === String(unitId));
+        if (unitIndex < 0) return false;
+        bookSelect.value = court.name;
+        if (!bookSelect.value) return false;
+        bookSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        bookUnitSelect.value = String(unitIndex);
+        bookUnitSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        return String(bookingState.unitId || '') === String(unitId);
+    }
+
+    if (bookSportGrid) bookSportGrid.addEventListener('change', (event) => {
+        const radio = event.target.closest('.dash-book-sport-radio');
+        if (!radio || !radio.checked) return;
+        const selectedSport = radio.value;
+        const restoreFocus = document.activeElement === radio;
         if (bookSelect) {
             bookSelect.value = '';
             bookingState.court = '';
             bookingState.unit = null;
             bookingState.unitId = null;
         }
-        bookingState.sportSlug = button.dataset.dashBookSport;
+        bookingState.sportSlug = radio.dataset.dashBookSport;
         renderSportChoices();
+        if (restoreFocus) {
+            [...bookSportGrid.querySelectorAll('.dash-book-sport-radio')]
+                .find((candidate) => candidate.dataset.dashBookSport === selectedSport)
+                ?.focus({ preventScroll: true });
+        }
         const courts = bookCourtsCache.filter((court) => bookSportChoiceKey(court) === bookingState.sportSlug);
         if (bookSelect) {
             bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((court) => {
@@ -2072,17 +2828,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `<option value="${window.escapeHtml(court.name)}" data-rate="${court.rate !== null ? window.escapeHtml(String(court.rate)) : ''}" data-rate-unit="${window.escapeHtml(court.rateUnit || '/hr')}" data-sport="${window.escapeHtml(sportName)}">${window.escapeHtml(label)}</option>`;
             }).join('');
             bookSelect.disabled = false;
-            bookSelect.value = courts[0]?.name || '';
-            if (bookSelect.value) bookSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            else {
-                bookingState.court = '';
-                bookingState.sport = '';
-                paintBookPreview(null);
-                resetTimeSelectionAndRender();
-            }
+            bookSelect.value = '';
+            bookingState.court = '';
+            bookingState.sport = '';
+            paintBookPreview(null);
+            renderCourtChoices(courts);
+            resetTimeSelectionAndRender();
         }
-        if (bookCourtChoice) bookCourtChoice.hidden = !courts.length;
-        openBookingModal(button);
+    });
+
+    bookCourtGrid?.addEventListener('change', (event) => {
+        const radio = event.target.closest('.dash-book-court-radio');
+        if (!radio || !radio.checked || radio.disabled) return;
+        const card = radio.closest('[data-dash-book-court-card]');
+        const selectedUnitId = card?.dataset.dashBookUnitId;
+        const selectedCourtName = card?.dataset.dashBookCourtCard;
+        const restoreFocus = document.activeElement === radio;
+        if (!card || !selectBookCourtUnit(card.dataset.dashBookCourtCard, card.dataset.dashBookUnitId)) return;
+        renderCourtChoices(bookCourtsCache.filter((court) => bookSportChoiceKey(court) === bookingState.sportSlug));
+        if (restoreFocus) {
+            const nextRadio = [...bookCourtGrid.querySelectorAll('.dash-book-court-radio')]
+                .find((candidate) => candidate.value === selectedUnitId
+                    && candidate.closest('[data-dash-book-court-card]')?.dataset.dashBookCourtCard === selectedCourtName);
+            nextRadio?.focus({ preventScroll: true });
+        }
     });
 
     // Replaces the "Loading courts…" placeholder <option> with one real
@@ -2106,7 +2875,6 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingState.court = '';
         bookingState.sport = '';
         bookingState.sportSlug = '';
-        if (bookCourtChoice) bookCourtChoice.hidden = true;
         paintBookPreview(null);
         renderSportChoices();
         updateSummary();
@@ -2116,7 +2884,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Landing-page selections are tab-scoped drafts. Resolve every selection
     // again from current court data and live availability before it enters
-    // the customer cart; the handoff itself never creates a reservation.
+    // the booking summary; the handoff itself never creates a reservation.
     async function importLandingDraftCart() {
         if (!landingDraftProfileReady || !landingDraftCourtDataReady || !landingDraftSettingsReady || landingDraftImportInFlight) return;
         let raw;
@@ -2165,8 +2933,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const sportName = isBowlingVariant(item) ? item.name : (item.sportName || item.name);
                     return `<option value="${window.escapeHtml(item.name)}" data-rate="${item.rate !== null ? window.escapeHtml(String(item.rate)) : ''}" data-rate-unit="${window.escapeHtml(item.rateUnit || '/hr')}" data-sport="${window.escapeHtml(sportName)}">${window.escapeHtml(label)}</option>`;
                 }).join('');
+                if (typeof renderCourtChoices === 'function') renderCourtChoices(courtsForSport);
                 bookSelect.disabled = false;
-                if (bookCourtChoice) bookCourtChoice.hidden = !courtsForSport.length;
                 bookSelect.value = court.name;
                 if (!bookSelect.value) throw new Error('A selected court is no longer listed.');
                 bookSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2176,6 +2944,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 paintBookPreview(court, unitIndex);
                 if (bookUnitSelect) bookUnitSelect.value = String(unitIndex);
+                if (typeof renderCourtChoices === 'function') renderCourtChoices(courtsForSport);
                 bookingState.selectedHours = [...new Set(draft.hours)].sort((a, b) => a - b);
                 await refreshTimePickers(true);
                 if (!bookingRules?.authoritative || !slotGridBookings.ok || !slotGridWalkins.ok
@@ -2186,14 +2955,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 runs.forEach((run) => staged.push(selectedBookingCartItem(run.startHour, run.endHourExclusive)));
             }
             if (staged.length !== 1) throw new Error('Choose one court booking at a time from the landing page.');
-            if (bookingCart.length + staged.length > 8) throw new Error('The customer cart can include up to eight booking ranges.');
+            if (bookingCart.length + staged.length > 8) throw new Error('One checkout can include up to eight bookings.');
             const combined = [...bookingCart, ...staged];
             for (let i = 0; i < combined.length; i += 1) {
                 if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
-                    throw new Error('A landing-page selection overlaps another booking in the cart. Review the times and try again.');
+                    throw new Error('A landing-page selection overlaps another booking. Review the times and try again.');
                 }
             }
             bookingCart.push(...staged);
+            bookingSummaryBackKey = staged[staged.length - 1]?.key || null;
             bookingState.selectedHours = [];
             bookingState.startHour = null;
             bookingState.endHour = null;
@@ -2201,6 +2971,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sessionStorage.removeItem('inigosync:landing-booking-draft:v1');
             updateSummary();
             renderBookingCart();
+            if (typeof goToBookStep === 'function') goToBookStep(4);
             setActivePanel('booking');
             window.InigoToast?.show('Your court booking is ready. Review the rate and time before continuing to payment.');
         } catch (error) {
@@ -2219,15 +2990,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.InigoCourtsData) {
         window.InigoCourtsData.getCourts().then((courts) => {
             populateBookSelect(courts);
+            renderOverviewAvailabilityCards(courts);
             landingDraftCourtDataReady = true;
             importLandingDraftCart();
         }).catch((err) => {
             console.error('[dashboard] could not load courts', err);
+            showOverviewAvailabilityLoadError();
         });
     } else {
         // Should never happen — includes/courtsData.js must load before
         // this file (see the <script> order in Pages/user_dashboard.html).
         console.error('[dashboard] window.InigoCourtsData is missing — check that includes/courtsData.js loads before includes/Dashboard.js.');
+        showOverviewAvailabilityLoadError();
     }
 
     // ------------------------------------------------------------------
@@ -2745,11 +3519,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // resolve inherited styles correctly, so any <iframe> on the
                 // page gets walked on every single receipt download even
                 // though it never appears in the output — verified locally
-                // this used to turn a ~70ms capture into 1300ms+ against the
-                // footer's old cross-origin Google Maps <iframe>. That
-                // <iframe> is gone as of Revision 5, D9 (implementation_plan.md
-                // — the dashboard footer now links out to Maps instead of
-                // embedding it), so this guard is currently a no-op; kept
+                // this used to turn a ~70ms capture into 1300ms+ against a
+                // former cross-origin Google Maps <iframe>. That iframe is
+                // gone, so this guard is currently a no-op; kept
                 // rather than removed since it's harmless and protects
                 // against the same slow-capture class of bug if any future
                 // dashboard content ever adds an <iframe> back.

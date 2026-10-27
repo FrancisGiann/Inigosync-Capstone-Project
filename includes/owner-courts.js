@@ -198,16 +198,20 @@
             const units = state.draft.units;
             $('[data-ioc-unit-count]').textContent = `${units.length} ${units.length === 1 ? 'unit' : 'units'}`;
             if (!units.length) { unitHost.innerHTML = '<p class="ioc-empty">Add at least one unit to make this sport bookable.</p>'; return; }
-            unitHost.innerHTML = units.map((unit, index) => {
+            const indexedUnits = units.map((unit, draftIndex) => ({ ...unit, draftIndex }));
+            const sortUnits = window.InigoCourtsData?.sortCourtUnits;
+            const displayUnits = sortUnits ? sortUnits(indexedUnits) : indexedUnits;
+            unitHost.innerHTML = displayUnits.map((unit, displayIndex) => {
+                const index = unit.draftIndex;
                 const preview = unit.photo_file ? '' : imageMarkup(unit.photo_url, `${unit.label} photo`);
-                return `<article class="ioc-unit-card" data-ioc-unit="${index}"><header class="ioc-unit-head"><div><span class="ioc-eyebrow">Unit ${index + 1}</span><h4>${esc(unit.label || `${unitNoun($('[data-ioc-unit-kind]').value)} ${index + 1}`)}</h4></div><button type="button" class="ioc-text-danger" data-ioc-remove-unit="${index}">Remove unit</button></header>
+                return `<article class="ioc-unit-card" data-ioc-unit="${index}"><header class="ioc-unit-head"><div><span class="ioc-eyebrow">Unit ${displayIndex + 1}</span><h4>${esc(unit.label || `${unitNoun($('[data-ioc-unit-kind]').value)} ${index + 1}`)}</h4></div><button type="button" class="ioc-text-danger" data-ioc-remove-unit="${index}">Remove unit</button></header>
                     <div class="ioc-unit-top"><label class="ioc-field"><span>Unit label</span><input class="admin-input" maxlength="80" value="${esc(unit.label)}" data-ioc-unit-label="${index}"></label><div class="ioc-unit-photo"><div class="ioc-unit-preview" data-ioc-unit-preview="${index}">${preview}</div><button class="ioc-button ioc-button-secondary" type="button" data-ioc-choose-unit-photo="${index}">Choose unit photo</button><input class="ioc-file-input ioc-unit-file-input" id="ioc-unit-photo-${index}" type="file" accept="image/*" tabindex="-1" aria-label="Photo for ${esc(unit.label || `unit ${index + 1}`)}" data-ioc-unit-file="${index}"></div></div>
                     <div class="ioc-rate-grid ${unit.rate_unit === '/set' ? 'is-per-set' : ''}" data-ioc-rate-grid="${index}"><label class="ioc-field"><span data-ioc-day-label="${index}">${unit.rate_unit === '/set' ? 'Price per set' : 'Day rate'}</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_day)}" placeholder="Not set" data-ioc-rate-day="${index}"><small data-ioc-set-hint="${index}" ${unit.rate_unit === '/set' ? '' : 'hidden'}>One set reserves one 60-minute slot.</small></label><label class="ioc-field" data-ioc-night-field="${index}" ${unit.rate_unit === '/set' ? 'hidden' : ''}><span>Night rate</span><input class="admin-input" type="number" min="0" step="0.01" value="${esc(unit.rate_night)}" placeholder="Same as day" data-ioc-rate-night="${index}"></label></div>
                     <div class="ioc-unit-connections"><div class="ioc-subhead"><strong>Availability connections</strong><span data-ioc-connection-count="${index}"></span></div><label class="ioc-field ioc-resource-search"><span>Search shared spaces</span><input class="admin-input" type="search" maxlength="100" placeholder="Search by sport or space name…" value="${esc(unit.resource_search)}" data-ioc-resource-search="${index}"></label><div class="ioc-resource-selected" data-ioc-resource-selected="${index}"></div><details class="ioc-resource-details" data-ioc-resource-details="${index}" ${unit.resource_open ? 'open' : ''}><summary>Choose shared spaces</summary><div class="ioc-connection-list" data-ioc-unit-resources="${index}"></div></details></div>
                     <div class="ioc-maintenance"><div class="ioc-subhead"><strong>Scheduled maintenance</strong><button type="button" class="ioc-link-button" data-ioc-add-maintenance="${index}">+ Add period</button></div><div data-ioc-maintenance-list="${index}"></div></div>
                 </article>`;
             }).join('');
-            units.forEach(updateUnitPhotoPreview);
+            displayUnits.forEach((unit) => updateUnitPhotoPreview(unit, unit.draftIndex));
             unitHost.querySelectorAll('[data-ioc-remove-unit]').forEach((button) => button.addEventListener('click', async () => {
                 const index = Number(button.dataset.iocRemoveUnit); const unit = state.draft.units[index];
             const okay = await confirm({ title: 'Remove this unit?', message: `“${unit.label}” will be removed when you save. Units with booking history cannot be removed.`, confirmLabel: 'Remove unit', danger: true });
@@ -368,8 +372,9 @@
             state.draft.listing.unit = kind;
             const perSetSport = /bowling|duckpin|ten[ -]?pin/i.test(`${$('[data-ioc-name]').value} ${state.draft.listing.slug}`);
             state.draft.units.push({ id: null, label, photo_url: null, photo_file: null, rate_day: '', rate_night: '', rate_unit: perSetSport ? '/set' : '/hr', resource_ids: defaultResources(), resource_search: '', resource_expanded: false, resource_open: false, maintenance: [] });
+            const addedIndex = state.draft.units.length - 1;
             labelInput.value = ''; markDirty(); renderUnits();
-            unitHost.lastElementChild?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+            unitHost.querySelector(`[data-ioc-unit="${addedIndex}"]`)?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
         }
 
         function uploadPath(file, prefix) {

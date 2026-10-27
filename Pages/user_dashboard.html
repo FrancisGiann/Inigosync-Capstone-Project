@@ -56,12 +56,15 @@
             <!-- Profile and sign-out are available in the avatar menu;
                  courts are selected in the booking wizard. -->
             <ul class="dash-nav">
+                <li class="dash-nav-section-label">Overview</li>
                 <li>
                     <button type="button" class="dash-nav-link is-active" data-dash-nav="overview" aria-current="page">
                         <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="3" width="8" height="5" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="13" y="12" width="8" height="9" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="15" width="8" height="6" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg>
                         Dashboard
                     </button>
                 </li>
+                <li class="dash-nav-divider" role="separator" aria-hidden="true"></li>
+                <li class="dash-nav-section-label">Bookings</li>
                 <li>
                     <button type="button" class="dash-nav-link" data-dash-nav="booking">
                         <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="4.5" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v3M16 3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 14.5l2.3 2.3L16 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -81,6 +84,7 @@
                     </button>
                 </li>
                 <li class="dash-nav-divider" role="separator" aria-hidden="true"></li>
+                <li class="dash-nav-section-label">Account</li>
                 <li>
                     <button type="button" class="dash-nav-link" data-dash-nav="settings">
                         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
@@ -115,21 +119,6 @@
                 </div>
 
                 <div class="dash-topbar-actions">
-                    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Toggle theme" aria-pressed="false" style="margin-right: 8px;">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="5" class="sun-circle"/>
-                            <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
-                            <line x1="12" y1="21" x2="12" y2="23" class="sun-line"/>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" class="sun-line"/>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" class="sun-line"/>
-                            <line x1="1" y1="12" x2="3" y2="12" class="sun-line"/>
-                            <line x1="21" y1="12" x2="23" y2="12" class="sun-line"/>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" class="sun-line"/>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" class="sun-line"/>
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
-                        </svg>
-                    </button>
-
                     <!-- Customer notifications are loaded from the account-scoped
                          notification API, including announcements and maintenance
                          notices. Pagination and read state belong to
@@ -157,7 +146,7 @@
                     </div>
 
                     <div class="dash-profile" data-dash-profile>
-                        <button type="button" class="dash-profile-trigger" data-dash-profile-trigger>
+                        <button type="button" class="dash-profile-trigger" data-dash-profile-trigger aria-haspopup="true" aria-expanded="false" aria-controls="customerProfileMenu">
                             <div class="dash-avatar">JD</div>
                             <div class="dash-profile-name">
                                 <strong data-dash-profile-name>Juan Dela Cruz</strong>
@@ -166,11 +155,31 @@
                             <svg class="dash-caret" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </button>
 
-                        <div class="dash-profile-menu">
+                        <div class="dash-profile-menu" id="customerProfileMenu">
                             <button type="button" data-dash-nav="profile">
                                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                 View Profile
                             </button>
+
+                            <div class="theme-menu-item">
+                                <span>Theme</span>
+                                <button type="button" class="theme-toggle" data-theme-toggle role="switch" aria-label="Light theme" aria-checked="false">
+                                    <span class="theme-toggle-thumb">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                            <circle cx="12" cy="12" r="5" class="sun-circle"/>
+                                            <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
+                                            <line x1="12" y1="21" x2="12" y2="23" class="sun-line"/>
+                                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" class="sun-line"/>
+                                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" class="sun-line"/>
+                                            <line x1="1" y1="12" x2="3" y2="12" class="sun-line"/>
+                                            <line x1="21" y1="12" x2="23" y2="12" class="sun-line"/>
+                                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" class="sun-line"/>
+                                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" class="sun-line"/>
+                                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
+                                        </svg>
+                                    </span>
+                                </button>
+                            </div>
 
                             <button type="button" class="dash-logout" data-dash-logout>
                                 <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -189,9 +198,10 @@
                      ============================================================ -->
                 <section class="dash-panel is-active" data-dash-panel="overview">
 
-                    <div class="dash-hero" data-dash-hero role="region" aria-label="Featured announcement" aria-live="polite">
-                        <div class="dash-hero-container">
-                            <article class="dash-hero-slide is-active" data-dash-hero-slide="0">
+                    <div class="dash-hero" data-dash-hero role="region" aria-label="Featured events carousel" aria-live="off">
+                        <div class="dash-hero-viewport">
+                          <div class="dash-hero-container">
+                            <article class="dash-hero-slide" data-dash-hero-slide="0">
                                 <img src="../database/web/basketball.jpg" alt="Bocohan Summer Basketball League" class="dash-hero-image" loading="eager">
                                 <div class="dash-hero-scrim">
                                     <div class="dash-hero-text">
@@ -221,32 +231,25 @@
                                     </div>
                                 </div>
                             </article>
-                            <article class="dash-hero-slide" data-dash-hero-slide="3">
-                                <img src="../database/web/bowling.jpg" alt="Duckpin &amp; Ten-Pin Nights" class="dash-hero-image" loading="lazy">
-                                <div class="dash-hero-scrim">
-                                    <div class="dash-hero-text">
-                                        <span class="dash-hero-tag">Lanes</span>
-                                        <h3 class="dash-hero-title">Duckpin &amp; Ten-Pin Nights</h3>
-                                        <p class="dash-hero-meta">8 duckpin + 12 ten-pin lanes · Mon–Thu</p>
-                                    </div>
-                                </div>
-                            </article>
+                          </div>
                         </div>
-
+                        <button type="button" class="dash-hero-pause" data-dash-hero-pause aria-label="Pause slideshow" aria-pressed="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
                         <div class="dash-hero-arrow-rail">
-                            <button type="button" class="dash-hero-arrow" data-dash-hero-prev aria-label="Previous featured photo" hidden><span aria-hidden="true">←</span></button>
-                            <button type="button" class="dash-hero-arrow" data-dash-hero-next aria-label="Next featured photo" hidden><span aria-hidden="true">→</span></button>
-                        </div>
-                        <div class="dash-hero-controls">
-                            <button type="button" class="dash-hero-pause" data-dash-hero-pause aria-label="Pause slideshow" aria-pressed="false" hidden>Pause</button>
-                            <div class="dash-hero-dots">
-                                <button type="button" class="dash-hero-dot is-active" data-dash-hero-dot="0" aria-label="Slide 1" aria-current="true"></button>
-                                <button type="button" class="dash-hero-dot" data-dash-hero-dot="1" aria-label="Slide 2"></button>
-                                <button type="button" class="dash-hero-dot" data-dash-hero-dot="2" aria-label="Slide 3"></button>
-                                <button type="button" class="dash-hero-dot" data-dash-hero-dot="3" aria-label="Slide 4"></button>
-                            </div>
+                            <button type="button" class="dash-hero-arrow" data-dash-hero-prev aria-label="Previous featured event"><span aria-hidden="true">←</span></button>
+                            <button type="button" class="dash-hero-arrow" data-dash-hero-next aria-label="Next featured event"><span aria-hidden="true">→</span></button>
                         </div>
                     </div>
+
+                    <div class="dash-overview-lower">
+                    <section class="dash-card dash-availability-card" aria-labelledby="dash-availability-title">
+                        <div class="dash-card-head">
+                            <div><h3 id="dash-availability-title">Court availability</h3><p class="dash-section-hint">Choose a sport to inspect courts and live time slots.</p></div>
+                            <div class="dash-form-group dash-availability-card-date"><label class="dash-form-label" for="dashAvailabilityDate">Date</label><input class="dash-input" id="dashAvailabilityDate" type="date" data-dash-availability-date></div>
+                        </div>
+                        <div class="dash-availability-grid" data-dash-availability aria-live="polite">
+                            <p class="dash-res-state">Loading active sports…</p>
+                        </div>
+                    </section>
 
                     <!-- Live, account-scoped bookings are populated by
                          includes/Dashboard.js; loading, empty and retry
@@ -262,7 +265,7 @@
                         </div>
                         <button type="button" class="dash-link-btn dash-res-more" data-dash-upcoming-more hidden>Show more</button>
 
-                        <div class="dash-quick-actions" style="margin-top: 20px;">
+                        <div class="dash-quick-actions dash-overview-actions">
                             <button type="button" class="dash-quick-btn" data-dash-nav="booking">
                                 <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                                 Book a court
@@ -273,90 +276,142 @@
                             </button>
                         </div>
                     </div>
+                    </div>
+
+                    <dialog class="dash-availability-dialog" id="dashAvailabilityDialog" data-dash-availability-dialog aria-labelledby="dashAvailabilityDialogTitle" aria-modal="true">
+                        <div class="dash-availability-dialog-head">
+                            <div><p class="dash-book-step-kicker">Live court availability</p><h2 id="dashAvailabilityDialogTitle" data-dash-availability-sport-title>Sport</h2><p class="dash-form-hint">Browse current openings by court and date. Viewing availability does not create a booking.</p></div>
+                            <button type="button" class="dash-modal-close" data-dash-availability-close aria-label="Close availability">×</button>
+                        </div>
+                        <section class="dash-availability-unit-photo" data-dash-availability-photo aria-label="Selected court image"></section>
+                        <div class="dash-availability-unit-picker dash-form-group"><label class="dash-form-label" for="dashAvailabilityUnit">Court number</label><select class="dash-select" id="dashAvailabilityUnit" data-dash-availability-unit></select></div>
+                        <div class="dash-availability-slots-area"><div class="dash-availability-slots-heading"><h3>Availability</h3><div class="dash-availability-date-actions"><p data-dash-availability-selected-date></p><button type="button" class="dash-availability-change-date" data-dash-availability-change-date aria-label="Change availability date">Change date</button></div></div><p class="dash-availability-live-status" data-dash-availability-status role="status" aria-live="polite">Choose a court and date to check live slots.</p><div class="dash-availability-slots" data-dash-availability-slots role="list" aria-label="Selected court availability by hour"></div></div>
+                    </dialog>
 
                 </section>
 
-                <!-- The booking wizard sends the selected inventory unit and
-                     time to one PayMongo checkout for the full cart. A verified
-                     payment creates the booking; the browser never inserts it. -->
+                <!-- The booking flow sends verified inventory and time ranges
+                     to one PayMongo checkout. A verified payment creates bookings. -->
                 <section class="dash-panel" data-dash-panel="booking">
                     <div class="dash-card dash-wizard-card">
-                        <!-- STEP 1 — Photo-first sport and court selection -->
+                        <nav class="dash-book-progress" aria-label="Booking progress">
+                            <ol>
+                                <li data-dash-book-progress-step="1"><span class="dash-book-progress-number">1</span><span>Sport</span></li>
+                                <li data-dash-book-progress-step="2"><span class="dash-book-progress-number">2</span><span>Court</span></li>
+                                <li data-dash-book-progress-step="3"><span class="dash-book-progress-number">3</span><span>Schedule</span></li>
+                                <li data-dash-book-progress-step="4"><span class="dash-book-progress-number">4</span><span>Summary</span></li>
+                                <li data-dash-book-progress-step="5"><span class="dash-book-progress-number">5</span><span>Payment</span></li>
+                            </ol>
+                        </nav>
                         <div class="dash-wizard-panel is-active" data-dash-book-step="1">
-                            <h3 class="dash-wizard-panel-title">Choose a court</h3>
-                            <p class="dash-form-hint">Choose a sport photo to view its courts, availability, and booking options.</p>
-                            <div class="dash-book-sport-grid" data-dash-book-sports aria-label="Sports"></div>
-                        </div>
-
-                    </div>
-
-                    <aside class="dash-book-cart-bar" data-dash-book-cart-bar aria-label="Booking cart" hidden>
-                        <div class="dash-book-cart-bar-content">
-                            <div class="dash-book-cart-bar-head"><strong data-dash-book-cart-bar-count>0 bookings selected</strong><span><small>Estimated total</small><strong data-dash-book-cart-bar-total>—</strong></span></div>
-                            <div class="dash-book-cart-bar-items" data-dash-book-cart-bar-items aria-live="polite"></div>
-                            <span class="dash-book-cart-bar-more" data-dash-book-cart-bar-more hidden></span>
-                        </div>
-                        <div class="dash-book-cart-bar-actions">
-                            <button type="button" class="dash-btn-ghost" data-dash-book-cart-details>View details</button>
-                            <button type="button" class="dash-btn-primary" data-dash-book-cart-proceed>Proceed to Payment</button>
-                        </div>
-                    </aside>
-
-                    <div class="dash-book-cart-details-modal" data-dash-book-cart-details-modal hidden>
-                        <div class="dash-book-cart-details-backdrop" data-dash-book-cart-details-close></div>
-                        <section class="dash-book-cart-details-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-cart-details-title" tabindex="-1">
-                            <button type="button" class="dash-modal-close" data-dash-book-cart-details-close aria-label="Close cart details">×</button>
-                            <h2 id="dash-book-cart-details-title">Booking details</h2>
-                            <p class="dash-form-hint" data-dash-book-cart-details-count></p>
-                            <ul class="dash-book-cart-details-list" data-dash-book-cart-details-list></ul>
-                            <div class="dash-book-cart-details-total"><span>Estimated booking total</span><strong data-dash-book-cart-details-total>—</strong></div>
-                            <button type="button" class="dash-btn-primary" data-dash-book-cart-details-proceed>Proceed to Payment</button>
-                        </section>
-                    </div>
-
-                    <!-- Cart review and payment choices stay inside the booking panel, presented as a popup. -->
-                    <div class="dash-book-payment-modal" data-dash-book-payment-modal hidden>
-                        <div class="dash-book-payment-backdrop" data-dash-book-payment-close></div>
-                        <section class="dash-book-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-payment-title" tabindex="-1">
-                            <button type="button" class="dash-modal-close" data-dash-book-payment-close aria-label="Close payment review">×</button>
-                            <h2 id="dash-book-payment-title">Review your cart</h2>
-                            <div class="dash-book-cart" data-dash-book-cart>
-                                <div class="dash-book-cart-head"><strong>Selected bookings</strong><span data-dash-book-cart-count>0 items</span></div>
-                                <p class="dash-form-hint" data-dash-book-cart-empty>Your cart is empty. Add available times to continue.</p>
-                                <ul data-dash-book-cart-items></ul>
-                                <p class="dash-form-hint">You can combine up to eight court bookings in one secure checkout.</p>
+                            <div class="dash-wizard-panel-content">
+                                <p class="dash-book-step-kicker">Step 1 of 5</p>
+                                <h3 class="dash-wizard-panel-title">Choose a sport</h3>
+                                <p class="dash-form-hint">Choose a sport to see its courts and live availability.</p>
+                                <div class="dash-book-sport-grid" data-dash-book-sports role="radiogroup" aria-label="Sports"></div>
                             </div>
+                            <div class="dash-book-flow-actions dash-book-sport-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-book-edit-cancel hidden>Cancel edit</button>
+                                <button type="button" class="dash-btn-primary" data-dash-book-next="2" data-dash-book-sport-next disabled>Next</button>
+                            </div>
+                        </div>
+                        <div class="dash-wizard-panel" data-dash-book-step="2" hidden>
+                            <div class="dash-wizard-panel-content">
+                                <p class="dash-book-step-kicker">Step 2 of 5</p>
+                                <h3 class="dash-wizard-panel-title">Select a court</h3>
+                                <p class="dash-form-hint">Choose the court unit you want to book.</p>
+                                <div class="dash-book-court-grid" data-dash-book-courts role="radiogroup" aria-label="Court units"></div>
+                                <select id="dash-book-court" data-dash-book-select hidden disabled aria-label="Selected court"></select>
+                                <select id="dash-book-unit" data-dash-book-unit-select hidden disabled aria-label="Selected court unit"><option value="">Choose a court</option></select>
+                            </div>
+                            <div class="dash-book-flow-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-book-back="1">Back</button>
+                                <button type="button" class="dash-btn-ghost" data-dash-book-edit-cancel hidden>Cancel edit</button>
+                                <button type="button" class="dash-btn-primary" data-dash-book-next="3" disabled>Choose a time</button>
+                            </div>
+                        </div>
+                        <div class="dash-wizard-panel" data-dash-book-step="3" hidden>
+                            <div class="dash-wizard-panel-content">
+                                <p class="dash-book-step-kicker">Step 3 of 5</p>
+                                <h3 class="dash-wizard-panel-title">Pick a schedule</h3>
+                                <p class="dash-form-hint" data-dash-book-schedule-summary></p>
+                                <div class="dash-book-date-panel">
+                                    <div class="dash-book-date-copy">
+                                        <span class="dash-book-date-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9h17"></path></svg>
+                                        </span>
+                                        <span><label class="dash-form-label" for="dash-book-date">Choose a date</label><span class="dash-book-date-hint" id="dash-book-date-hint">Live availability is checked for this court.</span></span>
+                                    </div>
+                                    <input id="dash-book-date" type="date" class="dash-input dash-book-date-input" data-dash-book-date aria-describedby="dash-book-date-hint">
+                                </div>
+                                <div class="dash-book-slot-heading"><div><h4>Available times</h4><p>Select one or more hours. Separate time ranges become separate bookings.</p></div><div class="dash-book-slot-legend" aria-label="Time slot key"><span><i class="is-available" aria-hidden="true"></i>Available</span><span><i class="is-selected" aria-hidden="true"></i>Selected</span><span><i class="is-in-cart" aria-hidden="true"></i>In summary</span><span><i class="is-unavailable" aria-hidden="true"></i>Unavailable</span></div></div>
+                                <div class="dash-book-slot-grid" data-dash-book-slots role="group" aria-label="Available hourly times"></div>
+                                <p class="dash-form-hint dash-book-slot-status" data-dash-book-slot-status role="status" aria-live="polite">Choose a court and date to see available times.</p>
+                            </div>
+                            <div class="dash-book-flow-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-book-back="2">Back</button>
+                                <button type="button" class="dash-btn-ghost" data-dash-book-edit-cancel hidden>Cancel edit</button>
+                                <button type="button" class="dash-btn-primary" data-dash-book-add disabled>Review booking</button>
+                            </div>
+                        </div>
+                        <div class="dash-wizard-panel" data-dash-book-step="4" hidden>
+                            <div class="dash-wizard-panel-content">
+                                <p class="dash-book-step-kicker">Step 4 of 5</p>
+                                <h3 class="dash-wizard-panel-title">Booking summary</h3>
+                                <p class="dash-form-hint">Review the selected times and payment preference before secure checkout.</p>
+                                <div class="dash-book-cart" data-dash-book-cart>
+                                    <div class="dash-book-cart-head"><strong>Your bookings</strong><div class="dash-book-cart-head-actions"><span data-dash-book-cart-count>0 items</span><button type="button" class="dash-btn-ghost" data-dash-book-new>Add another sport or court</button></div></div>
+                                    <p class="dash-form-hint dash-book-cart-empty" data-dash-book-cart-empty>Your summary is empty. Choose a time to continue.</p>
+                                    <ul data-dash-book-cart-items></ul>
+                                    <p class="dash-form-hint">Up to eight booking items can be included in one checkout. Edit a booking to change its court, date, or times.</p>
+                                </div>
+                                <div class="dash-book-summary-total"><span>Booking total</span><strong data-dash-booking-gross>—</strong></div>
+                            </div>
+                            <div class="dash-book-flow-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-book-back="3">Back</button>
+                                <button type="button" class="dash-btn-primary" data-dash-book-next="5" data-dash-book-payment-next>Continue to payment</button>
+                            </div>
+                        </div>
+                        <div class="dash-wizard-panel" data-dash-book-step="5" hidden>
+                            <div class="dash-wizard-panel-content">
+                                <p class="dash-book-step-kicker">Step 5 of 5</p>
+                                <h3 class="dash-wizard-panel-title">Payment &amp; confirmation</h3>
+                                <p class="dash-form-hint">Choose a payment option. PayMongo securely processes payment; your booking is confirmed only after payment is verified.</p>
 
-                            <div class="dash-form-group">
-                                <span class="dash-form-label">Payment preference</span>
-                                <div class="dash-payment-options">
-                                    <label class="dash-payment-option is-selected" data-dash-payment-option>
-                                        <span class="dash-payment-option-head">
-                                            <input type="radio" name="payment-option" checked data-dash-payment="downpayment">
-                                            Downpayment
-                                        </span>
-                                        <!-- Includes/Dashboard.js fills in the current
-                                             configured deposit percentage after settings load. -->
-                                        <p data-dash-payment-desc="downpayment">Pay the current deposit percentage now and the balance at check-in.</p>
-                                    </label>
-                                    <label class="dash-payment-option" data-dash-payment-option>
-                                        <span class="dash-payment-option-head">
-                                            <input type="radio" name="payment-option" data-dash-payment="full">
-                                            Full Payment
-                                        </span>
-                                        <p>Pay the full court amount securely now.</p>
-                                    </label>
+                                <div class="dash-form-group">
+                                    <span class="dash-form-label">Payment option</span>
+                                    <div class="dash-payment-options">
+                                        <label class="dash-payment-option is-selected" data-dash-payment-option>
+                                            <span class="dash-payment-option-head">
+                                                <input type="radio" name="payment-option" checked data-dash-payment="downpayment">
+                                                Downpayment
+                                            </span>
+                                            <!-- Includes/Dashboard.js fills in the current
+                                                 configured deposit percentage after settings load. -->
+                                            <p data-dash-payment-desc="downpayment">Pay the current deposit percentage now and the balance at check-in.</p>
+                                        </label>
+                                        <label class="dash-payment-option" data-dash-payment-option>
+                                            <span class="dash-payment-option-head">
+                                                <input type="radio" name="payment-option" data-dash-payment="full">
+                                                Full Payment
+                                            </span>
+                                            <p>Pay the full court amount securely now.</p>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="dash-wizard-summary">
+                                    <div class="dash-summary-row"><span>Payment option</span><strong data-dash-summary-payment>Downpayment</strong></div>
+                                    <div class="dash-summary-row"><span>Booking total</span><strong data-dash-summary-gross>—</strong></div>
+                                    <div class="dash-summary-total"><span>Estimated due now</span><span data-dash-summary-total>—</span></div>
+                                    <p class="dash-form-hint" data-dash-pay-mode-hint>Payment is processed securely through PayMongo after review.</p>
                                 </div>
                             </div>
-
-                            <div class="dash-wizard-summary">
-                                <div class="dash-summary-row"><span>Payment preference</span><strong data-dash-summary-payment>Downpayment</strong></div>
-                                <div class="dash-summary-total"><span>Estimated payment</span><span data-dash-summary-total>—</span></div>
-                                <p class="dash-form-hint" data-dash-pay-mode-hint>When online checkout is available, payment is processed through PayMongo after review.</p>
-                                <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Book and pay securely</button>
-                                <button type="button" class="dash-btn-ghost" data-dash-book-new>Add another booking</button>
+                            <div class="dash-book-flow-actions">
+                                <button type="button" class="dash-btn-ghost" data-dash-book-back="4">Back to summary</button>
+                                <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Continue to PayMongo</button>
                             </div>
-                        </section>
+                        </div>
                     </div>
                 </section>
 
@@ -374,40 +429,15 @@
                     </section>
                 </div>
 
-                <div class="dash-booking-modal" data-dash-booking-modal hidden>
-                    <div class="dash-booking-modal-backdrop" data-dash-booking-modal-close></div>
-                    <section class="dash-booking-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-booking-dialog-title" tabindex="-1">
-                        <button type="button" class="dash-modal-close" data-dash-booking-modal-close aria-label="Close court booking">×</button>
-                        <h2 id="dash-booking-dialog-title">Choose your court and time</h2>
-                        <div class="dash-book-court-choice" data-dash-book-court-choice>
-                            <div class="dash-book-step1-layout">
-                                <div class="dash-book-step1-fields">
-                                    <div class="dash-form-group">
-                                        <label class="dash-form-label" for="dash-book-court">Court</label>
-                                        <select id="dash-book-court" class="dash-select" data-dash-book-select disabled>
-                                            <option value="">Choose a sport first</option>
-                                        </select>
-                                    </div>
-                                    <div class="dash-form-group dash-court-unit-picker" data-dash-book-unit-wrap hidden>
-                                        <label class="dash-form-label" for="dash-book-unit" data-dash-book-unit-label>Choose a unit</label>
-                                        <select id="dash-book-unit" class="dash-select" data-dash-book-unit-select></select>
-                                    </div>
-                                    <div class="dash-form-group">
-                                        <label class="dash-form-label" for="dash-book-date">Date</label>
-                                        <input id="dash-book-date" type="date" class="dash-input" data-dash-book-date>
-                                    </div>
-                                    <p class="dash-form-hint" data-dash-book-open-windows>Select a court and date to check availability.</p>
-                                </div>
-                                <div class="dash-form-group dash-book-step1-preview">
-                                    <span class="dash-form-label">Court photo</span>
-                                    <div class="dash-court-media dash-court-media-lg" data-dash-book-preview-media></div>
-                                </div>
-                            </div>
+                <div class="dash-book-remove-confirmation-modal" data-dash-book-remove-confirmation hidden>
+                    <div class="dash-book-remove-confirmation-backdrop" data-dash-book-remove-cancel></div>
+                    <section class="dash-book-remove-confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dash-book-remove-title" aria-describedby="dash-book-remove-description" tabindex="-1">
+                        <h2 id="dash-book-remove-title">Remove this booking?</h2>
+                        <p id="dash-book-remove-description" data-dash-book-remove-description></p>
+                        <div class="dash-book-remove-confirmation-actions">
+                            <button type="button" class="dash-btn-ghost" data-dash-book-remove-cancel>Cancel</button>
+                            <button type="button" class="dash-btn-primary" data-dash-book-remove-confirm>Remove booking</button>
                         </div>
-                        <h3 class="dash-booking-time-title">Available times</h3>
-                        <div class="dash-book-slot-grid" data-dash-book-slots role="group" aria-label="Available hourly times"></div>
-                        <p class="dash-form-hint" data-dash-book-slot-status aria-live="polite">Choose a court and date to see available times.</p>
-                        <button type="button" class="dash-btn-primary" data-dash-book-add disabled>Add selected times to cart</button>
                     </section>
                 </div>
 
@@ -595,39 +625,41 @@
                      ACCOUNT SETTINGS PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="settings">
-                    <!-- Profile Photo is the first settings card. The shared
-                         crop editor previews the image before confirmation. -->
-                    <div class="dash-card">
-                        <div class="dash-card-head">
-                            <h3>Profile Photo</h3>
-                        </div>
-                        <div class="dash-avatar-upload-row">
-                            <div class="dash-avatar dash-avatar-upload-preview">JD</div>
-                            <div class="dash-avatar-upload-controls">
-                                <div class="dash-avatar-upload-actions">
-                                    <button type="button" class="dash-btn-save" data-dash-avatar-upload-trigger>Upload Photo</button>
-                                    <button type="button" class="dash-btn-ghost" data-dash-avatar-remove hidden>Remove Photo</button>
-                                    <input type="file" accept="image/*" data-dash-avatar-file hidden>
-                                </div>
-                                <p class="dash-avatar-upload-hint">Choose any image. Adjust the square crop before saving.</p>
+                    <!-- Profile Photo and Personal Information share the
+                         account card, matching owner and staff settings. -->
+                    <div class="dash-card dash-account-card">
+                        <section class="dash-account-photo" aria-label="Profile photo">
+                            <div class="dash-card-head">
+                                <h3>Profile Photo</h3>
                             </div>
-                        </div>
-                    </div>
+                            <div class="dash-avatar-upload-row">
+                                <div class="dash-avatar dash-avatar-upload-preview">JD</div>
+                                <div class="dash-avatar-upload-controls">
+                                    <div class="dash-avatar-upload-actions">
+                                        <button type="button" class="dash-btn-save" data-dash-avatar-upload-trigger>Upload Photo</button>
+                                        <button type="button" class="dash-btn-ghost" data-dash-avatar-remove hidden>Remove Photo</button>
+                                        <input type="file" accept="image/*" data-dash-avatar-file hidden>
+                                    </div>
+                                    <p class="dash-avatar-upload-hint">Choose any image. Adjust the square crop before saving.</p>
+                                </div>
+                            </div>
+                        </section>
 
-                    <div class="dash-card">
-                        <div class="dash-card-head">
-                            <h3>Personal Information</h3>
-                            <button type="button" class="dash-btn-ghost" data-dash-personal-edit aria-haspopup="dialog" aria-controls="dashPersonalEditDialog">Edit</button>
-                        </div>
-                        <div class="dash-profile-meta dash-settings-summary">
-                            <div class="dash-profile-meta-item"><span>Name</span><span data-dash-settings-display-name>—</span></div>
-                            <div class="dash-profile-meta-item"><span>Email address</span><span data-dash-settings-display-email>—</span></div>
-                            <div class="dash-profile-meta-item"><span>Mobile number</span><span data-dash-settings-display-mobile>—</span></div>
-                            <div class="dash-profile-meta-item"><span>Birthdate · age</span><span data-dash-settings-display-birthdate>—</span></div>
-                            <div class="dash-profile-meta-item"><span>Gender</span><span data-dash-settings-display-gender>—</span></div>
-                            <div class="dash-profile-meta-item"><span>Civil status</span><span data-dash-settings-display-civil-status>—</span></div>
-                            <div class="dash-profile-meta-item"><span>Emergency contact</span><span data-dash-settings-display-emergency>—</span></div>
-                        </div>
+                        <section class="dash-account-personal" aria-label="Personal information">
+                            <div class="dash-card-head">
+                                <h3>Personal Information</h3>
+                                <button type="button" class="dash-btn-ghost" data-dash-personal-edit aria-haspopup="dialog" aria-controls="dashPersonalEditDialog">Edit</button>
+                            </div>
+                            <div class="dash-profile-meta dash-settings-summary">
+                                <div class="dash-profile-meta-item"><span>Name</span><span data-dash-settings-display-name>—</span></div>
+                                <div class="dash-profile-meta-item"><span>Email address</span><span data-dash-settings-display-email>—</span></div>
+                                <div class="dash-profile-meta-item"><span>Mobile number</span><span data-dash-settings-display-mobile>—</span></div>
+                                <div class="dash-profile-meta-item"><span>Birthdate · age</span><span data-dash-settings-display-birthdate>—</span></div>
+                                <div class="dash-profile-meta-item"><span>Gender</span><span data-dash-settings-display-gender>—</span></div>
+                                <div class="dash-profile-meta-item"><span>Civil status</span><span data-dash-settings-display-civil-status>—</span></div>
+                                <div class="dash-profile-meta-item"><span>Emergency contact</span><span data-dash-settings-display-emergency>—</span></div>
+                            </div>
+                        </section>
                     </div>
 
                     <div class="dash-settings-modal" data-dash-personal-modal hidden>
@@ -821,16 +853,6 @@
 
             </main>
 
-            <!-- Compact help, directions, and terms footer. -->
-            <footer class="dash-footer" data-dash-footer>
-                <div class="dash-footer-inner">
-                    <a href="tel:+639281546876">Help: +63 928 154 6876</a>
-                    <a href="mailto:itsrosem8@gmail.com">itsrosem8@gmail.com</a>
-                    <a href="https://www.google.com/maps?q=I%C3%B1igos%20Sports%20Center%20Brgy.%20Bocohan%20Lucena%20City&amp;z=15" target="_blank" rel="noopener noreferrer">Directions</a>
-                    <a href="terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
-                    <span class="dash-footer-copyright">© 2026 IñigoSync · Lucena City</span>
-                </div>
-            </footer>
         </div>
     </div>
 
@@ -885,6 +907,8 @@
          fetch-with-fallback shape as courtsData.js above. Must load before
          Dashboard.js, which reads the downpayment percentage from it. -->
     <script src="../includes/appSettings.js"></script>
+    <!-- Existing sport cover assets used for customer availability cards. -->
+    <script src="../includes/landing-visuals.js"></script>
     <!-- Shared authoritative operating-hours reader for booking availability. -->
     <script src="../includes/businessHours.js"></script>
     <!-- Receipt PNG download (§7, D8) — same no-build-step CDN <script>

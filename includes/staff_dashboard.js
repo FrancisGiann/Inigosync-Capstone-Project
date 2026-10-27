@@ -431,14 +431,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ------------------------------------------------------------------
     // Theme toggle — includes/theme.js manages the data-theme attribute
-    // and persistence; this just wires the topbar button to it and keeps
+    // and persistence; this just wires the profile-menu switch to it and keeps
     // the sun/moon icon in sync.
     // ------------------------------------------------------------------
     const themeToggleBtn = document.querySelector('[data-theme-toggle]');
     function syncThemeToggleUI(theme) {
         if (!themeToggleBtn) return;
         const isLight = theme === 'light';
-        themeToggleBtn.setAttribute('aria-pressed', String(isLight));
+        themeToggleBtn.setAttribute('aria-checked', String(isLight));
         themeToggleBtn.querySelectorAll('.sun-circle, .sun-line').forEach((el) => {
             el.style.display = isLight ? 'none' : '';
         });

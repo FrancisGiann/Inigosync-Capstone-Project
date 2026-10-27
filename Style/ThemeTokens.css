@@ -232,6 +232,10 @@ html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-to
     backdrop-filter: blur(14px);
 }
 
+html:root[data-theme="dark"] body.dash-body .dash-topbar {
+    background: var(--surface-page);
+}
+
 html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-card, .staff-card, .admin-card, .staff-stat-card, .admin-stat-card) {
     border: 1px solid var(--border-card);
     border-radius: 14px;

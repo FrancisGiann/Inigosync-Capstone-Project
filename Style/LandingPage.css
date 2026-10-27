@@ -272,20 +272,6 @@ a {
     backdrop-filter: none;
 }
 
-/* Cross-page fallout from deleting the legacy `header` rules above.
-   Pages/user_dashboard.html loads this stylesheet *and* Style/Dashboard.css,
-   and its `<header class="dash-topbar">` was silently picking up its
-   light-mode surface from `:root[data-theme="light"] header` (0,2,1 beat
-   `.dash-topbar`'s 0,1,0). Dashboard.css ships no light-mode override of its
-   own — it only sets `background: rgba(20,17,13,.6)` — so without this the
-   customer dashboard's topbar would turn into a dark grey band on a light
-   page. Style/Dashboard.css is out of scope for this change, so the surface
-   it was already getting is restated here explicitly rather than left to a
-   deleted rule. Delete this the day Dashboard.css grows its own light block. */
-:root[data-theme="light"] .dash-topbar {
-    background: rgba(255, 252, 244, 0.5);
-}
-
 .site-nav-pill {
     display: flex;
     align-items: center;
