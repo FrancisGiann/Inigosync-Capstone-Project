@@ -954,6 +954,10 @@ body.landing-night::before {
 .landing-night .hero-title,
 .landing-night .hero-meta { color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,.55); }
 .landing-night .hero-tag { color: #ff9a4a; }
+.landing-night .landing-facts .hero-stats { background: #fff; color: #111; }
+.landing-night .landing-facts .hero-stats strong { color: #111; }
+.landing-night .landing-facts .hero-stats span { color: #505050; }
+.landing-night .landing-facts .hero-stats > div + div { border-color: rgba(0,0,0,.16); }
 :root[data-theme="dark"] .landing-night .landing-facts .hero-stats { background: #171717; color: #fff; }
 :root[data-theme="dark"] .landing-night .landing-facts .hero-stats strong { color: #fff; }
 :root[data-theme="dark"] .landing-night .landing-facts .hero-stats span { color: #d0d0d0; }
