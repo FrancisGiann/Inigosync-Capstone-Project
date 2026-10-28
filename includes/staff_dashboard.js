@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const subtitleEl = document.querySelector('[data-staff-subtitle]');
 
     const panelMeta = {
-        overview: { title: 'Booking Overview', subtitle: "Today's and upcoming court activity across the app." },
+        overview: { title: 'Booking Overview', subtitle: 'Upcoming and currently active court bookings.' },
         walkin: { title: 'Walk-In Management', subtitle: 'Record a walk-in customer and print or download their receipt.' },
         schedule: { title: 'Court Schedule', subtitle: 'Hour-by-hour availability per court/unit.' },
         transactions: { title: 'Transaction Records', subtitle: 'Payment records for your bookings and walk-ins.' },
@@ -81,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         if (name === 'schedule') refreshCourtSchedule();
+        if (name === 'overview') refreshBookingOverview();
         if (name === 'walkin' && walkinWizardWrap && !walkinWizardWrap.hidden && walkinState.court) refreshWalkinTimeSlots(true);
 
         document.querySelectorAll('[data-staff-nav]').forEach((btn) => {
@@ -627,17 +628,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return STAFF_STATUS_LABELS[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown');
     }
 
-    // Time-In is offered only for a row that hasn't been checked in yet
-    // (Booked or Unattended — both mean exactly that), and only once we're
-    // within TIME_IN_LEAD_MINUTES of the booked start (so staff can't time
-    // someone in hours ahead of their slot).
+    // Time-In is offered only for a booked row that hasn't been checked in,
+    // from the lead-in window through the scheduled end. This keeps old
+    // pending rows visible without offering a check-in for an expired slot.
     const TIME_IN_LEAD_MINUTES = 15;
     function staffCanTimeIn(row, status) {
         if (status !== 'booked') return false;
         if (row.checked_in_at) return false;
         const startMs = new Date(row.time_date).getTime();
         if (Number.isNaN(startMs)) return false;
-        return Date.now() >= startMs - TIME_IN_LEAD_MINUTES * 60000;
+        const endMs = rowWindow(row).end.getTime();
+        const now = Date.now();
+        return now >= startMs - TIME_IN_LEAD_MINUTES * 60000 && now < endMs;
     }
 
     // `walk_in_booking` has no tracked CREATE TABLE in this repo (same
@@ -923,30 +925,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ------------------------------------------------------------------
-    // Booking Overview — keep the full merged set for stats and action
-    // lookup, while showing only rows with an actionable Time-In/Time-Out.
-    // Status remains derived (staffDerivedStatus() above), never read
-    // straight off `status`.
+    // Booking Overview — keep future reservations and current in-play rows
+    // visible; omit expired and terminal rows. Status remains derived
+    // (staffDerivedStatus() above), never read straight off `status`; action
+    // buttons are rendered only when the Time-In/Time-Out rules permit them.
     // ------------------------------------------------------------------
     const overviewTableBody = document.querySelector('[data-staff-table="overview"] tbody');
     const overviewPagination = document.querySelector('[data-staff-pagination="overview"]');
     const overviewSearchInput = document.querySelector('[data-staff-overview-search]');
     const overviewSportSelect = document.querySelector('[data-staff-overview-sport]');
     const overviewDateInput = document.querySelector('[data-staff-overview-date]');
-    if (overviewDateInput && !overviewDateInput.value) overviewDateInput.value = todayDateInputValue();
     let overviewRows = [];
     let overviewPage = 1;
+    let overviewRefreshGeneration = 0;
 
-    function overviewActionEntries() {
-        return overviewRows
-            .map((row, index) => ({ row, index }))
-            .filter(({ row }) => staffHasOverviewAction(row));
+    function isOverviewVisible() {
+        return document.visibilityState === 'visible'
+            && document.querySelector('[data-staff-panel="overview"]')?.classList.contains('is-active');
     }
 
-    function renderOverviewSportOptions(actionEntries) {
+    function overviewEntries() {
+        const now = Date.now();
+        return overviewRows
+            .map((row, index) => ({ row, index }))
+            .filter(({ row }) => {
+                const status = staffDerivedStatus(row);
+                if (status === 'cancelled' || status === 'completed' || status === 'unattended') return false;
+                if (status === 'inplay') return true;
+                if (status !== 'booked') return false;
+                const start = new Date(row.time_date).getTime();
+                return start >= now || staffCanTimeIn(row, status);
+            });
+    }
+
+    function renderOverviewSportOptions(entries) {
         if (!overviewSportSelect) return;
         const selected = overviewSportSelect.value;
-        const sports = Array.from(new Set(actionEntries
+        const sports = Array.from(new Set(entries
             .map(({ row }) => String(row.sports || '').trim())
             .filter(Boolean)))
             .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -963,12 +978,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return manilaDate(instant) === dateFilter;
     }
 
-    function renderFilteredOverview(actionEntries = overviewActionEntries()) {
+    function renderFilteredOverview(entries = overviewEntries()) {
         if (!overviewTableBody) return;
         const query = (overviewSearchInput?.value || '').trim().toLocaleLowerCase();
         const sport = overviewSportSelect?.value || '';
         const dateFilter = overviewDateInput?.value || '';
-        const visible = actionEntries.filter(({ row }) => {
+        const visible = entries.filter(({ row }) => {
             const matchesSearch = !query
                 || String(row.customerName || '').toLocaleLowerCase().includes(query)
                 || staffOverviewIdLabel(row).toLocaleLowerCase().includes(query);
@@ -981,12 +996,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         overviewPage = page.page;
         renderStaffTablePagination(overviewPagination, visible.length, overviewPage, (page) => {
             overviewPage = page;
-            renderFilteredOverview(actionEntries);
+            renderFilteredOverview(entries);
         });
         if (!visible.length) {
-            const message = actionEntries.length
-                ? 'No actionable bookings match these filters.'
-                : 'No bookings need an action right now.';
+            const message = entries.length
+                ? 'No bookings match these filters.'
+                : 'No bookings found.';
             overviewTableBody.innerHTML = `<tr><td colspan="7" class="staff-table-message">${message}</td></tr>`;
             return;
         }
@@ -1004,41 +1019,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     // never guaranteed, and select('*') simply returns whatever DOES exist
     // instead of erroring on a column that doesn't — no schema-mismatch
     // retry needed on the read side at all.
+    // Supabase/PostgREST may cap a response at 1,000 rows. Fetch the current
+    // and future schedule in ordered pages without loading historical rows.
+    async function fetchOverviewRows(buildQuery) {
+        const pageSize = 500;
+        const rows = [];
+        for (let offset = 0; ; offset += pageSize) {
+            const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+            if (error) return { ok: false, rows: [], error };
+            const pageRows = data || [];
+            rows.push(...pageRows);
+            if (pageRows.length < pageSize) return { ok: true, rows };
+        }
+    }
+
     async function fetchOverviewBookings() {
         if (!window.sb) return { ok: false, rows: [] };
         const { start } = todayRange();
-        const { data, error } = await window.sb
+        const result = await fetchOverviewRows(() => window.sb
             .from('booking')
             .select('*')
-            .in('status', ['pending', 'confirmed', 'completed'])
             .gte('time_date', start.toISOString())
-            .order('time_date', { ascending: true });
-        if (error) {
-            console.error('[staff] failed to load bookings', error);
-            return { ok: false, rows: [] };
-        }
-        return { ok: true, rows: data || [] };
+            .order('time_date', { ascending: true })
+            .order('booking_id', { ascending: true }));
+        if (!result.ok) console.error('[staff] failed to load bookings', result.error);
+        return result;
     }
 
-    async function fetchTodayWalkins() {
+    async function fetchOverviewWalkins() {
         if (!window.sb) return { ok: false, rows: [] };
-        const { start, end } = todayRange();
-        const { data, error } = await window.sb
+        const { start } = todayRange();
+        const result = await fetchOverviewRows(() => window.sb
             .from('walk_in_booking')
             .select('*')
             .gte('time_date', start.toISOString())
-            .lt('time_date', end.toISOString())
-            .order('time_date', { ascending: true });
-        if (error) {
-            console.error("[staff] failed to load today's walk-ins", error);
-            return { ok: false, rows: [] };
-        }
-        return { ok: true, rows: data || [] };
+            .order('time_date', { ascending: true }));
+        if (!result.ok) console.error('[staff] failed to load walk-ins', result.error);
+        return result;
     }
 
-    // "3:00 PM – 5:00 PM" for today's rows; "Sep 18, 3:00 PM – 5:00 PM" for
-    // a future row — Overview now spans "today + upcoming" (S1), not just
-    // today, so a row on a different day needs its date spelled out.
+    // Include the date for every row outside today so future reservations
+    // remain distinguishable in the upcoming-bookings view.
     function formatOverviewTimeCell(row) {
         const { start, end } = rowWindow(row);
         const timeLabel = `${formatIsoTime12h(row.time_date)} – ${formatIsoTime12h(end.toISOString())}`;
@@ -1056,7 +1077,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return t >= startMs && t < endMs;
         });
 
-        const bookingsToday = todayRows.filter((r) => r.sourceType === 'booking').length;
+        const bookingsToday = todayRows.filter((r) => r.sourceType === 'booking'
+            && String(r.status || '').toLowerCase() !== 'cancelled').length;
         const walkinsToday = todayRows.filter((r) => r.sourceType === 'walkin').length;
         const inPlayNow = todayRows.filter((r) => staffDerivedStatus(r) === 'inplay').length;
         const unattendedToday = todayRows.filter((r) => r.sourceType === 'booking' && staffDerivedStatus(r) === 'unattended').length;
@@ -1115,9 +1137,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function refreshBookingOverview() {
-        if (!overviewTableBody || !window.sb) return;
+        if (!overviewTableBody || !window.sb || !isOverviewVisible()) return;
+        const generation = ++overviewRefreshGeneration;
 
-        const [bookingsRes, walkinsRes] = await Promise.all([fetchOverviewBookings(), fetchTodayWalkins()]);
+        const [bookingsRes, walkinsRes] = await Promise.all([fetchOverviewBookings(), fetchOverviewWalkins()]);
+        if (generation !== overviewRefreshGeneration || !isOverviewVisible()) return;
         if (!bookingsRes.ok) {
             renderStaffTablePagination(overviewPagination, 0, overviewPage, () => {});
             overviewTableBody.innerHTML = '<tr><td colspan="7" class="staff-table-message">Could not load bookings right now.</td></tr>';
@@ -1133,15 +1157,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         const nameMap = await fetchProfileNamesByIds(merged.filter((r) => r.sourceType === 'booking').map((r) => r.customerId));
+        if (generation !== overviewRefreshGeneration || !isOverviewVisible()) return;
         merged.forEach((r) => {
             if (r.sourceType === 'booking') r.customerName = nameMap.get(String(r.customerId)) || 'Customer';
         });
 
         overviewRows = merged;
         renderOverviewStats(merged);
-        const actionEntries = overviewActionEntries();
-        renderOverviewSportOptions(actionEntries);
-        renderFilteredOverview(actionEntries);
+        const entries = overviewEntries();
+        renderOverviewSportOptions(entries);
+        renderFilteredOverview(entries);
     }
 
     [overviewSearchInput, overviewSportSelect, overviewDateInput].forEach((control) => {
@@ -1165,21 +1190,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // identical button (wired the same way further below).
     wireTimeInButtons(overviewTableBody, () => overviewRows);
 
-    refreshBookingOverview();
+    if (isOverviewVisible()) refreshBookingOverview();
     document.addEventListener('inigosync:profile-ready', refreshBookingOverview);
     // Recompute Manila-day cards and derived attendance states while the
     // dashboard stays open. todayRange() is timezone anchored, so this also
     // rolls the four counters over after Asia/Manila midnight.
-    window.setInterval(refreshBookingOverview, 60000);
+    window.setInterval(() => {
+        if (isOverviewVisible()) refreshBookingOverview();
+    }, 60000);
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') refreshBookingOverview();
+        if (isOverviewVisible()) refreshBookingOverview();
     });
 
     // ------------------------------------------------------------------
     // Walk-In Management — Revision S1, decisions S3/S4. Replaces the old
     // single-page form (duration 1/2/3h + start time + Cash/QR Ph) with a
-    // 5-step wizard: ① Customer -> ② Sport & court -> ③ Time (today only,
-    // consecutive hourly slots) -> ④ Payment -> ⑤ Review & save. On
+    // 6-step wizard: ① Customer -> ② Sport -> ③ Court -> ④ Schedule ->
+    // ⑤ Summary -> ⑥ Payment & confirmation. On
     // success the wizard is swapped for a receipt card (Download PNG /
     // Print / New walk-in).
     // ------------------------------------------------------------------
@@ -1202,17 +1229,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinCustomerSelected = document.querySelector('[data-staff-customer-selected]');
     const walkinMobileStatus = document.querySelector('[data-staff-walkin-mobile-status]');
     const walkinSportCards = document.querySelector('[data-staff-walkin-sport-cards]');
-    const walkinUnitWrap = document.querySelector('[data-staff-walkin-unit-wrap]');
     const walkinUnitSelect = document.querySelector('[data-staff-walkin-unit-select]');
+    const walkinCourtCards = document.querySelector('[data-staff-walkin-court-cards]');
     const walkinOpenWindowsEl = document.querySelector('[data-staff-walkin-open-windows]');
     const walkinHourGrid = document.querySelector('[data-staff-walkin-hour-grid]');
     const walkinLinesEl = document.querySelector('[data-staff-walkin-lines]');
-    const walkinReviewLinesEl = document.querySelector('[data-staff-walkin-review-lines]');
     const walkinAddLineBtn = document.querySelector('[data-staff-walkin-add-line]');
     const walkinCurrentRangeEl = document.querySelector('[data-staff-walkin-current-range]');
     const walkinCurrentCourtEl = document.querySelector('[data-staff-walkin-current-court]');
     const walkinOnlineFeeNote = document.querySelector('[data-staff-walkin-online-fee-note]');
-    const walkinPaymentOptionEls = document.querySelectorAll('[data-staff-walkin-step="4"] [data-staff-payment-option]');
+    const walkinPaymentOptionEls = document.querySelectorAll('[data-staff-walkin-step="6"] [data-staff-payment-option]');
     const walkinCashUnavailableEl = document.querySelector('[data-staff-walkin-cash-unavailable]');
     const walkinQrUnavailableEl = document.querySelector('[data-staff-walkin-qr-unavailable]');
     const walkinAcknowledgmentNote = document.querySelector('[data-staff-walkin-acknowledgment-note]');
@@ -1220,13 +1246,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinSummaryName = document.querySelector('[data-staff-walkin-summary-name]');
     const walkinSummaryMobile = document.querySelector('[data-staff-walkin-summary-mobile]');
     const walkinSummaryPayment = document.querySelector('[data-staff-walkin-summary-payment]');
-    const walkinSummaryTotal = document.querySelector('[data-staff-walkin-summary-total]');
+    const walkinSummaryTotals = document.querySelectorAll('[data-staff-walkin-summary-total]');
     const walkinCashDetails = document.querySelector('[data-staff-walkin-cash-details]');
     const walkinCashTenderedInput = document.querySelector('[data-staff-walkin-cash-tendered]');
     const walkinCashValidation = document.querySelector('[data-staff-walkin-cash-validation]');
     const walkinCashChange = document.querySelector('[data-staff-walkin-cash-change]');
 
-    const WALKIN_STEP_COUNT = 5;
+    const WALKIN_STEP_COUNT = 6;
     let walkinWizardStep = 1;
     let staffCashEnabled = true;
     let staffQrphEnabled = false;
@@ -1260,7 +1286,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let walkinMobileCheckTimer = null;
     let walkinMobileCheckRevision = 0;
     let walkinMobileCheckAbort = null;
-    let walkinStep3Rechecking = false;
+    let walkinScheduleRechecking = false;
+    let editingWalkinItemIndex = null;
     let walkinQrPollTimer = null;
     let activeWalkinQr = null;
     let walkinQrCheckInFlight = false;
@@ -1316,14 +1343,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             || walkinState.mobileAvailability === 'available';
         if (step === 1) return Boolean(walkinState.name) && !walkinState.mobileError && guestMobileReady
             && (walkinState.customerMode !== 'account' || Boolean(walkinState.customerId));
-        if (step === 2) {
-            return Boolean(walkinState.court && walkinState.unit && window.InigoCourtsData);
-        }
-        if (step === 3) return walkinSelectionDate === todayDateInputValue()
+        if (step === 2) return Boolean(walkinState.sport);
+        if (step === 3) return Boolean(walkinState.court && walkinState.unit && window.InigoCourtsData);
+        if (step === 4) return walkinSelectionDate === todayDateInputValue()
             && Boolean(walkinBusinessRules?.authoritative && walkinBookings.ok && walkinWalkins.ok)
             && (walkinState.selectedHours?.length > 0
                 || (!walkinState.court && walkinState.items.length > 0));
-        if (step === 4) return Boolean(walkinState.payment)
+        if (step === 5) return Boolean(walkinState.items.length);
+        if (step === 6) return Boolean(walkinState.items.length && walkinState.payment)
             && (walkinState.payment !== 'cash' || staffCashEnabled)
             && (walkinState.payment !== 'paymongo_qr' || staffQrphEnabled);
         return true;
@@ -1343,14 +1370,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinNextBtn) {
             walkinNextBtn.hidden = walkinWizardStep === WALKIN_STEP_COUNT;
             walkinNextBtn.disabled = !walkinStepIsReady(walkinWizardStep);
+            walkinNextBtn.textContent = ({ 2: 'Select a court', 3: 'Choose a time', 4: 'Review booking', 5: 'Continue to payment' })[walkinWizardStep] || 'Next';
         }
         if (walkinSaveBtn) {
-            walkinSaveBtn.disabled = !walkinState.items.length || !walkinBusinessRules?.authoritative
+            walkinSaveBtn.disabled = !walkinStepIsReady(WALKIN_STEP_COUNT) || !walkinBusinessRules?.authoritative
                 || (walkinState.payment === 'cash' && !staffCashEnabled)
                 || (walkinState.payment === 'paymongo_qr' && !staffQrphEnabled)
                 || (walkinState.payment === 'cash' && !walkinCashTenderIsValid());
         }
-        if (walkinWizardStep === WALKIN_STEP_COUNT) updateWalkinSummary();
+        if (walkinBackBtn) walkinBackBtn.textContent = walkinWizardStep === 2 && editingWalkinItemIndex !== null ? 'Cancel edit' : 'Back';
+        if (walkinWizardStep === 5 || walkinWizardStep === WALKIN_STEP_COUNT) updateWalkinSummary();
     }
 
     function goToWalkinStep(step) {
@@ -1360,18 +1389,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (walkinNextBtn) {
         walkinNextBtn.addEventListener('click', async () => {
-            if (walkinNextBtn.disabled || walkinStep3Rechecking) return;
-            if (walkinWizardStep === 3) {
+            if (walkinNextBtn.disabled || walkinScheduleRechecking) return;
+            if (walkinWizardStep === 4) {
                 // Recheck live occupancy immediately before turning the
                 // selected slots into a booking line.
-                walkinStep3Rechecking = true;
+                walkinScheduleRechecking = true;
                 walkinNextBtn.disabled = true;
                 await refreshWalkinTimeSlots();
-                walkinStep3Rechecking = false;
-                if (walkinWizardStep !== 3) return;
+                walkinScheduleRechecking = false;
+                if (walkinWizardStep !== 4) return;
                 const line = buildWalkinLine();
                 if (line) {
-                    walkinState.items.push(line);
+                    if (editingWalkinItemIndex !== null && walkinState.items[editingWalkinItemIndex]) {
+                        walkinState.items[editingWalkinItemIndex] = line;
+                        editingWalkinItemIndex = null;
+                    } else {
+                        walkinState.items.push(line);
+                    }
                     clearWalkinCurrentLine();
                     renderWalkinLines();
                 } else if (walkinState.court) {
@@ -1385,7 +1419,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             goToWalkinStep(walkinWizardStep + 1);
         });
     }
-    if (walkinBackBtn) walkinBackBtn.addEventListener('click', () => goToWalkinStep(walkinWizardStep - 1));
+    if (walkinBackBtn) walkinBackBtn.addEventListener('click', () => {
+        if (walkinWizardStep === 2 && editingWalkinItemIndex !== null) {
+            editingWalkinItemIndex = null;
+            clearWalkinCurrentLine();
+            goToWalkinStep(5);
+            return;
+        }
+        goToWalkinStep(walkinWizardStep - 1);
+    });
 
     // ---- Step 1 — Customer ----
     if (walkinNameInput) {
@@ -1622,7 +1664,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // ---- Step 2 — Sport & court/unit ----
+    // ---- Step 2 — Sport ----
     function walkinSportKey(sport) {
         return String(sport?.slug || sport?.name || '').trim().toLowerCase();
     }
@@ -1703,21 +1745,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 walkinState.unit = null;
                 walkinState.unitId = null;
                 if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
-                if (walkinUnitWrap) walkinUnitWrap.hidden = true;
+                if (walkinCourtCards) walkinCourtCards.innerHTML = '<p class="staff-form-hint">Choose a sport first.</p>';
                 if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
                 renderWalkinSportCards();
                 renderWalkinUnitOptions();
                 resetWalkinTimeSelectionAndRefresh();
                 renderWalkinWizard();
-                walkinUnitSelect?.focus();
+                walkinCourtCards?.focus();
             });
         });
     }
 
     function renderWalkinUnitOptions() {
-        if (!walkinUnitSelect || !walkinUnitWrap) return;
+        if (!walkinUnitSelect) return;
         const choices = walkinUnitsForSelectedSport();
-        walkinUnitWrap.hidden = !walkinState.sport;
         walkinUnitSelect.disabled = !walkinState.sport || !choices.length;
         walkinUnitSelect.setAttribute('aria-label', walkinState.sport ? `Choose a court, lane, or table for ${walkinState.sport.name}` : 'Choose a court, lane, or table');
         walkinUnitSelect.innerHTML = `<option value="" selected disabled hidden>${choices.length ? 'Choose an available unit' : 'No verified units available'}</option>`
@@ -1728,6 +1769,40 @@ document.addEventListener('DOMContentLoaded', async () => {
                 && String(choice.unit.label || choice.court.name) === String(walkinState.unit));
             walkinUnitSelect.value = selectedIndex >= 0 ? String(selectedIndex) : '';
         } else walkinUnitSelect.value = '';
+        renderWalkinCourtCards(choices);
+    }
+
+    function renderWalkinCourtCards(choices = walkinUnitsForSelectedSport()) {
+        if (!walkinCourtCards) return;
+        if (!walkinState.sport) {
+            walkinCourtCards.innerHTML = '<p class="staff-form-hint">Choose a sport first.</p>';
+            return;
+        }
+        if (!choices.length) {
+            walkinCourtCards.innerHTML = '<p class="staff-form-hint">No verified court units are available for this sport.</p>';
+            return;
+        }
+        const selectedIndex = choices.findIndex((choice) => String(choice.court.id) === String(walkinState.court?.id)
+            && String(choice.unit.id || '') === String(walkinState.unitId || '')
+            && String(choice.unit.label || choice.court.name) === String(walkinState.unit));
+        walkinCourtCards.innerHTML = choices.map((choice, index) => {
+            const unit = choice.unit;
+            const court = choice.court;
+            const selected = index === selectedIndex;
+            const rate = typeof unit.rateDay === 'number' ? formatStaffPeso(unit.rateDay)
+                : typeof unit.rate === 'number' ? formatStaffPeso(unit.rate)
+                    : typeof court.rate === 'number' ? formatStaffPeso(court.rate) : '';
+            const rateUnit = unit.rateUnit || court.rateUnit || '/hr';
+            const rateLabel = rate ? `${rate}${rateUnit}` : 'Rate to be confirmed';
+            return `<button type="button" class="staff-walkin-court-card${selected ? ' is-selected' : ''}" data-staff-walkin-court-card="${index}" aria-pressed="${selected}"><strong>${window.escapeHtml(unit.label || court.name)}</strong><span>${window.escapeHtml(court.name)}</span><small>${window.escapeHtml(rateLabel)}</small></button>`;
+        }).join('');
+        walkinCourtCards.querySelectorAll('[data-staff-walkin-court-card]').forEach((card) => card.addEventListener('click', () => {
+            const choice = choices[Number(card.dataset.staffWalkinCourtCard)];
+            if (!choice) return;
+            selectWalkinUnit(choice.court, choice.unit);
+            resetWalkinTimeSelectionAndRefresh();
+            renderWalkinWizard();
+        }));
     }
 
     function selectWalkinUnit(court, unit) {
@@ -1779,7 +1854,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.sports = walkinSportsForVerifiedCourts(sports, walkinState.courts);
         walkinState.sport = null;
         walkinState.court = null;
-        if (walkinUnitWrap) walkinUnitWrap.hidden = true;
         renderWalkinSportCards();
         renderWalkinUnitOptions();
     }
@@ -1790,7 +1864,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateWalkinSummary();
     });
 
-    // ---- Step 3 — Time (today only) ----
+    // ---- Step 4 — Schedule (walk-ins are today only) ----
     // Reads today's live occupancy for the hourly slot grid.
     async function fetchWalkinOccupancyForCourt(courtName) {
         if (!window.sb || !courtName) return { ok: false, rows: [] };
@@ -2085,7 +2159,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.startHour = null;
         walkinState.endHour = null;
         walkinState.selectedHours = [];
-        if (walkinUnitWrap) walkinUnitWrap.hidden = true;
         if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = '';
     }
@@ -2094,38 +2167,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!walkinLinesEl) return;
         walkinLinesEl.innerHTML = walkinState.items.length ? `<strong>Added booking lines</strong>${walkinState.items.map((line, index) => {
             const hours = line.endHour - line.startHour + 1;
-            return `<div class="staff-walkin-line"><span>${index + 1}. ${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}<small>${window.escapeHtml(formatIsoTime12h(line.startsAt))}–${window.escapeHtml(formatIsoTime12h(line.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</small></span><strong>${line.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(line.subtotal))}</strong><button type="button" class="staff-icon-btn" aria-label="Remove line ${index + 1}" data-staff-walkin-remove-line="${index}">×</button></div>`;
+            return `<div class="staff-walkin-line"><span>${index + 1}. ${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}<small>${window.escapeHtml(formatIsoTime12h(line.startsAt))}–${window.escapeHtml(formatIsoTime12h(line.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</small></span><strong>${line.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(line.subtotal))}</strong><span class="staff-walkin-item-actions"><button type="button" class="staff-btn-ghost" data-staff-walkin-edit-line="${index}">Edit</button><button type="button" class="staff-icon-btn" aria-label="Remove line ${index + 1}" data-staff-walkin-remove-line="${index}">×</button></span></div>`;
         }).join('')}` : '';
+        walkinLinesEl.querySelectorAll('[data-staff-walkin-edit-line]').forEach((button) => button.addEventListener('click', () => {
+            const index = Number(button.dataset.staffWalkinEditLine);
+            const line = walkinState.items[index];
+            if (line && manilaDate(new Date(line.startsAt)) !== todayDateInputValue()) {
+                window.InigoToast?.show('Walk-in lines can only be edited for today. Remove this line and add a current one.', true);
+                return;
+            }
+            const court = walkinState.courts.find((candidate) => String(candidate.id) === String(line?.listingId));
+            if (!line || !court || !window.InigoCourtsData) {
+                window.InigoToast?.show('This booking line can no longer be edited. Remove it and add a new line.', true);
+                return;
+            }
+            const courtKey = walkinSportKey({ slug: court.sportSlug || court.sportName });
+            const sport = walkinState.sports.find((candidate) => candidate.walkinCourtSlug === court.slug)
+                || walkinState.sports.find((candidate) => walkinSportKey(candidate) === courtKey)
+                || walkinState.sports.find((candidate) => walkinSportKey(candidate) === walkinSportKey({ slug: court.slug }));
+            const unit = window.InigoCourtsData.resolveCourtUnits(court).units.find((candidate) =>
+                String(candidate.id || '') === String(line.unitId || '')
+                && String(candidate.label || court.name) === String(line.unit || court.name));
+            if (!sport || !unit) {
+                window.InigoToast?.show('This court unit is no longer available. Remove the line and add a new one.', true);
+                return;
+            }
+            editingWalkinItemIndex = index;
+            walkinState.sport = sport;
+            selectWalkinUnit(court, unit);
+            walkinState.startHour = Number(line.startHour);
+            walkinState.endHour = Number(line.endHour);
+            walkinState.selectedHours = Array.from({ length: walkinState.endHour - walkinState.startHour + 1 }, (_, offset) => walkinState.startHour + offset);
+            walkinSelectionDate = todayDateInputValue();
+            if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = `${court.name}${walkinState.unit ? ` · ${walkinState.unit}` : ''}`;
+            renderWalkinSportCards();
+            renderWalkinUnitOptions();
+            renderWalkinTimeSlots();
+            refreshWalkinTimeSlots();
+            goToWalkinStep(2);
+        }));
         walkinLinesEl.querySelectorAll('[data-staff-walkin-remove-line]').forEach((button) => button.addEventListener('click', () => {
             walkinState.items.splice(Number(button.dataset.staffWalkinRemoveLine), 1);
+            if (editingWalkinItemIndex !== null) {
+                if (editingWalkinItemIndex === Number(button.dataset.staffWalkinRemoveLine)) editingWalkinItemIndex = null;
+                else if (editingWalkinItemIndex > Number(button.dataset.staffWalkinRemoveLine)) editingWalkinItemIndex--;
+            }
             renderWalkinLines();
             updateWalkinSummary();
             renderWalkinWizard();
         }));
     }
 
-    if (walkinAddLineBtn) walkinAddLineBtn.addEventListener('click', async () => {
-        if (walkinStep3Rechecking) return;
-        walkinStep3Rechecking = true;
-        walkinAddLineBtn.disabled = true;
-        await refreshWalkinTimeSlots();
-        walkinStep3Rechecking = false;
-        walkinAddLineBtn.disabled = false;
-        if (walkinWizardStep !== 3) return;
-        const line = buildWalkinLine();
-        if (!line) {
-            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = walkinBookings.ok && walkinWalkins.ok
-                ? 'Availability changed. Select an open range again.'
-                : 'Live availability could not be verified. Refresh before creating this order.';
-            return;
-        }
-        walkinState.items.push(line);
+    if (walkinAddLineBtn) walkinAddLineBtn.addEventListener('click', () => {
+        editingWalkinItemIndex = null;
         clearWalkinCurrentLine();
-        renderWalkinLines();
         renderWalkinSportCards();
         renderWalkinUnitOptions();
         refreshWalkinTimeSlots();
-        updateWalkinSummary();
         goToWalkinStep(2);
     });
 
@@ -2136,17 +2234,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         refreshWalkinTimeSlots();
     }
 
-    // ---- Step 4 — Payment ----
+    // ---- Step 6 — Payment and confirmation ----
+    function selectWalkinPayment(radio) {
+        if (!radio || !['cash', 'paymongo_qr'].includes(radio.dataset.staffPayment)
+            || walkinState.payment === radio.dataset.staffPayment) return;
+        walkinState.payment = radio.dataset.staffPayment;
+        walkinPaymentOptionEls.forEach((option) => {
+            const optionRadio = option.querySelector('input[type="radio"]');
+            const selected = optionRadio === radio;
+            option.classList.toggle('is-selected', selected);
+            if (optionRadio) optionRadio.checked = selected;
+        });
+        renderWalkinWizard();
+        updateWalkinSummary();
+    }
+
     walkinPaymentOptionEls.forEach((option) => {
+        const radio = option.querySelector('input[type="radio"]');
+        if (radio) radio.addEventListener('change', () => {
+            if (radio.checked) selectWalkinPayment(radio);
+        });
         option.addEventListener('click', () => {
-            const radio = option.querySelector('input[type="radio"]');
             if (!radio) return;
-            walkinPaymentOptionEls.forEach((o) => o.classList.remove('is-selected'));
-            option.classList.add('is-selected');
             radio.checked = true;
-            walkinState.payment = radio.dataset.staffPayment;
-            renderWalkinWizard();
-            updateWalkinSummary();
+            selectWalkinPayment(radio);
         });
     });
 
@@ -2177,7 +2288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // ---- Step 5 — Review & save ----
+    // ---- Step 5 — Summary and line editing ----
     function walkinHoursSelected() {
         if (walkinState.startHour === null) return 0;
         const effectiveEnd = walkinState.endHour !== null ? walkinState.endHour : walkinState.startHour;
@@ -2212,7 +2323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'paymongo_qr'
             ? 'QR Ph'
             : 'Cash';
-        if (walkinSummaryTotal) walkinSummaryTotal.textContent = subtotal === null ? 'Confirm at front desk' : formatStaffPeso(subtotal);
+        walkinSummaryTotals.forEach((el) => { el.textContent = subtotal === null ? 'Confirm at front desk' : formatStaffPeso(subtotal); });
         if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = walkinState.payment !== 'paymongo_qr';
         if (walkinCashDetails) walkinCashDetails.hidden = walkinState.payment !== 'cash';
         if (walkinCashTenderedInput) {
@@ -2237,17 +2348,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinSaveBtn) walkinSaveBtn.textContent = walkinState.payment === 'paymongo_qr'
             ? 'Show QR Ph'
             : 'Complete cash payment';
-        if (walkinReviewLinesEl) {
-            walkinReviewLinesEl.innerHTML = walkinState.items.map((item, index) => {
-                const hours = item.endHour - item.startHour + 1;
-                return `<div class="staff-walkin-review-line">
-                <div><strong>${index + 1}. ${window.escapeHtml(item.sport)} · ${window.escapeHtml(item.court)}${item.unit ? ` · ${window.escapeHtml(item.unit)}` : ''}</strong>
-                <span>${window.escapeHtml(formatWalkinDateLabel(item.startsAt))} · ${window.escapeHtml(formatIsoTime12h(item.startsAt))}–${window.escapeHtml(formatIsoTime12h(item.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</span></div>
-                <strong>${item.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(item.subtotal))}</strong></div>`;
-            }).join('');
-        }
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = walkinTimeRangeLabel() || '';
-        if (walkinLinesEl && walkinState.items.length) renderWalkinLines();
+        renderWalkinLines();
     }
 
     // ---- Receipt (S4) — same store-receipt/ticket look as the customer
@@ -2365,6 +2467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sports = walkinState.sports || [];
         const courts = walkinState.courts;
         const nightRateStartsAt = walkinState.nightRateStartsAt || null;
+        editingWalkinItemIndex = null;
         walkinSelectionDate = todayDateInputValue();
         walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, mobileAvailability: '', sports, sport: null, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', nightRateStartsAt, startHour: null, endHour: null, selectedHours: [], items: [], payment: staffCashEnabled ? 'cash' : (staffQrphEnabled ? 'paymongo_qr' : null) };
         if (walkinNameInput) walkinNameInput.value = '';
@@ -2384,7 +2487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.unit = null;
         walkinState.unitId = null;
         if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
-        if (walkinUnitWrap) walkinUnitWrap.hidden = true;
         renderWalkinSportCards();
         renderWalkinUnitOptions();
         walkinBookings = { ok: true, rows: [] };

@@ -1036,7 +1036,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
    Generic step wizard shell (Revision S1, decisions S3/S9) — port of the
    owner dashboard's .admin-wizard-* (itself a port of the customer
    dashboard's .dash-wizard-*), under staff-* names. Used by both the
-   walk-in wizard (5 steps) and the Change Password wizard (2 steps) —
+   walk-in wizard (6 steps) and the Change Password wizard (2 steps) —
    one shared shell, matching this product's existing convention.
    ========================================================================== */
 .staff-wizard-steps {
@@ -1167,7 +1167,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     display: none;
 }
 
-/* Walk-in wizard's Step 5 summary — same rows/divider/total classes the
+/* Walk-in wizard's summary and payment steps — same rows/divider/total classes the
    .staff-summary sidebar card uses, just without that class's sticky
    positioning (there's nothing to scroll past inside a single step). */
 .staff-wizard-summary {
@@ -1859,6 +1859,13 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-sport-card-media img { width: 100%; height: 100%; object-fit: contain; }
 .staff-walkin-sport-card-media > span { font: 700 28px var(--font-numeric); color: var(--color-primary); }
 .staff-walkin-sport-card strong { display: flex; align-items: center; height: 42px; overflow: hidden; padding: 8px 12px; font-size: var(--fs-sm); white-space: nowrap; text-overflow: ellipsis; }
+.staff-walkin-court-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 280px)); justify-content: center; gap: 12px; }
+.staff-walkin-court-card { display: flex; min-width: 0; min-height: 132px; flex-direction: column; align-items: flex-start; gap: 8px; padding: 16px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg-elevated); color: var(--color-ink); text-align: left; cursor: pointer; }
+.staff-walkin-court-card:hover, .staff-walkin-court-card:focus-visible, .staff-walkin-court-card.is-selected { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.staff-walkin-court-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.staff-walkin-court-card strong { font-size: var(--fs-md); }
+.staff-walkin-court-card span { color: var(--color-ink-dim); font-size: var(--fs-sm); }
+.staff-walkin-court-card small { margin-top: auto; color: var(--color-ink-faint); font-family: var(--font-numeric); font-size: var(--fs-xs); }
 
 @media (max-width: 1199px) {
     .staff-walkin-sport-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -1871,6 +1878,9 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 }
 @media (max-width: 380px) {
     .staff-walkin-sport-cards { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+    .staff-walkin-court-cards { grid-template-columns: minmax(0, 1fr); }
 }
 
 .staff-hour-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
@@ -1890,6 +1900,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-walkin-line small, .staff-walkin-review-line span { color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .staff-walkin-line > strong, .staff-walkin-review-line > strong { white-space: nowrap; font-family: var(--font-numeric); }
 .staff-walkin-line-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.staff-walkin-line > .staff-walkin-item-actions { display: flex; flex: 0 0 auto; flex-direction: row; align-items: center; gap: 8px; }
 .staff-walkin-review-line { align-items: flex-start; }
 .staff-receipt-layout { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .staff-receipt-card { width: 72mm; max-width: 100%; border-radius: 3px; padding: 4mm; background: #fff; color: #171411; border-color: #d8d1c6; }

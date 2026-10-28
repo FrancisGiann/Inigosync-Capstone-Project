@@ -189,10 +189,8 @@
         <main class="staff-content">
 
             <!-- ============================================================
-                 BOOKING OVERVIEW PANEL — Revision S1, decision S1. Rewritten
-                 renderer: today's + upcoming bookings merged with today's
-                 walk-ins for the stats, with only rows ready for Time-In or
-                 Time-Out shown in the table — see
+                 BOOKING OVERVIEW PANEL — upcoming bookings and current
+                 in-play rows, with optional filters and row-specific actions — see
                  includes/staff_dashboard.js's refreshBookingOverview().
                  Confirm/Decline are gone (S2: an online booking is "Booked"
                  the moment it exists — no pending approval step for staff).
@@ -234,11 +232,11 @@
                     <div class="staff-card-head">
                         <div>
                             <h3>Bookings</h3>
-                            <p class="staff-card-description">Bookings and walk-ins that are ready for Time-In or Time-Out.</p>
+                            <p class="staff-card-description">Upcoming bookings and walk-ins, including those currently in play.</p>
                         </div>
                     </div>
 
-                    <div class="staff-overview-filters" aria-label="Filter actionable bookings">
+                    <div class="staff-overview-filters" aria-label="Filter bookings">
                         <label class="staff-search-wrap">
                             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                             <input type="search" class="staff-search" placeholder="Search customer or booking ID…" aria-label="Search customer or booking ID" data-staff-overview-search>
@@ -297,19 +295,23 @@
                         </div>
                         <div class="staff-wizard-step" data-staff-walkin-step-indicator="2" role="listitem">
                             <span class="staff-wizard-step-num">2</span>
-                            <span class="staff-wizard-step-label">Sport &amp; court</span>
+                            <span class="staff-wizard-step-label">Sport</span>
                         </div>
                         <div class="staff-wizard-step" data-staff-walkin-step-indicator="3" role="listitem">
                             <span class="staff-wizard-step-num">3</span>
-                            <span class="staff-wizard-step-label">Time</span>
+                            <span class="staff-wizard-step-label">Court</span>
                         </div>
                         <div class="staff-wizard-step" data-staff-walkin-step-indicator="4" role="listitem">
                             <span class="staff-wizard-step-num">4</span>
-                            <span class="staff-wizard-step-label">Payment</span>
+                            <span class="staff-wizard-step-label">Schedule</span>
                         </div>
                         <div class="staff-wizard-step" data-staff-walkin-step-indicator="5" role="listitem">
                             <span class="staff-wizard-step-num">5</span>
-                            <span class="staff-wizard-step-label">Review</span>
+                            <span class="staff-wizard-step-label">Summary</span>
+                        </div>
+                        <div class="staff-wizard-step" data-staff-walkin-step-indicator="6" role="listitem">
+                            <span class="staff-wizard-step-num">6</span>
+                            <span class="staff-wizard-step-label">Payment</span>
                         </div>
                     </div>
 
@@ -343,71 +345,83 @@
                             </div>
                         </div>
 
-                        <!-- STEP 2 — Sport & court/unit -->
+                        <!-- STEP 2 — Sport -->
                         <div class="staff-wizard-panel" data-staff-walkin-step="2">
-                            <h3 class="staff-wizard-panel-title">Choose a sport and court</h3>
+                            <h3 class="staff-wizard-panel-title">Choose a sport</h3>
+                            <p class="staff-form-hint">Choose a sport to see its available courts.</p>
                             <div class="staff-form-group">
-                                <span class="staff-form-label">Choose a sport</span>
+                                <span class="staff-form-label">Available sports</span>
                                 <div class="staff-walkin-sport-cards" data-staff-walkin-sport-cards role="group" aria-label="Available sports">
                                     <span class="staff-form-hint">Loading available sports…</span>
                                 </div>
                             </div>
-                            <label class="staff-form-group" data-staff-walkin-unit-wrap hidden>
-                                <span class="staff-form-label" data-staff-walkin-unit-label>Choose a court, lane, or table</span>
-                                <select class="staff-select" data-staff-walkin-unit-select aria-label="Choose a court, lane, or table" disabled>
-                                    <option value="" selected disabled hidden>Choose a sport first</option>
-                                </select>
-                            </label>
                         </div>
 
-                        <!-- STEP 3 — Select consecutive hourly slots -->
+                        <!-- STEP 3 — Court/unit -->
                         <div class="staff-wizard-panel" data-staff-walkin-step="3">
-                            <h3 class="staff-wizard-panel-title">Choose an available time</h3>
+                            <h3 class="staff-wizard-panel-title">Select a court</h3>
+                            <p class="staff-form-hint">Choose the court unit you want to book.</p>
+                            <div class="staff-walkin-court-cards" data-staff-walkin-court-cards role="group" aria-label="Available court units" tabindex="-1">
+                                <p class="staff-form-hint">Choose a sport first.</p>
+                            </div>
+                            <select class="staff-select" data-staff-walkin-unit-select aria-label="Selected court unit" hidden disabled>
+                                <option value="" selected disabled hidden>Choose a sport first</option>
+                            </select>
+                        </div>
+
+                        <!-- STEP 4 — Select consecutive hourly slots -->
+                        <div class="staff-wizard-panel" data-staff-walkin-step="4">
+                            <h3 class="staff-wizard-panel-title">Pick a schedule</h3>
                             <p class="staff-form-hint" data-staff-walkin-current-court>Select a court first.</p>
                             <p class="staff-form-hint">Select one or more consecutive hourly slots. Click a selected end slot to shorten the booking. Each line can use a different court and time.</p>
                             <div class="staff-form-group">
-                                <span class="staff-form-label">Available hourly slots · today</span>
+                                <span class="staff-form-label">Available times · today</span>
                                 <div class="staff-hour-grid" data-staff-walkin-hour-grid role="group" aria-label="Available hourly slots"></div>
                             </div>
                             <p class="staff-form-hint" data-staff-walkin-open-windows>Select a sport and court first.</p>
-                            <div class="staff-walkin-lines" data-staff-walkin-lines aria-live="polite"></div>
-                            <div class="staff-walkin-line-actions">
-                                <button type="button" class="staff-btn-ghost" data-staff-walkin-add-line>Add another booking line</button>
-                                <span class="staff-form-hint" data-staff-walkin-current-range></span>
-                            </div>
+                            <p class="staff-form-hint" data-staff-walkin-current-range></p>
                         </div>
 
-                        <!-- STEP 4 — Payment -->
-                        <div class="staff-wizard-panel" data-staff-walkin-step="4">
-                            <h3 class="staff-wizard-panel-title">Payment method</h3>
-                            <div class="staff-payment-options">
-                                <label class="staff-payment-option is-selected" data-staff-payment-option data-staff-walkin-cash-option>
-                                    <span class="staff-payment-option-head">
-                                        <input type="radio" name="staff-walkin-payment" checked data-staff-payment="cash">
-                                        Cash
-                                    </span>
-                                    <p>Collected on-site by staff.</p>
-                                </label>
-                                <label class="staff-payment-option" data-staff-payment-option data-staff-walkin-qr-option>
-                                    <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo_qr"> QR Ph</span>
-                                    <p>Show a checkout QR for the customer; payment completes with QR Ph.</p>
-                                </label>
-                            </div>
-                            <p class="staff-form-hint" data-staff-walkin-cash-unavailable hidden>Cash collection is unavailable. Ask the owner to enable Cash in Payment Configuration.</p>
-                            <p class="staff-form-hint" data-staff-walkin-qr-unavailable hidden>QR Ph checkout is unavailable. Ask the owner to enable QR Ph in Payment Configuration.</p>
-                        </div>
-
-                        <!-- STEP 5 — Review & save -->
+                        <!-- STEP 5 — Booking summary -->
                         <div class="staff-wizard-panel" data-staff-walkin-step="5">
-                            <h3 class="staff-wizard-panel-title">Review order</h3>
+                            <h3 class="staff-wizard-panel-title">Booking summary</h3>
+                            <p class="staff-form-hint">Review the customer and booking lines before continuing to payment.</p>
                             <div class="staff-wizard-summary">
                                 <div class="staff-summary-row"><span>Customer</span><strong data-staff-walkin-summary-name>—</strong></div>
                                 <div class="staff-summary-row"><span>Mobile</span><strong data-staff-walkin-summary-mobile>—</strong></div>
-                                <div class="staff-walkin-review-lines" data-staff-walkin-review-lines></div>
+                                <div class="staff-walkin-lines" data-staff-walkin-lines aria-live="polite"></div>
+                                <div class="staff-summary-total">
+                                    <span>Court subtotal</span>
+                                    <span data-staff-walkin-summary-total>—</span>
+                                </div>
+                                <button type="button" class="staff-btn-ghost" data-staff-walkin-add-line>Add another booking line</button>
+                            </div>
+                        </div>
+
+                        <!-- STEP 6 — Payment, confirmation, and receipt -->
+                        <div class="staff-wizard-panel" data-staff-walkin-step="6">
+                            <h3 class="staff-wizard-panel-title">Payment &amp; confirmation</h3>
+                            <p class="staff-form-hint">Choose how the customer will pay, then complete the payment to issue an acknowledgment.</p>
+                            <div class="staff-wizard-summary">
                                 <div class="staff-summary-row"><span>Payment method</span><strong data-staff-walkin-summary-payment>Cash</strong></div>
                                 <div class="staff-summary-total">
                                     <span>Court subtotal</span>
                                     <span data-staff-walkin-summary-total>—</span>
+                                </div>
+                                <div class="staff-form-group">
+                                    <span class="staff-form-label">Payment method</span>
+                                    <div class="staff-payment-options">
+                                        <label class="staff-payment-option is-selected" data-staff-payment-option data-staff-walkin-cash-option>
+                                            <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" checked data-staff-payment="cash">Cash</span>
+                                            <p>Collected on-site by staff.</p>
+                                        </label>
+                                        <label class="staff-payment-option" data-staff-payment-option data-staff-walkin-qr-option>
+                                            <span class="staff-payment-option-head"><input type="radio" name="staff-walkin-payment" data-staff-payment="paymongo_qr">QR Ph</span>
+                                            <p>Show a checkout QR for the customer; payment completes with QR Ph.</p>
+                                        </label>
+                                    </div>
+                                    <p class="staff-form-hint" data-staff-walkin-cash-unavailable hidden>Cash collection is unavailable. Ask the owner to enable Cash in Payment Configuration.</p>
+                                    <p class="staff-form-hint" data-staff-walkin-qr-unavailable hidden>QR Ph checkout is unavailable. Ask the owner to enable QR Ph in Payment Configuration.</p>
                                 </div>
                                 <div class="staff-form-group" data-staff-walkin-cash-details>
                                     <label class="staff-form-label" for="staffWalkinCashTendered">Amount tendered</label>
