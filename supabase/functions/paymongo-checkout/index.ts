@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
   const base = new URL(appBaseUrl);
   if (base.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))
     return json({ message: "Online checkout return URL is not secure." }, 503, origin);
-  let body: { booking_id?: unknown; items?: unknown; payment_option?: unknown; action?: unknown; attempt_id?: unknown };
+  let body: { booking_id?: unknown; items?: unknown; payment_option?: unknown; action?: unknown; attempt_id?: unknown; terms_acceptance?: unknown };
   try { body = await req.json(); } catch { return json({ message: "Invalid request." }, 400, origin); }
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: authData, error: authError } = await admin.auth.getUser(token);
@@ -69,7 +69,30 @@ Deno.serve(async (req: Request) => {
       p_attempt_id: attemptId, p_customer_id: authData.user.id,
     });
     const current = Array.isArray(fresh) ? fresh[0] : attempt;
-    return json({ attempt_id: current.id, status: current.status, item_count: current.item_count || 1 }, 200, origin);
+    let bookingReceipts: Array<{ booking_id: number; payment_id: number }> = [];
+    if (current.status === "paid") {
+      const { data: paidBookingRows, error: bookingIdsError } = await admin.rpc("get_paid_checkout_booking_receipts", {
+        p_attempt_id: attemptId, p_customer_id: authData.user.id,
+      });
+      if (bookingIdsError) console.error("Paid checkout receipt lookup failed", bookingIdsError.message);
+      else if (Array.isArray(paidBookingRows)) bookingReceipts = paidBookingRows
+        .map((row: { booking_id?: unknown; payment_id?: unknown }) => ({
+          booking_id: Number(row?.booking_id), payment_id: Number(row?.payment_id),
+        }))
+        .filter((receipt: { booking_id: number; payment_id: number }) =>
+          Number.isSafeInteger(receipt.booking_id) && receipt.booking_id > 0
+          && Number.isSafeInteger(receipt.payment_id) && receipt.payment_id > 0);
+    }
+    return json({ attempt_id: current.id, status: current.status, item_count: current.item_count || 1, booking_receipts: bookingReceipts }, 200, origin);
+  }
+
+  // New multi-item customer checkouts must carry the explicit, versioned
+  // acknowledgment accepted by Step 5. Legacy booking retries and status /
+  // cancellation operations do not use this cart-creation path.
+  if (Array.isArray(body.items)) {
+    const acceptance = body.terms_acceptance as { accepted?: unknown; version?: unknown } | null;
+    if (acceptance?.accepted !== true || acceptance.version !== "customer-booking-v1")
+      return json({ message: "Review and accept the booking and payment terms before proceeding." }, 400, origin);
   }
 
   if (!await hasPaymongoPaidWebhook({ secretKey,
@@ -146,7 +169,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("PayMongo checkout creation uncertain", error instanceof Error ? error.message : "network error");
-    return json({ message: "PayMongo could not be reached. The court is held temporarily; contact staff before trying again." }, 503, origin);
+    return json({ message: "Secure online payment could not be reached. Your court is held temporarily; contact staff before trying again." }, 503, origin);
   }
   const payload = await response.json().catch(() => null);
   const session = payload?.data;
@@ -159,7 +182,7 @@ Deno.serve(async (req: Request) => {
     if (response.status >= 400 && response.status < 500 && !sessionId) {
       await admin.rpc("abort_failed_paymongo_checkout", { p_attempt_id: id });
     }
-    return json({ message: "PayMongo could not create checkout. The court is held temporarily; contact staff if this continues." }, 502, origin);
+    return json({ message: "Secure online payment could not start. Your court is held temporarily; contact staff if this continues." }, 502, origin);
   }
   const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_checkout", {
     p_attempt_id: id, p_session_id: sessionId, p_checkout_url: checkoutUrl,

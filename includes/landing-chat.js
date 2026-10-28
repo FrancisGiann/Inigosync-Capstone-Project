@@ -55,11 +55,11 @@
             links: []
         }),
         records: () => ({
-            text: 'Your booking history, statuses, payment acknowledgments, and linked walk-in visits are available in My Bookings and Receipts after you sign in to your customer account.',
+            text: 'Your online bookings and linked walk-in visits are in My Bookings & Visits. Payment acknowledgments are in Receipts after you sign in to your customer account.',
             links: []
         }),
         policy: () => ({
-            text: 'Bookings cannot be cancelled through self-service, and completed payments are non-refundable. The published Terms & Conditions state a 30-minute grace period and no-show cancellation; sign in and check the notice at the top of My Bookings for the current venue grace period. No-show bookings are not refunded or rescheduled.',
+            text: 'Bookings cannot be cancelled through self-service, and completed payments are non-refundable. The published Terms & Conditions state a 30-minute grace period and no-show cancellation; sign in and check the notice at the top of My Bookings & Visits for the current venue grace period. No-show bookings are not refunded or rescheduled.',
             links: [LINKS.terms]
         }),
         location: () => ({

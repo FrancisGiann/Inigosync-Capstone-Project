@@ -63,7 +63,8 @@ async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor 
     });
     const response = await handler(new Request('https://db.example/functions/v1/paymongo-checkout', {
         method: 'POST', headers: { authorization: 'Bearer customer-token', origin: 'https://sandbox.inigosync.example' },
-        body: JSON.stringify({ payment_option: 'full', items: [{}] }),
+        body: JSON.stringify({ terms_acceptance: { accepted: true, version: 'customer-booking-v1' },
+            payment_option: 'full', items: [{}] }),
     }));
     assert.equal(response.status, 200);
     return requestAttributes;

@@ -39,6 +39,7 @@ test('summary and edit actions control visibility of the Step 1 return button', 
         paintBookPreview() {},
         renderSportChoices() {},
         resetTimeSelectionAndRender() {},
+        resetBookingDatesForFreshDraft() {},
     };
     context.goToBookStep = () => context.renderWizard();
 

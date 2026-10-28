@@ -10,6 +10,7 @@ const dashboard = (await readFile(new URL('../includes/Dashboard.js', import.met
 const ownerDashboard = await readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8');
 const upcomingSource = await readFile(new URL('../includes/dashboardUpcoming.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20261004085347_customer_feedback.sql', import.meta.url), 'utf8');
+const feedbackUpdateMigration = await readFile(new URL('../supabase/migrations/20261028084241_customer_feedback_one_per_customer.sql', import.meta.url), 'utf8');
 
 const helperContext = { window: {} };
 runInNewContext(upcomingSource, helperContext);
@@ -48,9 +49,38 @@ test('feedback schema remains private while owner reviews use the public booking
     assert.match(migration, /feedback_customer_select_own[\s\S]*?using\s*\(profile_id\s*=\s*\(select auth\.uid\(\)\)\)/i);
     assert.match(migration, /feedback_staff_select_all[\s\S]*?public\.inigosync_is_staff_or_admin\(\)/i);
     assert.match(migration, /revoke all on public\.feedback from public, anon/i);
+    assert.match(feedbackUpdateMigration, /create unique index[\s\S]*?on public\.feedback\s*\(profile_id\)/i);
+    assert.match(feedbackUpdateMigration, /rating is not null and rating between 1 and 5\) not valid/i);
+    assert.match(feedbackUpdateMigration, /alter column message drop not null/i);
+    assert.match(feedbackUpdateMigration, /message is null or length\(trim\(message\)\) > 0/i);
+    assert.match(feedbackUpdateMigration, /for update[\s\S]*?using\s*\([\s\S]*?profile_id = \(select auth\.uid\(\)\)[\s\S]*?with check\s*\([\s\S]*?profile_id = \(select auth\.uid\(\)\)/i);
     assert.doesNotMatch(ownerDashboard, /\.from\('feedback'\)/);
-    assert.match(dashboard, /\.from\('feedback'\)\.insert\([\s\S]*?profile_id:\s*window\.inigosyncProfile\.id/);
+    assert.match(dashboard, /\.from\('feedback'\)[\s\S]*?\.insert\(payload\)/);
+    assert.match(dashboard, /\.from\('feedback'\)[\s\S]*?\.update\(payload\)[\s\S]*?\.eq\('id',\s*existingFeedbackId\)/);
+    assert.match(dashboard, /\.select\('id, rating, message'\)[\s\S]*?\.eq\('profile_id',\s*window\.inigosyncProfile\.id\)[\s\S]*?\.maybeSingle\(\)/);
+    assert.match(dashboard, /error\?\.code === '23505'/);
+    assert.match(dashboard, /loadCustomerFeedback\(\)/);
+    assert.match(html, /role="radiogroup" aria-labelledby="dashFeedbackRatingLabel" aria-required="true"/);
+    assert.match(html, /data-dash-feedback-rating-error[^>]*role="alert"/);
+    assert.match(html, /maxlength="2000"[^>]*data-dash-feedback-message/);
+    assert.match(dashboard, /feedbackRating === null \|\| !Number\.isInteger\(feedbackRating\)/);
+    assert.match(dashboard, /message: message \|\| null/);
     assert.match(dashboard, /finally\s*\{\s*feedbackSubmitBtn\.disabled = false/);
+});
+
+test('shared confirmation modal sits outside dashboard panels so feedback can reach it', () => {
+    const modalPosition = html.indexOf('data-dash-confirm-modal');
+    const modalOpenTagPosition = html.lastIndexOf('<div class="dash-settings-modal"', modalPosition);
+    assert.notEqual(modalPosition, -1, 'shared confirmation modal exists');
+    assert.notEqual(modalOpenTagPosition, -1, 'shared confirmation wrapper exists');
+    const sectionStack = [];
+    for (const match of html.slice(0, modalOpenTagPosition).matchAll(/<!--[^]*?-->|<\/?section\b[^>]*>/gi)) {
+        const tag = match[0];
+        if (tag.startsWith('<!--')) continue;
+        if (/^<\/section/i.test(tag)) sectionStack.pop();
+        else sectionStack.push(/class="[^"]*\bdash-panel\b/.test(tag));
+    }
+    assert.equal(sectionStack.includes(true), false, 'the modal is not inside any tab panel');
 });
 
 class InteractionElement {
@@ -94,8 +124,13 @@ const feedbackEscapeHandler = extractBetween(
 );
 const feedbackSubmitHandler = extractBetween(
     dashboard,
-    '    if (feedbackSubmitBtn) {',
+    "    if (feedbackSubmitBtn) {\n        feedbackSubmitBtn.addEventListener('click', async () => {",
     '\n    // ------------------------------------------------------------------\n\n    // Theme toggle'
+);
+const feedbackLoadFunction = extractBetween(
+    dashboard,
+    '    async function loadCustomerFeedback() {',
+    '\n    function openFeedbackModal'
 );
 const bookingReviewHandlers = extractBetween(
     dashboard,
@@ -159,16 +194,26 @@ function makeConfirmationEscapeHarness(flow) {
         confirmText,
         pendingConfirm: null,
         confirmReturnFocus: null,
+        confirmSettingsChange(message) {
+            confirmText.textContent = message;
+            confirmModal.hidden = false;
+            return new Promise(resolve => { context.pendingConfirm = resolve; });
+        },
         feedbackSubmitBtn,
         feedbackMessageEl,
+        feedbackRatingError: new InteractionElement(),
+        feedbackStars: [new InteractionElement()],
         feedbackOverlay,
         feedbackDialog: new InteractionElement(),
         feedbackIsOpen: true,
         feedbackClosePending: false,
         feedbackSubmitPending: false,
+        existingFeedbackId: null,
         feedbackHideTimer: null,
         feedbackLastFocused: null,
-        feedbackRating: null,
+        feedbackRating: flow === 'feedback' ? 4 : null,
+        feedbackLoadPending: false,
+        feedbackLoadFailed: false,
         FEEDBACK_CLOSE_DELAY_MS: 0,
         paintFeedbackStars() {},
         bookingReviewModal,
@@ -195,6 +240,147 @@ function makeConfirmationEscapeHarness(flow) {
 
     return { confirmModal, confirmText, feedbackSubmitBtn, feedbackMessageEl, bookingReviewModal, reviewSubmitBtn, reviewComment, writes, pressEscapeOnConfirmation };
 }
+
+function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, insertError = null, conflictRow = null } = {}) {
+    const submit = new InteractionElement();
+    submit.textContent = 'Loading…';
+    const message = new InteractionElement();
+    const ratingError = new InteractionElement();
+    ratingError.hidden = true;
+    const stars = Array.from({ length: 5 }, (_, index) => {
+        const star = new InteractionElement();
+        star.dataset = { dashFeedbackStar: String(index + 1) };
+        return star;
+    });
+    const overlay = new InteractionElement();
+    const messages = [];
+    const writes = [];
+    const confirmations = [];
+    let feedbackReads = 0;
+    const supabase = {
+        from(table) {
+            assert.equal(table, 'feedback');
+            const query = {
+                mode: null,
+                select(columns) { this.mode = 'select'; this.columns = columns; return this; },
+                eq(column, value) { this.filters ||= {}; this.filters[column] = value; return this; },
+                maybeSingle() {
+                    assert.equal(this.filters.profile_id, 'customer-1');
+                    feedbackReads += 1;
+                    if (loadError && feedbackReads === 1) return Promise.resolve({ data: null, error: loadError });
+                    return Promise.resolve({ data: feedbackReads === 1 ? existingRow : conflictRow, error: null });
+                },
+                insert(payload) { writes.push({ action: 'insert', payload }); return Promise.resolve({ error: insertError }); },
+                update(payload) {
+                    writes.push({ action: 'update', payload });
+                    this.mode = 'update';
+                    return this;
+                },
+                then(resolve, reject) { return Promise.resolve({ error: null }).then(resolve, reject); },
+            };
+            return query;
+        },
+    };
+    const context = {
+        document: { querySelector() { return null; }, querySelectorAll() { return []; }, contains() { return true; } },
+        window: {
+            sb: supabase,
+            inigosyncProfile: { id: 'customer-1' },
+            InigoToast: { show(text, isError) { messages.push({ text, isError }); } },
+            setTimeout() { return 1; }, clearTimeout() {},
+        },
+        console: { error() {} },
+        feedbackSubmitBtn: submit,
+        feedbackMessageEl: message,
+        feedbackRatingError: ratingError,
+        feedbackStars: stars,
+        feedbackOverlay: overlay,
+        feedbackDialog: new InteractionElement(),
+        feedbackIsOpen: true,
+        feedbackClosePending: false,
+        feedbackSubmitPending: false,
+        feedbackHideTimer: null,
+        feedbackLastFocused: null,
+        feedbackRating: null,
+        existingFeedbackId: null,
+        feedbackLoadPending: false,
+        feedbackLoadFailed: false,
+        initialFeedbackSnapshot: null,
+        FEEDBACK_CLOSE_DELAY_MS: 0,
+        paintFeedbackStars() {},
+        async confirmSettingsChange(message) { confirmations.push(message); return true; },
+        closeFeedbackModal() {},
+        isDashboardSchemaMismatch() { return false; },
+    };
+    runInNewContext(`${feedbackLoadFunction}\n${feedbackSubmitHandler}`, context);
+    return { context, submit, message, ratingError, stars, writes, messages, confirmations, read: () => vmRead(context) };
+}
+
+function vmRead(context) {
+    return {
+        load: context.loadCustomerFeedback,
+        getRating: () => context.feedbackRating,
+        getExistingId: () => context.existingFeedbackId,
+        getLoadFailed: () => context.feedbackLoadFailed,
+    };
+}
+
+test('feedback loads the account row and saves edits to that row', async () => {
+    const harness = makeFeedbackBehaviorHarness({ existingRow: { id: 'feedback-9', rating: 3, message: '  Helpful  ' } });
+    const state = harness.read();
+    await state.load();
+    assert.equal(harness.message.value, '  Helpful  ');
+    assert.equal(state.getRating(), 3);
+    assert.equal(state.getExistingId(), 'feedback-9');
+    assert.equal(harness.submit.textContent, 'Save Feedback');
+    harness.message.value = 'Updated';
+    await harness.submit.dispatch('click');
+    assert.deepEqual(harness.writes.map(write => write.action), ['update']);
+    assert.equal(harness.writes[0].payload.message, 'Updated');
+    assert.equal(harness.writes[0].payload.rating, 3);
+});
+
+test('first feedback submission requires a rating but allows an empty message', async () => {
+    const harness = makeFeedbackBehaviorHarness();
+    const state = harness.read();
+    await state.load();
+    assert.equal(harness.submit.textContent, 'Submit Feedback');
+    await harness.submit.dispatch('click');
+    assert.equal(harness.writes.length, 0, 'a missing rating prevents persistence');
+    assert.equal(harness.ratingError.hidden, false);
+    harness.context.feedbackRating = 5;
+    await harness.submit.dispatch('click');
+    assert.equal(harness.writes.length, 1);
+    assert.equal(harness.writes[0].action, 'insert');
+    assert.equal(harness.writes[0].payload.message, null);
+    assert.equal(harness.writes[0].payload.rating, 5);
+    assert.deepEqual(harness.confirmations, ['Submit this feedback?']);
+});
+
+test('a unique-conflict on first insert reloads and updates the concurrent row', async () => {
+    const harness = makeFeedbackBehaviorHarness({ insertError: { code: '23505' }, conflictRow: { id: 'raced-row' } });
+    const state = harness.read();
+    await state.load();
+    harness.context.feedbackRating = 4;
+    harness.message.value = 'Concurrent-safe';
+    await harness.submit.dispatch('click');
+    assert.deepEqual(harness.writes.map(write => write.action), ['insert', 'update']);
+    assert.equal(harness.writes[1].payload.message, 'Concurrent-safe');
+    assert.equal(harness.context.existingFeedbackId, 'raced-row');
+});
+
+test('a failed feedback load turns submit into a safe retry without writing', async () => {
+    const harness = makeFeedbackBehaviorHarness({ loadError: { message: 'network unavailable' } });
+    const state = harness.read();
+    await state.load();
+    assert.equal(state.getLoadFailed(), true);
+    assert.equal(harness.submit.disabled, false);
+    assert.equal(harness.submit.textContent, 'Retry Load');
+    await harness.submit.dispatch('click');
+    assert.equal(state.getLoadFailed(), false);
+    assert.equal(harness.submit.textContent, 'Submit Feedback');
+    assert.equal(harness.writes.length, 0);
+});
 
 test('Escape declining feedback Save does not open a discard prompt or close the draft', async () => {
     const harness = makeConfirmationEscapeHarness('feedback');

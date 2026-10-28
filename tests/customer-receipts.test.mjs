@@ -9,19 +9,43 @@ const receiptCss = await readFile(new URL('../Style/paymentAcknowledgment.css', 
 const receiptHelper = await readFile(new URL('../includes/paymentAcknowledgment.js', import.meta.url), 'utf8');
 const dashboard = await readFile(new URL('../includes/Dashboard.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20260930110844_customer_booking_payment_acknowledgments.sql', import.meta.url), 'utf8');
+const walkinActivityMigration = await readFile(new URL('../supabase/migrations/20261028003238_customer_walkin_activity.sql', import.meta.url), 'utf8');
 const receiptFilterSource = await readFile(new URL('../includes/customerReceipts.js', import.meta.url), 'utf8');
 const receiptFilterContext = { window: {} };
 runInNewContext(receiptFilterSource, receiptFilterContext);
 const filterAcknowledgments = receiptFilterContext.window.InigoCustomerReceipts.filterAcknowledgments;
 
-test('receipts panel combines both payment sources behind shared ID and payment date filters', () => {
-    assert.match(html, /Search booking or visit ID[\s\S]*?data-dash-receipt-search/);
+test('receipts panel keeps payment sources behind receipt-number and payment-date filters', () => {
+    assert.match(html, /Search receipt number[\s\S]*?data-dash-receipt-search/);
     assert.match(html, /Payment date[\s\S]*?data-dash-receipt-date/);
     assert.match(html, /Payment source[\s\S]*?All payments[\s\S]*?Online bookings[\s\S]*?Walk-ins/);
     assert.match(html, /customerReceipts\.js[\s\S]*?Dashboard\.js/);
     assert.match(html, /paymentAcknowledgment\.js[\s\S]*?Dashboard\.js/);
     assert.match(html, /data-dash-receipts/);
     assert.doesNotMatch(html, /Online booking payments|Walk-in payments|data-dash-walkin-receipts|data-dash-booking-receipts/);
+    assert.match(html, /<dialog[^>]*data-dash-receipt-dialog[^>]*aria-labelledby/);
+    assert.match(html, /<button[^>]*data-dash-receipt-close[^>]*aria-label="Close payment acknowledgment"[^>]*>\s*<span aria-hidden="true">×<\/span>/);
+    assert.match(html, /data-dash-receipt-dialog-content[^>]*><\/div>\s*<footer class="dash-receipt-dialog-footer">[\s\S]*?data-dash-receipt-download[\s\S]*?data-dash-receipt-print/);
+    assert.match(dashboard, /Payment date<\/th>[\s\S]*?Receipt number<\/th>[\s\S]*?Amount paid<\/th>[\s\S]*?Action<\/th>/);
+    assert.doesNotMatch(dashboard.match(/function renderReceiptTable\(entries\) \{[\s\S]*?\n    \}/)?.[0] || '', /Booking source|Payment for \/ reference|sport|court/i);
+    assert.match(dashboard, /data-dash-receipt-view/);
+    assert.match(dashboard, /renderPaymentAcknowledgment\(entry\)[\s\S]*?receiptDialog\.showModal\(\)/);
+    assert.match(dashboard, /cardAttributes: `data-dash-receipt-card="\$\{safeKey\}"`,\s*\n\s*\}\);/);
+    assert.match(dashboard, /receiptDownloadButton\?\.setAttribute\('data-dash-receipt-download'/);
+    assert.match(dashboard, /receiptDialogContent\.innerHTML = ''[\s\S]*?activeReceiptOpener\.focus\(\)/);
+    assert.match(dashboard, /\.dash-receipt-dialog \[data-dash-receipt-download\]/);
+    assert.match(dashboard, /\.dash-receipt-dialog \[data-dash-receipt-print\]/);
+    const receiptWiring = dashboard.match(/function wireReceiptDownloads\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+    assert.equal((receiptWiring.match(/receiptDialogContent\?\.querySelector\('\[data-dash-receipt-card\]'\)/g) || []).length, 2,
+        'both footer actions target the card rendered in the dialog content');
+    assert.doesNotMatch(receiptWiring, /btn\.closest\('\.payment-ack-layout'\)/,
+        'footer actions must not search for a layout ancestor they are outside of');
+    assert.match(css, /\.dash-receipt-table\s*\{/);
+    assert.match(css, /\.dash-receipt-dialog-shell\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto/s);
+    assert.match(css, /\.dash-receipt-dialog-content\s*\{[^}]*overflow-y:\s*auto/s);
+    assert.match(css, /\.dash-receipt-dialog-footer\s*\{/);
+    assert.match(css, /@media \(max-width:\s*640px\)[\s\S]*?\.dash-receipt-table td::before/);
+    assert.doesNotMatch(dashboard.match(/function renderReceiptTable\(entries\) \{[\s\S]*?\n    \}/)?.[0] || '', /Customer/);
     assert.match(css, /\.dash-receipts-group\s*\{[^}]*background:\s*var\(--color-bg-elevated\)/s);
     assert.match(css, /\.dash-receipt-filters\s*\{[^}]*grid-template-columns/s);
     assert.match(css, /@media \(max-width:\s*640px\)[\s\S]*?\.dash-receipt-filters\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
@@ -41,6 +65,20 @@ test('receipts panel combines both payment sources behind shared ID and payment 
     assert.match(receiptCss, /body\.payment-ack-printing > :not\(\.payment-ack-print-root\)/);
     assert.match(receiptCss, /body\.payment-ack-printing\s*\{[^}]*min-height:\s*0 !important;[^}]*height:\s*auto !important;/s);
     assert.match(receiptCss, /body\.dash-body\.payment-ack-printing::before\s*\{[^}]*display:\s*none !important;/);
+});
+
+test('bookings and visits stay activity-focused and include only account-linked walk-ins', () => {
+    assert.match(html, /My Bookings &amp; Visits/);
+    assert.match(html, /data-dash-booking-source[\s\S]*?Online bookings[\s\S]*?Walk-ins/);
+    assert.doesNotMatch(html.match(/data-dash-panel="bookings"[\s\S]*?data-dash-panel="receipts"/)?.[0] || '', /data-dash-nav="receipts"/);
+    assert.match(dashboard, /customer_list_walkin_activity/);
+    assert.match(dashboard, /row\.dataset\.bookingSource = 'walkin'/);
+    assert.match(dashboard, /myBookingsSource\?\.value/);
+    assert.match(walkinActivityMigration, /auth\.uid\(\)/);
+    assert.match(walkinActivityMigration, /p\.role = 'customer' and p\.status = 'active'/);
+    assert.match(walkinActivityMigration, /w\.walkin_order_id is not null and o\.customer_id = v_actor/);
+    assert.match(walkinActivityMigration, /w\.walkin_order_id is null and w\.customer_id = v_actor/);
+    assert.match(walkinActivityMigration, /revoke all on function public\.customer_list_walkin_activity[\s\S]*?from public,anon/);
 });
 
 test('booking receipts render only saved acknowledgment snapshots, preserving deposit and balance history', () => {
@@ -67,16 +105,16 @@ test('loading and failure messages do not present fabricated booking receipts', 
     assert.doesNotMatch(dashboard, /Booking summary · Not proof of payment/);
 });
 
-test('source, ID, and payment date filters combine across booking and walk-in acknowledgments', () => {
+test('source, receipt number, and payment date filters combine across booking and walk-in acknowledgments', () => {
     const entries = [
-        { source: 'booking', searchIds: ['102'], acknowledgment: { issued_at: '2026-10-03T16:30:00Z' } },
-        { source: 'walkin', searchIds: ['order-abc', '5502'], acknowledgment: { issued_at: '2026-10-04T16:00:00Z' } },
+        { source: 'booking', searchIds: ['PA-102'], acknowledgment: { issued_at: '2026-10-03T16:30:00Z' } },
+        { source: 'walkin', searchIds: ['PA-5502'], acknowledgment: { issued_at: '2026-10-04T16:00:00Z' } },
     ];
     const dateKey = value => value === entries[0].acknowledgment.issued_at ? '2026-10-04' : '2026-10-05';
     assert.equal(filterAcknowledgments(entries, { source: 'all' }, dateKey).length, 2);
-    assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'all', idQuery: '102', paymentDate: '2026-10-04' }, dateKey), entry => entry.source), ['booking']);
-    assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'walkin', idQuery: '5502', paymentDate: '2026-10-05' }, dateKey), entry => entry.source), ['walkin']);
-    assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'booking', idQuery: '5502', paymentDate: '2026-10-05' }, dateKey)), []);
+    assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'all', idQuery: 'PA-102', paymentDate: '2026-10-04' }, dateKey), entry => entry.source), ['booking']);
+    assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'walkin', idQuery: 'PA-5502', paymentDate: '2026-10-05' }, dateKey), entry => entry.source), ['walkin']);
+    assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'booking', idQuery: 'PA-5502', paymentDate: '2026-10-05' }, dateKey)), []);
     assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'all', idQuery: 'missing', paymentDate: '2026-10-04' }, dateKey)), []);
     assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'all', paymentDate: '2026-10-06' }, dateKey)), []);
 });

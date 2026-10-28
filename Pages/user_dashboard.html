@@ -74,7 +74,7 @@
                 <li>
                     <button type="button" class="dash-nav-link" data-dash-nav="bookings">
                         <svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 10h8M8 14h8M8 18h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                        My Bookings
+                        My Bookings &amp; Visits
                     </button>
                 </li>
                 <li>
@@ -340,12 +340,20 @@
                                         <span class="dash-book-date-icon" aria-hidden="true">
                                             <svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"></rect><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9h17"></path></svg>
                                         </span>
-                                        <span><label class="dash-form-label" for="dash-book-date">Choose a date</label><span class="dash-book-date-hint" id="dash-book-date-hint">Live availability is checked for this court.</span></span>
+                                        <span><label class="dash-form-label" for="dash-book-date">Choose dates</label><span class="dash-book-date-hint" id="dash-book-date-hint">Choose each date to add it to your schedule. Times are shown separately by day.</span></span>
                                     </div>
-                                    <input id="dash-book-date" type="date" class="dash-input dash-book-date-input" data-dash-book-date aria-describedby="dash-book-date-hint">
+                                    <input id="dash-book-date" type="text" data-dash-book-date aria-describedby="dash-book-date-hint" hidden>
+                                    <div class="dash-book-calendar" data-dash-book-calendar>
+                                        <button type="button" class="dash-input dash-book-calendar-trigger" data-dash-calendar-trigger aria-expanded="false" aria-controls="dash-book-calendar-popup">Choose dates</button>
+                                        <div class="dash-book-calendar-popup" id="dash-book-calendar-popup" data-dash-calendar-popup hidden>
+                                            <div class="dash-book-calendar-head"><button type="button" data-dash-calendar-prev aria-label="Previous month">‹</button><strong data-dash-calendar-title></strong><button type="button" data-dash-calendar-next aria-label="Next month">›</button></div>
+                                            <div class="dash-book-calendar-grid" data-dash-calendar-grid role="group" aria-label="Choose booking dates"></div>
+                                            <div class="dash-book-calendar-foot"><span data-dash-calendar-count role="status" aria-live="polite"></span><button type="button" class="dash-btn-primary" data-dash-calendar-done>Done</button></div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="dash-book-slot-heading"><div><h4>Available times</h4><p>Select one or more hours. Separate time ranges become separate bookings.</p></div><div class="dash-book-slot-legend" aria-label="Time slot key"><span><i class="is-available" aria-hidden="true"></i>Available</span><span><i class="is-selected" aria-hidden="true"></i>Selected</span><span><i class="is-in-cart" aria-hidden="true"></i>In summary</span><span><i class="is-unavailable" aria-hidden="true"></i>Unavailable</span></div></div>
-                                <div class="dash-book-slot-grid" data-dash-book-slots role="group" aria-label="Available hourly times"></div>
+                                <div class="dash-book-slot-heading"><div><h4>Available times</h4><p>Choose one continuous block of hours per date. Selecting a later time fills available hours in between; the checkbox selects the earliest continuous block.</p></div><div class="dash-book-slot-legend" aria-label="Time slot key"><span><i class="is-available" aria-hidden="true"></i>Available</span><span><i class="is-selected" aria-hidden="true"></i>Selected</span><span><i class="is-in-cart" aria-hidden="true"></i>In summary</span><span><i class="is-unavailable" aria-hidden="true"></i>Unavailable</span></div></div>
+                                <div class="dash-book-slot-grid" data-dash-book-slots role="group" aria-label="Available hourly times by selected date"></div>
                                 <p class="dash-form-hint dash-book-slot-status" data-dash-book-slot-status role="status" aria-live="polite">Choose a court and date to see available times.</p>
                             </div>
                             <div class="dash-book-flow-actions">
@@ -360,10 +368,10 @@
                                 <h3 class="dash-wizard-panel-title">Booking summary</h3>
                                 <p class="dash-form-hint">Review the selected times and payment preference before secure checkout.</p>
                                 <div class="dash-book-cart" data-dash-book-cart>
-                                    <div class="dash-book-cart-head"><strong>Your bookings</strong><div class="dash-book-cart-head-actions"><span data-dash-book-cart-count>0 items</span><button type="button" class="dash-btn-ghost" data-dash-book-new>Add another sport or court</button></div></div>
+                                    <div class="dash-book-cart-head"><strong>Your bookings</strong><div class="dash-book-cart-head-actions"><span data-dash-book-cart-count>0 items</span><button type="button" class="dash-btn-primary" data-dash-book-new>Add more</button></div></div>
                                     <p class="dash-form-hint dash-book-cart-empty" data-dash-book-cart-empty>Your summary is empty. Choose a time to continue.</p>
                                     <ul data-dash-book-cart-items></ul>
-                                    <p class="dash-form-hint">Up to eight booking items can be included in one checkout. Edit a booking to change its court, date, or times.</p>
+                                    <p class="dash-form-hint">Edit a booking to change its court, date, or times.</p>
                                 </div>
                                 <div class="dash-book-summary-total"><span>Booking total</span><strong data-dash-booking-gross>—</strong></div>
                             </div>
@@ -376,40 +384,90 @@
                             <div class="dash-wizard-panel-content">
                                 <p class="dash-book-step-kicker">Step 5 of 5</p>
                                 <h3 class="dash-wizard-panel-title">Payment &amp; confirmation</h3>
-                                <p class="dash-form-hint">Choose a payment option. PayMongo securely processes payment; your booking is confirmed only after payment is verified.</p>
+                                <p class="dash-form-hint">Choose how you’d like to pay, then review the booking details and terms before proceeding to online payment.</p>
 
-                                <div class="dash-form-group">
-                                    <span class="dash-form-label">Payment option</span>
-                                    <div class="dash-payment-options">
-                                        <label class="dash-payment-option is-selected" data-dash-payment-option>
-                                            <span class="dash-payment-option-head">
-                                                <input type="radio" name="payment-option" checked data-dash-payment="downpayment">
-                                                Downpayment
-                                            </span>
-                                            <!-- Includes/Dashboard.js fills in the current
-                                                 configured deposit percentage after settings load. -->
-                                            <p data-dash-payment-desc="downpayment">Pay the current deposit percentage now and the balance at check-in.</p>
-                                        </label>
-                                        <label class="dash-payment-option" data-dash-payment-option>
-                                            <span class="dash-payment-option-head">
-                                                <input type="radio" name="payment-option" data-dash-payment="full">
-                                                Full Payment
-                                            </span>
-                                            <p>Pay the full court amount securely now.</p>
-                                        </label>
+                                <div class="dash-payment-review-layout">
+                                    <div class="dash-payment-review-options">
+                                        <div class="dash-form-group">
+                                            <span class="dash-form-label" id="dash-payment-option-label">Payment option</span>
+                                            <div class="dash-payment-options" role="radiogroup" aria-labelledby="dash-payment-option-label">
+                                                <label class="dash-payment-option is-selected" data-dash-payment-option>
+                                                    <span class="dash-payment-option-head">
+                                                        <input type="radio" name="payment-option" checked data-dash-payment="downpayment">
+                                                        Downpayment
+                                                    </span>
+                                                    <!-- Includes/Dashboard.js fills in the current
+                                                         configured deposit percentage after settings load. -->
+                                                    <p data-dash-payment-desc="downpayment">Pay the current deposit percentage now and the balance at check-in.</p>
+                                                </label>
+                                                <label class="dash-payment-option" data-dash-payment-option>
+                                                    <span class="dash-payment-option-head">
+                                                        <input type="radio" name="payment-option" data-dash-payment="full">
+                                                        Full Payment
+                                                    </span>
+                                                    <p>Pay the full court amount securely now.</p>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <p class="dash-form-hint" data-dash-pay-mode-hint>Online payment is available after review.</p>
+                                        <div class="dash-payment-terms-control">
+                                            <label class="dash-payment-terms-checkbox-label">
+                                                <input type="checkbox" data-dash-payment-terms-accepted aria-haspopup="dialog" aria-controls="dash-payment-terms-dialog">
+                                                <span>I have read and agree to the booking and payment terms.</span>
+                                            </label>
+                                            <a class="dash-payment-terms-link" href="terms.html" target="_blank" rel="noopener noreferrer">Read the full Terms &amp; Conditions</a>
+                                            <span class="dash-payment-terms-status" data-dash-payment-terms-status role="status" aria-live="polite">Not accepted</span>
+                                        </div>
                                     </div>
+
+                                    <section class="dash-payment-receipt" aria-labelledby="dash-payment-receipt-title">
+                                        <h4 id="dash-payment-receipt-title">Booking summary</h4>
+                                        <ul class="dash-payment-receipt-items" data-dash-payment-receipt-items aria-live="polite"></ul>
+                                        <div class="dash-summary-row"><span>Payment option</span><strong data-dash-summary-payment>Downpayment</strong></div>
+                                        <div class="dash-summary-row"><span>Booking total</span><strong data-dash-summary-gross>—</strong></div>
+                                        <div class="dash-summary-total"><span>Estimated due now</span><span data-dash-summary-total>—</span></div>
+                                        <div class="dash-summary-row dash-payment-balance-row"><span>Estimated balance at check-in</span><strong data-dash-summary-balance>—</strong></div>
+                                        <p class="dash-payment-receipt-note">Any payment-method fee will be shown for your review before you authorize payment.</p>
+                                    </section>
                                 </div>
 
-                                <div class="dash-wizard-summary">
-                                    <div class="dash-summary-row"><span>Payment option</span><strong data-dash-summary-payment>Downpayment</strong></div>
-                                    <div class="dash-summary-row"><span>Booking total</span><strong data-dash-summary-gross>—</strong></div>
-                                    <div class="dash-summary-total"><span>Estimated due now</span><span data-dash-summary-total>—</span></div>
-                                    <p class="dash-form-hint" data-dash-pay-mode-hint>Payment is processed securely through PayMongo after review.</p>
-                                </div>
+                                <dialog class="dash-payment-terms-dialog" data-dash-payment-terms-dialog id="dash-payment-terms-dialog" aria-labelledby="dash-payment-terms-title" aria-describedby="dash-payment-terms-description">
+                                    <div class="dash-payment-terms-dialog-content">
+                                        <header class="dash-payment-terms-header">
+                                            <h4 id="dash-payment-terms-title" tabindex="-1">Booking and payment terms</h4>
+                                        </header>
+                                        <div class="dash-payment-terms-body" id="dash-payment-terms-description" tabindex="0">
+                                            <p>Review these booking and payment terms from the <a href="terms.html" target="_blank" rel="noopener noreferrer">full Terms &amp; Conditions</a> before continuing.</p>
+                                            <h5>Booking details</h5>
+                                            <ul>
+                                                <li>You must be signed in to a registered customer account. Select a sport or court, date, and time slot; each time slot can be reserved by one customer at a time.</li>
+                                                <li>Review the booking summary, including the court, schedule, and total cost, before confirming. Provide an accurate name and mobile number so the sports center and its staff can confirm, follow up on, or resolve issues with your reservation.</li>
+                                                <li>The sports center sets court rates and available sports, which may change. The rate shown when you make the booking applies to that booking.</li>
+                                            </ul>
+                                            <h5>Payment and confirmation</h5>
+                                            <ul>
+                                                <li>When online checkout is available, booking payments are processed through PayMongo. Available payment methods depend on what the sports center has enabled. You may pay the deposit percentage set by the sports center or pay the full amount.</li>
+                                                <li>Any remaining balance is due at check-in using a payment method available and confirmed by the sports center.</li>
+                                                <li>PayMongo may add a processing fee that varies by payment method. Before authorizing payment, review the fee and final total PayMongo displays for your selected method. See <a href="https://www.paymongo.com/terms" target="_blank" rel="noopener noreferrer">PayMongo’s Terms of Use</a>.</li>
+                                                <li>An online booking is confirmed only after IñigoSync validates PayMongo’s payment-success confirmation. If online checkout is unavailable, follow the payment instructions shown in IñigoSync or contact the sports center before relying on a booking.</li>
+                                            </ul>
+                                            <h5>Attendance, cancellation, and refunds</h5>
+                                            <ul>
+                                                <li>Once made, a booking cannot be cancelled. There is no self-service cancellation option in the dashboard.</li>
+                                                <li>Completed booking payments are non-refundable and cannot be converted to cashback, store credit, or another form of reimbursement.</li>
+                                                <li>A fixed 30-minute grace period applies: arrive at Iñigos Sports Center within 30 minutes of your reserved start time. If you arrive more than 30 minutes after it, the booking is automatically cancelled as a no-show and the court is released to other customers. A no-show is not refunded and cannot be rescheduled.</li>
+                                            </ul>
+                                        </div>
+                                        <div class="dash-payment-terms-actions">
+                                            <button type="button" class="dash-btn-ghost" data-dash-payment-terms-decline>Disagree</button>
+                                            <button type="button" class="dash-btn-primary" data-dash-payment-terms-agree>Agree</button>
+                                        </div>
+                                    </div>
+                                </dialog>
                             </div>
                             <div class="dash-book-flow-actions">
                                 <button type="button" class="dash-btn-ghost" data-dash-book-back="4">Back to summary</button>
-                                <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Continue to PayMongo</button>
+                                <button type="button" class="dash-btn-primary" data-dash-book-submit disabled>Proceed to pay online</button>
                             </div>
                         </div>
                     </div>
@@ -419,12 +477,12 @@
                     <div class="dash-book-fee-confirmation-backdrop" data-dash-book-fee-close></div>
                     <section class="dash-book-fee-confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-book-fee-title" aria-describedby="dash-book-fee-description" tabindex="-1">
                         <button type="button" class="dash-modal-close" data-dash-book-fee-close aria-label="Close fee confirmation">×</button>
-                        <h2 id="dash-book-fee-title">PayMongo transaction fee</h2>
-                        <p id="dash-book-fee-description">PayMongo may add a transaction fee depending on your payment method. Review any fee and the final total in PayMongo before you authorize payment; your booking is confirmed after payment is verified.</p>
+                        <h2 id="dash-book-fee-title">Online payment transaction fee</h2>
+                        <p id="dash-book-fee-description">Your payment method may add a transaction fee. Review any fee and the final total on the secure payment page before you authorize payment; your booking is confirmed after payment is verified.</p>
                         <p data-dash-book-fee-question>Would you like to continue to secure checkout?</p>
                         <div class="dash-book-fee-confirmation-actions">
                             <button type="button" class="dash-btn-ghost" data-dash-book-fee-close>Cancel</button>
-                            <button type="button" class="dash-btn-primary" data-dash-book-fee-continue>Continue to PayMongo</button>
+                            <button type="button" class="dash-btn-primary" data-dash-book-fee-continue>Proceed to pay online</button>
                         </div>
                     </section>
                 </div>
@@ -445,14 +503,7 @@
                      MY BOOKINGS PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="bookings">
-                    <!-- §6 of the feedback doc removes the status filter chips
-                         that used to sit here ("All/Pending/Confirmed/
-                         Completed/Cancelled") — they were cosmetic-only
-                         (includes/Dashboard.js just toggled .is-active with a
-                         TODO), so nothing behavioral is lost. The Status
-                         column below and the rest of the table's layout are
-                         unchanged per §6's "retain the current overall visual
-                         display". -->
+                    <div class="dash-panel-head"><h2>My Bookings &amp; Visits</h2><p>Your online bookings and account-linked walk-in visits.</p></div>
                     <!-- Venue booking policy; the date-specific grace period
                          is populated from the current admin rule. -->
                     <div class="dash-notice">
@@ -461,11 +512,35 @@
                     </div>
 
                     <div class="dash-card">
+                        <div class="dash-booking-filters" role="search" aria-label="Search your bookings and visits">
+                            <label class="dash-booking-filter dash-booking-search" for="customerBookingSearch">
+                                Search activity
+                                <input id="customerBookingSearch" type="search" data-dash-booking-search maxlength="200" placeholder="Court, sport, date, amount, or status" autocomplete="off">
+                            </label>
+                            <label class="dash-booking-filter" for="customerBookingSource">Source<select id="customerBookingSource" data-dash-booking-source><option value="">All sources</option><option value="booking">Online bookings</option><option value="walkin">Walk-ins</option></select></label>
+                            <label class="dash-booking-filter" for="customerBookingStatus">
+                                Status
+                                <select id="customerBookingStatus" data-dash-booking-status>
+                                    <option value="">All statuses</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="confirmed">Confirmed</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="cancelled">Cancelled</option>
+                                    <option value="unattended">Unattended</option>
+                                </select>
+                            </label>
+                            <label class="dash-booking-filter" for="customerBookingDate">
+                                Booking date
+                                <input id="customerBookingDate" type="date" data-dash-booking-date>
+                            </label>
+                            <p class="dash-booking-filter-count" data-dash-booking-count role="status" aria-live="polite"></p>
+                        </div>
                         <div class="dash-table-wrap">
                             <table class="dash-table">
                                 <thead>
                                     <tr>
-                                        <th>Court</th>
+                                        <th>Source</th>
+                                        <th>Court / visit</th>
                                         <th>Date</th>
                                         <th>Time</th>
                                         <th>Amount</th>
@@ -473,72 +548,68 @@
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
-                                <!-- No Cancel button anywhere in this table any
-                                     more (R3 — see the notice above and
-                                     includes/Dashboard.js's refreshMyBookings(),
-                                     which replaces it in the live renderer with
-                                     this same Receipt shortcut). These 5 rows
+                                <!-- These 5 rows
                                      are a design-preview fallback only — real
                                      rows replace them the moment the signed-in
                                      customer's profile is ready. -->
                                 <tbody>
                                     <tr>
-                                        <td class="dash-cell-main">Basketball — Full Court</td>
+                                        <td>Online booking</td><td class="dash-cell-main">Basketball — Full Court</td>
                                         <td>Jul 12, 2026</td>
                                         <td>6:00 PM – 7:00 PM</td>
                                         <td>₱300.00</td>
                                         <td><span class="dash-status confirmed">Confirmed</span></td>
                                         <td>
                                             <div class="dash-table-actions">
-                                                <button type="button" class="dash-mini-btn" data-dash-nav="receipts">Details</button>
+                                            <span>—</span>
                                             </div>
                                         </td>
                                     </tr>
                                     <tr>
-                                        <td class="dash-cell-main">Badminton — Court 2</td>
+                                        <td>Online booking</td><td class="dash-cell-main">Badminton — Court 2</td>
                                         <td>Jul 14, 2026</td>
                                         <td>5:00 PM – 6:00 PM</td>
                                         <td>₱100.00</td>
                                         <td><span class="dash-status pending">Pending</span></td>
                                         <td>
                                             <div class="dash-table-actions">
-                                                <button type="button" class="dash-mini-btn" data-dash-nav="receipts">Details</button>
+                                            <span>—</span>
                                             </div>
                                         </td>
                                     </tr>
                                     <tr>
-                                        <td class="dash-cell-main">Pickleball — Court 1</td>
+                                        <td>Online booking</td><td class="dash-cell-main">Pickleball — Court 1</td>
                                         <td>Jul 16, 2026</td>
                                         <td>3:00 PM – 4:00 PM</td>
                                         <td>₱220.00</td>
                                         <td><span class="dash-status confirmed">Confirmed</span></td>
                                         <td>
                                             <div class="dash-table-actions">
-                                                <button type="button" class="dash-mini-btn" data-dash-nav="receipts">Details</button>
+                                            <span>—</span>
                                             </div>
                                         </td>
                                     </tr>
                                     <tr>
-                                        <td class="dash-cell-main">Volleyball</td>
+                                        <td>Online booking</td><td class="dash-cell-main">Volleyball</td>
                                         <td>Jul 3, 2026</td>
                                         <td>4:00 PM – 5:00 PM</td>
                                         <td>₱250.00</td>
                                         <td><span class="dash-status completed">Completed</span></td>
                                         <td>
                                             <div class="dash-table-actions">
-                                                <button type="button" class="dash-mini-btn" data-dash-nav="receipts">Details</button>
+                                            <span>—</span>
                                             </div>
                                         </td>
                                     </tr>
                                     <tr>
-                                        <td class="dash-cell-main">Bowling — Lane 2</td>
+                                        <td>Online booking</td><td class="dash-cell-main">Bowling — Lane 2</td>
                                         <td>Jun 28, 2026</td>
                                         <td>6:00 PM – 7:00 PM</td>
                                         <td>₱150.00</td>
                                         <td><span class="dash-status cancelled">Cancelled</span></td>
                                         <td>
                                             <div class="dash-table-actions">
-                                                <button type="button" class="dash-mini-btn" data-dash-nav="receipts">Details</button>
+                                            <span>—</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -552,9 +623,10 @@
                      BOOKING SUMMARY PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="receipts">
+                    <div class="dash-panel-head"><h2>Receipts</h2><p>Payment records and downloadable acknowledgments.</p></div>
                     <div class="dash-receipts-group">
                         <div class="dash-receipt-filters">
-                            <label class="dash-receipt-filter" for="customerReceiptSearch">Search booking or visit ID<input id="customerReceiptSearch" type="search" data-dash-receipt-search placeholder="Enter a booking or walk-in ID" autocomplete="off"></label>
+                            <label class="dash-receipt-filter" for="customerReceiptSearch">Search receipt number<input id="customerReceiptSearch" type="search" data-dash-receipt-search placeholder="Enter a receipt number" autocomplete="off"></label>
                             <label class="dash-receipt-filter" for="customerReceiptDate">Payment date<input id="customerReceiptDate" type="date" data-dash-receipt-date></label>
                             <label class="dash-receipt-filter" for="customerReceiptSource">Payment source<select id="customerReceiptSource" data-dash-receipt-source><option value="all">All payments</option><option value="booking">Online bookings</option><option value="walkin">Walk-ins</option></select></label>
                         </div>
@@ -562,20 +634,40 @@
                     </div>
                 </section>
 
+                <dialog class="dash-receipt-dialog" data-dash-receipt-dialog aria-labelledby="dashReceiptDialogTitle">
+                    <div class="dash-receipt-dialog-shell">
+                        <header class="dash-receipt-dialog-head">
+                            <h2 id="dashReceiptDialogTitle">Payment acknowledgment</h2>
+                            <button type="button" class="dash-btn-ghost dash-receipt-dialog-close" data-dash-receipt-close aria-label="Close payment acknowledgment" title="Close">
+                                <span aria-hidden="true">×</span>
+                            </button>
+                        </header>
+                        <div class="dash-receipt-dialog-content" data-dash-receipt-dialog-content></div>
+                        <footer class="dash-receipt-dialog-footer">
+                            <button type="button" class="dash-btn-primary" data-dash-receipt-download>Download acknowledgment</button>
+                            <button type="button" class="dash-btn-ghost payment-ack-print-button" data-dash-receipt-print>Print</button>
+                        </footer>
+                    </div>
+                </dialog>
+
                 <!-- ============================================================
                      PROFILE PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="profile">
-                    <div class="dash-card">
+                    <div class="dash-card dash-profile-hero">
                         <div class="dash-profile-card">
                             <div class="dash-avatar">JD</div>
                             <div class="dash-profile-card-info">
                                 <h3>Juan Dela Cruz</h3>
-                                <p>Customer</p>
+                                <span class="dash-role-pill">Customer</span>
+                                <p>Customer since —</p>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="dash-profile-meta" style="margin-top: 24px;">
+                    <div class="dash-card">
+                        <div class="dash-card-head"><h3>Account details</h3></div>
+                        <div class="dash-profile-meta dash-profile-details">
                             <div class="dash-profile-meta-item">
                                 <span>Email address</span>
                                 <span data-dash-profile-meta-email>juan.delacruz@email.com</span>
@@ -613,11 +705,11 @@
                                 <span data-dash-profile-emergency-number>—</span>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="dash-form-actions" style="margin-top: 28px;">
-                            <button type="button" class="dash-btn-ghost" data-dash-logout>Log Out</button>
-                            <button type="button" class="dash-btn-save" data-dash-nav="settings">Edit Profile</button>
-                        </div>
+                    <div class="dash-form-actions dash-profile-actions">
+                        <button type="button" class="dash-btn-ghost" data-dash-logout>Log Out</button>
+                        <button type="button" class="dash-btn-save" data-dash-nav="settings">Edit Profile</button>
                     </div>
                 </section>
 
@@ -667,55 +759,37 @@
                         <section class="dash-settings-dialog dash-personal-dialog" id="dashPersonalEditDialog" role="dialog" aria-modal="true" aria-labelledby="dashPersonalEditTitle" tabindex="-1" data-dash-personal-dialog>
                             <header class="dash-settings-dialog-header"><h2 id="dashPersonalEditTitle">Edit personal information</h2><button type="button" class="dash-modal-close" data-dash-personal-close aria-label="Close personal information editor">×</button></header>
                             <div class="dash-settings-dialog-body">
-                            <div class="dash-name-fields">
-                                <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsFirstName">First name</label><input id="dashSettingsFirstName" type="text" class="dash-input" placeholder="Juan" data-dash-settings-firstname></div>
-                                <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsMiddleName">Middle name <span class="dash-form-label-hint">(optional)</span></label><input id="dashSettingsMiddleName" type="text" class="dash-input" placeholder="Reyes" data-dash-settings-middlename></div>
-                                <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsLastName">Surname</label><input id="dashSettingsLastName" type="text" class="dash-input" placeholder="Dela Cruz" data-dash-settings-lastname></div>
-                            </div>
-                            <div class="dash-settings-grid">
-                                <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsBirthdate">Birthdate</label>
-                                    <input id="dashSettingsBirthdate" type="date" class="dash-input" data-dash-settings-birthdate>
-                                    <span class="dash-mobile-status" role="status" data-dash-birthdate-age>Age will be calculated from your birthdate.</span>
-                                </div>
-                                <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsGender">Gender</label>
-                                    <select id="dashSettingsGender" class="dash-input" data-dash-settings-gender>
-                                        <option value="">Select if you wish</option><option value="Male">Male</option><option value="Female">Female</option><option value="Prefer not to say">Prefer not to say</option>
-                                    </select>
-                                </div>
-                                <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsCivilStatus">Civil status</label>
-                                    <select id="dashSettingsCivilStatus" class="dash-input" data-dash-settings-civil-status>
-                                        <option value="">Select if you wish</option><option>Single</option><option>Married</option><option>Separated</option><option>Widowed</option><option>Prefer not to say</option>
-                                    </select>
-                                </div>
-                                <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsEmergencyName">Emergency contact name</label>
-                                    <input id="dashSettingsEmergencyName" type="text" class="dash-input" autocomplete="off" data-dash-settings-emergency-name>
-                                </div>
-                                <div class="dash-form-group">
-                                    <div class="phone-field-heading"><label class="dash-form-label" for="dashSettingsEmergencyNumber">Emergency contact number</label><span id="dashSettingsEmergencyStatus" class="phone-field-status" data-dash-emergency-status role="status" aria-live="polite">Optional · shared contacts allowed</span></div>
-                                    <div class="dash-mobile-verify-row">
-                                        <input id="dashSettingsEmergencyNumber" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" aria-describedby="dashSettingsEmergencyStatus" data-digits-only data-dash-settings-emergency-number>
-                                        <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-emergency-save hidden disabled>Save validated number</button>
-                                        <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-emergency-remove hidden>Remove</button>
+                                <p class="dash-personal-intro">Update the details shown on your profile and used for your bookings. Fields marked optional can be left blank.</p>
+                                <section class="dash-personal-section" aria-labelledby="dashPersonalNameHeading">
+                                    <div class="dash-personal-section-heading"><h3 id="dashPersonalNameHeading">Name</h3><p>Enter your name as you want it to appear on your account and booking records.</p></div>
+                                    <div class="dash-name-fields">
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsFirstName">First name</label><input id="dashSettingsFirstName" type="text" class="dash-input" placeholder="Juan" autocomplete="given-name" data-dash-settings-firstname></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsMiddleName">Middle name <span class="dash-form-label-hint">(optional)</span></label><input id="dashSettingsMiddleName" type="text" class="dash-input" placeholder="Reyes" autocomplete="additional-name" data-dash-settings-middlename></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsLastName">Surname</label><input id="dashSettingsLastName" type="text" class="dash-input" placeholder="Dela Cruz" autocomplete="family-name" data-dash-settings-lastname></div>
                                     </div>
-                                </div>
-                                <div class="dash-form-group">
-                                    <label class="dash-form-label" for="dashSettingsEmail">Email address</label>
-                                    <div class="dash-mobile-verify-row"><input id="dashSettingsEmail" type="email" class="dash-input" value="" readonly data-dash-settings-email><button type="button" class="dash-btn-ghost" data-dash-email-edit aria-haspopup="dialog" aria-controls="dashEmailProposalDialog">Change Email</button></div>
-                                    <span class="dash-mobile-status" role="status" data-dash-email-staged-status></span>
-                                </div>
-                                <div class="dash-form-group">
-                                    <div class="phone-field-heading"><label class="dash-form-label" for="dashSettingsMobile">Mobile number · optional</label><span id="dashSettingsMobileStatus" class="phone-field-status" data-dash-mobile-status role="status" aria-live="polite">Optional · format and availability check</span></div>
-                                    <div class="dash-mobile-verify-row">
-                                        <input id="dashSettingsMobile" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" aria-describedby="dashSettingsMobileStatus" data-digits-only data-dash-settings-mobile>
-                                        <button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-validate hidden disabled>Save validated number</button>
-                                        <button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-mobile-remove hidden>Remove</button>
+                                </section>
+                                <section class="dash-personal-section" aria-labelledby="dashPersonalDetailsHeading">
+                                    <div class="dash-personal-section-heading"><h3 id="dashPersonalDetailsHeading">Personal details</h3><p>These optional details help keep your profile up to date. Your age is calculated from your birthdate.</p></div>
+                                    <div class="dash-settings-grid">
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsBirthdate">Birthdate <span class="dash-form-label-hint">(optional)</span></label><input id="dashSettingsBirthdate" type="date" class="dash-input" data-dash-settings-birthdate><span class="dash-mobile-status" role="status" data-dash-birthdate-age>Age will be calculated from your birthdate.</span></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsGender">Gender <span class="dash-form-label-hint">(optional)</span></label><select id="dashSettingsGender" class="dash-input" data-dash-settings-gender><option value="">Select if you wish</option><option value="Male">Male</option><option value="Female">Female</option><option value="Prefer not to say">Prefer not to say</option></select></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsCivilStatus">Civil status <span class="dash-form-label-hint">(optional)</span></label><select id="dashSettingsCivilStatus" class="dash-input" data-dash-settings-civil-status><option value="">Select if you wish</option><option>Single</option><option>Married</option><option>Separated</option><option>Widowed</option><option>Prefer not to say</option></select></div>
                                     </div>
-                                </div>
-                            </div>
+                                </section>
+                                <section class="dash-personal-section" aria-labelledby="dashPersonalEmergencyHeading">
+                                    <div class="dash-personal-section-heading"><h3 id="dashPersonalEmergencyHeading">Emergency contact</h3><p>Add someone we can contact if needed. Both fields are optional.</p></div>
+                                    <div class="dash-settings-grid">
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsEmergencyName">Contact name</label><input id="dashSettingsEmergencyName" type="text" class="dash-input" autocomplete="off" data-dash-settings-emergency-name></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsEmergencyNumber">Contact number</label><div class="dash-mobile-verify-row"><input id="dashSettingsEmergencyNumber" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" aria-describedby="dashSettingsEmergencyStatus" data-digits-only data-dash-settings-emergency-number><span class="dash-personal-phone-actions"><button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-emergency-save hidden disabled>Save validated number</button><button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-emergency-remove hidden>Remove</button></span></div><span id="dashSettingsEmergencyStatus" class="dash-mobile-status" data-dash-emergency-status role="status" aria-live="polite">Optional · shared contacts allowed</span></div>
+                                    </div>
+                                </section>
+                                <section class="dash-personal-section" aria-labelledby="dashPersonalContactHeading">
+                                    <div class="dash-personal-section-heading"><h3 id="dashPersonalContactHeading">Email and mobile</h3><p>Your email is used to sign in. To change it, select Change Email and complete verification. A mobile number is optional.</p></div>
+                                    <div class="dash-settings-grid">
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsEmail">Email address</label><div class="dash-mobile-verify-row"><input id="dashSettingsEmail" type="email" class="dash-input" value="" readonly data-dash-settings-email><button type="button" class="dash-btn-ghost" data-dash-email-edit aria-haspopup="dialog" aria-controls="dashEmailProposalDialog">Change Email</button></div><span class="dash-mobile-status dash-personal-reserved-status" role="status" data-dash-email-staged-status></span></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsMobile">Mobile number <span class="dash-form-label-hint">(optional)</span></label><div class="dash-mobile-verify-row"><input id="dashSettingsMobile" type="tel" class="dash-input" placeholder="09XX XXX XXXX" inputmode="numeric" maxlength="11" aria-describedby="dashSettingsMobileStatus" data-digits-only data-dash-settings-mobile><span class="dash-personal-phone-actions"><button type="button" class="dash-btn-ghost dash-mobile-verify-btn" data-dash-mobile-validate hidden disabled>Save validated number</button><button type="button" class="dash-btn-ghost dash-mobile-remove-btn" data-dash-mobile-remove hidden>Remove</button></span></div><span id="dashSettingsMobileStatus" class="dash-mobile-status" data-dash-mobile-status role="status" aria-live="polite">Optional · format and availability check</span></div>
+                                    </div>
+                                </section>
                             </div>
                             <div class="dash-form-actions dash-settings-dialog-footer">
                                 <button type="button" class="dash-btn-ghost" data-dash-personal-close>Cancel</button>
@@ -762,18 +836,6 @@
                             <div class="dash-settings-dialog-actions dash-settings-dialog-footer">
                                 <button type="button" class="dash-btn-ghost" data-dash-email-otp-close>Cancel</button>
                                 <button type="button" class="dash-btn-save" data-dash-email-otp-verify>Verify current code</button>
-                            </div>
-                        </section>
-                    </div>
-
-                    <div class="dash-settings-modal" data-dash-confirm-modal hidden>
-                        <div class="dash-settings-modal-backdrop"></div>
-                        <section class="dash-settings-dialog dash-settings-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dashSettingsConfirmTitle" aria-describedby="dashSettingsConfirmText" tabindex="-1" data-dash-confirm-dialog>
-                            <h2 id="dashSettingsConfirmTitle">Confirm account change</h2>
-                            <p id="dashSettingsConfirmText">Are you sure you want to change?</p>
-                            <div class="dash-settings-dialog-actions">
-                                <button type="button" class="dash-btn-ghost" data-dash-confirm-cancel>Cancel</button>
-                                <button type="button" class="dash-btn-save" data-dash-confirm-accept>Confirm</button>
                             </div>
                         </section>
                     </div>
@@ -851,36 +913,51 @@
                     </div>
                 </section>
 
+                <!-- Shared across dashboard panels, including feedback and
+                     booking reviews. Keeping it outside each .dash-panel
+                     ensures it remains visible when another panel is active. -->
+                <div class="dash-settings-modal" data-dash-confirm-modal hidden>
+                    <div class="dash-settings-modal-backdrop"></div>
+                    <section class="dash-settings-dialog dash-settings-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dashSettingsConfirmTitle" aria-describedby="dashSettingsConfirmText" tabindex="-1" data-dash-confirm-dialog>
+                        <h2 id="dashSettingsConfirmTitle">Confirm account change</h2>
+                        <p id="dashSettingsConfirmText">Are you sure you want to change?</p>
+                        <div class="dash-settings-dialog-actions">
+                            <button type="button" class="dash-btn-ghost" data-dash-confirm-cancel>Cancel</button>
+                            <button type="button" class="dash-btn-save" data-dash-confirm-accept>Confirm</button>
+                        </div>
+                    </section>
+                </div>
+
             </main>
 
         </div>
     </div>
 
-    <button type="button" class="customer-faq-launcher" data-customer-faq-open aria-label="Open frequently asked questions" aria-haspopup="dialog" aria-expanded="false">
-        <span class="customer-faq-launcher-label">Have a questions</span>
+    <button type="button" class="customer-faq-launcher" data-customer-faq-open aria-label="Open help and frequently asked questions" aria-haspopup="dialog" aria-controls="customerFaqDialog" aria-expanded="false">
+        <span class="customer-faq-launcher-label">Help &amp; FAQ</span>
         <span class="customer-faq-launcher-icon" aria-hidden="true">?</span>
     </button>
     <div class="customer-faq-overlay" data-customer-faq-overlay hidden>
-        <section class="customer-faq-dialog" role="dialog" aria-modal="true" aria-labelledby="customerFaqTitle" aria-describedby="customerFaqIntro" tabindex="-1" data-customer-faq-dialog>
+        <section class="customer-faq-dialog" id="customerFaqDialog" role="dialog" aria-modal="true" aria-labelledby="customerFaqTitle" aria-describedby="customerFaqIntro" tabindex="-1" data-customer-faq-dialog>
             <header class="customer-faq-header">
                 <div>
                     <p class="customer-faq-kicker">IñigoSync help</p>
-                    <h2 id="customerFaqTitle">Ask about the sports center</h2>
-                    <p id="customerFaqIntro">Quick answers about bookings, payments, and visits.</p>
+                    <h2 id="customerFaqTitle">Frequently asked questions</h2>
+                    <p id="customerFaqIntro">Choose a question for quick answers about booking, payments, and your visit.</p>
                 </div>
                 <button type="button" class="customer-faq-close" data-customer-faq-close aria-label="Close frequently asked questions">×</button>
             </header>
             <div class="customer-faq-log" data-customer-faq-log role="log" aria-live="polite" aria-relevant="additions text" aria-label="FAQ conversation">
-                <p class="customer-faq-message is-assistant">Hi! I can help with booking, sports and rates, payments, receipts, directions, or contact details.</p>
+                <p class="customer-faq-message is-assistant">Hi! Choose a question below. Your booking is confirmed after online payment is verified.</p>
             </div>
-            <div class="customer-faq-questions" role="group" aria-label="Suggested questions">
+            <div class="customer-faq-questions" role="group" aria-label="Frequently asked questions">
                 <button type="button" data-customer-faq-question="booking">How do I book?</button>
                 <button type="button" data-customer-faq-question="sports">Sports and rates</button>
-                <button type="button" data-customer-faq-question="cart">Multiple courts</button>
-                <button type="button" data-customer-faq-question="payment">Payment</button>
-                <button type="button" data-customer-faq-question="records">Bookings &amp; receipts</button>
-                <button type="button" data-customer-faq-question="policy">Cancellation &amp; check-in</button>
-                <button type="button" data-customer-faq-question="contact">Location &amp; contact</button>
+                <button type="button" data-customer-faq-question="cart">Can I book multiple courts at once?</button>
+                <button type="button" data-customer-faq-question="payment">How does payment work?</button>
+                <button type="button" data-customer-faq-question="records">Where are my bookings and receipts?</button>
+                <button type="button" data-customer-faq-question="policy">Cancellation and check-in policy</button>
+                <button type="button" data-customer-faq-question="location">Location and contact</button>
             </div>
         </section>
     </div>
@@ -931,14 +1008,15 @@
             <h3 id="dashFeedbackTitle">Give Feedback</h3>
             <p class="dash-modal-sub">Tell us how your experience with IñigoSync has been.</p>
             <div class="dash-form-group">
-                <span class="dash-form-label">Rating (optional)</span>
-                <div class="dash-feedback-rating" data-dash-feedback-rating>
-                    <button type="button" data-dash-feedback-star="1" aria-label="1 star" aria-pressed="false">★</button>
-                    <button type="button" data-dash-feedback-star="2" aria-label="2 stars" aria-pressed="false">★</button>
-                    <button type="button" data-dash-feedback-star="3" aria-label="3 stars" aria-pressed="false">★</button>
-                    <button type="button" data-dash-feedback-star="4" aria-label="4 stars" aria-pressed="false">★</button>
-                    <button type="button" data-dash-feedback-star="5" aria-label="5 stars" aria-pressed="false">★</button>
+                <span class="dash-form-label" id="dashFeedbackRatingLabel">Rating <span aria-hidden="true">(required)</span></span>
+                <div class="dash-feedback-rating" data-dash-feedback-rating role="radiogroup" aria-labelledby="dashFeedbackRatingLabel" aria-required="true" aria-describedby="dashFeedbackRatingError">
+                    <button type="button" role="radio" data-dash-feedback-star="1" aria-label="1 star" aria-checked="false">★</button>
+                    <button type="button" role="radio" data-dash-feedback-star="2" aria-label="2 stars" aria-checked="false">★</button>
+                    <button type="button" role="radio" data-dash-feedback-star="3" aria-label="3 stars" aria-checked="false">★</button>
+                    <button type="button" role="radio" data-dash-feedback-star="4" aria-label="4 stars" aria-checked="false">★</button>
+                    <button type="button" role="radio" data-dash-feedback-star="5" aria-label="5 stars" aria-checked="false">★</button>
                 </div>
+                <p id="dashFeedbackRatingError" class="dash-form-error" data-dash-feedback-rating-error role="alert" hidden>Please choose a rating from 1 to 5 stars.</p>
             </div>
             <div class="dash-form-group">
                 <label class="dash-form-label" for="dashFeedbackMessage">Your message</label>

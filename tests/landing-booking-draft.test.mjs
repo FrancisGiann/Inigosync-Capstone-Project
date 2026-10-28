@@ -9,6 +9,7 @@ class Element {
     setAttribute(name, value) { this[name] = value; }
     async dispatch(type, event = {}) { await Promise.all((this.listeners.get(type) || []).map((callback) => callback(event))); }
     replaceChildren() { this.innerHTML = ''; }
+    querySelectorAll() { return []; }
     focus() { this.focused = true; }
 }
 
@@ -16,7 +17,9 @@ function makeGuestPage(initialDraft = null, pricing = {}) {
     const fields = {
         '[data-landing-book-date]': Object.assign(new Element(), { value: '2099-01-01' }),
         '[data-landing-book-status]': new Element(),
-        '[data-landing-book-slots]': new Element(),
+        '[data-landing-book-slots]': Object.assign(new Element(), {
+            querySelectorAll() { return [8, 9, 10, 11].map((hour) => ({ disabled: false, dataset: { landingSlot: String(hour) } })); },
+        }),
         '[data-landing-book-continue]': new Element(),
         '[data-landing-book-back]': new Element(),
         '[data-landing-booking-dialog]': new Element(),
@@ -180,11 +183,11 @@ test('landing booking hands off exactly one court and one contiguous time range 
 
     await page.selectHour(8);
     await page.selectHour(10);
-    assert.equal(page.fields['[data-landing-book-continue]'].disabled, true, 'disjoint hours cannot create multiple booking ranges');
-    assert.match(page.fields['[data-landing-book-status]'].textContent, /consecutive hours/);
-    await page.selectHour(10);
+    assert.equal(page.fields['[data-landing-book-continue]'].disabled, false, 'a distant end hour fills the continuous range');
+    assert.match(page.fields['[data-landing-book-status]'].textContent, /3 provisional hours/);
     await page.selectHour(9);
-    assert.equal(page.fields['[data-landing-book-continue]'].disabled, false, 'one consecutive range can proceed');
+    assert.match(page.fields['[data-booking-summary-time]'].textContent, /8-9/, 'clicking within the range trims it from that hour onward');
+    await page.selectHour(10);
     await page.fields['[data-landing-book-continue]'].dispatch('click');
 
     assert.equal(page.root.hidden, true, 'continuing closes the date and time dialog');
@@ -195,7 +198,7 @@ test('landing booking hands off exactly one court and one contiguous time range 
     assert.equal(payload.items.length, 1);
     assert.deepEqual(JSON.parse(JSON.stringify(payload.items[0])), {
         listingSlug: 'basketball', court: 'Basketball', sport: 'Basketball', unit: 'Court 1',
-        unitId: 'unit-1', resourceIds: ['resource-1'], date: '2099-01-01', hours: [8, 9], rate: null, rateUnit: '/hr',
+        unitId: 'unit-1', resourceIds: ['resource-1'], date: '2099-01-01', hours: [8, 9, 10], rate: null, rateUnit: '/hr',
     });
     assert.equal(page.getRpcCalls(), 0, 'guest selection uses tab storage and does not call a database API');
     const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');

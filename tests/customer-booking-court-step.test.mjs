@@ -13,7 +13,7 @@ test('customer date and live schedule controls are in Step 3', () => {
     assert.doesNotMatch(step2, /data-dash-book-date|type="date"/);
     assert.match(step3, /data-dash-book-date/);
     assert.match(step3, /data-dash-book-slots/);
-    assert.match(step3, /for="dash-book-date"[^>]*>Choose a date/);
+    assert.match(step3, /for="dash-book-date"[^>]*>Choose dates/);
     assert.match(step3, /aria-describedby="dash-book-date-hint"/);
     assert.match(step3, /data-dash-book-slot-status role="status" aria-live="polite"/);
     assert.match(step3, /dash-book-slot-legend/);
@@ -23,7 +23,7 @@ test('customer date and live schedule controls are in Step 3', () => {
     assert.match(css, /\.dash-book-slot\.is-selected/);
     assert.match(css, /\.dash-book-slot\.is-booked, \.dash-book-slot\.is-past/);
     assert.match(css, /\.dash-book-slot:focus-visible/);
-    assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.dash-book-slot-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+    assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.dash-book-day-slots \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
 });
 
 test('court choices render one image card per unit with unit rates and listing ratings', () => {
@@ -194,7 +194,7 @@ test('selected court preview caption names the unit and the schedule summary avo
 
 test('Step 4 keeps add-booking in the card header and exposes edit controls with an accurate breakdown', () => {
     const step4 = html.slice(html.indexOf('data-dash-book-step="4"'), html.indexOf('data-dash-book-step="5"'));
-    assert.match(step4, /dash-book-cart-head[^]*data-dash-book-new>Add another sport or court/);
+    assert.match(step4, /dash-book-cart-head[^]*data-dash-book-new>Add more/);
     assert.doesNotMatch(step4.slice(step4.indexOf('dash-book-flow-actions')), /data-dash-book-new/);
     assert.match(dashboard, /data-dash-book-cart-edit/);
     assert.match(dashboard, /bookingItemRateBreakdown\(item\)/);

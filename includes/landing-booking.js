@@ -149,7 +149,7 @@
         const oneRange = window.InigoBookingSlots.groupConsecutiveHours([...selectedHours]).length === 1;
         setStatus(selectedCount && !oneRange ? 'Choose consecutive hours for one court booking.'
             : selectedCount ? `${selectedCount} provisional hour${selectedCount === 1 ? '' : 's'} selected. Live availability is checked after sign in.`
-            : 'Provisional hours only. Live availability and date-specific closures are checked after sign in.');
+            : 'Provisional hours only. Choose any end hour to select a continuous range. Live availability and date-specific closures are checked after sign in.');
         continueButton.disabled = !selectedCount || !oneRange;
     }
 
@@ -205,7 +205,34 @@
         const button = event.target.closest('[data-landing-slot]');
         if (!button || button.disabled) return;
         const hour = Number(button.dataset.landingSlot);
-        if (selectedHours.has(hour)) selectedHours.delete(hour); else selectedHours.add(hour);
+        const selected = [...selectedHours].sort((a, b) => a - b);
+        if (selected.includes(hour)) {
+            selectedHours = new Set(selected.filter((selectedHour) => selectedHour < hour));
+            renderSlots();
+            return;
+        }
+        if (!selected.length) selectedHours = new Set([hour]);
+        else {
+            const available = new Set([...slots.querySelectorAll('[data-landing-slot]')]
+                .filter((slot) => !slot.disabled)
+                .map((slot) => Number(slot.dataset.landingSlot)));
+            const extendingEarlier = hour < selected[0];
+            const nextHour = extendingEarlier ? selected[0] - 1 : selected[selected.length - 1] + 1;
+            const range = [...selected];
+            let blocked = false;
+            for (let candidate = nextHour; extendingEarlier ? candidate >= hour : candidate <= hour; candidate += extendingEarlier ? -1 : 1) {
+                if (!available.has(candidate)) { blocked = true; break; }
+                range.push(candidate);
+            }
+            if (range.length === selected.length && blocked) {
+                setStatus('The range could not extend past the first unavailable hour. Your current selection was kept.', true);
+                return;
+            }
+            selectedHours = new Set(range);
+            renderSlots();
+            if (blocked) setStatus('Selection extended up to the first unavailable hour.');
+            return;
+        }
         renderSlots();
     });
     continueButton?.addEventListener('click', async () => {

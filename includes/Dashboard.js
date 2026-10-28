@@ -56,8 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // its content now lives inside 'overview' (§4/D2), which already has
         // its own entry above.
         booking: { title: 'Book a Court', subtitle: 'Choose a sport, court, and time, then review your bookings.' },
-        bookings: { title: 'My Bookings', subtitle: "Track the status of every reservation you've made." },
-        receipts: { title: 'Receipts', subtitle: 'View your booking payments and walk-in payments linked to your account.' },
+        bookings: { title: 'My Bookings & Visits', subtitle: 'Track online bookings and walk-in visits linked to your account.' },
+        receipts: { title: 'Receipts', subtitle: 'Review payments and open a receipt for its full details.' },
         profile: { title: 'My Profile', subtitle: 'Your personal details and booking history at a glance.' },
         settings: { title: 'Account Settings', subtitle: 'Update your personal details and manage your password.' },
     };
@@ -720,33 +720,96 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackDialog = document.querySelector('[data-dash-feedback-dialog]');
     const feedbackMessageEl = document.querySelector('[data-dash-feedback-message]');
     const feedbackSubmitBtn = document.querySelector('[data-dash-feedback-submit]');
+    const feedbackRatingError = document.querySelector('[data-dash-feedback-rating-error]');
     const feedbackStars = Array.from(document.querySelectorAll('[data-dash-feedback-star]'));
 
     const FEEDBACK_CLOSE_DELAY_MS = 250;
     let feedbackHideTimer = null;
     let feedbackLastFocused = null;
     let feedbackIsOpen = false;
-    // Optional (§2: "optional 1-5 rating") — stays null until a star is
-    // clicked, and clicking the already-selected star again clears it back
-    // to null, so a customer who changes their mind can un-rate.
+    // Rating is required; null represents an unselected rating until one is
+    // chosen.
     let feedbackRating = null;
+    let existingFeedbackId = null;
+    let feedbackLoadPending = false;
+    let feedbackLoadFailed = false;
+    let initialFeedbackSnapshot = null;
 
     function paintFeedbackStars(value) {
         feedbackStars.forEach((btn) => {
             const starValue = Number(btn.dataset.dashFeedbackStar);
             const isSelected = value !== null && starValue <= value;
             btn.classList.toggle('is-selected', isSelected);
-            btn.setAttribute('aria-pressed', String(value !== null && starValue === value));
+            btn.setAttribute('aria-checked', String(value !== null && starValue === value));
         });
     }
 
     feedbackStars.forEach((btn) => {
         btn.addEventListener('click', () => {
+            if (feedbackLoadPending) return;
             const value = Number(btn.dataset.dashFeedbackStar);
-            feedbackRating = (feedbackRating === value) ? null : value;
+            feedbackRating = value;
             paintFeedbackStars(feedbackRating);
+            if (feedbackRatingError) feedbackRatingError.hidden = feedbackRating !== null;
+        });
+        btn.addEventListener('keydown', (event) => {
+            const key = event.key;
+            if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(key)) return;
+            event.preventDefault();
+            const index = feedbackStars.indexOf(btn);
+            const nextIndex = key === 'Home' ? 0
+                : key === 'End' ? feedbackStars.length - 1
+                    : (index + (key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1) + feedbackStars.length) % feedbackStars.length;
+            feedbackStars[nextIndex]?.focus();
+            feedbackStars[nextIndex]?.click();
         });
     });
+
+    async function loadCustomerFeedback() {
+        if (!window.sb || !window.inigosyncProfile) {
+            feedbackLoadFailed = true;
+            if (feedbackSubmitBtn) {
+                feedbackSubmitBtn.disabled = false;
+                feedbackSubmitBtn.textContent = 'Retry Load';
+            }
+            return;
+        }
+        feedbackLoadPending = true;
+        feedbackLoadFailed = false;
+        feedbackSubmitBtn && (feedbackSubmitBtn.disabled = true);
+        if (feedbackSubmitBtn) feedbackSubmitBtn.textContent = 'Loading…';
+        try {
+            const { data, error } = await window.sb.from('feedback')
+                .select('id, rating, message')
+                .eq('profile_id', window.inigosyncProfile.id)
+                .maybeSingle();
+            if (error) throw error;
+            const row = data || null;
+            existingFeedbackId = row?.id || null;
+            feedbackRating = row?.rating == null ? null : Number(row.rating);
+            if (feedbackMessageEl) feedbackMessageEl.value = row?.message || '';
+            initialFeedbackSnapshot = {
+                rating: feedbackRating,
+                message: (feedbackMessageEl?.value || '').trim(),
+            };
+            paintFeedbackStars(feedbackRating);
+            if (feedbackRatingError) feedbackRatingError.hidden = true;
+            if (feedbackSubmitBtn) feedbackSubmitBtn.textContent = row ? 'Save Feedback' : 'Submit Feedback';
+            feedbackLoadFailed = false;
+        } catch (error) {
+            feedbackLoadFailed = true;
+            console.error('[dashboard] feedback load failed', error);
+            window.InigoToast?.show(isDashboardSchemaMismatch(error)
+                ? "Feedback isn't set up yet — this needs a database update. Please try again later."
+                : 'Could not load your feedback. Please try again.', true);
+        } finally {
+            feedbackLoadPending = false;
+            if (feedbackSubmitBtn) {
+                feedbackSubmitBtn.disabled = false;
+                if (feedbackLoadFailed) feedbackSubmitBtn.textContent = 'Retry Load';
+            }
+        }
+    }
 
     function openFeedbackModal(invoker) {
         if (!feedbackOverlay || !feedbackDialog) return;
@@ -769,11 +832,23 @@ document.addEventListener('DOMContentLoaded', () => {
         feedbackOverlay.setAttribute('data-open', '');
         feedbackIsOpen = true;
         feedbackDialog.focus();
+        if (feedbackMessageEl) feedbackMessageEl.value = '';
+        feedbackRating = null;
+        existingFeedbackId = null;
+        initialFeedbackSnapshot = null;
+        paintFeedbackStars(null);
+        if (feedbackRatingError) feedbackRatingError.hidden = true;
+        if (feedbackSubmitBtn) feedbackSubmitBtn.textContent = 'Loading…';
+        void loadCustomerFeedback();
     }
 
     let feedbackClosePending = false;
     let feedbackSubmitPending = false;
-    function feedbackHasChanges() { return Boolean(feedbackMessageEl?.value.trim()) || feedbackRating !== null; }
+    function feedbackHasChanges() {
+        if (!initialFeedbackSnapshot) return Boolean(feedbackMessageEl?.value.trim()) || feedbackRating !== null;
+        return feedbackRating !== initialFeedbackSnapshot.rating
+            || (feedbackMessageEl?.value || '').trim() !== initialFeedbackSnapshot.message;
+    }
     async function closeFeedbackModal(force = false) {
         if (!feedbackIsOpen) return;
         if (!force && feedbackHasChanges()) {
@@ -825,12 +900,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (feedbackSubmitBtn) {
         feedbackSubmitBtn.addEventListener('click', async () => {
             if (feedbackSubmitPending) return;
-            const message = (feedbackMessageEl?.value || '').trim();
-            if (!message) {
-                window.InigoToast?.show('Please enter a message before submitting.', true);
-                feedbackMessageEl?.focus();
+            if (feedbackLoadPending) return;
+            if (feedbackLoadFailed) {
+                await loadCustomerFeedback();
                 return;
             }
+            const message = (feedbackMessageEl?.value || '').trim();
+            if (feedbackRating === null || !Number.isInteger(feedbackRating) || feedbackRating < 1 || feedbackRating > 5) {
+                if (feedbackRatingError) feedbackRatingError.hidden = false;
+                feedbackStars[0]?.focus();
+                return;
+            }
+            if (feedbackRatingError) feedbackRatingError.hidden = true;
             if (!window.sb || !window.inigosyncProfile) {
                 window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
                 return;
@@ -838,17 +919,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const originalLabel = feedbackSubmitBtn.textContent;
             feedbackSubmitPending = true;
-            if (!await confirmSettingsChange('Submit this feedback?')) { feedbackSubmitPending = false; return; }
+            if (!await confirmSettingsChange(existingFeedbackId ? 'Save changes to your feedback?' : 'Submit this feedback?')) { feedbackSubmitPending = false; return; }
             feedbackSubmitBtn.disabled = true;
-            feedbackSubmitBtn.textContent = 'Submitting…';
+            feedbackSubmitBtn.textContent = existingFeedbackId ? 'Saving…' : 'Submitting…';
 
             let error = null;
             try {
-                ({ error } = await window.sb.from('feedback').insert({
-                    profile_id: window.inigosyncProfile.id,
-                    rating: feedbackRating,
-                    message,
-                }));
+                const payload = { profile_id: window.inigosyncProfile.id, rating: feedbackRating, message: message || null };
+                if (existingFeedbackId) {
+                    ({ error } = await window.sb.from('feedback').update(payload).eq('id', existingFeedbackId).eq('profile_id', window.inigosyncProfile.id));
+                } else {
+                    ({ error } = await window.sb.from('feedback').insert(payload));
+                    // A second tab can submit between the initial read and
+                    // insert. The unique constraint arbitrates; recover by
+                    // updating that account's row instead of creating a duplicate.
+                    if (error?.code === '23505') {
+                        const { data, error: lookupError } = await window.sb.from('feedback').select('id').eq('profile_id', window.inigosyncProfile.id).maybeSingle();
+                        if (lookupError || !data?.id) throw lookupError || error;
+                        existingFeedbackId = data.id;
+                        ({ error } = await window.sb.from('feedback').update(payload).eq('id', data.id).eq('profile_id', window.inigosyncProfile.id));
+                    }
+                }
             } catch (requestError) {
                 error = requestError;
             } finally {
@@ -858,7 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (error) {
-                console.error('[dashboard] feedback insert failed', error);
+                console.error('[dashboard] feedback save failed', error);
                 // isDashboardSchemaMismatch() (defined further below) turns
                 // a missing table/column into a clear setup message rather
                 // than a raw database error or a fake success toast.
@@ -869,7 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            window.InigoToast?.show('Thanks for your feedback!');
+            window.InigoToast?.show(existingFeedbackId ? 'Your feedback was updated.' : 'Thanks for your feedback!');
             if (feedbackMessageEl) feedbackMessageEl.value = '';
             feedbackRating = null;
             paintFeedbackStars(null);
@@ -943,6 +1034,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const bookSelect = document.querySelector('[data-dash-book-select]');
     const bookDate = document.querySelector('[data-dash-book-date]');
+    const bookingCalendar = document.querySelector('[data-dash-book-calendar]');
+    const bookingCalendarTrigger = bookingCalendar?.querySelector('[data-dash-calendar-trigger]');
+    const bookingCalendarPopup = bookingCalendar?.querySelector('[data-dash-calendar-popup]');
+    const bookingCalendarGrid = bookingCalendar?.querySelector('[data-dash-calendar-grid]');
+    const bookingCalendarTitle = bookingCalendar?.querySelector('[data-dash-calendar-title]');
+    const bookingCalendarCount = bookingCalendar?.querySelector('[data-dash-calendar-count]');
+    if (bookingCalendarPopup && bookingCalendarTrigger) {
+        bookingCalendarPopup.classList.add('is-floating');
+        document.body.appendChild(bookingCalendarPopup);
+    }
     const bookSportGrid = document.querySelector('[data-dash-book-sports]');
     const bookCourtGrid = document.querySelector('[data-dash-book-courts]');
     const bookingModal = document.querySelector('[data-dash-booking-modal]');
@@ -973,6 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingPanel = document.querySelector('[data-dash-panel="booking"]');
     const bookSlotsGrid = document.querySelector('[data-dash-book-slots]');
     const bookSlotStatus = document.querySelector('[data-dash-book-slot-status]');
+    const bookSelectAllSlots = document.querySelector('[data-dash-book-select-all]');
     const paymentOptions = document.querySelectorAll('[data-dash-payment-option]');
     const paymentModeHint = document.querySelector('[data-dash-pay-mode-hint]');
     const bookSubmit = document.querySelector('[data-dash-book-submit]');
@@ -1017,9 +1119,80 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!bookDate.value || bookDate.value < todayStr) bookDate.value = todayStr;
     }
 
+    let bookingCalendarMonth = new Date(`${(bookDate?.value || todayDateInputValue()).slice(0, 7)}-01T00:00:00`);
+    function positionBookingCalendar() {
+        if (!bookingCalendarPopup || bookingCalendarPopup.hidden || !bookingCalendarTrigger) return;
+        const triggerRect = bookingCalendarTrigger.getBoundingClientRect();
+        const popupRect = bookingCalendarPopup.getBoundingClientRect();
+        const gutter = 8;
+        const width = popupRect.width;
+        const height = popupRect.height;
+        const left = Math.max(gutter, Math.min(triggerRect.right - width, window.innerWidth - width - gutter));
+        const below = window.innerHeight - triggerRect.bottom - gutter;
+        const above = triggerRect.top - gutter;
+        let top = below >= height || below >= above ? triggerRect.bottom + 6 : triggerRect.top - height - 6;
+        top = Math.max(gutter, Math.min(top, window.innerHeight - height - gutter));
+        bookingCalendarPopup.style.left = `${left}px`;
+        bookingCalendarPopup.style.top = `${top}px`;
+    }
+    function renderBookingCalendar() {
+        if (!bookingCalendarGrid || !bookingCalendarTitle) return;
+        const year = bookingCalendarMonth.getFullYear(); const month = bookingCalendarMonth.getMonth();
+        bookingCalendarTitle.textContent = bookingCalendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        const first = new Date(year, month, 1); const start = new Date(year, month, 1 - first.getDay());
+        const minDate = todayDateInputValue();
+        bookingCalendarGrid.innerHTML = ['Su','Mo','Tu','We','Th','Fr','Sa'].map((d) => `<span class="dash-book-calendar-weekday" aria-hidden="true">${d}</span>`).join('')
+            + Array.from({ length: 42 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); const key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; const selected = bookingSelectedDates.has(key); const disabled = key < minDate || (editingBookingCartKey && key !== bookingState.date); const label = date.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }); return `<button type="button" class="dash-book-calendar-day${date.getMonth() !== month ? ' is-outside' : ''}${selected ? ' is-selected' : ''}" data-dash-calendar-date="${key}" aria-label="${label}" aria-pressed="${selected}"${key === minDate ? ' aria-current="date"' : ''}${disabled ? ' disabled' : ''}>${date.getDate()}</button>`; }).join('');
+        if (bookingCalendarCount) bookingCalendarCount.textContent = `${bookingSelectedDates.size} date${bookingSelectedDates.size === 1 ? '' : 's'} selected`;
+        if (bookingCalendarTrigger) { bookingCalendarTrigger.textContent = bookingSelectedDates.size ? [...bookingSelectedDates].sort().map((d) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month:'short', day:'numeric' })).join(', ') : 'Choose dates'; bookingCalendarTrigger.setAttribute('aria-expanded', String(!bookingCalendarPopup?.hidden)); }
+    }
+    bookingCalendarPopup?.addEventListener('click', (event) => {
+        // Selecting a date rerenders this grid and detaches the clicked node.
+        // Stop bubbling before replacement so the document handler does not
+        // mistake the old target for an outside click.
+        event.stopPropagation();
+        const target = event.target.closest('button'); if (!target) return;
+        if (target.matches('[data-dash-calendar-done]')) { bookingCalendarPopup.hidden = true; bookingCalendarTrigger?.setAttribute('aria-expanded', 'false'); renderBookingCalendar(); bookingCalendarTrigger?.focus(); return; }
+        if (target.matches('[data-dash-calendar-prev], [data-dash-calendar-next]')) { bookingCalendarMonth.setMonth(bookingCalendarMonth.getMonth() + (target.matches('[data-dash-calendar-prev]') ? -1 : 1)); renderBookingCalendar(); positionBookingCalendar(); return; }
+        if (target.matches('[data-dash-calendar-date]') && !target.disabled) {
+            const date = target.dataset.dashCalendarDate;
+            if (editingBookingCartKey) {
+                if (bookDate) bookDate.value = date;
+                bookingState.date = date; bookingSelectedDates.clear(); bookingSelectedDates.add(date); bookingSelectionsByDate.clear(); bookingSelectionsByDate.set(date, []); bookingState.selectedHours = []; bookingAvailabilityByDate.clear();
+            } else if (bookingSelectedDates.has(date)) {
+                bookingSelectedDates.delete(date); bookingSelectionsByDate.delete(date); bookingAvailabilityByDate.delete(date);
+                if (bookingState.date === date) bookingState.date = [...bookingSelectedDates].sort()[0] || '';
+            } else { bookingSelectedDates.add(date); bookingSelectionsByDate.set(date, []); bookingState.date = date; if (bookDate) bookDate.value = date; }
+            if (bookDate) bookDate.value = bookingState.date;
+            bookingState.selectedHours = [...(bookingSelectionsByDate.get(bookingState.date) || [])];
+            const run = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours)[0]; bookingState.startHour = run?.startHour ?? null; bookingState.endHour = run ? run.endHourExclusive - 1 : null;
+            renderBookingCalendar(); positionBookingCalendar(); refreshTimePickers(); updateSummary();
+        }
+    });
+    bookingCalendarTrigger?.addEventListener('click', () => {
+        bookingCalendarPopup.hidden = !bookingCalendarPopup.hidden;
+        bookingCalendarTrigger.setAttribute('aria-expanded', String(!bookingCalendarPopup.hidden));
+        if (!bookingCalendarPopup.hidden) { renderBookingCalendar(); positionBookingCalendar(); }
+    });
+    window.addEventListener('resize', positionBookingCalendar, { passive: true });
+    window.addEventListener('scroll', positionBookingCalendar, { passive: true, capture: true });
+    document.addEventListener('click', (event) => { if (bookingCalendarPopup && !bookingCalendarPopup.hidden && !bookingCalendarPopup.contains(event.target) && !bookingCalendarTrigger?.contains(event.target)) { bookingCalendarPopup.hidden = true; bookingCalendarTrigger?.setAttribute('aria-expanded', 'false'); renderBookingCalendar(); } });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && bookingCalendarPopup && !bookingCalendarPopup.hidden) { bookingCalendarPopup.hidden = true; bookingCalendarTrigger?.setAttribute('aria-expanded', 'false'); renderBookingCalendar(); bookingCalendarTrigger?.focus(); } });
+
     const summaryPayment = document.querySelector('[data-dash-summary-payment]');
     const summaryTotal = document.querySelector('[data-dash-summary-total]');
     const summaryGross = document.querySelector('[data-dash-summary-gross]');
+    const summaryBalance = document.querySelector('[data-dash-summary-balance]');
+    const paymentReceiptItems = document.querySelector('[data-dash-payment-receipt-items]');
+    const paymentTermsAccepted = document.querySelector('[data-dash-payment-terms-accepted]');
+    const paymentTermsDialog = document.querySelector('[data-dash-payment-terms-dialog]');
+    const paymentTermsOpen = document.querySelector('[data-dash-payment-terms-accepted]');
+    const paymentTermsAgree = document.querySelector('[data-dash-payment-terms-agree]');
+    const paymentTermsDecline = document.querySelector('[data-dash-payment-terms-decline]');
+    const paymentTermsStatus = document.querySelector('[data-dash-payment-terms-status]');
+    let paymentAcceptanceSignature = null;
+    let paymentTermsReturnFocus = null;
+    let paymentTermsDialogAgreed = false;
 
     // Customer booking steps remain inline: sport, court, schedule, summary.
     const bookStepPanels = document.querySelectorAll('[data-dash-book-step]');
@@ -1069,6 +1242,9 @@ document.addEventListener('DOMContentLoaded', () => {
         downpaymentPct: window.InigoAppSettings ? window.InigoAppSettings.DEFAULT_SETTINGS.downpaymentPct : 50,
     };
     const bookingCart = [];
+    const bookingSelectedDates = new Set(bookingState.date ? [bookingState.date] : []);
+    const bookingSelectionsByDate = new Map(bookingState.date ? [[bookingState.date, []]] : []);
+    const bookingAvailabilityByDate = new Map();
     let bookingCartSeq = 0;
     let bookingSummaryBackKey = null;
     let editingBookingCartKey = null;
@@ -1319,7 +1495,6 @@ document.addEventListener('DOMContentLoaded', () => {
         bookWizardStep = nextStep;
         renderBookWizard();
         updateSummary();
-        if (bookSubmit) bookSubmit.disabled = !bookingCart.length || bookingCartSaving;
         renderBookingCart();
     }
 
@@ -1376,7 +1551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingFeeReturnFocus = returnFocus || bookSubmit;
         bookingFeeContinueAction = onContinue || (() => submitBookingCart());
         if (bookingFeeQuestion) bookingFeeQuestion.textContent = question || 'Would you like to continue to secure checkout?';
-        if (bookingFeeContinue) bookingFeeContinue.textContent = continueLabel || 'Continue to PayMongo';
+        if (bookingFeeContinue) bookingFeeContinue.textContent = continueLabel || 'Proceed to pay online';
         bookingFeeConfirmation.hidden = false;
         const cancelButton = bookingFeeConfirmation.querySelector('button[data-dash-book-fee-close]');
         (cancelButton || bookingFeeContinue || bookingFeeConfirmationDialog).focus({ preventScroll: true });
@@ -1434,6 +1609,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('[data-dash-book-new]')?.addEventListener('click', () => {
         editingBookingCartKey = null;
         addingBookingFromSummary = true;
+        resetBookingDatesForFreshDraft();
         bookingState.sportSlug = '';
         bookingState.court = '';
         bookingState.sport = '';
@@ -1485,6 +1661,10 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingState.startHour = item.startHour;
         bookingState.endHour = item.endHour;
         bookingState.selectedHours = Array.from({ length: item.hours }, (_, index) => item.startHour + index);
+        bookingSelectedDates.clear();
+        bookingSelectedDates.add(item.date);
+        bookingSelectionsByDate.clear();
+        bookingSelectionsByDate.set(item.date, [...bookingState.selectedHours]);
         await refreshTimePickers(true);
         goToBookStep(returnStep);
         updateSummary();
@@ -1497,6 +1677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addingBookingFromSummary = false;
         if (bookAddButton) bookAddButton.textContent = 'Review booking';
         bookingState.selectedHours = [];
+        bookingSelectionsByDate.set(bookingState.date, []);
         bookingState.startHour = null;
         bookingState.endHour = null;
         updateSummary();
@@ -1562,27 +1743,89 @@ document.addEventListener('DOMContentLoaded', () => {
             // where supported). Clamped forward to today rather than just
             // rejected, so the field never sits on an invalid value.
             const todayStr = todayDateInputValue();
-            if (bookDate.value < todayStr) {
+            if (!bookDate.value) {
+                bookDate.value = bookingState.date || todayStr;
+            } else if (bookDate.value < todayStr) {
                 bookDate.value = todayStr;
                 window.InigoToast?.show("You can't book a date in the past — showing today instead.", true);
             }
+            if (editingBookingCartKey && bookDate.value !== bookingState.date) {
+                bookingState.date = bookDate.value;
+                bookingState.selectedHours = [];
+                bookingState.startHour = null;
+                bookingState.endHour = null;
+                bookingSelectedDates.clear();
+                bookingSelectedDates.add(bookingState.date);
+                bookingSelectionsByDate.clear();
+                bookingSelectionsByDate.set(bookingState.date, []);
+                bookingAvailabilityByDate.clear();
+                refreshTimePickers();
+                updateSummary();
+                return;
+            }
+            bookingSelectionsByDate.set(bookingState.date, [...bookingState.selectedHours]);
             bookingState.date = bookDate.value;
-            resetTimeSelectionAndRender();
+            bookingSelectedDates.add(bookingState.date);
+            bookingState.selectedHours = [...(bookingSelectionsByDate.get(bookingState.date) || [])];
+            const firstRun = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours)[0];
+            bookingState.startHour = firstRun?.startHour ?? null;
+            bookingState.endHour = firstRun ? firstRun.endHourExclusive - 1 : null;
+            refreshTimePickers();
             updateSummary();
         });
     }
 
     paymentOptions.forEach((option) => {
-        option.addEventListener('click', () => {
+        const radio = option.querySelector('input[type="radio"]');
+        radio?.addEventListener('change', () => {
             paymentOptions.forEach((o) => o.classList.remove('is-selected'));
             option.classList.add('is-selected');
-            const radio = option.querySelector('input[type="radio"]');
-            if (radio) {
-                radio.checked = true;
-                bookingState.paymentType = radio.dataset.dashPayment;
-            }
+            bookingState.paymentType = radio.dataset.dashPayment;
+            if (paymentTermsAccepted) paymentTermsAccepted.checked = false;
             updateSummary();
         });
+    });
+
+    function closePaymentTermsDialog(accepted = false) {
+        paymentTermsDialogAgreed = accepted;
+        if (paymentTermsAccepted) paymentTermsAccepted.checked = accepted;
+        updateSummary();
+        if (paymentTermsDialog?.open) paymentTermsDialog.close();
+        else if (!accepted) paymentTermsOpen?.focus({ preventScroll: true });
+    }
+
+    function openPaymentTermsDialog() {
+        // The checkbox is only a request to review the terms. It stays unchecked
+        // unless the customer explicitly chooses Agree in the dialog.
+        if (paymentTermsAccepted) paymentTermsAccepted.checked = false;
+        updateSummary();
+        paymentTermsReturnFocus = paymentTermsOpen;
+        if (paymentTermsDialog && !paymentTermsDialog.open) paymentTermsDialog.showModal();
+        paymentTermsDecline?.focus({ preventScroll: true });
+    }
+    paymentTermsAccepted?.addEventListener('change', () => {
+        if (paymentTermsAccepted.checked) openPaymentTermsDialog();
+        else updateSummary();
+    });
+    paymentTermsAgree?.addEventListener('click', () => closePaymentTermsDialog(true));
+    paymentTermsDecline?.addEventListener('click', () => closePaymentTermsDialog(false));
+    paymentTermsDialog?.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closePaymentTermsDialog(false);
+    });
+    paymentTermsDialog?.addEventListener('click', (event) => {
+        if (event.target === paymentTermsDialog) closePaymentTermsDialog(false);
+    });
+    paymentTermsDialog?.addEventListener('keydown', (event) => handleBookingDialogKeydown(
+        event, paymentTermsDialog, () => closePaymentTermsDialog(false),
+    ));
+    paymentTermsDialog?.addEventListener('close', () => {
+        if (!paymentTermsDialogAgreed && paymentTermsAccepted) paymentTermsAccepted.checked = false;
+        paymentTermsDialogAgreed = false;
+        updateSummary();
+        const target = paymentTermsReturnFocus;
+        paymentTermsReturnFocus = null;
+        if (target?.isConnected && !target.disabled && !target.closest('[hidden]')) target.focus({ preventScroll: true });
     });
 
     // ------------------------------------------------------------------
@@ -1742,14 +1985,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'available';
     }
 
-    function isSlotHourInBookingCart(hour) {
+    function isSlotHourInBookingCart(hour, date = bookingState.date) {
         const court = findBookCourt(bookingState.court);
         const unitId = String(bookingState.unitId || '');
         if (!unitId) return false;
         return bookingCart.some((item) => {
             const startHour = Number(item.startHour);
             const endHour = Number(item.endHour);
-            if (item.key === editingBookingCartKey || item.date !== bookingState.date
+            if (item.key === editingBookingCartKey || item.date !== date
                 || !item.unitId || String(item.unitId) !== unitId
                 || !Number.isFinite(startHour) || !Number.isFinite(endHour)
                 || startHour > hour || endHour < hour) return false;
@@ -1761,63 +2004,106 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTimePickers() {
         if (!bookSlotsGrid) return;
-        const clear = () => { bookingState.selectedHours = []; bookingState.startHour = null; bookingState.endHour = null; };
-        if (!bookingState.court || !bookingState.unitId || !bookingState.date) {
+        if (!bookingState.court || !bookingState.unitId) {
             bookSlotsGrid.innerHTML = '';
-            if (bookSlotStatus) bookSlotStatus.textContent = 'Select a court and date to check availability.';
-            clear();
+            if (bookSlotStatus) bookSlotStatus.textContent = 'Select a court to check availability for your chosen dates.';
             return;
         }
-        if (!bookingRules) {
-            bookSlotsGrid.innerHTML = '';
-            if (bookSlotStatus) bookSlotStatus.textContent = 'Checking opening hours…';
-            clear();
-            return;
-        }
-        if (!bookingRules.authoritative) {
-            bookSlotsGrid.innerHTML = '';
-            if (bookSlotStatus) bookSlotStatus.textContent = 'Opening hours could not be verified. Try again later.';
-            clear();
-            return;
-        }
-        if (bookingRules.isClosed || !slotGridBookings.ok || !slotGridWalkins.ok) {
-            bookSlotsGrid.innerHTML = '';
-            if (bookSlotStatus) bookSlotStatus.textContent = bookingRules.isClosed
-                ? 'The facility is closed on this date.'
-                : 'Live availability could not be verified. Please refresh and try again.';
-            clear();
-            return;
-        }
-        const hours = bookingHoursRange();
-        const available = new Set(hours.filter((hour) => slotHourStatus(hour) === 'available' && !isSlotHourInBookingCart(hour)));
-        bookingState.selectedHours = bookingState.selectedHours.filter((hour) => available.has(hour));
-        bookSlotsGrid.innerHTML = hours.map((hour) => {
-            const serverStatus = slotHourStatus(hour);
-            const status = serverStatus === 'available' && isSlotHourInBookingCart(hour) ? 'in-cart' : serverStatus;
-            const disabled = status !== 'available';
-            const selected = bookingState.selectedHours.includes(hour);
-            const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
-            const statusLabel = selected ? 'Selected' : status === 'available' ? 'Available' : status === 'in-cart' ? 'In summary' : status === 'booked' ? 'Booked' : 'Elapsed';
-            return `<button type="button" class="dash-book-slot is-${status}${selected ? ' is-selected' : ''}" data-dash-book-slot="${hour}" aria-label="${window.escapeHtml(label)}, ${statusLabel}${disabled ? ', unavailable' : ''}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}><span class="dash-book-slot-time">${window.escapeHtml(label)}</span><span class="dash-book-slot-state" aria-hidden="true">${statusLabel}</span></button>`;
-        }).join('') || '<p class="dash-res-state">No bookable hours are configured for this date.</p>';
-        if (bookSlotStatus) {
-            bookSlotStatus.textContent = bookingState.selectedHours.length
-                ? `${bookingState.selectedHours.length} hour${bookingState.selectedHours.length === 1 ? '' : 's'} selected. Gaps create separate bookings.`
-                : 'Choose available hours. Booked, elapsed, and times already in your summary cannot be selected.';
+        if (bookingState.date) bookingSelectionsByDate.set(bookingState.date, [...bookingState.selectedHours]);
+        const dates = [...bookingSelectedDates].sort();
+        const statusFor = (date, hour, availability) => {
+            if (!availability?.rules?.authoritative) return 'checking';
+            const hours = hoursRangeForRules(availability.rules);
+            if (!hours.includes(hour)) return 'closed';
+            if (new Date(window.InigoBookingSlots.localDateHourToIso(date, hour)).getTime() < Date.now()) return 'past';
+            const slotStart = new Date(window.InigoBookingSlots.localDateHourToIso(date, hour));
+            const slot = { start: slotStart, end: new Date(slotStart.getTime() + 3600000) };
+            const rows = [...availability.bookings.rows, ...availability.walkins.rows];
+            return rows.some((row) => courtUnitsOverlap(row.court_unit, bookingState.unit || '')
+                && bookingWindowsOverlap(bookingTimeWindow(row), slot)) ? 'booked' : 'available';
+        };
+        let eligibleAcrossDates = 0; let selectedAcrossDates = 0;
+        const earliestBlockByDate = new Map();
+        const sections = dates.map((date) => {
+            const availability = bookingAvailabilityByDate.get(date);
+            const selection = new Set(bookingSelectionsByDate.get(date) || []);
+            if (!availability || !availability.rules?.authoritative || !availability.bookings.ok || !availability.walkins.ok) {
+                return `<section class="dash-book-day" data-dash-book-day="${window.escapeHtml(date)}"><h5>${window.escapeHtml(date)}</h5><p class="dash-form-hint">${slotGridLoading ? 'Checking availability…' : 'Availability could not be verified. Refresh and try again.'}</p></section>`;
+            }
+            const hours = hoursRangeForRules(availability.rules);
+            const available = hours.filter((hour) => statusFor(date, hour, availability) === 'available' && !isSlotHourInBookingCart(hour, date));
+            const earliestBlock = [];
+            for (const hour of available) {
+                if (earliestBlock.length && hour !== earliestBlock[earliestBlock.length - 1] + 1) break;
+                earliestBlock.push(hour);
+            }
+            earliestBlockByDate.set(date, earliestBlock);
+            const availableSet = new Set(available);
+            const originallySelected = [...selection].filter((hour) => availableSet.has(hour)).sort((a, b) => a - b);
+            const picked = [];
+            for (const hour of originallySelected) {
+                if (picked.length && hour !== picked[picked.length - 1] + 1) break;
+                picked.push(hour);
+            }
+            eligibleAcrossDates += available.length; selectedAcrossDates += picked.length;
+            selection.clear(); picked.forEach((hour) => selection.add(hour));
+            bookingSelectionsByDate.set(date, picked);
+            if (date === bookingState.date) {
+                bookingState.selectedHours = [...picked];
+                bookingState.startHour = picked[0] ?? null;
+                bookingState.endHour = picked[picked.length - 1] ?? null;
+            }
+            const buttons = hours.map((hour) => {
+                const serverStatus = statusFor(date, hour, availability);
+                const status = serverStatus === 'available' && isSlotHourInBookingCart(hour, date) ? 'in-cart' : serverStatus;
+                const selected = selection.has(hour) && status === 'available';
+                const disabled = status !== 'available' || slotGridLoading;
+                const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
+                const state = selected ? 'Selected' : status === 'available' ? 'Available' : status === 'in-cart' ? 'In summary' : status === 'booked' || status === 'past' ? 'Unavailable' : 'Unavailable';
+                const spoken = status === 'past' ? 'Elapsed' : state;
+                return `<button type="button" class="dash-book-slot is-${status}${selected ? ' is-selected' : ''}" data-dash-book-slot="${date}:${hour}" aria-label="${window.escapeHtml(label)}, ${spoken}${disabled ? ', unavailable' : ''}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}><span class="dash-book-slot-time">${window.escapeHtml(label)}</span><span class="dash-book-slot-state" aria-hidden="true">${state}</span></button>`;
+            }).join('') || '<p class="dash-res-state">No bookable hours are configured for this date.</p>';
+            return `<section class="dash-book-day" data-dash-book-day="${window.escapeHtml(date)}"><div class="dash-book-day-heading"><h5>${window.escapeHtml(new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))}</h5><button type="button" class="dash-book-remove-day" data-dash-book-remove-day="${date}" aria-label="Remove ${date} from selected dates">Remove day</button></div><div class="dash-book-day-slots" role="group" aria-label="Available hourly times for ${date}">${buttons}</div></section>`;
+        });
+        const allSelected = eligibleAcrossDates > 0 && dates.every((date) => {
+            const expected = earliestBlockByDate.get(date) || [];
+            const selected = bookingSelectionsByDate.get(date) || [];
+            return expected.length === selected.length && expected.every((hour, index) => selected[index] === hour);
+        });
+        const partial = selectedAcrossDates > 0 && !allSelected;
+        bookSlotsGrid.innerHTML = `<label class="dash-book-select-all"><input type="checkbox" data-dash-book-select-all aria-label="Select the earliest continuous available block on each selected date"${allSelected ? ' checked' : ''}${partial ? ' data-indeterminate="true"' : ''}${slotGridLoading || !eligibleAcrossDates ? ' disabled' : ''}><span>Select continuous available times</span></label>` + (dates.length ? sections.join('') : '<p class="dash-form-hint">Choose a date to add it to your schedule.</p>');
+        bookSlotsGrid.querySelectorAll?.('[data-indeterminate="true"]').forEach((checkbox) => { checkbox.indeterminate = true; });
+        const selectedCount = [...bookingSelectionsByDate.values()].reduce((total, hours) => total + hours.length, 0);
+        const allSelectedDatesVerified = dates.every((date) => {
+            const availability = bookingAvailabilityByDate.get(date);
+            return availability?.rules?.authoritative && availability.bookings.ok && availability.walkins.ok;
+        });
+        if (bookSlotStatus) bookSlotStatus.textContent = selectedCount
+            ? `${selectedCount} hour${selectedCount === 1 ? '' : 's'} selected across ${[...bookingSelectionsByDate.values()].filter((hours) => hours.length).length} date${[...bookingSelectionsByDate.values()].filter((hours) => hours.length).length === 1 ? '' : 's'}. Each date has one continuous time range.`
+            : 'Choose available hours on one or more dates. Booked, elapsed, and times already in your summary cannot be selected.';
+        const currentAvailability = bookingAvailabilityByDate.get(bookingState.date);
+        if (currentAvailability) {
+            bookingRules = currentAvailability.rules;
+            slotGridBookings = currentAvailability.bookings;
+            slotGridWalkins = currentAvailability.walkins;
         }
         if (bookAddButton) {
             const canReturnToSummary = plainSummaryBackMode && bookingCart.length > 0;
             bookAddButton.disabled = bookingCartSaving || (!canReturnToSummary
-                && (!bookingState.unitId || !bookingState.selectedHours.length || slotGridLoading));
+                && (!bookingState.unitId || selectedCount === 0 || !allSelectedDatesVerified || slotGridLoading));
         }
     }
 
     async function refreshTimePickers(forceRules = false) {
         if (!bookSlotsGrid) return;
         const mySeq = ++slotGridRequestSeq;
-        if (!bookingState.court || !bookingState.unitId || !bookingState.date) { slotGridLoading = false; renderTimePickers(); return; }
+        if (!bookingState.court || !bookingState.unitId || !bookingSelectedDates.size) { slotGridLoading = false; renderTimePickers(); return; }
         slotGridLoading = true;
-        bookSlotsGrid.innerHTML = '';
+        const datesToRefresh = [...bookingSelectedDates];
+        datesToRefresh.forEach((date) => bookingAvailabilityByDate.delete(date));
+        bookSlotsGrid.querySelectorAll?.('[data-dash-book-select-all], [data-dash-book-slot]').forEach((control) => { control.disabled = true; });
+        if (bookSelectAllSlots) bookSelectAllSlots.disabled = true;
+        renderTimePickers();
         if (bookSlotStatus) bookSlotStatus.textContent = 'Checking availability…';
         if (bookAddButton) bookAddButton.disabled = true;
         if (!window.InigoBusinessHours?.getForDate) {
@@ -1827,14 +2113,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         let result, rules;
         try {
-            [result, rules] = await Promise.all([
-                fetchDayOccupancy(bookingState.court, bookingState.date),
-                window.InigoBusinessHours.getForDate(bookingState.date, { force: forceRules }),
-            ]);
+            const dates = datesToRefresh;
+            const results = await Promise.all(dates.map(async (date) => {
+                const [occupancy, rulesForDate] = await Promise.all([
+                    fetchDayOccupancy(bookingState.court, date),
+                    window.InigoBusinessHours.getForDate(date, { force: forceRules }),
+                ]);
+                return [date, { rules: rulesForDate, bookings: { ok: occupancy.ok, rows: occupancy.rows.filter((row) => row.source === 'online') },
+                    walkins: { ok: occupancy.ok, rows: occupancy.rows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source)) } }];
+            }));
+            if (mySeq !== slotGridRequestSeq) return;
+            results.forEach(([date, data]) => bookingAvailabilityByDate.set(date, data));
         } catch (error) {
             console.error('[dashboard] failed to refresh authoritative booking availability', error);
             if (mySeq !== slotGridRequestSeq) return;
             slotGridLoading = false;
+            bookingAvailabilityByDate.set(bookingState.date, { rules: null, bookings: { ok: false, rows: [] }, walkins: { ok: false, rows: [] } });
             slotGridBookings = { ok: false, rows: [] };
             slotGridWalkins = { ok: false, rows: [] };
             bookingRules = null;
@@ -1843,18 +2137,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (mySeq !== slotGridRequestSeq) return;
         slotGridLoading = false;
-        bookingRules = rules;
-        slotGridBookings = { ok: result.ok, rows: result.rows.filter((row) => row.source === 'online') };
-        slotGridWalkins = { ok: result.ok, rows: result.rows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source)) };
         renderTimePickers();
         updateSummary();
     }
 
     function resetTimeSelectionAndRender() {
+        bookingSelectedDates.forEach((date) => bookingSelectionsByDate.set(date, []));
         bookingState.selectedHours = [];
         bookingState.startHour = null;
         bookingState.endHour = null;
+        bookingAvailabilityByDate.clear();
         refreshTimePickers();
+    }
+
+    function resetBookingDatesForFreshDraft() {
+        const date = bookingState.date || bookDate?.value || '';
+        bookingSelectedDates.clear();
+        bookingSelectionsByDate.clear();
+        bookingAvailabilityByDate.clear();
+        bookingState.selectedHours = [];
+        bookingState.startHour = null;
+        bookingState.endHour = null;
+        if (date) {
+            bookingSelectedDates.add(date);
+            bookingSelectionsByDate.set(date, []);
+        }
     }
 
     // Overview availability is a read-only sport-card and date-specific slot
@@ -2098,9 +2405,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function updateSummary() {
+        if (bookingState.date) bookingSelectionsByDate.set(bookingState.date, [...bookingState.selectedHours]);
         const pct = bookingState.downpaymentPct;
         const gross = bookingCart.reduce((sum, item) => sum + (Number.isFinite(item.estimatedTotal) ? item.estimatedTotal : 0), 0);
         const verifiedGross = bookingCart.length > 0 && bookingCart.every((item) => Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0);
+        const acceptanceSignature = JSON.stringify({
+            paymentType: bookingState.paymentType,
+            pct,
+            items: bookingCart.map((item) => [item.sport, item.court, item.unit, item.date, item.startHour, item.endHour, item.estimatedTotal]),
+        });
+        if (paymentAcceptanceSignature !== null && paymentAcceptanceSignature !== acceptanceSignature && paymentTermsAccepted) {
+            paymentTermsAccepted.checked = false;
+        }
+        paymentAcceptanceSignature = acceptanceSignature;
+        if (paymentTermsStatus) {
+            const accepted = Boolean(paymentTermsAccepted?.checked);
+            paymentTermsStatus.textContent = accepted ? 'Accepted for this selection' : 'Not accepted';
+            paymentTermsStatus.classList.toggle('is-accepted', accepted);
+        }
         const amount = verifiedGross && gross > 0 ? (bookingState.paymentType === 'full'
             ? gross : bookingCart.reduce((sum, item) => sum + (Number.isFinite(item.estimatedTotal)
                 ? Math.round(item.estimatedTotal * pct) / 100 : 0), 0)) : null;
@@ -2110,38 +2432,137 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'Full payment' : `Downpayment (${pct}%)`;
         if (summaryGross) summaryGross.textContent = verifiedGross ? `₱${gross.toFixed(2)}` : 'Rate to be confirmed';
         if (summaryTotal) summaryTotal.textContent = amount !== null ? `₱${amount.toFixed(2)}` : '—';
+        if (summaryBalance) summaryBalance.textContent = amount !== null ? `₱${Math.max(0, gross - amount).toFixed(2)}` : '—';
         if (downpaymentDesc) downpaymentDesc.textContent = `Pay ${pct}% securely now; pay the remaining balance at check-in.`;
+        if (paymentReceiptItems) {
+            paymentReceiptItems.innerHTML = bookingCart.map((item) => {
+                const courtLabel = String(item.sport).toLocaleLowerCase() === String(item.court).toLocaleLowerCase()
+                    ? item.court : `${item.sport} · ${item.court}`;
+                const unitLabel = item.unit ? ` · ${item.unit}` : '';
+                const time = `${window.InigoBusinessHours.formatHourLabel(item.startHour)} – ${window.InigoBusinessHours.formatHourLabel(item.endHour + 1)}`;
+                const total = Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0
+                    ? `₱${item.estimatedTotal.toFixed(2)}` : 'Rate to be confirmed';
+                return `<li><div><strong>${window.escapeHtml(courtLabel)}${unitLabel ? ` · ${window.escapeHtml(item.unit)}` : ''}</strong><span>${window.escapeHtml(formatDate(item.date))} · ${window.escapeHtml(time)}</span></div><strong>${window.escapeHtml(total)}</strong></li>`;
+            }).join('');
+        }
         if (bookSubmit) {
-            const ready = bookingCart.length > 0 && bookingCart.length <= 8
+            const ready = bookingCart.length > 0
                 && bookingCart.every((item) => item.listingId && item.unitId && Number.isFinite(item.estimatedTotal) && item.estimatedTotal > 0);
-            bookSubmit.disabled = !ready || bookingCartSaving;
-            bookSubmit.textContent = bookingCartSaving ? 'Opening secure checkout…' : 'Continue to PayMongo';
+            bookSubmit.disabled = !ready || bookingCartSaving || !paymentTermsAccepted?.checked;
+            bookSubmit.textContent = bookingCartSaving ? 'Opening secure checkout…' : 'Proceed to pay online';
             if (paymentModeHint) paymentModeHint.textContent = bookingCart.length && !ready
                 ? 'Every booking needs an available court unit and a confirmed rate before online checkout.'
-                : 'Payment is processed securely through PayMongo after review.';
+                : 'Your booking will be confirmed after your online payment is verified.';
         }
         if (bookAddButton) {
             const canReturnToSummary = plainSummaryBackMode && bookingCart.length > 0;
+            const draftHours = [...bookingSelectionsByDate.values()].reduce((total, hours) => total + hours.length, 0);
+            const selectedDateList = [...bookingSelectedDates];
+            const verifiedDraftDays = selectedDateList.every((date) => {
+                const availability = bookingAvailabilityByDate.get(date);
+                return availability?.rules?.authoritative && availability.bookings.ok && availability.walkins.ok;
+            });
             bookAddButton.disabled = bookingCartSaving || (!canReturnToSummary && (!bookingState.unitId
-                || !bookingState.selectedHours.length || (bookingCart.length >= 8 && !editingBookingCartKey) || slotGridLoading));
+                || !draftHours || !verifiedDraftDays || slotGridLoading));
         }
         renderBookWizard();
         renderBookingCart();
     }
 
-    if (bookSlotsGrid) bookSlotsGrid.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-dash-book-slot]');
-        if (!button || button.disabled) return;
-        const hour = Number(button.dataset.dashBookSlot);
-        const selected = new Set(bookingState.selectedHours);
-        if (selected.has(hour)) selected.delete(hour); else selected.add(hour);
-        bookingState.selectedHours = Array.from(selected).sort((a, b) => a - b);
-        const firstRun = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours)[0];
-        bookingState.startHour = firstRun?.startHour ?? null;
-        bookingState.endHour = firstRun ? firstRun.endHourExclusive - 1 : null;
+    function setBookingDaySelection(date, hours) {
+        const next = [...new Set(hours)].sort((a, b) => a - b);
+        bookingSelectionsByDate.set(date, next);
+        if (date === bookingState.date) {
+            bookingState.selectedHours = next;
+            const firstRun = window.InigoBookingSlots.groupConsecutiveHours(next)[0];
+            bookingState.startHour = firstRun?.startHour ?? null;
+            bookingState.endHour = firstRun ? firstRun.endHourExclusive - 1 : null;
+        }
         renderTimePickers();
         updateSummary();
-    });
+    }
+
+    function bookingRunsByDate(selectedByDate) {
+        return [...selectedByDate].flatMap(([date, hours]) =>
+            window.InigoBookingSlots.groupConsecutiveHours(hours).map((run) => ({ date, run })));
+    }
+
+    if (bookSlotsGrid) {
+        bookSlotsGrid.addEventListener('click', (event) => {
+            const removeDay = event.target.closest('[data-dash-book-remove-day]');
+            if (removeDay) {
+                const date = removeDay.dataset.dashBookRemoveDay;
+                bookingSelectedDates.delete(date);
+                bookingSelectionsByDate.delete(date);
+                bookingAvailabilityByDate.delete(date);
+                if (bookingState.date === date) {
+                    bookingState.date = [...bookingSelectedDates].sort()[0] || '';
+                    if (bookDate) bookDate.value = bookingState.date;
+                    bookingState.selectedHours = [...(bookingSelectionsByDate.get(bookingState.date) || [])];
+                }
+                renderBookingCalendar();
+                renderTimePickers();
+                updateSummary();
+                return;
+            }
+            const button = event.target.closest('[data-dash-book-slot]');
+            if (!button || button.disabled || slotGridLoading) return;
+            const [date, rawHour] = String(button.dataset.dashBookSlot).split(':');
+            const hour = Number(rawHour);
+            const selected = [...new Set(bookingSelectionsByDate.get(date) || [])].sort((a, b) => a - b);
+            if (selected.includes(hour)) {
+                // Clicking within a selected range trims it at that hour; this
+                // keeps the remaining draft contiguous and makes the first
+                // selected hour an easy way to clear the range.
+                setBookingDaySelection(date, selected.filter((selectedHour) => selectedHour < hour));
+                return;
+            }
+            if (!selected.length) {
+                setBookingDaySelection(date, [hour]);
+                return;
+            }
+            const selectableHours = new Set([...bookSlotsGrid.querySelectorAll('[data-dash-book-slot]')]
+                .filter((slot) => slot.dataset.dashBookSlot.startsWith(`${date}:`) && !slot.disabled)
+                .map((slot) => Number(slot.dataset.dashBookSlot.split(':')[1])));
+            const range = [...selected];
+            const extendingEarlier = hour < selected[0];
+            const first = extendingEarlier ? selected[0] - 1 : selected[selected.length - 1] + 1;
+            const last = hour;
+            let blocked = false;
+            for (let nextHour = first; extendingEarlier ? nextHour >= last : nextHour <= last; nextHour += extendingEarlier ? -1 : 1) {
+                if (!selectableHours.has(nextHour)) { blocked = true; break; }
+                range.push(nextHour);
+            }
+            if (range.length === selected.length && blocked) {
+                if (bookSlotStatus) bookSlotStatus.textContent = 'The range could not extend past the first unavailable hour. Your current selection was kept.';
+                return;
+            }
+            setBookingDaySelection(date, range);
+            if (blocked && bookSlotStatus) bookSlotStatus.textContent = 'Selection extended up to the first unavailable hour.';
+        });
+        bookSlotsGrid.addEventListener('change', (event) => {
+            const checkbox = event.target.closest('[data-dash-book-select-all]');
+            if (!checkbox || checkbox.disabled || slotGridLoading) return;
+            for (const date of bookingSelectedDates) {
+                const eligible = [...bookSlotsGrid.querySelectorAll('[data-dash-book-slot]')]
+                    .filter((button) => button.dataset.dashBookSlot.startsWith(`${date}:`) && !button.disabled)
+                    .map((button) => Number(button.dataset.dashBookSlot.split(':')[1]));
+                const selected = new Set(bookingSelectionsByDate.get(date) || []);
+                if (checkbox.checked) {
+                    selected.clear();
+                    let previous = null;
+                    for (const hour of eligible) {
+                        if (previous !== null && hour !== previous + 1) break;
+                        selected.add(hour);
+                        previous = hour;
+                    }
+                } else selected.clear();
+                bookingSelectionsByDate.set(date, [...selected].sort((a, b) => a - b));
+            }
+            bookingState.selectedHours = [...(bookingSelectionsByDate.get(bookingState.date) || [])];
+            renderTimePickers(); updateSummary();
+        });
+    }
 
     function selectedBookingCartItem(startHour, endHourExclusive, key = null) {
         const court = findBookCourt(bookingState.court);
@@ -2377,13 +2798,13 @@ document.addEventListener('DOMContentLoaded', () => {
     bookingRemoveConfirmation?.addEventListener('keydown', (event) => handleBookingDialogKeydown(event, bookingRemoveConfirmationDialog, closeBookingCartRemoveConfirmation));
 
     async function submitBookingCart() {
+        if (!paymentTermsAccepted?.checked) {
+            paymentTermsOpen?.focus({ preventScroll: true });
+            return;
+        }
         if (bookingCartSaving || !window.sb || !window.inigosyncProfile) return;
         const items = bookingCart.map((item) => ({ ...item, paymentType: bookingState.paymentType }));
         if (!items.length) return;
-        if (items.length > 8) {
-            window.InigoToast?.show('A checkout can include up to eight booking items.', true);
-            return;
-        }
         if (items.some((item) => !item.listingId || !item.unitId || !Number.isFinite(item.estimatedTotal) || item.estimatedTotal <= 0)) {
             window.InigoToast?.show('This court needs a confirmed rate and lane before online checkout.', true);
             return;
@@ -2471,6 +2892,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const { data, error } = await window.sb.functions.invoke('paymongo-checkout', {
                 body: {
+                    terms_acceptance: { accepted: true, version: 'customer-booking-v1' },
                     payment_option: items[0].paymentType,
                     items: items.map((item) => ({
                         listing_id: item.listingId,
@@ -2499,14 +2921,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (bookAddButton) {
         bookAddButton.addEventListener('click', async () => {
-            if (plainSummaryBackMode && !bookingState.selectedHours.length && bookingCart.length) {
+            const pendingHours = [...bookingSelectionsByDate.values()].reduce((total, hours) => total + hours.length, 0)
+                || bookingState.selectedHours.length;
+            if (plainSummaryBackMode && !pendingHours && bookingCart.length) {
                 // Back returned to the existing cart. Review booking takes
                 // the user forward without adding or editing a cart item.
                 goToBookStep(4);
                 return;
             }
-            if (bookingCartSaving || slotGridLoading || !bookingState.court || !bookingState.unitId || !bookingState.date || !bookingState.selectedHours.length) return;
-            const selectedHours = [...bookingState.selectedHours];
+            const selectedByDate = new Map([...bookingSelectionsByDate.entries()].filter(([date, hours]) => bookingSelectedDates.has(date) && hours.length)
+                .map(([date, hours]) => [date, [...hours]]));
+            if (!selectedByDate.size && bookingState.date && bookingState.selectedHours.length) {
+                selectedByDate.set(bookingState.date, [...bookingState.selectedHours]);
+            }
+            if (bookingCartSaving || slotGridLoading || !bookingState.court || !bookingState.unitId || !selectedByDate.size) return;
             try {
                 const currentCourts = await window.InigoCourtsData.getCourts({ force: true });
                 bookCourtsCache = currentCourts;
@@ -2525,28 +2953,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             await refreshTimePickers(true);
-            if (!bookingRules?.authoritative || !slotGridBookings.ok || !slotGridWalkins.ok) {
+            if ([...selectedByDate.keys()].some((date) => {
+                const availability = bookingAvailabilityByDate.get(date);
+                return !availability?.rules?.authoritative || !availability.bookings.ok || !availability.walkins.ok;
+            })) {
                 window.InigoToast?.show('Hours and live availability could not be verified. Please retry before adding times.', true);
                 return;
             }
-            if (selectedHours.some((hour) => !bookingState.selectedHours.includes(hour))) {
+            if ([...selectedByDate].some(([date, hours]) => hours.some((hour) => !(bookingSelectionsByDate.get(date) || []).includes(hour)))) {
                 window.InigoToast?.show('Availability changed. Please check the times and select again.', true);
                 return;
             }
-            const runs = window.InigoBookingSlots.groupConsecutiveHours(selectedHours);
-            if ((bookingCart.length - (editingBookingCartKey ? 1 : 0)) + runs.length > 8) {
-                window.InigoToast?.show('One checkout can include up to eight bookings. Choose fewer separate time ranges.', true);
+            const dayRuns = bookingRunsByDate(selectedByDate);
+            if ([...selectedByDate.keys()].some((date) => dayRuns.filter((item) => item.date === date).length > 1)) {
+                window.InigoToast?.show('Choose one continuous time range per date before adding your bookings.', true);
                 return;
             }
-            if (editingBookingCartKey && runs.length !== 1) {
+            if (editingBookingCartKey && (selectedByDate.size !== 1 || dayRuns.length !== 1)) {
                 window.InigoToast?.show('An edited booking must use one continuous time range. Cancel and add separate ranges as new bookings.', true);
                 return;
             }
-            const additions = runs.map((run) => {
+            const previousDate = bookingState.date;
+            const additions = dayRuns.map(({ date, run }) => {
+                bookingState.date = date;
                 bookingState.startHour = run.startHour;
                 bookingState.endHour = run.endHourExclusive - 1;
                 return selectedBookingCartItem(run.startHour, run.endHourExclusive, editingBookingCartKey);
             });
+            bookingState.date = previousDate;
             const combined = [...bookingCart.filter((item) => item.key !== editingBookingCartKey), ...additions];
             for (let i = 0; i < combined.length; i += 1) {
                 if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
@@ -2564,6 +2998,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bookingSummaryBackKey = additions[additions.length - 1]?.key || null;
             addingBookingFromSummary = false;
             plainSummaryBackMode = false;
+            bookingSelectedDates.forEach((date) => bookingSelectionsByDate.set(date, []));
             bookingState.selectedHours = [];
             bookingState.startHour = null;
             bookingState.endHour = null;
@@ -2598,6 +3033,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Keep the previous court and date available for navigation, but do
         // not restore cart hours: this is a plain return, not an edit draft.
         bookingState.selectedHours = [];
+        bookingSelectedDates.clear();
+        bookingSelectedDates.add(item.date);
+        bookingSelectionsByDate.clear();
+        bookingSelectionsByDate.set(item.date, []);
         bookingState.startHour = null;
         bookingState.endHour = null;
         refreshTimePickers(true);
@@ -2634,7 +3073,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if (bookSubmit) {
         bookSubmit.addEventListener('click', () => {
-            if (bookSubmit.disabled) return;
+            if (bookSubmit.disabled || !paymentTermsAccepted?.checked) {
+                paymentTermsOpen?.focus({ preventScroll: true });
+                return;
+            }
             openBookingFeeConfirmation();
         });
     }
@@ -2661,13 +3103,24 @@ document.addEventListener('DOMContentLoaded', () => {
             || !bookingState.court || !bookingState.unitId || !bookingState.date) return;
         const today = todayDateInputValue();
         if (bookDate) bookDate.min = today;
+        for (const date of bookingSelectedDates) {
+            if (date < today) {
+                bookingSelectedDates.delete(date);
+                bookingSelectionsByDate.delete(date);
+                bookingAvailabilityByDate.delete(date);
+            }
+        }
         if (bookingState.date < today) {
             bookingState.date = today;
             if (bookDate) bookDate.value = today;
-            bookingState.selectedHours = [];
-            bookingState.startHour = null;
-            bookingState.endHour = null;
         }
+        if (!bookingSelectedDates.has(bookingState.date)) bookingSelectedDates.add(bookingState.date);
+        if (!bookingSelectionsByDate.has(bookingState.date)) bookingSelectionsByDate.set(bookingState.date, []);
+        bookingState.selectedHours = [...bookingSelectionsByDate.get(bookingState.date)];
+        const firstRun = window.InigoBookingSlots.groupConsecutiveHours(bookingState.selectedHours)[0];
+        bookingState.startHour = firstRun?.startHour ?? null;
+        bookingState.endHour = firstRun ? firstRun.endHourExclusive - 1 : null;
+        renderBookingCalendar();
         refreshTimePickers(true);
     }
     document.addEventListener('inigosync:booking-rules-updated', refreshVisibleBookingAvailability);
@@ -2685,7 +3138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.InigoAppSettings.getSettings().then((settings) => {
             bookingState.downpaymentPct = settings.downpaymentPct;
             bookingState.nightRateStartsAt = settings.nightRateStartsAt || null;
-            if (paymentModeHint) paymentModeHint.textContent = 'Payment is processed securely through PayMongo after review.';
+            if (paymentModeHint) paymentModeHint.textContent = 'Your booking will be confirmed after your online payment is verified.';
             updateSummary();
             refreshMyBookings();
             landingDraftSettingsReady = true;
@@ -2955,7 +3408,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 runs.forEach((run) => staged.push(selectedBookingCartItem(run.startHour, run.endHourExclusive)));
             }
             if (staged.length !== 1) throw new Error('Choose one court booking at a time from the landing page.');
-            if (bookingCart.length + staged.length > 8) throw new Error('One checkout can include up to eight bookings.');
             const combined = [...bookingCart, ...staged];
             for (let i = 0; i < combined.length; i += 1) {
                 if (combined.slice(i + 1).some((other) => bookingCartItemsConflict(combined[i], other))) {
@@ -3009,6 +3461,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // (authGuard.js dispatches this after its own session+profile check).
     // ------------------------------------------------------------------
     const bookingsTableBody = document.querySelector('[data-dash-panel="bookings"] tbody');
+    const myBookingsSearch = document.querySelector('[data-dash-booking-search]');
+    const myBookingsStatus = document.querySelector('[data-dash-booking-status]');
+    const myBookingsDate = document.querySelector('[data-dash-booking-date]');
+    const myBookingsSource = document.querySelector('[data-dash-booking-source]');
+    const myBookingsCount = document.querySelector('[data-dash-booking-count]');
     const upcomingReservationsList = document.querySelector('[data-dash-upcoming-list]');
     const upcomingReservationsMore = document.querySelector('[data-dash-upcoming-more]');
     const UPCOMING_RESERVATIONS_INITIAL_LIMIT = 5;
@@ -3183,6 +3640,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
     const bookingPolicyNotice = document.querySelector('[data-dash-booking-policy]');
     const bookingGraceMinutesByDate = new Map();
+    let bookingTodayGraceRuleGeneration = 0;
+    let bookingTodayGraceRuleRequest = null;
     const bookingDateForRules = (value) => {
         if (window.InigoBusinessHours?.dateInManila) return window.InigoBusinessHours.dateInManila(value);
         const parts = new Intl.DateTimeFormat('en-US', {
@@ -3191,6 +3650,42 @@ document.addEventListener('DOMContentLoaded', () => {
         const part = (type) => parts.find((item) => item.type === type)?.value;
         return `${part('year')}-${part('month')}-${part('day')}`;
     };
+
+    async function loadTodayBookingGraceRule({ force = false } = {}) {
+        if (typeof window.InigoBusinessHours?.getForDate !== 'function') return null;
+        // A normal booking refresh must not overtake a forced owner-rule refresh
+        // with a potentially stale cached read.
+        if (!force && bookingTodayGraceRuleRequest?.force) return bookingTodayGraceRuleRequest.promise;
+
+        const date = bookingDateForRules(new Date());
+        const generation = ++bookingTodayGraceRuleGeneration;
+        const request = { force, generation, promise: null };
+        request.promise = Promise.resolve().then(async () => {
+            try {
+                const rules = await window.InigoBusinessHours.getForDate(date, { force });
+                if (generation !== bookingTodayGraceRuleGeneration) return rules;
+                if (rules?.authoritative && Number.isInteger(rules.graceMinutes) && rules.graceMinutes >= 0) {
+                    bookingGraceMinutesByDate.set(date, rules.graceMinutes);
+                    if (date === bookingDateForRules(new Date())) renderBookingPolicyNotice(rules.graceMinutes);
+                } else {
+                    bookingGraceMinutesByDate.delete(date);
+                    if (date === bookingDateForRules(new Date())) renderBookingPolicyNotice(null);
+                }
+                return rules;
+            } catch (error) {
+                if (generation === bookingTodayGraceRuleGeneration) {
+                    bookingGraceMinutesByDate.delete(date);
+                    if (date === bookingDateForRules(new Date())) renderBookingPolicyNotice(null);
+                    console.warn('[dashboard] booking grace rule could not be loaded', error);
+                }
+                return null;
+            } finally {
+                if (bookingTodayGraceRuleRequest === request) bookingTodayGraceRuleRequest = null;
+            }
+        });
+        bookingTodayGraceRuleRequest = request;
+        return request.promise;
+    }
 
     async function loadBookingGraceRules(bookings, { forceToday = false } = {}) {
         if (typeof window.InigoBusinessHours?.getForDate !== 'function') return;
@@ -3204,17 +3699,19 @@ document.addEventListener('DOMContentLoaded', () => {
             .map((booking) => bookingDateForRules(booking.time_date))]);
 
         await Promise.all([...dates].map(async (date) => {
+            if (date === today) {
+                await loadTodayBookingGraceRule({ force: forceToday });
+                return;
+            }
             try {
-                const rules = await window.InigoBusinessHours.getForDate(date, { force: forceToday && date === today });
+                const rules = await window.InigoBusinessHours.getForDate(date);
                 if (rules?.authoritative && Number.isInteger(rules.graceMinutes) && rules.graceMinutes >= 0) {
                     bookingGraceMinutesByDate.set(date, rules.graceMinutes);
                 } else {
                     bookingGraceMinutesByDate.delete(date);
                 }
-                if (date === today) renderBookingPolicyNotice(rules?.authoritative ? rules.graceMinutes : null);
             } catch (error) {
                 bookingGraceMinutesByDate.delete(date);
-                if (date === today) renderBookingPolicyNotice(null);
                 console.warn('[dashboard] booking grace rule could not be loaded', error);
             }
         }));
@@ -3227,6 +3724,27 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'the grace period set by the venue';
         bookingPolicyNotice.textContent = `You cannot cancel a booking yourself. Completed payments are non-refundable. If you have not checked in within ${graceDescription} after your start time, your booking will be cancelled as a no-show and the court will become available again.`;
     }
+
+    function isMyBookingsPanelActive() {
+        return Boolean(document.querySelector('[data-dash-panel="bookings"]')?.classList.contains('is-active'));
+    }
+
+    async function refreshBookingPolicyNotice() {
+        if (!bookingPolicyNotice || !isMyBookingsPanelActive()
+            || typeof window.InigoBusinessHours?.getForDate !== 'function') return;
+        await loadTodayBookingGraceRule({ force: true });
+    }
+
+    document.addEventListener('inigosync:booking-rules-updated', refreshBookingPolicyNotice);
+    window.addEventListener('storage', (event) => {
+        if (!event.key || event.key === 'inigosync:booking-rules-updated') refreshBookingPolicyNotice();
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshBookingPolicyNotice();
+    });
+    window.setInterval(() => {
+        if (isMyBookingsPanelActive()) refreshBookingPolicyNotice();
+    }, 60_000);
 
     function displayStatusFor(booking) {
         const rawStatus = String(booking.status || '').toLowerCase();
@@ -3252,6 +3770,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const graceDeadline = start.getTime() + graceMinutes * 60000;
         return Date.now() > graceDeadline ? 'unattended' : rawStatus;
     }
+
+    function applyMyBookingsFilters() {
+        if (!bookingsTableBody) return;
+        const rows = Array.from(bookingsTableBody.querySelectorAll('[data-customer-booking-row]'));
+        const query = String(myBookingsSearch?.value || '').trim().toLocaleLowerCase();
+        const status = String(myBookingsStatus?.value || '').toLocaleLowerCase();
+        const date = String(myBookingsDate?.value || '');
+        let visibleCount = 0;
+
+        rows.forEach((row) => {
+            const matches = (!query || row.textContent.toLocaleLowerCase().includes(query))
+                && (!status || row.dataset.bookingStatus === status)
+                && (!myBookingsSource?.value || row.dataset.bookingSource === myBookingsSource.value)
+                && (!date || row.dataset.bookingDate === date);
+            row.hidden = !matches;
+            if (matches) visibleCount += 1;
+        });
+
+        let emptyRow = bookingsTableBody.querySelector('[data-dash-bookings-no-results]');
+        if (rows.length && visibleCount === 0) {
+            if (!emptyRow) {
+                emptyRow = document.createElement('tr');
+                emptyRow.dataset.dashBookingsNoResults = '';
+                emptyRow.innerHTML = '<td colspan="7" class="dash-booking-no-results">No bookings or visits match your search and filters. Try changing or clearing them.</td>';
+                bookingsTableBody.appendChild(emptyRow);
+            }
+            emptyRow.hidden = false;
+        } else if (emptyRow) {
+            emptyRow.hidden = true;
+        }
+
+        if (myBookingsCount) {
+            myBookingsCount.textContent = rows.length
+                ? `Showing ${visibleCount} of ${rows.length} ${rows.length === 1 ? 'activity' : 'activities'}`
+                : '0 activities';
+        }
+    }
+
+    [myBookingsSearch, myBookingsStatus, myBookingsDate, myBookingsSource].forEach((control) => {
+        control?.addEventListener('input', applyMyBookingsFilters);
+        control?.addEventListener('change', applyMyBookingsFilters);
+    });
 
     let activeReviewBookingId = null;
     const bookingReviewModal = document.querySelector('[data-booking-review-modal]');
@@ -3285,6 +3845,30 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadBookingGraceRules(data || [], { forceToday: forceCurrentRule });
         if (generation !== bookingFetchGeneration) return;
 
+        let walkins = [];
+        try {
+            let offset = 0;
+            let total = null;
+            const limit = 50;
+            do {
+                const { data: result, error: walkinError } = await window.sb.rpc('customer_list_walkin_activity', {
+                    p_offset: offset, p_limit: limit,
+                });
+                if (walkinError) throw walkinError;
+                const rows = Array.isArray(result?.rows) ? result.rows : [];
+                total = Number(result?.total_count) || 0;
+                walkins.push(...rows);
+                offset += rows.length;
+                if (!rows.length || offset >= total) break;
+            } while (offset < total && offset < 5000);
+            if (offset < total) throw new Error('Walk-in activity paging exceeded the safe limit.');
+        } catch (walkinError) {
+            console.error('[dashboard] linked walk-in activity could not be loaded', walkinError);
+            walkins = [];
+            window.InigoToast?.show('Walk-in visits could not be loaded. Refresh and try again.', true);
+        }
+        if (generation !== bookingFetchGeneration) return;
+
         renderUpcomingReservations(data || []);
         // Notifications (§3, D6) — reuses this exact fetch rather than a
         // second query against `booking`; see renderNotifications()'s own
@@ -3296,10 +3880,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         bookingsTableBody.innerHTML = '';
 
-        if (!data || data.length === 0) {
+        if ((!data || data.length === 0) && walkins.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="6" style="text-align:center; color: var(--color-ink-faint);">No bookings yet — book a court to see it here.</td>';
+            row.innerHTML = '<td colspan="7" style="text-align:center; color: var(--color-ink-faint);">No bookings or visits yet — book a court to get started.</td>';
             bookingsTableBody.appendChild(row);
+            applyMyBookingsFilters();
             return;
         }
 
@@ -3308,7 +3893,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const reviewResult = await window.sb.from('my_booking_reviews').select('booking_id');
         const reviewedBookings = new Set((reviewResult.error ? [] : reviewResult.data || []).map((review) => String(review.booking_id)));
 
-        data.forEach((booking) => {
+        (data || []).forEach((booking) => {
             const savedTotal = booking.amount_total === null || booking.amount_total === undefined ? null : Number(booking.amount_total);
             const bookingPricing = getBookingUnitPricing(booking);
             const displayedTotal = Number.isFinite(savedTotal) ? savedTotal : quoteExistingBookingTotal(booking, bookingPricing);
@@ -3322,6 +3907,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // overdue booking reads "Unattended" only when its date-specific
             // grace rule was confirmed, without writing that value to DB.
             const displayStatus = displayStatusFor(booking);
+            row.dataset.customerBookingRow = '';
+            row.dataset.bookingSource = 'booking';
+            row.dataset.activityTimestamp = String(new Date(booking.time_date).getTime() || 0);
+            row.dataset.bookingStatus = displayStatus;
+            row.dataset.bookingDate = bookingDateForRules(booking.time_date);
             const courtLabel = window.escapeHtml(booking.courts || '');
             const statusClass = window.escapeHtml(displayStatus);
             const statusLabel = window.escapeHtml(displayStatus ? displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1) : '—');
@@ -3339,13 +3929,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // notice in Pages/user_dashboard.html): the real rule is no
             // cancellation and no refunds/cashback. An overdue booking shows
             // as Unattended above using its date-specific venue grace rule.
-            // This cell used to
-            // hold ONLY a conditional Cancel button (nothing for
-            // completed/cancelled rows) — a Receipt shortcut takes its
-            // place instead of leaving the Actions column permanently
-            // blank, matching what the static demo rows above it already
-            // show in this same column.
             row.innerHTML = `
+                <td>Online booking</td>
                 <td class="dash-cell-main">${courtLabel}</td>
                 <td>${formatBookingDate(booking.time_date)}</td>
                 <td>${formatBookingTime(booking.time_date, booking.end_at)}</td>
@@ -3355,12 +3940,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="dash-table-actions">
                         ${retryPaymentButton}
                         ${reviewButton}
-                        <button type="button" class="dash-mini-btn" data-dash-nav="receipts">Details</button>
                     </div>
                 </td>
             `;
             bookingsTableBody.appendChild(row);
         });
+
+        walkins.forEach((visit) => {
+            const row = document.createElement('tr');
+            const status = String(visit.display_status || visit.status || '—').toLowerCase();
+            row.dataset.customerBookingRow = '';
+            row.dataset.bookingSource = 'walkin';
+            row.dataset.activityTimestamp = String(new Date(visit.time_date).getTime() || 0);
+            row.dataset.bookingStatus = status;
+            row.dataset.bookingDate = bookingDateForRules(visit.time_date);
+            const court = window.escapeHtml([visit.sports, visit.courts, visit.court_unit].filter(Boolean).join(' — ') || 'Walk-in visit');
+            const amount = Number.isFinite(Number(visit.amount_total)) ? `₱${Number(visit.amount_total).toFixed(2)}` : '—';
+            const statusLabel = window.escapeHtml(status ? status.charAt(0).toUpperCase() + status.slice(1) : '—');
+            row.innerHTML = `<td>Walk-in</td><td class="dash-cell-main">${court}</td><td>${formatBookingDate(visit.time_date)}</td><td>${formatBookingTime(visit.time_date, visit.end_at)}</td><td>${amount}</td><td><span class="dash-status ${window.escapeHtml(status)}">${statusLabel}</span></td><td><span>—</span></td>`;
+            bookingsTableBody.appendChild(row);
+        });
+
+        Array.from(bookingsTableBody.querySelectorAll('[data-customer-booking-row]'))
+            .sort((left, right) => Number(right.dataset.activityTimestamp) - Number(left.dataset.activityTimestamp))
+            .forEach(row => bookingsTableBody.appendChild(row));
+
+        applyMyBookingsFilters();
 
         // Dynamically-created [data-dash-nav] buttons don't inherit the
         // page's one-time navButtons.forEach() binding at the very top of
@@ -3369,14 +3974,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // render idiom this file already uses elsewhere for its own
         // dynamically rendered scopes (wireOverviewCourtList() above,
         // wireReceiptDownloads() below).
-        bookingsTableBody.querySelectorAll('[data-dash-nav="receipts"]').forEach((btn) => {
-            btn.addEventListener('click', () => setActivePanel('receipts'));
-        });
         bookingsTableBody.querySelectorAll('[data-dash-retry-checkout]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const bookingId = Number(btn.dataset.dashRetryCheckout);
                 openBookingFeeConfirmation({
-                    question: `Would you like to continue to PayMongo and retry payment for booking #${bookingId}?`,
+                    question: `Would you like to reopen online payment for booking #${bookingId}?`,
                     continueLabel: 'Retry payment securely',
                     returnFocus: btn,
                     onContinue: async () => {
@@ -3462,12 +4064,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ------------------------------------------------------------------
     // Receipts list only saved payment acknowledgments. A booking summary
-    // is not proof of payment, so unpaid bookings never create receipt cards.
+    // is not proof of payment, so unpaid bookings never create receipt rows.
     // ------------------------------------------------------------------
     const receiptsGrid = document.querySelector('[data-dash-receipts]');
     const receiptSearchInput = document.querySelector('[data-dash-receipt-search]');
     const receiptDateInput = document.querySelector('[data-dash-receipt-date]');
     const receiptSourceInput = document.querySelector('[data-dash-receipt-source]');
+    const receiptDialog = document.querySelector('[data-dash-receipt-dialog]');
+    const receiptDialogContent = document.querySelector('[data-dash-receipt-dialog-content]');
+    const receiptDialogClose = document.querySelector('[data-dash-receipt-close]');
+    const receiptDownloadButton = document.querySelector('.dash-receipt-dialog [data-dash-receipt-download]');
     const RECEIPT_LOADING_HTML = '<p class="dash-notif-empty">Loading payment acknowledgments from both sources…</p>';
     let receiptRenderGeneration = 0;
     let receiptAcknowledgments = [];
@@ -3481,12 +4087,55 @@ document.addEventListener('DOMContentLoaded', () => {
         const sourceId = entry.sourceId || acknowledgment.source_id || acknowledgment.items?.[0]?.reservation_id || '';
         const hasWalkinOrderId = entry.source === 'walkin' && Boolean(entry.sourceId || acknowledgment.source_id);
         const sourceLabel = entry.source !== 'walkin' ? 'Booking ID' : hasWalkinOrderId ? 'Walk-in order ID' : 'Walk-in visit ID';
-        const actionsHtml = `<button type="button" class="dash-btn-primary" data-dash-receipt-download="${safeKey}">Download acknowledgment</button><button type="button" class="dash-btn-ghost payment-ack-print-button" data-dash-receipt-print>Print</button>`;
         return window.InigoPaymentAcknowledgment.render(acknowledgment, {
             sourceLabel, sourceId, itemReferenceLabel: entry.source === 'walkin' ? 'Visit ID' : '', transactionId: acknowledgment.transaction_id,
-            cardAttributes: `data-dash-receipt-card="${safeKey}"`, actionsHtml,
+            cardAttributes: `data-dash-receipt-card="${safeKey}"`,
         });
     }
+
+    function receiptDateLabel(value) {
+        if (!value || Number.isNaN(new Date(value).getTime())) return '—';
+        return new Intl.DateTimeFormat('en-PH', {
+            timeZone: 'Asia/Manila', dateStyle: 'medium',
+        }).format(new Date(value));
+    }
+
+    function renderReceiptTable(entries) {
+        const rows = entries.map(entry => {
+            const acknowledgment = entry.acknowledgment || {};
+            const key = window.escapeHtml(String(entry.cardKey || ''));
+            const amount = window.InigoPaymentAcknowledgment.money(acknowledgment.total, acknowledgment.gross_minor);
+            const receiptNumber = acknowledgment.receipt_number || acknowledgment.receipt_id || '—';
+            return `<tr>
+                <td data-label="Payment date">${window.escapeHtml(receiptDateLabel(acknowledgment.issued_at))}</td>
+                <td data-label="Receipt number" class="dash-receipt-reference">${window.escapeHtml(String(receiptNumber))}</td>
+                <td data-label="Amount paid" class="dash-receipt-amount">${window.escapeHtml(amount)}</td>
+                <td data-label="Action"><button type="button" class="dash-btn-ghost" data-dash-receipt-view="${key}">View receipt</button></td>
+            </tr>`;
+        }).join('');
+        return `<div class="dash-receipt-table-wrap"><table class="dash-receipt-table">
+            <thead><tr><th scope="col">Payment date</th><th scope="col">Receipt number</th><th scope="col">Amount paid</th><th scope="col">Action</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>`;
+    }
+
+    let activeReceiptOpener = null;
+    function openReceipt(entry, opener) {
+        if (!receiptDialog || !receiptDialogContent || !entry) return;
+        activeReceiptOpener = opener;
+        receiptDownloadButton?.setAttribute('data-dash-receipt-download', String(entry.cardKey || entry.acknowledgment.receipt_id || entry.acknowledgment.receipt_number || 'payment'));
+        receiptDialogContent.innerHTML = renderPaymentAcknowledgment(entry);
+        wireReceiptDownloads();
+        if (!receiptDialog.open) receiptDialog.showModal();
+        receiptDialogClose?.focus();
+    }
+
+    receiptDialogClose?.addEventListener('click', () => receiptDialog?.close());
+    receiptDialog?.addEventListener('close', () => {
+        receiptDialogContent.innerHTML = '';
+        if (activeReceiptOpener?.isConnected) activeReceiptOpener.focus();
+        activeReceiptOpener = null;
+    });
 
     // Promisifies HTMLCanvasElement.toBlob (callback-only in every browser)
     // so downloadReceiptAsPng() below can simply await it.
@@ -3555,11 +4204,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // render idiom wireOverviewCourtList() above already uses for its own
     // dynamically rendered scope.
     function wireReceiptDownloads() {
-        document.querySelectorAll('.dash-receipt-grid [data-dash-receipt-download]').forEach((btn) => {
+        document.querySelectorAll('.dash-receipt-dialog [data-dash-receipt-download]').forEach((btn) => {
             if (btn.dataset.dashReceiptDownloadBound === 'true') return;
             btn.dataset.dashReceiptDownloadBound = 'true';
             btn.addEventListener('click', async () => {
-                const card = btn.closest('.payment-ack-layout')?.querySelector('[data-dash-receipt-card]');
+                const card = receiptDialogContent?.querySelector('[data-dash-receipt-card]');
                 if (!card) return;
                 const originalLabel = btn.textContent;
                 btn.disabled = true;
@@ -3570,10 +4219,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ok) window.InigoToast?.show('Payment acknowledgment downloaded.');
             });
         });
-        document.querySelectorAll('.dash-receipt-grid [data-dash-receipt-print]').forEach((btn) => {
+        document.querySelectorAll('.dash-receipt-dialog [data-dash-receipt-print]').forEach((btn) => {
             if (btn.dataset.dashReceiptPrintBound === 'true') return;
             btn.dataset.dashReceiptPrintBound = 'true';
-            btn.addEventListener('click', () => window.InigoPaymentAcknowledgment.print(btn.closest('.payment-ack-layout')?.querySelector('[data-dash-receipt-card]')));
+            btn.addEventListener('click', () => window.InigoPaymentAcknowledgment.print(receiptDialogContent?.querySelector('[data-dash-receipt-card]')));
         });
     }
 
@@ -3594,6 +4243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!snapshot || typeof snapshot !== 'object' || !snapshot.receipt_id) return null;
         return {
             ...snapshot,
+            payment_id: Number(historyEntry?.payment_id || snapshot.payment_id || 0),
             receipt_id: snapshot.receipt_id || historyEntry.receipt_id,
             receipt_number: snapshot.receipt_number || historyEntry.receipt_number,
             issued_at: snapshot.issued_at || historyEntry.issued_at,
@@ -3640,17 +4290,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const filtered = window.InigoCustomerReceipts.filterAcknowledgments(receiptAcknowledgments, {
             source, idQuery: query, paymentDate,
         }, paymentDateKey);
-        const cards = filtered.map(renderPaymentAcknowledgment);
-        const message = cards.length
+        const hasEntries = filtered.length > 0;
+        const table = hasEntries ? renderReceiptTable(filtered) : '';
+        const message = hasEntries
             ? ''
-            : query || paymentDate
+            : query || paymentDate || source !== 'all'
                 ? '<p class="dash-notif-empty">No payment acknowledgments match those filters.</p>'
                 : '<p class="dash-notif-empty">No payment acknowledgments yet.</p>';
         const errors = receiptLoadErrors.length
             ? `<p class="dash-receipt-load-warning" role="status">${window.escapeHtml(receiptLoadErrors.join(' '))}</p>`
             : '';
-        receiptsGrid.innerHTML = `${errors}${cards.join('')}${message}`;
-        wireReceiptDownloads();
+        receiptsGrid.innerHTML = `${errors}${table}${message}`;
+        receiptsGrid.querySelectorAll('[data-dash-receipt-view]').forEach(button => {
+            button.addEventListener('click', () => {
+                const entry = receiptAcknowledgments.find(item => String(item.cardKey || '') === button.dataset.dashReceiptView);
+                openReceipt(entry, button);
+            });
+        });
     }
 
     // The RPC caps each page at 50 rows. Fetch pages serially using its
@@ -3719,7 +4375,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     source: 'booking',
                     sourceId: bookingId,
                     acknowledgment,
-                    searchIds: [bookingId.toLowerCase()],
+                    searchIds: [acknowledgment.receipt_number, acknowledgment.receipt_id].filter(Boolean),
                     referenceLabel: `Booking #${bookingId}`,
                     cardKey: `booking-${bookingId}-${acknowledgment.receipt_id}`,
                 }));
@@ -3738,14 +4394,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     transaction_id: snapshot.transaction_id || row.payment_id,
                 };
                 const orderId = String(row.order_id || '');
-                const visitIds = Array.isArray(acknowledgment.items)
-                    ? acknowledgment.items.map(item => String(item.reservation_id || '')).filter(Boolean)
-                    : [];
                 loadedAcknowledgments.push({
                     source: 'walkin',
                     sourceId: orderId,
                     acknowledgment,
-                    searchIds: [orderId, ...visitIds].filter(Boolean).map(id => id.toLowerCase()),
+                    searchIds: [acknowledgment.receipt_number, acknowledgment.receipt_id].filter(Boolean),
                     referenceLabel: `Walk-in order #${orderId || acknowledgment.receipt_id}`,
                     cardKey: `walkin-${orderId || acknowledgment.receipt_id}`,
                 });
@@ -5080,7 +5733,299 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshMyBookings();
     }
 
-    // PayMongo redirects back to the dashboard, but the redirect itself is
+    const celebratedPaymentAttempts = new Set();
+    const pendingPaymentReceipts = new Map();
+    const activePaymentReceiptLoads = new Set();
+    const pendingPaymentStatusChecks = new Map();
+    const activePaymentStatusChecks = new Set();
+    const PENDING_PAYMENT_RECEIPT_PREFIX = 'inigosync:pending-payment-receipt:';
+    const PENDING_PAYMENT_STATUS_PREFIX = 'inigosync:pending-payment-status:';
+    const PAYMENT_STATUS_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000];
+    function normalizePaymentReceiptReferences(receipts) {
+        if (!Array.isArray(receipts)) return [];
+        const seen = new Set();
+        return receipts.map(receipt => ({ booking_id: Number(receipt?.booking_id), payment_id: Number(receipt?.payment_id) }))
+            .filter(receipt => Number.isSafeInteger(receipt.booking_id) && receipt.booking_id > 0
+                && Number.isSafeInteger(receipt.payment_id) && receipt.payment_id > 0)
+            .filter(receipt => {
+                const key = `${receipt.booking_id}:${receipt.payment_id}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }
+
+    function persistPendingPaymentReceipt(attemptId, bookingReceipts) {
+        const id = String(attemptId || '');
+        const receipts = normalizePaymentReceiptReferences(bookingReceipts);
+        if (!id || !receipts.length) return false;
+        const pending = { attemptId: id, bookingReceipts: receipts };
+        pendingPaymentReceipts.set(id, pending);
+        try { window.sessionStorage?.setItem(`${PENDING_PAYMENT_RECEIPT_PREFIX}${id}`, JSON.stringify(pending)); } catch { /* Keep an in-memory retry when storage is unavailable. */ }
+        return true;
+    }
+
+    function clearPendingPaymentReceipt(attemptId) {
+        const id = String(attemptId || '');
+        pendingPaymentReceipts.delete(id);
+        try { window.sessionStorage?.removeItem(`${PENDING_PAYMENT_RECEIPT_PREFIX}${id}`); } catch { /* The receipt is already rendered in this page. */ }
+    }
+
+    function readPendingPaymentReceipts(excludeAttemptId = '') {
+        const pending = new Map(pendingPaymentReceipts);
+        try {
+            const storage = window.sessionStorage;
+            for (let index = 0; storage && index < storage.length; index += 1) {
+                const key = storage.key(index);
+                if (!key?.startsWith(PENDING_PAYMENT_RECEIPT_PREFIX)) continue;
+                const saved = JSON.parse(storage.getItem(key) || 'null');
+                if (saved?.attemptId && saved.attemptId === key.slice(PENDING_PAYMENT_RECEIPT_PREFIX.length)) {
+                    pending.set(saved.attemptId, { attemptId: saved.attemptId, bookingReceipts: normalizePaymentReceiptReferences(saved.bookingReceipts) });
+                }
+            }
+        } catch { /* The in-memory pending map remains available for this page. */ }
+        return [...pending.values()].filter(item => item.attemptId !== String(excludeAttemptId || '') && item.bookingReceipts.length);
+    }
+
+    function persistPendingPaymentStatusCheck(attemptId, returnKind) {
+        const id = String(attemptId || '');
+        if (!id) return false;
+        const pending = { attemptId: id, returnKind: returnKind === 'cancelled' ? 'cancelled' : 'success' };
+        pendingPaymentStatusChecks.set(id, pending);
+        try { window.sessionStorage?.setItem(`${PENDING_PAYMENT_STATUS_PREFIX}${id}`, JSON.stringify(pending)); } catch { /* Keep an in-memory retry when storage is unavailable. */ }
+        return true;
+    }
+
+    function clearPendingPaymentStatusCheck(attemptId) {
+        const id = String(attemptId || '');
+        pendingPaymentStatusChecks.delete(id);
+        try { window.sessionStorage?.removeItem(`${PENDING_PAYMENT_STATUS_PREFIX}${id}`); } catch { /* Status is already terminal or paid. */ }
+    }
+
+    function readPendingPaymentStatusChecks() {
+        const pending = new Map(pendingPaymentStatusChecks);
+        try {
+            const storage = window.sessionStorage;
+            for (let index = 0; storage && index < storage.length; index += 1) {
+                const key = storage.key(index);
+                if (!key?.startsWith(PENDING_PAYMENT_STATUS_PREFIX)) continue;
+                const saved = JSON.parse(storage.getItem(key) || 'null');
+                if (saved?.attemptId && saved.attemptId === key.slice(PENDING_PAYMENT_STATUS_PREFIX.length)) {
+                    pending.set(saved.attemptId, { attemptId: saved.attemptId, returnKind: saved.returnKind === 'cancelled' ? 'cancelled' : 'success' });
+                }
+            }
+        } catch { /* The in-memory pending map remains available for this page. */ }
+        return [...pending.values()];
+    }
+
+    function schedulePaymentStatusRetry(attemptId, returnKind, retryIndex = 0) {
+        const delay = PAYMENT_STATUS_RETRY_DELAYS_MS[retryIndex];
+        if (!Number.isFinite(delay)) return;
+        window.setTimeout(() => checkPaymentReturnStatus(attemptId, returnKind, retryIndex + 1), delay);
+    }
+
+    function claimPaymentCelebration(attemptId) {
+        const key = `inigosync:payment-celebrated:${String(attemptId || '')}`;
+        if (!attemptId || celebratedPaymentAttempts.has(key)) return false;
+        try {
+            if (window.sessionStorage?.getItem(key) === '1') return false;
+            window.sessionStorage?.setItem(key, '1');
+        } catch { /* Storage can be disabled; the in-memory guard still applies. */ }
+        celebratedPaymentAttempts.add(key);
+        return true;
+    }
+
+    function playPaymentSuccessSound() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        try {
+            const audio = new AudioContextClass();
+            const now = audio.currentTime;
+            audio.resume().catch(() => {});
+            [659.25, 880, 1046.5].forEach((frequency, index) => {
+                const oscillator = audio.createOscillator();
+                const gain = audio.createGain();
+                const start = now + index * 0.12;
+                oscillator.type = 'sine';
+                oscillator.frequency.value = frequency;
+                gain.gain.setValueAtTime(0.0001, start);
+                gain.gain.exponentialRampToValueAtTime(0.055, start + 0.025);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.24);
+                oscillator.connect(gain);
+                gain.connect(audio.destination);
+                oscillator.start(start);
+                oscillator.stop(start + 0.25);
+            });
+            window.setTimeout(() => audio.close().catch(() => {}), 850);
+        } catch { /* Autoplay restrictions or unavailable audio are non-fatal. */ }
+    }
+
+    function showPaymentConfetti() {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || !receiptDialog) return;
+        const canvas = document.createElement('canvas');
+        canvas.className = 'dash-payment-celebration-canvas';
+        canvas.setAttribute('aria-hidden', 'true');
+        receiptDialog.appendChild(canvas);
+        const context = canvas.getContext('2d');
+        if (!context) { canvas.remove(); return; }
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const width = receiptDialog.clientWidth;
+        const height = receiptDialog.clientHeight;
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        const colors = ['#e4ad43', '#55a77c', '#7ea8d8', '#e58c78', '#f3d87c'];
+        const pieces = Array.from({ length: 90 }, () => ({
+            x: Math.random() * width, y: -Math.random() * height * 0.55,
+            vx: (Math.random() - 0.5) * 3.2, vy: 2.2 + Math.random() * 3.8,
+            size: 4 + Math.random() * 5, angle: Math.random() * Math.PI,
+            spin: (Math.random() - 0.5) * 0.16, color: colors[Math.floor(Math.random() * colors.length)],
+        }));
+        const start = performance.now();
+        const draw = (time) => {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.save();
+            context.scale(ratio, ratio);
+            pieces.forEach(piece => {
+                piece.x += piece.vx;
+                piece.y += piece.vy;
+                piece.angle += piece.spin;
+                context.save();
+                context.translate(piece.x, piece.y);
+                context.rotate(piece.angle);
+                context.fillStyle = piece.color;
+                context.fillRect(-piece.size / 2, -piece.size / 2, piece.size, piece.size * 0.65);
+                context.restore();
+            });
+            context.restore();
+            if (time - start < 1900) window.requestAnimationFrame(draw);
+            else canvas.remove();
+        };
+        window.requestAnimationFrame(draw);
+    }
+
+    async function showVerifiedPaymentReceipt(attemptId, bookingReceipts) {
+        const key = String(attemptId || '');
+        if (!key || activePaymentReceiptLoads.has(key)) return false;
+        activePaymentReceiptLoads.add(key);
+        try { return await renderVerifiedPaymentReceipt(attemptId, bookingReceipts); }
+        finally { activePaymentReceiptLoads.delete(key); }
+    }
+
+    async function renderVerifiedPaymentReceipt(attemptId, bookingReceipts) {
+        const receipts = normalizePaymentReceiptReferences(bookingReceipts);
+        if (!attemptId || !receipts.length || !window.sb || !receiptDialog || !receiptDialogContent) return false;
+        // The paid webhook and its acknowledgment trigger commit together, but
+        // allow a short retry window for acknowledgment replication. Keep the
+        // paid references in session storage if this window is not enough.
+        let entries = [];
+        for (let attempt = 0; attempt < 4 && !entries.length; attempt += 1) {
+            const results = await Promise.all(receipts.map(async receipt => {
+                try {
+                    const saved = await fetchBookingAcknowledgments({ booking_id: receipt.booking_id });
+                    const acknowledgment = saved.find(item => Number(item.payment_id) === receipt.payment_id);
+                    return acknowledgment ? [{
+                        source: 'booking', sourceId: String(receipt.booking_id), acknowledgment,
+                        searchIds: [acknowledgment.receipt_number, acknowledgment.receipt_id].filter(Boolean),
+                        referenceLabel: `Booking #${receipt.booking_id}`,
+                        cardKey: `booking-${receipt.booking_id}-${acknowledgment.receipt_id}`,
+                    }] : [];
+                } catch (error) {
+                    console.error('[dashboard] verified payment receipt could not be loaded', error);
+                    return [];
+                }
+            }));
+            entries = results.flat();
+            if (!entries.length && attempt < 3) await new Promise(resolve => window.setTimeout(resolve, 500));
+        }
+        if (!entries.length) return false;
+        activeReceiptOpener = null;
+        receiptDownloadButton?.setAttribute('data-dash-receipt-download', String(entries[0].cardKey || 'payment'));
+        receiptDialogContent.innerHTML = entries.map(renderPaymentAcknowledgment).join('');
+        wireReceiptDownloads();
+        if (!receiptDialog.open) receiptDialog.showModal();
+        if (!receiptDialog.open) return false;
+        clearPendingPaymentReceipt(attemptId);
+        receiptDialogClose?.focus({ preventScroll: true });
+        if (claimPaymentCelebration(attemptId)) {
+            playPaymentSuccessSound();
+            showPaymentConfetti();
+        }
+        return true;
+    }
+
+    function resumePendingPaymentReceiptRenders() {
+        readPendingPaymentReceipts().forEach(pending => {
+            showVerifiedPaymentReceipt(pending.attemptId, pending.bookingReceipts);
+        });
+    }
+
+    function handlePaymentReturnStatus(error, data, attemptId, returnKind, retryIndex = 0) {
+        if (error || !data) {
+            window.InigoToast?.show('We could not confirm checkout yet. Please check again shortly.', true);
+            persistPendingPaymentStatusCheck(attemptId, returnKind);
+            schedulePaymentStatusRetry(attemptId, returnKind, retryIndex);
+            return;
+        }
+        if (data.status === 'paid') {
+            window.InigoToast?.show('Payment received. Your booking is confirmed.');
+            if (!persistPendingPaymentReceipt(attemptId, data.booking_receipts)) {
+                // The paid status is verified, but keep checking until the
+                // owner-scoped receipt references are available to render.
+                persistPendingPaymentStatusCheck(attemptId, returnKind);
+                schedulePaymentStatusRetry(attemptId, returnKind, retryIndex);
+                refreshMyBookings();
+                return;
+            }
+            clearPendingPaymentStatusCheck(attemptId);
+            showVerifiedPaymentReceipt(attemptId, data.booking_receipts);
+            refreshMyBookings();
+        } else if (data.status === 'expired') {
+            clearPendingPaymentStatusCheck(attemptId);
+            window.InigoToast?.show('Checkout ended. The selected time is available again.', true);
+            refreshMyBookings();
+        } else if (String(data.status || '').toLowerCase() === 'cancelled') {
+            clearPendingPaymentStatusCheck(attemptId);
+            window.InigoToast?.show('Checkout was cancelled. Your selected time is available again.', true);
+            refreshMyBookings();
+        } else if (['failed', 'review'].includes(String(data.status || '').toLowerCase())) {
+            clearPendingPaymentStatusCheck(attemptId);
+            window.InigoToast?.show('Payment needs staff review. Please contact the sports center before trying again.', true);
+            refreshMyBookings();
+        } else if (returnKind === 'cancelled') {
+            window.InigoToast?.show('Checkout cancellation is being confirmed. Your time remains held until cancellation is confirmed.', true);
+            persistPendingPaymentStatusCheck(attemptId, returnKind);
+            schedulePaymentStatusRetry(attemptId, returnKind, retryIndex);
+        } else {
+            window.InigoToast?.show('Payment is still processing. We will update your booking once the payment is verified.');
+            persistPendingPaymentStatusCheck(attemptId, returnKind);
+            schedulePaymentStatusRetry(attemptId, returnKind, retryIndex);
+        }
+    }
+
+    async function checkPaymentReturnStatus(attemptId, returnKind, retryIndex = 0) {
+        const id = String(attemptId || '');
+        if (!id || activePaymentStatusChecks.has(id) || !window.sb) return;
+        activePaymentStatusChecks.add(id);
+        try {
+            const action = retryIndex === 0 && returnKind === 'cancelled' ? 'cancel' : 'status';
+            const { data, error } = await window.sb.functions.invoke('paymongo-checkout', {
+                body: { action, attempt_id: id },
+            });
+            handlePaymentReturnStatus(error, data, id, returnKind, retryIndex);
+        } catch (error) {
+            handlePaymentReturnStatus(error, null, id, returnKind, retryIndex);
+        } finally {
+            activePaymentStatusChecks.delete(id);
+        }
+    }
+
+    function resumePendingPaymentStatusChecks() {
+        readPendingPaymentStatusChecks().forEach(pending => {
+            checkPaymentReturnStatus(pending.attemptId, pending.returnKind);
+        });
+    }
+
+    // The payment provider redirects back to the dashboard, but the redirect itself is
     // never treated as proof of payment. The signed webhook is authoritative;
     // this owner-scoped status check only tells the customer what the server
     // has recorded so far.
@@ -5089,19 +6034,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const paymentReturnAttempt = paymentReturn.get('attempt');
     if (paymentReturnKind && paymentReturnAttempt && window.sb) {
         window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
-        window.sb.functions.invoke('paymongo-checkout', {
-            body: { action: paymentReturnKind === 'cancelled' ? 'cancel' : 'status', attempt_id: paymentReturnAttempt },
-        }).then(({ data, error }) => {
-            if (error || !data) {
-                window.InigoToast?.show('We could not confirm checkout yet. Please check again shortly.', true);
-                return;
-            }
-            if (data.status === 'paid') window.InigoToast?.show('Payment received. Your booking is confirmed.');
-            else if (data.status === 'expired') window.InigoToast?.show('Checkout ended. The selected time is available again.', true);
-            else if (paymentReturnKind === 'cancelled') window.InigoToast?.show('Checkout cancellation is being confirmed. Your time remains held until PayMongo closes it.', true);
-            else window.InigoToast?.show('Payment is still processing. We will update your booking when PayMongo confirms it.');
-            refreshMyBookings();
-        }).catch(() => window.InigoToast?.show('We could not confirm checkout yet. Please check again shortly.', true));
+        persistPendingPaymentStatusCheck(paymentReturnAttempt, paymentReturnKind);
+        checkPaymentReturnStatus(paymentReturnAttempt, paymentReturnKind);
+        resumePendingPaymentReceiptRenders();
+        resumePendingPaymentStatusChecks();
+    } else {
+        resumePendingPaymentReceiptRenders();
+        resumePendingPaymentStatusChecks();
     }
 
     // ------------------------------------------------------------------

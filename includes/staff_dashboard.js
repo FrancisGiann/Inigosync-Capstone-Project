@@ -1926,31 +1926,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             const hour = Number(button.dataset.staffWalkinHour);
-            const selection = [...walkinState.selectedHours];
-            const selectedIndex = selection.indexOf(hour);
-            if (selectedIndex !== -1) {
-                if (selectedIndex !== 0 && selectedIndex !== selection.length - 1) {
-                    if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Keep selected hours consecutive. Shorten the booking from either end.';
-                    return;
-                }
-                selection.splice(selectedIndex, 1);
-            } else if (!selection.length) {
-                selection.push(hour);
+            const selected = [...walkinState.selectedHours].sort((a, b) => a - b);
+            let selection;
+            let message = '';
+            if (selected.includes(hour)) {
+                selection = selected.filter((selectedHour) => selectedHour < hour);
+            } else if (!selected.length) {
+                selection = [hour];
             } else {
-                const first = selection[0];
-                const last = selection[selection.length - 1];
-                if (hour === first - 1) selection.unshift(hour);
-                else if (hour === last + 1) selection.push(hour);
-                else {
-                    if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'Select consecutive hours. Choose an hour next to the current selection.';
+                const extendingEarlier = hour < selected[0];
+                const first = extendingEarlier ? selected[0] - 1 : selected[selected.length - 1] + 1;
+                const selectableHours = new Set(walkinHoursForDay.filter((candidate) => walkinSlotStatus(candidate) === 'open'));
+                selection = [...selected];
+                let blocked = false;
+                for (let candidate = first; extendingEarlier ? candidate >= hour : candidate <= hour; candidate += extendingEarlier ? -1 : 1) {
+                    if (!selectableHours.has(candidate)) { blocked = true; break; }
+                    selection.push(candidate);
+                }
+                if (selection.length === selected.length && blocked) {
+                    if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'The range could not extend past the first unavailable hour. Your current selection was kept.';
                     return;
                 }
+                selection.sort((a, b) => a - b);
+                if (blocked) message = 'Selection extended up to the first unavailable hour.';
             }
-            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = '';
             walkinState.selectedHours = selection;
             walkinState.startHour = selection.length ? selection[0] : null;
             walkinState.endHour = selection.length ? selection[selection.length - 1] : null;
+            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = '';
             renderWalkinTimeSlots();
+            if (message && walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = message;
             updateWalkinSummary();
             renderWalkinWizard();
         }));
@@ -1960,7 +1965,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             && !String(walkinOpenWindowsEl.textContent || '').startsWith('Availability changed')) {
             walkinOpenWindowsEl.textContent = currentSelection.length
                 ? `${currentSelection.length} consecutive hour${currentSelection.length === 1 ? '' : 's'} selected.`
-                : 'Select an available hour. Add adjacent hours to extend the booking.';
+                : 'Select an available hour. Choose any end hour to extend the booking continuously.';
         }
     }
 

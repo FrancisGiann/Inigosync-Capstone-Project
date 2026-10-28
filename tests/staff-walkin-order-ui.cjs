@@ -363,6 +363,21 @@ function occupancyRow(hour, source = 'online') {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
         const errors = [];
+        const continuousRangeContext = await openStaffPage(browser, {
+            timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            config: { bookings: [occupancyRow(10)] },
+        });
+        const continuousRangePage = continuousRangeContext.page;
+        await openWalkinTimeStep(continuousRangePage);
+        await continuousRangePage.locator('[data-staff-walkin-hour="9"]').click();
+        await continuousRangePage.locator('[data-staff-walkin-hour="12"]').click();
+        assert.deepEqual(await continuousRangePage.locator('[data-staff-walkin-hour].is-selected').evaluateAll(slots => slots.map(slot => Number(slot.dataset.staffWalkinHour))), [9],
+            'walk-in extension stops immediately before a booked hour');
+        await continuousRangePage.locator('[data-staff-walkin-hour="9"]').click();
+        assert.equal(await continuousRangePage.locator('[data-staff-walkin-hour].is-selected').count(), 0,
+            'clicking the first selected hour clears the remaining continuous range');
+        await continuousRangeContext.context.close();
+
         const customerStepContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
             config: {
