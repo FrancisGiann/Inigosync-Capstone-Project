@@ -21,17 +21,19 @@ test('only customer checkout expands to the PayMongo sandbox method set', () => 
 });
 
 async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor = amountMinor,
-    paymentOption = 'full' } = {}) {
+    paymentOption = 'full', qrphEnabled = true, legacy = false } = {}) {
     let handler;
     let requestAttributes;
     const checkoutId = '11111111-2222-4333-8444-555555555555';
     const admin = {
         auth: { getUser: async () => ({ data: { user: { id: 'customer-1' } }, error: null }) },
         from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({
-            data: { card_enabled: true, gcash_enabled: true, qrph_enabled: false }, error: null,
+            data: { card_enabled: true, gcash_enabled: true, qrph_enabled: qrphEnabled }, error: null,
         }) }) }) }),
         rpc: async (name) => {
             if (name === 'prepare_paid_checkout_cart') return { data: { attempt_id: checkoutId, item_count: 1 }, error: null };
+            if (name === 'prepare_paymongo_checkout') return { data: [{ attempt_id: checkoutId,
+                courts: 'Court 1' }], error: null };
             if (name === 'get_paymongo_checkout_attempt_detail') return { data: [{ id: checkoutId,
                 status: 'creating', amount_minor: amountMinor, total_minor: totalMinor,
                 payment_option: paymentOption, item_count: 1 }], error: null };
@@ -63,8 +65,10 @@ async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor 
     });
     const response = await handler(new Request('https://db.example/functions/v1/paymongo-checkout', {
         method: 'POST', headers: { authorization: 'Bearer customer-token', origin: 'https://sandbox.inigosync.example' },
-        body: JSON.stringify({ terms_acceptance: { accepted: true, version: 'customer-booking-v1' },
-            payment_option: 'full', items: [{}] }),
+        body: JSON.stringify(legacy ? { booking_id: 123 } : {
+            terms_acceptance: { accepted: true, version: 'customer-booking-v1' },
+            payment_option: paymentOption, items: [{}],
+        }),
     }));
     assert.equal(response.status, 200);
     return requestAttributes;
@@ -72,18 +76,32 @@ async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor 
 
 test('test secret enables requested hosted options and live secret keeps configured methods exactly', async () => {
     assert.deepEqual((await createCheckoutForKey('sk_test_fixture')).payment_method_types,
-        ['card', 'gcash', 'paymaya', 'grab_pay']);
-    assert.deepEqual((await createCheckoutForKey('sk_live_fixture')).payment_method_types, ['card', 'gcash']);
+        ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
+    assert.deepEqual((await createCheckoutForKey('sk_live_fixture', { qrphEnabled: false })).payment_method_types,
+        ['card', 'gcash']);
 });
 
-test('test QR Ph is limited to a one-peso full-payment cart', async () => {
+test('test QR Ph is owner-controlled and available for full and deposit customer carts', async () => {
     const onePeso = await createCheckoutForKey('sk_test_fixture', { amountMinor: 100 });
     assert.deepEqual(onePeso.payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
     assert.equal(onePeso.pass_on_fees, true);
+    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 200 })).payment_method_types,
+        ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
+    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 201 })).payment_method_types,
+        ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
+    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 32500, totalMinor: 65000,
+        paymentOption: 'downpayment' })).payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
     assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 100,
-        totalMinor: 200 })).payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
-    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 100,
-        paymentOption: 'downpayment' })).payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
+        totalMinor: 200, qrphEnabled: false })).payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
+    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 200,
+        qrphEnabled: false })).payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
     assert.deepEqual((await createCheckoutForKey('sk_live_fixture', { amountMinor: 100 })).payment_method_types,
-        ['card', 'gcash']);
+        ['card', 'gcash', 'qrph']);
+});
+
+test('legacy booking retries add owner-enabled QR Ph only when creating a new test session', async () => {
+    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { legacy: true })).payment_method_types,
+        ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
+    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { legacy: true, qrphEnabled: false }))
+        .payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
 });

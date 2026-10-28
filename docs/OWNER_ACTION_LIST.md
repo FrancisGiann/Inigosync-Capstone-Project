@@ -108,9 +108,12 @@ because browser JavaScript only runs while somebody has a tab open:
 1. Sign up at <https://dashboard.paymongo.com/signup> (free; no business
    documents needed while you stay in **Test Mode**).
 2. Stay in **Test Mode** — the toggle is in the dashboard. Card and e-wallet
-   authorizations are simulated. QR Ph test codes can still be real-payable,
-   so customer Hosted Checkout offers QR Ph only for an exactly ₱1 full-payment
-   booking test. Confirm the displayed total before scanning or paying.
+   authorizations are simulated. When QR Ph is enabled in owner settings,
+   customer Hosted Checkout offers it for full and deposit payments at any
+   amount accepted by PayMongo. Test QR Ph codes may still move real money:
+   never scan or pay one; use the simulator instead. An existing checkout
+   session keeps the payment-method list saved when it was created, so changing
+   this setting does not add QR Ph to sessions already in progress.
 3. Use the existing Supabase project `xrlwtnwamboucihsamrr` and existing
    database. No separate test project or schema migration is needed. Card and
    wallet test payments create no real charge, but their signed webhooks will
@@ -134,14 +137,16 @@ because browser JavaScript only runs while somebody has a tab open:
 
 **What works:** customer checkout with simulated Card, GCash, Maya, and GrabPay
 payments records paid reservations in the existing database without collecting
-money. Restore matching live credentials and webhook before accepting real
-payments. QR Ph needs a verified simulator path before being added to test
-Hosted Checkout under a no-real-money requirement.
+money. Owner-enabled QR Ph is also available in test Hosted Checkout for full
+and deposit customer payments, but PayMongo test QR codes can be real-payable.
+Use only the provider's simulator for test outcomes, and confirm reservations
+through the signed webhook. Restore matching live credentials and webhook
+before accepting real payments.
 
 **Test payments:** PayMongo provides simulated card and e-wallet authorization
-flows. Test-mode QR Ph codes may be real-payable: never scan or pay one; the
-existing staff QR flow only exposes a simulator when PayMongo returns a trusted
-simulator URL.
+flows. Test-mode QR Ph codes may be real-payable: never scan or pay one; use
+PayMongo's simulator for QR outcomes and rely on the signed webhook for payment
+confirmation.
 
 ---
 

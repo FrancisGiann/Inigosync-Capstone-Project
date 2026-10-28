@@ -143,14 +143,12 @@ Deno.serve(async (req: Request) => {
   const cancel = new URL("/Pages/user_dashboard.html", base);
   cancel.searchParams.set("paymongo", "cancelled"); cancel.searchParams.set("attempt", id);
   const reference = id.replaceAll("-", "");
-  // Sandbox QR Ph can accept real funds. Expose it only for the requested
-  // one-peso, full-payment cart so other test bookings cannot present a QR.
-  const onePesoQrTest = testMode && Array.isArray(body.items)
-    && attempt.payment_option === "full" && Number(attempt.amount_minor) === 100
-    && Number(attempt.total_minor) === 100;
+  // Test-mode QR Ph can accept real funds. Offer it on customer carts only
+  // when the owner enabled it; PayMongo applies its normal amount constraints.
+  const testQrphEnabled = testMode && settings?.qrph_enabled === true;
   const checkoutAttributes = {
     line_items: [{ name: label, amount: Number(attempt.amount_minor), currency: "PHP", quantity: 1 }],
-    payment_method_types: onePesoQrTest ? [...methods, "qrph"] : methods,
+    payment_method_types: testQrphEnabled ? [...methods, "qrph"] : methods,
     success_url: success.toString(), cancel_url: cancel.toString(),
     reference_number: reference, description: `IñigoSync reservation ${reference.slice(0, 12)}`,
     pass_on_fees: true, send_email_receipt: false,
