@@ -5,7 +5,9 @@ import test from 'node:test';
 
 const source = await readFile(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../Pages/staff_dashboard.html', import.meta.url), 'utf8');
+const customerHtml = await readFile(new URL('../Pages/user_dashboard.html', import.meta.url), 'utf8');
 const css = await readFile(new URL('../Style/staff_dashboard.css', import.meta.url), 'utf8');
+const customerCss = await readFile(new URL('../Style/Dashboard.css', import.meta.url), 'utf8');
 const start = source.indexOf('    function staffNotificationCategoryLabel(value) {');
 const end = source.indexOf('    async function loadStaffNotifications() {', start);
 assert.ok(start >= 0 && end > start, 'Staff notification presentation helpers are present');
@@ -23,7 +25,7 @@ test('staff notifications present title, summary, readable category, Manila time
         key: 'activity:4', title: 'Booking unattended', body: 'Bea · Tennis', category: 'unattended',
         created_at: '2026-10-06T01:35:00Z', href: '#booking-overview', read_at: null,
     });
-    assert.match(html, /<strong>Booking unattended<\/strong><span>Bea · Tennis<\/span><small>Attendance · Oct 6, 2026, 9:35 AM · Unread<\/small>/);
+    assert.match(html, /<strong>Booking unattended<\/strong><span>Bea · Tennis<\/span><small>Unattended · Oct 6, 2026, 9:35 AM · Unread<\/small>/);
     assert.match(html, /class="staff-notif-row staff-notif-persistent is-unread"/);
     assert.match(html, /data-staff-notif-select-row="activity:4"/);
     assert.match(html, /data-staff-notif-open/);
@@ -32,13 +34,21 @@ test('staff notifications present title, summary, readable category, Manila time
 
 test('staff notification menu keeps selection controls, one read action, and paginated rows', () => {
     assert.match(html, /<div class="staff-notif-menu-head"><span>Notifications<\/span><\/div>/);
-    assert.match(html, /Select notifications[\s\S]*data-staff-notif-selected[\s\S]*data-staff-notif-select[\s\S]*data-staff-notif-mark-selected[^>]*>Mark as read<\/button>/);
+    assert.match(html, /<label><span class="staff-notif-selection-label">Select notifications<\/span><select data-staff-notif-select/);
+    assert.match(html, /data-staff-notif-selected[\s\S]*data-staff-notif-mark-selected[^>]*>Mark as read<\/button>/);
     assert.doesNotMatch(html, /Mark all read|data-staff-notif-mark-all|data-staff-notif-unread/);
     assert.match(html, /data-staff-notif-pagination/);
     assert.match(css, /\.staff-notif-menu-head[^\n]*border-bottom/);
     assert.match(css, /\.staff-notif-selection[^\n]*grid/);
+    assert.match(css, /\.staff-notif-menu\s*\{[^}]*display: flex;\s*flex-direction: column;[^}]*overflow: hidden/s);
+    assert.match(css, /\.staff-notif-list\s*\{[^}]*overflow-y: auto/s);
+    assert.match(css, /\.staff-notif-pagination\s*\{[^}]*flex: 0 0 auto/s);
     assert.match(css, /\.staff-notif-select-row/);
     assert.match(css, /\.staff-notif-row\.is-selected/);
+    assert.match(customerHtml, /<div class="dash-notif-list" data-dash-notif-list>/);
+    assert.match(customerCss, /\.dash-notif-menu\s*\{[^}]*display: flex;\s*flex-direction: column;[^}]*overflow: hidden/s);
+    assert.match(customerCss, /\.dash-notif-list\s*\{[^}]*overflow-y: auto/s);
+    assert.match(customerCss, /\.dash-notif-pagination\s*\{[^}]*flex: 0 0 auto/s);
     assert.doesNotMatch(source, /staffNotifMarkAll|staff_mark_all_notifications_read/);
     assert.match(source, /applyStaffNotificationSelection/);
     assert.match(source, /staffNotifMarkSelected/);

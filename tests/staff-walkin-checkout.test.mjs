@@ -37,7 +37,7 @@ function checkoutFixture({ channel, requestBody, settings = { card_enabled: true
         hasVerifiedEmailSession: async () => true,
         hasPaymongoPaidWebhook: async () => true,
         hasPaymongoWebhook: async () => webhookReady,
-        enabledPaymongoMethods: settings => [ ...(settings?.card_enabled ? ['card'] : []), ...(settings?.gcash_enabled ? ['gcash'] : []), ...(settings?.qrph_enabled ? ['qrph'] : []) ],
+        enabledPaymongoMethods: settings => [ ...(settings?.card_enabled === true ? ['card'] : []), ...(settings?.gcash_enabled === true ? ['gcash'] : []), ...(settings?.qrph_enabled === true ? ['qrph'] : []) ],
         fetch: async (url, options) => {
             apiRequests.push({ url, options });
             if (url.endsWith('/v1/payment_intents')) {
@@ -54,7 +54,7 @@ function checkoutFixture({ channel, requestBody, settings = { card_enabled: true
                 return new Response(JSON.stringify({ data: { id: 'pi_fixture', attributes: { amount: 12000, livemode: providerLivemode, next_action: { code: { image_url: qrImageUrl, test_url: testUrl } } } } }), { status: 200, headers: { 'content-type': 'application/json' } });
             }
             checkoutRequest = JSON.parse(options.body).data.attributes;
-            return new Response(JSON.stringify({ data: { id: 'cs_fixture', attributes: { checkout_url: 'https://checkout.paymongo.com/fixture', livemode: false } } }), { status: 200, headers: { 'content-type': 'application/json' } });
+            return new Response(JSON.stringify({ data: { id: 'cs_fixture', attributes: { checkout_url: 'https://checkout.paymongo.com/fixture', livemode: secretMode === 'live' } } }), { status: 200, headers: { 'content-type': 'application/json' } });
         },
         Request, Response, URL, AbortSignal, btoa, console,
     });
@@ -261,13 +261,53 @@ test('checkout rejects unknown payment channels before creating an attempt', asy
     assert.equal(fixture.rpcCalls.length, 0);
 });
 
-test('existing online checkout keeps Card and GCash and staff return', async () => {
+test('Pay Online checkout creates a full amount session with owner-enabled methods and returns to staff', async () => {
     const fixture = checkoutFixture();
     const response = await fixture.handler()(fixture.request);
     assert.equal(response.status, 200);
-    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['card', 'gcash']);
+    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['card', 'gcash'],
+        'sandbox checkout does not expose unconfigured payment methods');
     assert.equal(new URL(fixture.checkoutRequest().success_url).pathname, '/Pages/staff_dashboard.html');
     assert.equal(new URL(fixture.checkoutRequest().success_url).searchParams.get('order'), orderId);
+    assert.equal(fixture.checkoutRequest().line_items[0].amount, 12000, 'the provider request uses the server-prepared full order amount');
+    assert.equal(fixture.checkoutRequest().pass_on_fees, true);
+    assert.equal(fixture.apiRequests.some(call => call.url.includes('/v2/checkout_sessions')), true);
+    const result = await response.json();
+    assert.equal(result.checkout_url, 'https://checkout.paymongo.com/fixture');
+    assert.equal(fixture.rpcCalls.some(call => call.name === 'attach_paymongo_checkout'), true);
+});
+
+test('Pay Online includes only owner-enabled methods in a test-key hosted checkout', async () => {
+    const fixture = checkoutFixture({ settings: { card_enabled: true, gcash_enabled: true, qrph_enabled: true } });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['card', 'gcash', 'qrph']);
+    assert.equal(fixture.apiRequests.some(call => call.url.endsWith('/v1/payment_methods')), false,
+        'Pay Online uses a hosted checkout session instead of constructing a QR-only payment intent');
+});
+
+test('Pay Online never adds QR Ph to hosted checkout when the owner has disabled it', async () => {
+    const fixture = checkoutFixture({ settings: { card_enabled: true, gcash_enabled: true, qrph_enabled: false } });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['card', 'gcash']);
+});
+
+test('test-key Pay Online excludes owner-disabled Card and GCash methods', async () => {
+    const fixture = checkoutFixture({ settings: { card_enabled: false, gcash_enabled: true, qrph_enabled: false } });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['gcash']);
+});
+
+test('live Pay Online hosted checkout uses only the online methods enabled by the owner', async () => {
+    const fixture = checkoutFixture({
+        secretMode: 'live', providerLivemode: true,
+        settings: { card_enabled: true, gcash_enabled: false, qrph_enabled: true },
+    });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['card', 'qrph']);
 });
 
 test('direct QR Ph flow fails closed without the payment.paid webhook', async () => {

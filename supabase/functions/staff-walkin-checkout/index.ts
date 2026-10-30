@@ -73,6 +73,10 @@ Deno.serve(async (req: Request) => {
     return json({ message: "Active staff access is required." }, 403, origin);
   const { data: settings, error: settingsError } = await admin.from("app_settings")
     .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
+  const testMode = secretKey.startsWith("sk_test_");
+  // Walk-in Pay Online is governed by the owner's configured methods in both
+  // test and live mode. The customer checkout sandbox expansion must not
+  // silently expose methods disabled in Payment Configuration.
   const methods = settingsError ? [] : enabledPaymongoMethods(settings);
   if (settingsError || !settings)
     return json({ message: "Online payment settings are unavailable. No new order was saved." }, 503, origin);
@@ -310,7 +314,8 @@ Deno.serve(async (req: Request) => {
     cancel.searchParams.set("order", orderId);
   }
   const reference = prepared.attempt_id.replaceAll("-", "");
-  const checkoutMethods = qrPhCheckout ? ["qrph"] : methods;
+  const testQrphEnabled = testMode && settings.qrph_enabled === true && !methods.includes("qrph");
+  const checkoutMethods = qrPhCheckout ? ["qrph"] : testQrphEnabled ? [...methods, "qrph"] : methods;
   const requestedCheckoutAttributes = {
     line_items: [{ name: "Front desk walk-in order", amount: Number(prepared.base_minor), currency: "PHP", quantity: 1 }],
     payment_method_types: checkoutMethods, success_url: success.toString(), cancel_url: cancel.toString(),

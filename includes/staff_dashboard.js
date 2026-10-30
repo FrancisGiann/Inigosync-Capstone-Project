@@ -66,13 +66,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         overview: { title: 'Booking Overview', subtitle: 'Upcoming and currently active court bookings.' },
         walkin: { title: 'Walk-In Management', subtitle: 'Record a walk-in customer and print or download their receipt.' },
         schedule: { title: 'Court Schedule', subtitle: 'Hour-by-hour availability per court/unit.' },
-        transactions: { title: 'Transaction Records', subtitle: 'Payment records for your bookings and walk-ins.' },
+        transactions: { title: 'Transaction Records', subtitle: 'Completed and unattended visit records for bookings and walk-ins.' },
         // Revision S1 (implementation_plan.md, decision S7) — not in
         // .staff-nav, only reachable from the topbar dropdown's "View
         // Profile"; setActivePanel() below still works unmodified since it
         // just looks this key up.
         profile: { title: 'My Profile', subtitle: 'Your account, at a glance.' },
-        settings: { title: 'Account Settings', subtitle: '' },
+        settings: { title: 'Account Settings', subtitle: 'Manage your profile photo, personal information, and password.' },
     };
 
     function setActivePanel(name) {
@@ -216,9 +216,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const selectedStaffNotifKeys = new Set();
     let staffNotifItems = [];
 
-    function renderStaffPageNumbers(container, currentPage, pageCount, onPageChange) {
+    function renderStaffPageNumbers(container, currentPage, pageCount, onPageChange, maxVisible) {
         if (!container || !window.InigoStaffPagination) return;
-        container.replaceChildren(...window.InigoStaffPagination.pageNumbers(currentPage, pageCount).map(page => {
+        container.replaceChildren(...window.InigoStaffPagination.pageNumbers(currentPage, pageCount, maxVisible).map(page => {
             if (page === 'gap') {
                 const gap = document.createElement('span');
                 gap.className = 'staff-page-gap';
@@ -267,12 +267,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             announcement: 'Announcement',
             arrival: 'Arrival',
             maintenance: 'Maintenance',
+            ending_soon: 'Ending soon',
             booking_created: 'New booking',
             walkin_created: 'Walk-in',
             payment_recorded: 'Payment',
             time_in: 'Check-in',
             time_out: 'Check-out',
-            unattended: 'Attendance',
+            unattended: 'Unattended',
         };
         if (labels[category]) return labels[category];
         return category.replace(/[_-]+/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase()) || 'Update';
@@ -364,6 +365,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.addEventListener('keydown', event => {
             if (event.key === 'Escape') closeStaffNotifMenu();
         });
+    }
+
+    // Match the landing/customer dashboards: hide the sticky topbar while
+    // scrolling down, then reveal it as soon as the user scrolls back up.
+    // Keep it available near the top, while the mobile sidebar is open, or
+    // while a header control has focus. If it hides, close its menus and make
+    // the offscreen controls unavailable to keyboard and assistive technology.
+    const staffTopbar = document.querySelector('.staff-topbar');
+    if (staffTopbar) {
+        let previousY = Math.max(0, window.scrollY);
+        let directionAnchor = previousY;
+        let previousDirection = 0;
+        let syncPending = false;
+
+        const setStaffTopbarHidden = (hidden) => {
+            if (hidden) {
+                closeProfileMenu();
+                closeStaffNotifMenu();
+                const activeElement = document.activeElement;
+                if (staffTopbar.contains(activeElement)) activeElement.blur?.();
+                staffTopbar.classList.add('is-hidden');
+                staffTopbar.setAttribute('aria-hidden', 'true');
+                staffTopbar.setAttribute('inert', '');
+                return;
+            }
+
+            staffTopbar.classList.remove('is-hidden');
+            staffTopbar.removeAttribute('aria-hidden');
+            staffTopbar.removeAttribute('inert');
+        };
+
+        const syncStaffTopbar = () => {
+            syncPending = false;
+            const y = Math.max(0, window.scrollY);
+            const direction = Math.sign(y - previousY);
+            if (direction && direction !== previousDirection) {
+                directionAnchor = previousY;
+                previousDirection = direction;
+            }
+
+            const keepVisible = y < 96 || document.body.classList.contains('staff-sidebar-open');
+            if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) setStaffTopbarHidden(false);
+            else if (direction > 0 && y - directionAnchor >= 12) setStaffTopbarHidden(true);
+            previousY = y;
+        };
+
+        window.addEventListener('scroll', () => {
+            if (!syncPending) {
+                syncPending = true;
+                window.requestAnimationFrame(syncStaffTopbar);
+            }
+        }, { passive: true });
+        staffTopbar.addEventListener('focusin', () => setStaffTopbarHidden(false));
+        staffTopbar.addEventListener('focusout', () => window.requestAnimationFrame(syncStaffTopbar));
+        new MutationObserver(syncStaffTopbar).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     }
 
     staffNotifPrev?.addEventListener('click', () => {
@@ -862,6 +918,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function wireFilterableTable(scopeName) {
         const group = document.querySelector(`[data-staff-filter-group="${scopeName}"]`);
         const searchInput = document.querySelector(`[data-staff-search="${scopeName}"]`);
+        const statusSelect = scopeName === 'transactions' ? document.querySelector('[data-staff-tx-status]') : null;
         const table = document.querySelector(`[data-staff-table="${scopeName}"]`);
         const pagination = document.querySelector(`[data-staff-pagination="${scopeName}"]`);
         if (!table) return;
@@ -879,15 +936,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.rows = Array.from(table.querySelectorAll('tbody tr'));
 
         const applyFilters = () => {
-            const matchingRows = state.rows.filter((row) => {
+            const emptyStateRow = state.rows.find((row) => row.hasAttribute('data-staff-empty-state'));
+            const dataRows = state.rows.filter((row) => !row.hasAttribute('data-staff-empty-state'));
+            const matchingRows = dataRows.filter((row) => {
                 const matchesFilter = state.activeFilter === 'all' || row.dataset.status === state.activeFilter;
+                const matchesVisitStatus = !statusSelect || statusSelect.value === 'all' || row.dataset.visitStatus === statusSelect.value;
                 const matchesQuery = !state.query || row.textContent.toLowerCase().includes(state.query);
-                return matchesFilter && matchesQuery;
+                return matchesFilter && matchesVisitStatus && matchesQuery;
             });
             const page = window.InigoStaffPagination.paginateRows(matchingRows, state.page);
             state.page = page.page;
             const visibleRows = new Set(page.rows);
             state.rows.forEach((row) => {
+                if (row === emptyStateRow) {
+                    row.style.display = matchingRows.length ? 'none' : '';
+                    if (scopeName === 'transactions') {
+                        const messageCell = row.querySelector('td');
+                        const transactionDateValue = document.querySelector('[data-staff-tx-date]')?.value || '';
+                        messageCell.textContent = state.query || state.activeFilter !== 'all' || (statusSelect && statusSelect.value !== 'all')
+                            ? 'No transactions match your search and filters.'
+                            : (transactionDateValue && transactionRows.length
+                                ? 'No transactions match the selected date.'
+                                : 'No completed or unattended visit records are available.');
+                    }
+                    return;
+                }
                 const isEmptyState = row.dataset.rowIndex === undefined;
                 row.style.display = isEmptyState ? '' : (visibleRows.has(row) ? '' : 'none');
             });
@@ -917,6 +990,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 applyFilters();
             });
         }
+        if (statusSelect && !state.bound) {
+            statusSelect.addEventListener('change', () => {
+                state.page = 1;
+                applyFilters();
+            });
+        }
         if (group) group.querySelectorAll('[data-staff-chip]').forEach((chip) => {
             chip.classList.toggle('is-active', chip.dataset.staffFilter === state.activeFilter);
         });
@@ -935,6 +1014,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const overviewSearchInput = document.querySelector('[data-staff-overview-search]');
     const overviewSportSelect = document.querySelector('[data-staff-overview-sport]');
     const overviewDateInput = document.querySelector('[data-staff-overview-date]');
+    // Booking Overview opens on the current business-local date. Staff can
+    // clear or change this filter to review other eligible reservations.
+    if (overviewDateInput && !overviewDateInput.value) overviewDateInput.value = todayDateInputValue();
     let overviewRows = [];
     let overviewPage = 1;
     let overviewRefreshGeneration = 0;
@@ -949,6 +1031,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         return overviewRows
             .map((row, index) => ({ row, index }))
             .filter(({ row }) => {
+                // Booking Overview is the customer reservation queue. Staff
+                // walk-ins remain available in their own workflow and stats.
+                if (row.sourceType !== 'booking') return false;
                 const status = staffDerivedStatus(row);
                 if (status === 'cancelled' || status === 'completed' || status === 'unattended') return false;
                 if (status === 'inplay') return true;
@@ -1234,19 +1319,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinOpenWindowsEl = document.querySelector('[data-staff-walkin-open-windows]');
     const walkinHourGrid = document.querySelector('[data-staff-walkin-hour-grid]');
     const walkinLinesEl = document.querySelector('[data-staff-walkin-lines]');
+    const walkinBookingCountEl = document.querySelector('[data-staff-walkin-booking-count]');
     const walkinAddLineBtn = document.querySelector('[data-staff-walkin-add-line]');
+    const walkinDeleteAllBtn = document.querySelector('[data-staff-walkin-delete-all]');
     const walkinCurrentRangeEl = document.querySelector('[data-staff-walkin-current-range]');
     const walkinCurrentCourtEl = document.querySelector('[data-staff-walkin-current-court]');
+    const walkinDateLabelEl = document.querySelector('[data-staff-walkin-date-label]');
     const walkinOnlineFeeNote = document.querySelector('[data-staff-walkin-online-fee-note]');
     const walkinPaymentOptionEls = document.querySelectorAll('[data-staff-walkin-step="6"] [data-staff-payment-option]');
     const walkinCashUnavailableEl = document.querySelector('[data-staff-walkin-cash-unavailable]');
-    const walkinQrUnavailableEl = document.querySelector('[data-staff-walkin-qr-unavailable]');
+    const walkinOnlineUnavailableEl = document.querySelector('[data-staff-walkin-online-unavailable]');
     const walkinAcknowledgmentNote = document.querySelector('[data-staff-walkin-acknowledgment-note]');
 
     const walkinSummaryName = document.querySelector('[data-staff-walkin-summary-name]');
     const walkinSummaryMobile = document.querySelector('[data-staff-walkin-summary-mobile]');
+    const walkinPaymentName = document.querySelector('[data-staff-walkin-payment-name]');
+    const walkinPaymentMobile = document.querySelector('[data-staff-walkin-payment-mobile]');
+    const walkinPaymentLinesEl = document.querySelector('[data-staff-walkin-payment-lines]');
     const walkinSummaryPayment = document.querySelector('[data-staff-walkin-summary-payment]');
-    const walkinSummaryTotals = document.querySelectorAll('[data-staff-walkin-summary-total]');
+    const walkinSummaryTotals = document.querySelectorAll('[data-staff-walkin-summary-total], [data-staff-walkin-payment-total]');
     const walkinCashDetails = document.querySelector('[data-staff-walkin-cash-details]');
     const walkinCashTenderedInput = document.querySelector('[data-staff-walkin-cash-tendered]');
     const walkinCashValidation = document.querySelector('[data-staff-walkin-cash-validation]');
@@ -1256,6 +1347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let walkinWizardStep = 1;
     let staffCashEnabled = true;
     let staffQrphEnabled = false;
+    let staffOnlineEnabled = true;
 
     let walkinState = {
         name: '',
@@ -1288,6 +1380,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let walkinMobileCheckAbort = null;
     let walkinScheduleRechecking = false;
     let editingWalkinItemIndex = null;
+    let addingWalkinItem = false;
     let walkinQrPollTimer = null;
     let activeWalkinQr = null;
     let walkinQrCheckInFlight = false;
@@ -1302,6 +1395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function applyStaffPaymentSettings(settings) {
         staffCashEnabled = settings?.cashEnabled !== false;
         staffQrphEnabled = settings?.qrphEnabled === true;
+        staffOnlineEnabled = settings?.cardEnabled === true || settings?.gcashEnabled === true || staffQrphEnabled;
         document.querySelectorAll('[data-staff-walkin-cash-option], [data-staff-timein-cash-option]').forEach((option) => {
             option.hidden = !staffCashEnabled;
             if (!staffCashEnabled) {
@@ -1310,15 +1404,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (radio) radio.checked = false;
             }
         });
-        const qrOption = document.querySelector('[data-staff-walkin-qr-option]');
-        if (qrOption) qrOption.hidden = !staffQrphEnabled;
+        const walkinOnlineOption = document.querySelector('[data-staff-walkin-online-option]');
+        if (walkinOnlineOption) walkinOnlineOption.hidden = !staffOnlineEnabled;
         const timeInQrOption = document.querySelector('[data-staff-timein-qr-option]');
         if (timeInQrOption) timeInQrOption.hidden = !staffQrphEnabled;
-        if (walkinQrUnavailableEl) walkinQrUnavailableEl.hidden = staffQrphEnabled;
+        if (walkinOnlineUnavailableEl) walkinOnlineUnavailableEl.hidden = staffOnlineEnabled;
         if (walkinCashUnavailableEl) walkinCashUnavailableEl.hidden = staffCashEnabled;
-        if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = staffQrphEnabled ? 'paymongo_qr' : null;
+        if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = staffOnlineEnabled ? 'paymongo' : null;
         if (staffCashEnabled && !walkinState.payment) walkinState.payment = 'cash';
-        if (!staffQrphEnabled && walkinState.payment === 'paymongo_qr') {
+        if (!staffOnlineEnabled && walkinState.payment === 'paymongo') {
             walkinState.payment = staffCashEnabled ? 'cash' : null;
         }
         walkinPaymentOptionEls.forEach((option) => {
@@ -1352,11 +1446,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (step === 5) return Boolean(walkinState.items.length);
         if (step === 6) return Boolean(walkinState.items.length && walkinState.payment)
             && (walkinState.payment !== 'cash' || staffCashEnabled)
-            && (walkinState.payment !== 'paymongo_qr' || staffQrphEnabled);
+            && (walkinState.payment !== 'paymongo' || staffOnlineEnabled);
         return true;
     }
 
     function renderWalkinWizard() {
+        if (walkinDateLabelEl) walkinDateLabelEl.textContent = formatWalkinDateLabel(manilaDateTime(todayDateInputValue(), 0).toISOString());
         walkinStepPanels.forEach((panel) => {
             panel.classList.toggle('is-active', Number(panel.dataset.staffWalkinStep) === walkinWizardStep);
         });
@@ -1373,12 +1468,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             walkinNextBtn.textContent = ({ 2: 'Select a court', 3: 'Choose a time', 4: 'Review booking', 5: 'Continue to payment' })[walkinWizardStep] || 'Next';
         }
         if (walkinSaveBtn) {
+            walkinSaveBtn.hidden = walkinWizardStep !== WALKIN_STEP_COUNT;
             walkinSaveBtn.disabled = !walkinStepIsReady(WALKIN_STEP_COUNT) || !walkinBusinessRules?.authoritative
                 || (walkinState.payment === 'cash' && !staffCashEnabled)
-                || (walkinState.payment === 'paymongo_qr' && !staffQrphEnabled)
+                || (walkinState.payment === 'paymongo' && !staffOnlineEnabled)
                 || (walkinState.payment === 'cash' && !walkinCashTenderIsValid());
         }
-        if (walkinBackBtn) walkinBackBtn.textContent = walkinWizardStep === 2 && editingWalkinItemIndex !== null ? 'Cancel edit' : 'Back';
+        if (walkinBackBtn) walkinBackBtn.textContent = walkinWizardStep === 2 && editingWalkinItemIndex !== null
+            ? 'Cancel edit' : addingWalkinItem && walkinWizardStep >= 2 && walkinWizardStep <= 4
+                ? 'Back to Summary' : 'Back';
         if (walkinWizardStep === 5 || walkinWizardStep === WALKIN_STEP_COUNT) updateWalkinSummary();
     }
 
@@ -1408,6 +1506,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                     clearWalkinCurrentLine();
                     renderWalkinLines();
+                    addingWalkinItem = false;
                 } else if (walkinState.court) {
                     if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = walkinBookings.ok && walkinWalkins.ok
                         ? 'Availability changed. Select an open range again.'
@@ -1420,6 +1519,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     if (walkinBackBtn) walkinBackBtn.addEventListener('click', () => {
+        if (addingWalkinItem && walkinWizardStep >= 2 && walkinWizardStep <= 4) {
+            addingWalkinItem = false;
+            clearWalkinCurrentLine();
+            walkinState.sport = null;
+            renderWalkinSportCards();
+            renderWalkinUnitOptions();
+            goToWalkinStep(5);
+            return;
+        }
         if (walkinWizardStep === 2 && editingWalkinItemIndex !== null) {
             editingWalkinItemIndex = null;
             clearWalkinCurrentLine();
@@ -1669,13 +1777,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         return String(sport?.slug || sport?.name || '').trim().toLowerCase();
     }
 
-    function walkinCourtsForSelectedSport() {
-        if (!walkinState.sport) return [];
-        if (walkinState.sport.walkinCourtSlug) {
-            return walkinState.courts.filter((court) => court.slug === walkinState.sport.walkinCourtSlug);
+    function walkinCourtsForSport(sport) {
+        if (!sport) return [];
+        if (sport.walkinCourtSlug) {
+            return walkinState.courts.filter((court) => court.slug === sport.walkinCourtSlug);
         }
-        const selectedKey = walkinSportKey(walkinState.sport);
+        const selectedKey = walkinSportKey(sport);
         return walkinState.courts.filter((court) => walkinSportKey({ slug: court.sportSlug || court.sportName }) === selectedKey);
+    }
+
+    function walkinCourtsForSelectedSport() {
+        return walkinCourtsForSport(walkinState.sport);
     }
 
     function walkinSportsForVerifiedCourts(sports, courts) {
@@ -1729,32 +1841,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinSportCards.innerHTML = walkinState.sports.map((sport) => {
             const key = walkinSportKey(sport);
             const active = walkinState.sport && walkinSportKey(walkinState.sport) === key;
-            const coverUrl = window.InigoVisuals?.sportCover(sport.slug) || null;
+            const sportCourts = walkinCourtsForSport(sport);
+            const coverCourt = sportCourts.find((court) => court.imageUrl
+                || window.InigoCourtsData.resolveCourtUnits(court).units.some((unit) => unit.imageUrl)) || sportCourts[0];
+            const coverUnit = coverCourt
+                ? window.InigoCourtsData.resolveCourtUnits(coverCourt).units.find((unit) => unit.imageUrl)
+                : null;
+            const coverUrl = coverCourt?.imageUrl || coverUnit?.imageUrl || '';
             const media = coverUrl
                 ? `<img src="${window.escapeHtml(coverUrl)}" alt="" loading="lazy">`
-                : `<span aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(sport.slug, sport.name))}</span>`;
-            return `<button type="button" class="staff-walkin-sport-card${active ? ' is-selected' : ''}" data-staff-walkin-sport-card="${window.escapeHtml(key)}" aria-pressed="${Boolean(active)}"><span class="staff-walkin-sport-card-media">${media}</span><strong>${window.escapeHtml(sport.name)}</strong></button>`;
+                : `<span aria-hidden="true">${window.escapeHtml(window.InigoCourtsData.monogramFor(key, sport.name))}</span>`;
+            return `<label class="staff-walkin-sport-card${active ? ' is-selected' : ''}" data-staff-walkin-sport-card="${window.escapeHtml(key)}"><input class="staff-walkin-sport-radio" type="radio" name="staff-walkin-sport" value="${window.escapeHtml(key)}" data-staff-walkin-sport-radio="${window.escapeHtml(key)}" aria-label="${window.escapeHtml(sport.name)}"${active ? ' checked' : ''}><span class="staff-walkin-sport-card-media">${media}</span><span class="staff-walkin-sport-name">${window.escapeHtml(sport.name)}</span></label>`;
         }).join('');
-        walkinSportCards.querySelectorAll('[data-staff-walkin-sport-card]').forEach((card) => {
-            card.addEventListener('click', () => {
-                const sport = walkinState.sports.find((item) => walkinSportKey(item) === card.dataset.staffWalkinSportCard);
-                if (!sport) return;
-                walkinState.sport = sport;
-                clearWalkinCurrentLine();
-                walkinState.court = null;
-                walkinState.unit = null;
-                walkinState.unitId = null;
-                if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
-                if (walkinCourtCards) walkinCourtCards.innerHTML = '<p class="staff-form-hint">Choose a sport first.</p>';
-                if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
-                renderWalkinSportCards();
-                renderWalkinUnitOptions();
-                resetWalkinTimeSelectionAndRefresh();
-                renderWalkinWizard();
-                walkinCourtCards?.focus();
-            });
-        });
     }
+
+    if (walkinSportCards) walkinSportCards.addEventListener('change', (event) => {
+        const radio = event.target.closest('.staff-walkin-sport-radio');
+        if (!radio || !radio.checked) return;
+        const restoreFocus = document.activeElement === radio;
+        const sport = walkinState.sports.find((item) => walkinSportKey(item) === radio.value);
+        if (!sport) return;
+        walkinState.sport = sport;
+        clearWalkinCurrentLine();
+        walkinState.court = null;
+        walkinState.unit = null;
+        walkinState.unitId = null;
+        if (walkinUnitSelect) walkinUnitSelect.replaceChildren();
+        if (walkinCourtCards) walkinCourtCards.innerHTML = '<p class="staff-form-hint">Choose a sport first.</p>';
+        if (walkinCurrentCourtEl) walkinCurrentCourtEl.textContent = 'Select a court first.';
+        renderWalkinSportCards();
+        renderWalkinUnitOptions();
+        resetWalkinTimeSelectionAndRefresh();
+        renderWalkinWizard();
+        if (restoreFocus) {
+            Array.from(walkinSportCards.querySelectorAll('.staff-walkin-sport-radio'))
+                .find((candidate) => candidate.value === radio.value)?.focus();
+        }
+    });
 
     function renderWalkinUnitOptions() {
         if (!walkinUnitSelect) return;
@@ -1789,21 +1912,47 @@ document.addEventListener('DOMContentLoaded', async () => {
             const unit = choice.unit;
             const court = choice.court;
             const selected = index === selectedIndex;
-            const rate = typeof unit.rateDay === 'number' ? formatStaffPeso(unit.rateDay)
-                : typeof unit.rate === 'number' ? formatStaffPeso(unit.rate)
-                    : typeof court.rate === 'number' ? formatStaffPeso(court.rate) : '';
             const rateUnit = unit.rateUnit || court.rateUnit || '/hr';
-            const rateLabel = rate ? `${rate}${rateUnit}` : 'Rate to be confirmed';
-            return `<button type="button" class="staff-walkin-court-card${selected ? ' is-selected' : ''}" data-staff-walkin-court-card="${index}" aria-pressed="${selected}"><strong>${window.escapeHtml(unit.label || court.name)}</strong><span>${window.escapeHtml(court.name)}</span><small>${window.escapeHtml(rateLabel)}</small></button>`;
+            let rate = '';
+            if (typeof unit.rateDay === 'number' && Number.isFinite(unit.rateDay)
+                && typeof unit.rateNight === 'number' && Number.isFinite(unit.rateNight)) {
+                rate = unit.rateDay === unit.rateNight
+                    ? `${formatStaffPeso(unit.rateDay)}${rateUnit}`
+                    : `${formatStaffPeso(unit.rateDay)}${rateUnit} day · ${formatStaffPeso(unit.rateNight)}${rateUnit} night`;
+            } else if (typeof unit.rateDay === 'number' && Number.isFinite(unit.rateDay)) {
+                rate = `${formatStaffPeso(unit.rateDay)}${rateUnit}`;
+            } else if (typeof unit.rateNight === 'number' && Number.isFinite(unit.rateNight)) {
+                rate = `${formatStaffPeso(unit.rateNight)}${rateUnit}`;
+            } else if (typeof court.rate === 'number' && Number.isFinite(court.rate)) {
+                rate = `${formatStaffPeso(court.rate)}${court.rateUnit || '/hr'}`;
+            }
+            const photoUrl = unit.imageUrl || court.imageUrl || '';
+            const monogram = window.InigoCourtsData.monogramFor(walkinSportKey({ slug: court.sportSlug || court.sportName }), court.name);
+            const photo = photoUrl
+                ? `<img src="${window.escapeHtml(photoUrl)}" alt="" loading="lazy">`
+                : `<span class="staff-walkin-court-monogram" aria-hidden="true">${window.escapeHtml(monogram)}<small>Photo coming soon</small></span>`;
+            const rating = Number.isFinite(court.rating) && court.rating >= 0 && court.rating <= 5
+                ? `<span class="staff-walkin-court-rating" aria-label="Listing rating ${court.rating.toFixed(1)} out of 5"><span aria-hidden="true">★</span> ${court.rating.toFixed(1)}<small>listing rating</small></span>`
+                : '';
+            const choiceLabel = choice.label || unit.label || `${court.name} ${index + 1}`;
+            return `<label class="staff-walkin-court-card${selected ? ' is-selected' : ''}" data-staff-walkin-court-card="${index}"><input class="staff-walkin-court-radio" type="radio" name="staff-walkin-court-unit" value="${window.escapeHtml(unit.id || index)}" data-staff-walkin-court-radio="${index}" aria-label="${window.escapeHtml(choiceLabel)}${rate ? `, ${window.escapeHtml(rate)}` : ''}"${selected ? ' checked' : ''}><span class="staff-walkin-court-photo">${photo}</span><span class="staff-walkin-court-body"><span class="staff-walkin-court-heading"><strong>${window.escapeHtml(choiceLabel)}</strong>${rating}</span><span class="staff-walkin-court-rate">${window.escapeHtml(rate || 'Rate to be confirmed')}</span>${court.description ? `<span class="staff-walkin-court-details">${window.escapeHtml(court.description)}</span>` : ''}</span></label>`;
         }).join('');
-        walkinCourtCards.querySelectorAll('[data-staff-walkin-court-card]').forEach((card) => card.addEventListener('click', () => {
-            const choice = choices[Number(card.dataset.staffWalkinCourtCard)];
-            if (!choice) return;
-            selectWalkinUnit(choice.court, choice.unit);
-            resetWalkinTimeSelectionAndRefresh();
-            renderWalkinWizard();
-        }));
     }
+
+    if (walkinCourtCards) walkinCourtCards.addEventListener('change', (event) => {
+        const radio = event.target.closest('.staff-walkin-court-radio');
+        if (!radio || !radio.checked) return;
+        const restoreFocus = document.activeElement === radio;
+        const choice = walkinUnitsForSelectedSport()[Number(radio.dataset.staffWalkinCourtRadio)];
+        if (!choice) return;
+        selectWalkinUnit(choice.court, choice.unit);
+        resetWalkinTimeSelectionAndRefresh();
+        renderWalkinWizard();
+        if (restoreFocus) {
+            Array.from(walkinCourtCards.querySelectorAll('.staff-walkin-court-radio'))
+                .find((candidate) => candidate.value === radio.value)?.focus();
+        }
+    });
 
     function selectWalkinUnit(court, unit) {
         if (!walkinState.sport || !walkinCourtsForSelectedSport().some((available) => String(available.id) === String(court?.id))) return;
@@ -1936,6 +2085,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     function walkinSlotStatus(hour) {
         if (isWalkinHourPast(hour)) return 'past';
         const { start, end } = hourWindow(hour, todayDateInputValue());
+        const selectedLineIndex = editingWalkinItemIndex;
+        const inCart = walkinState.items.some((line, index) => {
+            if (index === selectedLineIndex || !sameCourtName(line.court, walkinState.court?.name || '')
+                || !courtUnitsOverlap(line.unit, walkinState.unit || '')) return false;
+            return windowsOverlap({ start: new Date(line.startsAt), end: new Date(line.endsAt) }, { start, end });
+        });
+        if (inCart) return 'in-cart';
         const overlap = [...walkinBookings.rows, ...walkinWalkins.rows].filter((row) => {
             if (!sameCourtName(row.courts, walkinState.court?.name || '')) return false;
             if (!courtUnitsOverlap(row.court_unit, walkinState.unit || '')) return false;
@@ -1984,15 +2140,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.startHour = currentSelection.length ? currentSelection[0] : null;
         walkinState.endHour = currentSelection.length ? currentSelection[currentSelection.length - 1] : null;
         const fmt = window.InigoBusinessHours.formatHourLabel;
-        const labels = { open: 'Open', unavailable: 'Unavailable', held: 'Temporarily held', maintenance: 'Maintenance', past: 'Unavailable' };
-        walkinHourGrid.innerHTML = walkinHoursForDay.map((hour) => {
+        const rangeLabel = window.InigoBusinessHours.formatHourRangeLabelShort;
+        const labels = { open: 'Available', 'in-cart': 'In summary', unavailable: 'Unavailable', held: 'Temporarily held', maintenance: 'Maintenance', past: 'Unavailable' };
+        const openHours = walkinHoursForDay.filter((hour) => walkinSlotStatus(hour) === 'open');
+        const earliestBlock = [];
+        for (const hour of openHours) {
+            if (earliestBlock.length && hour !== earliestBlock[earliestBlock.length - 1] + 1) break;
+            earliestBlock.push(hour);
+        }
+        const selectContinuous = earliestBlock.length > 0 && earliestBlock.length === currentSelection.length
+            && earliestBlock.every((hour, index) => currentSelection[index] === hour);
+        const selectContinuousPartial = currentSelection.length > 0 && !selectContinuous;
+        const buttons = walkinHoursForDay.map((hour) => {
             const slotStatus = walkinSlotStatus(hour);
             const available = slotStatus === 'open';
             const selected = currentSelection.includes(hour);
-            return `<button type="button" class="staff-hour-slot is-${slotStatus}${selected ? ' is-selected' : ''}" data-staff-walkin-hour="${hour}" aria-pressed="${selected}" ${available ? '' : 'disabled'}>
-                <strong>${window.escapeHtml(fmt(hour))}–${window.escapeHtml(fmt(hour + 1))}</strong><span>${window.escapeHtml(selected ? 'Selected' : labels[slotStatus] || 'Unavailable')}</span>
+            const label = typeof rangeLabel === 'function' ? rangeLabel(hour) : `${fmt(hour)}–${fmt(hour + 1)}`;
+            const state = selected ? 'Selected' : labels[slotStatus] || 'Unavailable';
+            return `<button type="button" class="staff-hour-slot is-${slotStatus}${selected ? ' is-selected' : ''}" data-staff-walkin-hour="${hour}" aria-label="${window.escapeHtml(label)}, ${window.escapeHtml(state)}" aria-pressed="${selected}" ${available ? '' : 'disabled'}>
+                <strong>${window.escapeHtml(label)}</strong><span>${window.escapeHtml(state)}</span>
             </button>`;
         }).join('') || '<p class="staff-form-hint">No opening hours are configured for this date.</p>';
+        walkinHourGrid.innerHTML = `<div class="staff-hour-slot-legend" aria-label="Time slot key"><span><i class="is-available" aria-hidden="true"></i>Available</span><span><i class="is-selected" aria-hidden="true"></i>Selected</span><span><i class="is-in-cart" aria-hidden="true"></i>In summary</span><span><i class="is-unavailable" aria-hidden="true"></i>Unavailable</span></div><label class="staff-hour-select-all"><input type="checkbox" data-staff-walkin-select-continuous aria-label="Select the earliest continuous available hours"${selectContinuous ? ' checked' : ''}${selectContinuousPartial ? ' data-indeterminate="true"' : ''}${!openHours.length ? ' disabled' : ''}><span>Select continuous available times</span></label>${buttons}`;
+        walkinHourGrid.querySelectorAll('[data-indeterminate="true"]').forEach((checkbox) => { checkbox.indeterminate = true; });
         walkinHourGrid.querySelectorAll('[data-staff-walkin-hour]').forEach((button) => button.addEventListener('click', () => {
             if (walkinSelectionDate !== todayDateInputValue()) {
                 if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'The date changed. Checking today’s availability…';
@@ -2029,10 +2199,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             walkinState.endHour = selection.length ? selection[selection.length - 1] : null;
             if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = '';
             renderWalkinTimeSlots();
+            [...walkinHourGrid.querySelectorAll('[data-staff-walkin-hour]')]
+                .find((slot) => Number(slot.dataset.staffWalkinHour) === hour)?.focus();
             if (message && walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = message;
             updateWalkinSummary();
             renderWalkinWizard();
         }));
+        walkinHourGrid.querySelector('[data-staff-walkin-select-continuous]')?.addEventListener('change', (event) => {
+            if (walkinSelectionDate !== todayDateInputValue()) {
+                if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = 'The date changed. Checking today’s availability…';
+                refreshWalkinTimeSlots(true);
+                return;
+            }
+            const selection = event.currentTarget.checked ? [...earliestBlock] : [];
+            walkinState.selectedHours = selection;
+            walkinState.startHour = selection[0] ?? null;
+            walkinState.endHour = selection[selection.length - 1] ?? null;
+            if (walkinOpenWindowsEl) walkinOpenWindowsEl.textContent = '';
+            renderWalkinTimeSlots();
+            walkinHourGrid.querySelector('[data-staff-walkin-select-continuous]')?.focus();
+            updateWalkinSummary();
+            renderWalkinWizard();
+        });
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = walkinTimeRangeLabel() || '';
         if (walkinOpenWindowsEl && !String(walkinOpenWindowsEl.textContent || '').startsWith('Select consecutive')
             && !String(walkinOpenWindowsEl.textContent || '').startsWith('Keep selected')
@@ -2163,12 +2351,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = '';
     }
 
+    function returnToWalkinSportAfterEmptySummary() {
+        editingWalkinItemIndex = null;
+        addingWalkinItem = false;
+        clearWalkinCurrentLine();
+        walkinState.sport = null;
+        renderWalkinSportCards();
+        renderWalkinUnitOptions();
+        refreshWalkinTimeSlots();
+        goToWalkinStep(2);
+    }
+
     function renderWalkinLines() {
         if (!walkinLinesEl) return;
-        walkinLinesEl.innerHTML = walkinState.items.length ? `<strong>Added booking lines</strong>${walkinState.items.map((line, index) => {
+        if (walkinBookingCountEl) walkinBookingCountEl.textContent = `Your bookings · ${walkinState.items.length} item${walkinState.items.length === 1 ? '' : 's'}`;
+        if (walkinDeleteAllBtn) walkinDeleteAllBtn.disabled = !walkinState.items.length;
+        walkinLinesEl.innerHTML = walkinState.items.map((line, index) => {
             const hours = line.endHour - line.startHour + 1;
-            return `<div class="staff-walkin-line"><span>${index + 1}. ${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}<small>${window.escapeHtml(formatIsoTime12h(line.startsAt))}–${window.escapeHtml(formatIsoTime12h(line.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</small></span><strong>${line.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(line.subtotal))}</strong><span class="staff-walkin-item-actions"><button type="button" class="staff-btn-ghost" data-staff-walkin-edit-line="${index}">Edit</button><button type="button" class="staff-icon-btn" aria-label="Remove line ${index + 1}" data-staff-walkin-remove-line="${index}">×</button></span></div>`;
-        }).join('')}` : '';
+            return `<div class="staff-walkin-line"><span>${index + 1}. ${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}<small>${window.escapeHtml(formatWalkinDateLabel(line.startsAt))} · ${window.escapeHtml(formatIsoTime12h(line.startsAt))}–${window.escapeHtml(formatIsoTime12h(line.endsAt))} · ${hours} hr${hours === 1 ? '' : 's'}</small></span><strong>${line.subtotal === null ? 'Rate pending' : window.escapeHtml(formatStaffPeso(line.subtotal))}</strong><span class="staff-walkin-item-actions"><button type="button" class="staff-btn-ghost" data-staff-walkin-edit-line="${index}">Edit</button><button type="button" class="staff-icon-btn" aria-label="Remove line ${index + 1}" data-staff-walkin-remove-line="${index}">×</button></span></div>`;
+        }).join('');
         walkinLinesEl.querySelectorAll('[data-staff-walkin-edit-line]').forEach((button) => button.addEventListener('click', () => {
             const index = Number(button.dataset.staffWalkinEditLine);
             const line = walkinState.items[index];
@@ -2193,6 +2394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             editingWalkinItemIndex = index;
+            addingWalkinItem = false;
             walkinState.sport = sport;
             selectWalkinUnit(court, unit);
             walkinState.startHour = Number(line.startHour);
@@ -2206,25 +2408,49 @@ document.addEventListener('DOMContentLoaded', async () => {
             refreshWalkinTimeSlots();
             goToWalkinStep(2);
         }));
-        walkinLinesEl.querySelectorAll('[data-staff-walkin-remove-line]').forEach((button) => button.addEventListener('click', () => {
-            walkinState.items.splice(Number(button.dataset.staffWalkinRemoveLine), 1);
+        walkinLinesEl.querySelectorAll('[data-staff-walkin-remove-line]').forEach((button) => button.addEventListener('click', async () => {
+            const line = walkinState.items[Number(button.dataset.staffWalkinRemoveLine)];
+            if (!line || !await confirmStaffAction('Remove this booking from the summary?', 'Remove booking?', 'Remove')) return;
+            const index = walkinState.items.indexOf(line);
+            if (index < 0) return;
+            walkinState.items.splice(index, 1);
             if (editingWalkinItemIndex !== null) {
-                if (editingWalkinItemIndex === Number(button.dataset.staffWalkinRemoveLine)) editingWalkinItemIndex = null;
-                else if (editingWalkinItemIndex > Number(button.dataset.staffWalkinRemoveLine)) editingWalkinItemIndex--;
+                if (editingWalkinItemIndex === index) editingWalkinItemIndex = null;
+                else if (editingWalkinItemIndex > index) editingWalkinItemIndex--;
             }
             renderWalkinLines();
             updateWalkinSummary();
-            renderWalkinWizard();
+            if (walkinState.items.length) renderWalkinWizard();
+            else returnToWalkinSportAfterEmptySummary();
         }));
+    }
+
+    function renderWalkinPaymentReviewLines() {
+        if (!walkinPaymentLinesEl) return;
+        walkinPaymentLinesEl.innerHTML = walkinState.items.map((line) => {
+            const hours = Number(line.endHour) - Number(line.startHour) + 1;
+            const schedule = `${formatWalkinDateLabel(line.startsAt)} · ${formatIsoTime12h(line.startsAt)}–${formatIsoTime12h(line.endsAt)} · ${hours} hr${hours === 1 ? '' : 's'}`;
+            const amount = line.subtotal === null ? 'Rate pending' : formatStaffPeso(line.subtotal);
+            return `<div class="staff-walkin-review-line"><div><strong>${window.escapeHtml(line.sport)} · ${window.escapeHtml(line.court)}${line.unit ? ` · ${window.escapeHtml(line.unit)}` : ''}</strong><span>${window.escapeHtml(schedule)}</span></div><strong>${window.escapeHtml(amount)}</strong></div>`;
+        }).join('');
     }
 
     if (walkinAddLineBtn) walkinAddLineBtn.addEventListener('click', () => {
         editingWalkinItemIndex = null;
+        addingWalkinItem = true;
         clearWalkinCurrentLine();
         renderWalkinSportCards();
         renderWalkinUnitOptions();
         refreshWalkinTimeSlots();
         goToWalkinStep(2);
+    });
+
+    if (walkinDeleteAllBtn) walkinDeleteAllBtn.addEventListener('click', async () => {
+        if (!walkinState.items.length || !await confirmStaffAction('Delete all bookings from this summary?', 'Delete all bookings?', 'Delete All')) return;
+        walkinState.items.splice(0);
+        renderWalkinLines();
+        updateWalkinSummary();
+        returnToWalkinSportAfterEmptySummary();
     });
 
     function resetWalkinTimeSelectionAndRefresh() {
@@ -2236,7 +2462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ---- Step 6 — Payment and confirmation ----
     function selectWalkinPayment(radio) {
-        if (!radio || !['cash', 'paymongo_qr'].includes(radio.dataset.staffPayment)
+        if (!radio || !['cash', 'paymongo'].includes(radio.dataset.staffPayment)
             || walkinState.payment === radio.dataset.staffPayment) return;
         walkinState.payment = radio.dataset.staffPayment;
         walkinPaymentOptionEls.forEach((option) => {
@@ -2320,11 +2546,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const subtotal = walkinState.items.reduce((sum, item) => item.subtotal === null ? null : (sum === null ? item.subtotal : sum + item.subtotal), 0);
         if (walkinSummaryName) walkinSummaryName.textContent = walkinState.name || '—';
         if (walkinSummaryMobile) walkinSummaryMobile.textContent = walkinState.mobile || 'Not provided';
-        if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'paymongo_qr'
-            ? 'QR Ph'
+        if (walkinPaymentName) walkinPaymentName.textContent = walkinState.name || '—';
+        if (walkinPaymentMobile) walkinPaymentMobile.textContent = walkinState.mobile || 'Not provided';
+        if (walkinSummaryPayment) walkinSummaryPayment.textContent = walkinState.payment === 'paymongo'
+            ? 'Pay Online'
             : 'Cash';
         walkinSummaryTotals.forEach((el) => { el.textContent = subtotal === null ? 'Confirm at front desk' : formatStaffPeso(subtotal); });
-        if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = walkinState.payment !== 'paymongo_qr';
+        if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = walkinState.payment !== 'paymongo';
         if (walkinCashDetails) walkinCashDetails.hidden = walkinState.payment !== 'cash';
         if (walkinCashTenderedInput) {
             walkinCashTenderedInput.disabled = walkinState.payment !== 'cash';
@@ -2342,14 +2570,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                         : `Cash received: ${formatStaffPeso(tenderedMinor / 100)}.`;
             walkinCashValidation.setAttribute('aria-invalid', dueMinor !== null && tenderedMinor !== null && tenderedMinor < dueMinor ? 'true' : 'false');
         }
-        if (walkinAcknowledgmentNote) walkinAcknowledgmentNote.textContent = walkinState.payment === 'paymongo_qr'
-            ? 'A payment acknowledgment is available only after PayMongo confirms payment.'
+        if (walkinAcknowledgmentNote) walkinAcknowledgmentNote.textContent = walkinState.payment === 'paymongo'
+            ? 'A payment acknowledgment is available only after PayMongo verifies the full payment.'
             : 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
-        if (walkinSaveBtn) walkinSaveBtn.textContent = walkinState.payment === 'paymongo_qr'
-            ? 'Show QR Ph'
+        if (walkinSaveBtn) walkinSaveBtn.textContent = walkinState.payment === 'paymongo'
+            ? 'Continue to PayMongo'
             : 'Complete cash payment';
         if (walkinCurrentRangeEl) walkinCurrentRangeEl.textContent = walkinTimeRangeLabel() || '';
         renderWalkinLines();
+        renderWalkinPaymentReviewLines();
     }
 
     // ---- Receipt (S4) — same store-receipt/ticket look as the customer
@@ -2394,13 +2623,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isBooking = context === 'transaction' && receipt.source === 'booking';
         const hasWalkinOrderId = Boolean(receipt.source_id || receipt.order_id || receipt.walkin_order_id);
         const sourceLabel = isBooking ? 'Booking ID' : hasWalkinOrderId ? 'Walk-in order ID' : 'Walk-in visit ID';
-        const actionsHtml = `<button type="button" class="staff-btn-primary" data-staff-receipt-download="${idAttr}">Download PNG</button>
+        const actionsHtml = context === 'walkin' ? `<button type="button" class="staff-btn-primary" data-staff-receipt-download="${idAttr}">Download PNG</button>
             <button type="button" class="staff-btn-ghost payment-ack-print-button" data-staff-receipt-print>Print</button>
-            ${context === 'walkin' ? '<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>' : ''}`;
+            <button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button>` : '';
         target.innerHTML = `<div class="staff-receipt-layout">${window.InigoPaymentAcknowledgment.render(staffWalkinReceipt, {
-            sourceLabel, sourceId, itemReferenceLabel: isBooking ? '' : 'Visit ID', transactionId: receipt.transaction_id,
+            sourceLabel, sourceId, itemReferenceLabel: isBooking ? '' : 'Visit ID', transactionId: receipt.visit_transaction_id || receipt.transaction_id,
             cardAttributes: 'data-staff-receipt-card', actionsHtml,
         })}</div>`;
+        if (context === 'transaction' && receipt.payment_id !== null && receipt.payment_id !== undefined) {
+            const meta = target.querySelector('.payment-ack-meta');
+            if (meta) {
+                const paymentId = document.createElement('div');
+                paymentId.className = 'payment-ack-meta-row';
+                paymentId.innerHTML = `<span>Payment ID</span><strong>${window.escapeHtml(String(receipt.payment_id))}</strong>`;
+                meta.appendChild(paymentId);
+            }
+        }
         const cashTenderedMinor = Number(receipt.cash_tendered_minor);
         const cashChangeMinor = Number(receipt.cash_change_minor);
         if (receipt.payment_method === 'Cash' && Number.isSafeInteger(cashTenderedMinor)
@@ -2468,8 +2706,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const courts = walkinState.courts;
         const nightRateStartsAt = walkinState.nightRateStartsAt || null;
         editingWalkinItemIndex = null;
+        addingWalkinItem = false;
         walkinSelectionDate = todayDateInputValue();
-        walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, mobileAvailability: '', sports, sport: null, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', nightRateStartsAt, startHour: null, endHour: null, selectedHours: [], items: [], payment: staffCashEnabled ? 'cash' : (staffQrphEnabled ? 'paymongo_qr' : null) };
+        walkinState = { name: '', mobile: '', customerId: null, customerMode: 'guest', customerSearchResult: null, mobileError: false, mobileAvailability: '', sports, sport: null, courts, court: null, unit: null, unitId: null, rateDay: null, rateNight: null, rate: null, rateUnit: '/hr', nightRateStartsAt, startHour: null, endHour: null, selectedHours: [], items: [], payment: staffCashEnabled ? 'cash' : (staffOnlineEnabled ? 'paymongo' : null) };
         if (walkinNameInput) walkinNameInput.value = '';
         if (walkinMobileInput) walkinMobileInput.value = '';
         if (walkinCashTenderedInput) walkinCashTenderedInput.value = '';
@@ -2772,6 +3011,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         return showWalkinQrCheckoutData(orderId, amount, checkout.data);
     }
 
+    function renderWalkinOnlineCheckoutError(orderId, message) {
+        if (walkinWizardWrap) walkinWizardWrap.hidden = true;
+        if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
+        const safeOrderId = typeof orderId === 'string'
+            && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId) ? orderId : '';
+        const retry = safeOrderId
+            ? `<button type="button" class="staff-btn-primary" data-staff-walkin-online-checkout-retry="${window.escapeHtml(safeOrderId)}">Retry PayMongo checkout</button>`
+            : '<button type="button" class="staff-btn-primary" data-staff-walkin-online-review-retry>Review and try again</button>';
+        if (walkinReceiptEl) walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending"><h3>Online checkout not ready</h3><p>${window.escapeHtml(message || 'Could not prepare the PayMongo checkout.')}</p>${retry}<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button></div>`;
+    }
+
+    async function createWalkinPayOnlineCheckout(details) {
+        let checkout;
+        try {
+            checkout = await window.sb.functions.invoke('staff-walkin-checkout', { body: details });
+        } catch (error) { checkout = { error }; }
+        if (checkout?.error) {
+            let orderId = null;
+            try {
+                const response = checkout.error.context;
+                if (response && typeof response.json === 'function') {
+                    const payload = await response.json();
+                    if (typeof payload?.order_id === 'string') orderId = payload.order_id;
+                    if (payload?.message) checkout.error.message = payload.message;
+                }
+            } catch { /* The function error may not include a response body. */ }
+            renderWalkinOnlineCheckoutError(orderId, checkout.error.message);
+            return false;
+        }
+        const orderId = checkout?.data?.order_id;
+        const checkoutUrl = checkout?.data?.checkout_url;
+        if (typeof orderId !== 'string' || !orderId
+            || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('https://checkout.paymongo.com/')) {
+            renderWalkinOnlineCheckoutError(typeof orderId === 'string' ? orderId : null,
+                checkout?.data?.message || 'The verified checkout service did not return a valid PayMongo checkout link.');
+            return false;
+        }
+        window.location.assign(checkoutUrl);
+        return true;
+    }
+
     async function showWalkinAcknowledgment(orderId) {
         walkinLastOrderId = orderId;
         const result = await loadWalkinAcknowledgment(orderId);
@@ -2790,6 +3070,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffReceiptModal = document.querySelector('[data-staff-receipt-modal]');
     const staffReceiptDialog = document.querySelector('[data-staff-receipt-dialog]');
     const staffReceiptModalContent = document.querySelector('[data-staff-receipt-modal-content]');
+    const staffReceiptModalTitle = document.querySelector('[data-staff-receipt-modal-title]');
     const staffShell = document.querySelector('.staff-shell');
     let staffReceiptModalLastFocus = null;
 
@@ -2838,7 +3119,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function openTransactionAcknowledgment(payment) {
         if (!payment || !staffReceiptModalContent || !staffReceiptModal) return;
+        if (staffReceiptModalTitle) staffReceiptModalTitle.textContent = 'Payment acknowledgment';
         staffReceiptModalContent.innerHTML = '<p class="staff-notif-empty">Loading payment acknowledgment…</p>';
+        staffReceiptModalContent.scrollTop = 0;
         staffReceiptModal.setAttribute('data-open', '');
         staffReceiptModal.hidden = false;
         if (staffReceiptDialog) staffReceiptDialog.scrollTop = 0;
@@ -2855,26 +3138,67 @@ document.addEventListener('DOMContentLoaded', async () => {
             staffReceiptModalContent.innerHTML = '<p class="staff-notif-empty">No payment acknowledgment is available until a payment is confirmed.</p>';
             return;
         }
-        renderStaffReceipt({ ...ack, transaction_id: ack.transaction_id || payment.payment_id, source: payment.source }, staffReceiptModalContent, 'transaction');
+        renderStaffReceipt({ ...ack, transaction_id: ack.transaction_id || payment.payment_id, visit_transaction_id: payment.transaction_id, payment_id: payment.payment_id, source: payment.source }, staffReceiptModalContent, 'transaction');
+        staffReceiptModal.querySelector('[data-staff-receipt-download]')?.setAttribute('data-staff-receipt-download', String(ack.receipt_number || ack.receipt_id || ack.id || 'receipt'));
     }
 
     function showImmediatePaymentAcknowledgment(acknowledgment, source) {
         const ack = normalizeRpcRow(acknowledgment);
         if (!ack || !staffReceiptModalContent || !staffReceiptModal) return false;
+        if (staffReceiptModalTitle) staffReceiptModalTitle.textContent = 'Payment acknowledgment';
         if (!['paid', 'succeeded', 'completed', 'partially_paid', 'partially paid', 'partially_settled']
             .includes(String(ack.payment_status || '').toLowerCase())) return false;
         staffReceiptModalContent.replaceChildren();
+        staffReceiptModalContent.scrollTop = 0;
         staffReceiptModal.setAttribute('data-open', '');
         staffReceiptModal.hidden = false;
         staffReceiptModalLastFocus = document.activeElement;
         updateStaffModalBackground();
         renderStaffReceipt({ ...ack, source }, staffReceiptModalContent, 'transaction');
+        staffReceiptModal.querySelector('[data-staff-receipt-download]')?.setAttribute('data-staff-receipt-download', String(ack.receipt_number || ack.receipt_id || ack.id || 'receipt'));
         staffReceiptDialog?.focus();
         return true;
     }
 
+    function openTransactionVisitRecord(row) {
+        if (!row?.transaction_id || !staffReceiptModalContent || !staffReceiptModal) return;
+        const timestamp = (value) => {
+            if (!value || !Number.isFinite(Date.parse(value))) return '—';
+            return new Intl.DateTimeFormat('en-PH', {
+                timeZone: STAFF_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short',
+            }).format(new Date(value));
+        };
+        const source = row.source === 'walkin' ? 'Walk-in' : 'Booking';
+        const amount = Number.isFinite(Number(row.amount_minor)) ? formatStaffPeso(Number(row.amount_minor) / 100) : '—';
+        const notCollected = Number(row.amount_minor) === 0;
+        if (staffReceiptModalTitle) staffReceiptModalTitle.textContent = 'Time-In acknowledgment';
+        staffReceiptModalContent.innerHTML = `<article class="payment-ack-card staff-visit-record-card" data-payment-ack-card>
+            <header class="payment-ack-heading"><strong>InigoSync</strong><span>(Inigos Sports Center)</span><span class="payment-ack-address">Brgy. Bocohan, Diversion Road, Lucena City, Quezon, Philippines</span><b>TIME-IN ACKNOWLEDGMENT</b></header>
+            <div class="payment-ack-rule"></div>
+            <div class="payment-ack-meta">
+                <div class="payment-ack-meta-row"><span>Transaction ID</span><strong>${window.escapeHtml(row.transaction_id)}</strong></div>
+                <div class="payment-ack-meta-row"><span>Customer</span><strong>${window.escapeHtml(row.customer_name || '—')}</strong></div>
+                <div class="payment-ack-meta-row"><span>Source</span><strong>${source}</strong></div>
+                <div class="payment-ack-meta-row"><span>Time In</span><strong>${window.escapeHtml(timestamp(row.checked_in_at))}</strong></div>
+                <div class="payment-ack-meta-row"><span>Time Out</span><strong>${window.escapeHtml(timestamp(row.checked_out_at))}</strong></div>
+            </div>
+            <div class="payment-ack-rule"></div>
+            <div class="payment-ack-totals"><div class="payment-ack-total"><span>Collected at Time-In</span><strong>${window.escapeHtml(amount)}</strong></div></div>
+            <div class="payment-ack-rule"></div>
+            <p class="payment-ack-disclaimer">STAFF TIME-IN RECORD<br><span>${notCollected ? 'No payment was collected at Time-In. This record does not include any earlier booking payment.' : 'This record confirms staff Time-In and the amount collected at that time. It is not an official receipt.'}</span></p>
+        </article>`;
+        staffReceiptModalContent.scrollTop = 0;
+        staffReceiptModal.setAttribute('data-open', '');
+        staffReceiptModal.hidden = false;
+        staffReceiptDialog?.focus();
+        staffReceiptModalLastFocus = document.activeElement;
+        updateStaffModalBackground();
+        staffReceiptModal.querySelector('[data-staff-receipt-download]')?.setAttribute('data-staff-receipt-download', `time-in-${row.transaction_id}`);
+    }
+
     function closeStaffReceiptModal() {
         if (!staffReceiptModal) return;
+        if (staffReceiptModalTitle) staffReceiptModalTitle.textContent = 'Payment acknowledgment';
         staffReceiptModal.removeAttribute('data-open');
         staffReceiptModal.hidden = true;
         updateStaffModalBackground();
@@ -2896,7 +3220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             const downloadBtn = event.target.closest('[data-staff-receipt-download]');
             if (downloadBtn) {
-                const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.payment-ack-card');
+                const card = staffReceiptModalContent?.querySelector('.payment-ack-card');
                 if (!card) return;
                 const original = downloadBtn.textContent;
                 downloadBtn.disabled = true;
@@ -2938,8 +3262,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('Cash payment is currently unavailable.', true);
             return;
         }
-        if (walkinState.payment === 'paymongo_qr' && !staffQrphEnabled) {
-            window.InigoToast?.show('QR Ph checkout is currently unavailable.', true);
+        if (walkinState.payment === 'paymongo' && !staffOnlineEnabled) {
+            window.InigoToast?.show('Online checkout is currently unavailable.', true);
             return;
         }
         if (walkinState.items.some((item) => !Number.isFinite(item.subtotal)
@@ -2956,10 +3280,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const walkinTotal = walkinState.items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
         const walkinConfirmMessage = walkinState.payment === 'cash'
             ? `Collect ${formatStaffPeso(walkinTotal)} in Cash and save this walk-in payment?`
-            : `Prepare a QR Ph payment for ${formatStaffPeso(walkinTotal)}? PayMongo may add a transaction fee, shown before the customer authorizes payment. The reservation and acknowledgment are confirmed only after PayMongo verifies payment.`;
+            : `Continue to PayMongo checkout for ${formatStaffPeso(walkinTotal)}? The customer can choose an enabled online payment method. Any processing fee is shown before payment. The reservation and acknowledgment are confirmed only after PayMongo verifies the full payment.`;
         if (!await confirmStaffAction(walkinConfirmMessage,
-            walkinState.payment === 'cash' ? 'Confirm Cash Payment' : 'Confirm QR Payment',
-            walkinState.payment === 'cash' ? 'Complete cash payment' : 'Show QR')) return;
+            walkinState.payment === 'cash' ? 'Confirm Cash Payment' : 'Confirm Online Payment',
+            walkinState.payment === 'cash' ? 'Complete cash payment' : 'Continue to checkout')) return;
 
         button.disabled = true;
         const originalText = button.textContent;
@@ -2974,18 +3298,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             quoted_minor: Math.round(item.subtotal * 100),
             ...(walkinState.payment === 'cash' ? { cash_tendered_minor: walkinCashTenderMinor() } : {}),
         }));
-        if (walkinState.payment === 'paymongo_qr') {
-            button.textContent = 'Preparing QR Ph…';
-            const estimate = requestedLines.reduce((sum, item) => sum + item.subtotal, 0);
-            await createWalkinQrCheckout({
+        if (walkinState.payment === 'paymongo') {
+            button.textContent = 'Preparing PayMongo checkout…';
+            const redirected = await createWalkinPayOnlineCheckout({
                 customer_id: walkinState.customerId || null,
                 guest_name: walkinState.customerId ? null : walkinState.name,
                 guest_mobile: walkinState.mobile || null,
                 items: rpcItems,
-            }, estimate);
-            refreshBookingOverview();
-            refreshCourtSchedule();
-            refreshTransactions();
+            });
+            if (!redirected) {
+                refreshBookingOverview();
+                refreshCourtSchedule();
+                refreshTransactions();
+            }
             return;
         }
         let create;
@@ -3038,6 +3363,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const qrCheckBtn = e.target.closest('[data-staff-walkin-qr-check]');
             const qrCheckoutRetryBtn = e.target.closest('[data-staff-walkin-qr-checkout-retry]');
             const qrReviewRetryBtn = e.target.closest('[data-staff-walkin-qr-review-retry]');
+            const onlineCheckoutRetryBtn = e.target.closest('[data-staff-walkin-online-checkout-retry]');
+            const onlineReviewRetryBtn = e.target.closest('[data-staff-walkin-online-review-retry]');
 
             if (downloadBtn) {
                 const card = downloadBtn.closest('.staff-receipt-layout')?.querySelector('.payment-ack-card');
@@ -3076,6 +3403,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (qrReviewRetryBtn) {
                 activeWalkinQr = null;
+                if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
+                if (walkinWizardWrap) walkinWizardWrap.hidden = false;
+                goToWalkinStep(WALKIN_STEP_COUNT);
+                return;
+            }
+            if (onlineCheckoutRetryBtn) {
+                const orderId = onlineCheckoutRetryBtn.dataset.staffWalkinOnlineCheckoutRetry;
+                onlineCheckoutRetryBtn.disabled = true;
+                onlineCheckoutRetryBtn.textContent = 'Preparing…';
+                await createWalkinPayOnlineCheckout({ order_id: orderId });
+                return;
+            }
+            if (onlineReviewRetryBtn) {
                 if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
                 if (walkinWizardWrap) walkinWizardWrap.hidden = false;
                 goToWalkinStep(WALKIN_STEP_COUNT);
@@ -3523,19 +3863,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     // every unit of every sport, each row prefixed with its court name.
     // ------------------------------------------------------------------
     const scheduleDateInput = document.querySelector('[data-staff-schedule-date]');
-    const scheduleSportSelect = document.querySelector('[data-staff-schedule-sport]');
+    const scheduleDatePrevious = document.querySelector('[data-staff-schedule-date-prev]');
+    const scheduleDateNext = document.querySelector('[data-staff-schedule-date-next]');
+    const scheduleTodayButton = document.querySelector('[data-staff-schedule-today]');
+    const scheduleDayHeading = document.querySelector('[data-staff-schedule-day-heading]');
     const scheduleTable = document.querySelector('[data-staff-schedule-grid]');
     const scheduleSearchInput = document.querySelector('[data-staff-schedule-search]');
     const scheduleSortSelect = document.querySelector('[data-staff-schedule-sort]');
     const schedulePagination = document.querySelector('[data-staff-schedule-pagination]');
+    const scheduleTableWrap = document.querySelector('.staff-schedule-table-wrap');
     const schedulePreviousButton = document.querySelector('[data-staff-schedule-page-prev]');
     const scheduleNextButton = document.querySelector('[data-staff-schedule-page-next]');
     const schedulePageNumbers = document.querySelector('[data-staff-schedule-page-numbers]');
+    const scheduleSportFilters = document.querySelector('[data-staff-schedule-sport-filters]');
+    const scheduleHourWindow = document.querySelector('.staff-schedule-window');
+    const scheduleHourPrevious = document.querySelector('[data-staff-schedule-hour-prev]');
+    const scheduleHourNext = document.querySelector('[data-staff-schedule-hour-next]');
     const SCHEDULE_PAGE_SIZE = 15;
 
     let scheduleActiveSport = 'all';
     let scheduleDate = todayDateInputValue();
     let schedulePage = 1;
+    let scheduleHourOffset = 0;
+    let scheduleHourPageSize = 4;
+    let scheduleHourTotal = 0;
     let scheduleCourtsCache = [];
     let scheduleCourtCreatedAt = new Map();
     let scheduleBookingsCache = [];
@@ -3545,20 +3896,85 @@ document.addEventListener('DOMContentLoaded', async () => {
     let scheduleRulesCache = null;
     let scheduleRequestSeq = 0;
 
+    function scheduleDateLabel(dateValue) {
+        const [year, month, day] = String(dateValue || '').split('-').map(Number);
+        if (!year || !month || !day) return '';
+        return new Intl.DateTimeFormat('en-US', {
+            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+        }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+    }
+
+    function shiftScheduleDate(dateValue, days) {
+        const [year, month, day] = String(dateValue || '').split('-').map(Number);
+        if (!year || !month || !day) return todayDateInputValue();
+        const shifted = new Date(Date.UTC(year, month - 1, day + days, 12));
+        return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    function normalizeScheduleDate(dateValue, fallbackDate, today) {
+        const isValidDate = (value) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return false;
+            const parsed = new Date(`${value}T00:00:00Z`);
+            return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+        };
+        const validToday = isValidDate(today) ? today : '';
+        if (!validToday) return '';
+        const validFallback = isValidDate(fallbackDate) && fallbackDate >= validToday ? fallbackDate : validToday;
+        const requested = isValidDate(dateValue) ? dateValue : validFallback;
+        return requested < validToday ? validToday : requested;
+    }
+
+    function selectScheduleDate(dateValue) {
+        const today = todayDateInputValue();
+        scheduleDate = normalizeScheduleDate(dateValue, scheduleDate, today);
+        if (scheduleDateInput) scheduleDateInput.value = scheduleDate;
+        schedulePage = 1;
+        scheduleHourOffset = 0;
+        refreshCourtSchedule();
+    }
+
+    function scheduleIdentityColumnWidth(containerWidth) {
+        const width = Number(containerWidth);
+        if (!Number.isFinite(width) || width <= 0) return 230;
+        return width <= 560 ? 190 : Math.min(260, Math.max(230, width * 0.25));
+    }
+
+    function scheduleHoursPerWindow(containerWidth, totalHours) {
+        const total = Math.max(0, Number(totalHours) || 0);
+        if (!total) return 0;
+        const width = Number(containerWidth);
+        const identityWidth = Number.isFinite(width) && width > 0 ? scheduleIdentityColumnWidth(width) : 0;
+        const minimumSlots = Number.isFinite(width) && width > 0 && width <= 360
+            ? Math.min(total, 2)
+            : Math.min(total, 4);
+        const slotsThatFit = Number.isFinite(width) && width > 0
+            ? Math.floor((Math.max(0, width - identityWidth)) / 46)
+            : 4;
+        return Math.min(total, Math.max(minimumSlots, slotsThatFit));
+    }
+
+    function nextScheduleHourOffset(offset, direction, pageSize, totalHours) {
+        const total = Math.max(0, Number(totalHours) || 0);
+        const step = Math.max(1, Number(pageSize) || 1);
+        const maxOffset = Math.max(0, total - step);
+        return Math.min(maxOffset, Math.max(0, (Number(offset) || 0) + (direction < 0 ? -step : step)));
+    }
+
     if (scheduleDateInput) {
         scheduleDateInput.min = todayDateInputValue();
         scheduleDateInput.value = scheduleDate;
         scheduleDateInput.addEventListener('change', () => {
             const minStr = todayDateInputValue();
-            if (scheduleDateInput.value < minStr) {
-                scheduleDateInput.value = minStr;
+            if (scheduleDateInput.value && scheduleDateInput.value < minStr) {
                 window.InigoToast?.show("You can't view a date in the past — showing today instead.", true);
             }
-            scheduleDate = scheduleDateInput.value;
-            schedulePage = 1;
-            refreshCourtSchedule();
+            selectScheduleDate(scheduleDateInput.value);
         });
     }
+
+    scheduleDatePrevious?.addEventListener('click', () => selectScheduleDate(shiftScheduleDate(scheduleDate, -1)));
+    scheduleDateNext?.addEventListener('click', () => selectScheduleDate(shiftScheduleDate(scheduleDate, 1)));
+    scheduleTodayButton?.addEventListener('click', () => selectScheduleDate(todayDateInputValue()));
 
     // Groups active court rows by sport, then flattens each court's units
     // (resolveCourtUnits()) into one row per unit. A row is prefixed with
@@ -3586,7 +4002,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const unitValue = unit.label || '';
                 const displayUnit = unit.label || court.name;
                 const rowLabel = (sportSlug === 'all' || siblingCount > 1) ? `${court.name} — ${displayUnit}` : displayUnit;
-                rows.push({ court, unitValue, rowLabel, key: `${court.id}:${i}` });
+                rows.push({ court, unit, unitValue, rowLabel, key: `${court.id}:${i}` });
             });
         });
         return rows;
@@ -3628,8 +4044,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             && sameCourtName(h.courts, row.court.name)
             && courtUnitsOverlap(h.court_unit, row.unitValue)
             && windowsOverlap(rowWindow(h), slot));
-        if (heldMatch) return { cls: 'is-held', label: 'Temporarily held', title: scheduleTooltipFor(heldMatch, 'Checkout hold') };
-        if (bookingMatch) return { cls: 'is-unavailable', label: 'Unavailable', title: scheduleTooltipFor(bookingMatch, 'Online booking') };
+        if (heldMatch) return { cls: 'is-unavailable', label: 'Booked', title: scheduleTooltipFor(heldMatch, 'Checkout hold') };
+        if (bookingMatch) return { cls: 'is-unavailable', label: 'Booked', title: scheduleTooltipFor(bookingMatch, 'Online booking') };
 
         const walkinMatch = walkins.find((w) => {
             if (w.source === 'maintenance' || ['hold', 'checkout_hold', 'payment_hold', 'temporary_hold'].includes(String(w.source || '').toLowerCase())) return false;
@@ -3637,7 +4053,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!courtUnitsOverlap(w.court_unit, row.unitValue)) return false;
             return windowsOverlap(rowWindow(w), slot);
         });
-        if (walkinMatch) return { cls: 'is-unavailable', label: 'Unavailable', title: scheduleTooltipFor(walkinMatch, 'Walk-in', walkinMatch.customer_name || 'Walk-in customer') };
+        if (walkinMatch) return { cls: 'is-unavailable', label: 'Booked', title: scheduleTooltipFor(walkinMatch, 'Walk-in', walkinMatch.customer_name || 'Walk-in customer') };
 
         return { cls: 'is-open', title: '' };
     }
@@ -3646,13 +4062,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!scheduleTable || !window.InigoCourtsData || !window.InigoBusinessHours) return;
         const openHour = Number(scheduleRulesCache?.openHour ?? window.InigoBusinessHours.OPEN_HOUR ?? 8);
         const closeHour = Number(scheduleRulesCache?.closeHour ?? window.InigoBusinessHours.CLOSE_HOUR ?? 20);
-        const hours = scheduleRulesCache?.isClosed || closeHour <= openHour ? [] : Array.from({ length: closeHour - openHour }, (_, index) => openHour + index);
+        const allHours = scheduleRulesCache?.isClosed || closeHour <= openHour ? [] : Array.from({ length: closeHour - openHour }, (_, index) => openHour + index);
+        scheduleHourTotal = allHours.length;
+        const scheduleWidth = scheduleTableWrap?.getBoundingClientRect().width || scheduleTableWrap?.clientWidth || 0;
+        if (scheduleTableWrap && scheduleWidth > 0) {
+            scheduleTableWrap.classList.toggle('is-narrow', scheduleWidth <= 560);
+        }
+        const visibleHourCount = scheduleHoursPerWindow(scheduleWidth, allHours.length);
+        const identityColumnWidth = scheduleIdentityColumnWidth(scheduleWidth);
+        scheduleHourPageSize = visibleHourCount || 4;
+        scheduleHourOffset = Math.min(Math.max(scheduleHourOffset, 0), Math.max(0, allHours.length - visibleHourCount));
+        const hours = allHours.slice(scheduleHourOffset, scheduleHourOffset + visibleHourCount);
         const dateBase = scheduleDate;
+        if (scheduleDayHeading) scheduleDayHeading.textContent = scheduleDateLabel(scheduleDate);
         let rows = scheduleRowsForSport(scheduleActiveSport, courts);
         const query = (scheduleSearchInput?.value || '').trim().toLocaleLowerCase();
         if (query) rows = rows.filter((row) => `${row.rowLabel} ${row.court.sportName || ''} ${row.court.name} ${row.unitValue}`.toLocaleLowerCase().includes(query));
 
-        const openCountFor = (row) => hours.reduce((sum, hour) => sum + (scheduleCellInfo(row, hour, dateBase, scheduleBookingsCache, scheduleWalkinsCache).cls === 'is-open' ? 1 : 0), 0);
+        const openCountFor = (row) => allHours.reduce((sum, hour) => sum + (scheduleCellInfo(row, hour, dateBase, scheduleBookingsCache, scheduleWalkinsCache).cls === 'is-open' ? 1 : 0), 0);
         const sortBy = scheduleSortSelect?.value || 'created-desc';
         rows.sort((a, b) => {
             if (sortBy === 'created-desc') {
@@ -3668,7 +4095,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const thead = scheduleTable.querySelector('thead');
         const tbody = scheduleTable.querySelector('tbody');
+        const columns = scheduleTable.querySelector('[data-staff-schedule-columns]');
         if (!thead || !tbody) return;
+
+        if (columns) {
+            columns.innerHTML = `<col class="staff-schedule-identity-column" style="width:${identityColumnWidth}px">${hours.map(() => '<col class="staff-schedule-hour-column">').join('')}`;
+        }
+
+        const canNavigateHours = allHours.length > hours.length;
+        if (scheduleHourWindow) scheduleHourWindow.hidden = !canNavigateHours;
+        if (scheduleHourPrevious) {
+            scheduleHourPrevious.hidden = !canNavigateHours;
+            scheduleHourPrevious.disabled = scheduleHourOffset <= 0;
+        }
+        if (scheduleHourNext) {
+            scheduleHourNext.hidden = !canNavigateHours;
+            scheduleHourNext.disabled = scheduleHourOffset >= allHours.length - visibleHourCount;
+        }
 
         const pageCount = Math.max(1, Math.ceil(rows.length / SCHEDULE_PAGE_SIZE));
         schedulePage = Math.min(Math.max(schedulePage, 1), pageCount);
@@ -3679,7 +4122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderStaffPageNumbers(schedulePageNumbers, schedulePage, pageCount, page => {
                 schedulePage = page;
                 renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
-            });
+            }, 3);
         }
 
         thead.innerHTML = `<tr><th>Court / Unit</th>${hours.map((h) => `<th>${window.escapeHtml(window.InigoBusinessHours.formatHourRangeLabelShort(h))}</th>`).join('')}</tr>`;
@@ -3699,25 +4142,58 @@ document.addEventListener('DOMContentLoaded', async () => {
             const cells = hours.map((hour) => {
                 const info = scheduleCellInfo(row, hour, dateBase, bookings, walkins);
                 const titleAttr = info.title ? ` title="${window.escapeHtml(info.title)}"` : '';
-                const label = info.label || (info.cls === 'is-open' ? 'Open' : 'Unavailable');
-                return `<td class="staff-schedule-cell ${info.cls}"${titleAttr}>${label}</td>`;
+                const statusLabel = info.cls === 'is-open'
+                    ? 'Available'
+                    : info.cls === 'is-maintenance'
+                        ? 'Maintenance'
+                    : 'Booked';
+                const timeLabel = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
+                const mark = info.cls === 'is-maintenance'
+                    ? '<svg viewBox="0 0 24 24" focusable="false"><path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3.5 17.5a2.1 2.1 0 0 0 3 3l4.8-4.8a5 5 0 0 0 6.4-6.4l-3 3-3.1-3.1 3.1-2.9Z"/></svg>'
+                    : info.cls === 'is-open'
+                        ? '<svg viewBox="0 0 16 16" focusable="false"><path d="m4 8.2 2.5 2.5L12.4 5"/></svg>'
+                        : '<svg viewBox="0 0 16 16" focusable="false"><path d="m5 5 6 6m0-6-6 6"/></svg>';
+                return `<td class="staff-schedule-cell ${info.cls}"${titleAttr} aria-label="${window.escapeHtml(timeLabel)}: ${window.escapeHtml(statusLabel)}"><span class="staff-schedule-time">${window.escapeHtml(timeLabel)}</span><span class="staff-schedule-status"><span class="staff-schedule-mark" aria-hidden="true">${mark}</span><span>${window.escapeHtml(statusLabel)}</span></span></td>`;
             }).join('');
-            return `<tr><td>${window.escapeHtml(row.rowLabel)}</td>${cells}</tr>`;
+            const photoUrl = row.unit?.imageUrl || row.court?.imageUrl || '';
+            const photo = photoUrl ? `<img src="${window.escapeHtml(photoUrl)}" alt="" loading="lazy">` : '';
+            const unitName = row.unitValue || row.court.name;
+            const context = row.rowLabel === unitName ? '' : `<small>${window.escapeHtml(row.court.sportName || row.court.name)}</small>`;
+            return `<tr><th scope="row" class="staff-schedule-identity${photo ? ' has-photo' : ''}">${photo ? `<span class="staff-schedule-photo">${photo}</span>` : ''}<span class="staff-schedule-identity-copy"><strong>${window.escapeHtml(unitName)}</strong>${context}</span></th>${cells}</tr>`;
         }).join('');
     }
 
     async function renderScheduleSportOptions() {
-        if (!scheduleSportSelect || !window.InigoCourtsData) return;
+        if (!window.InigoCourtsData) return;
         const sports = await window.InigoCourtsData.getSports();
-        scheduleSportSelect.innerHTML = '<option value="all">All Sports</option>'
-            + sports.map((s) => `<option value="${window.escapeHtml(s.slug)}">${window.escapeHtml(s.name)}</option>`).join('');
         if (!sports.some((sport) => sport.slug === scheduleActiveSport)) scheduleActiveSport = 'all';
-        scheduleSportSelect.value = scheduleActiveSport;
+        if (scheduleSportFilters) {
+            scheduleSportFilters.innerHTML = [
+                { slug: 'all', name: 'All Sports' },
+                ...sports,
+            ].map((sport) => `<button type="button" class="staff-schedule-sport-chip${sport.slug === scheduleActiveSport ? ' is-active' : ''}" data-staff-schedule-sport-chip="${window.escapeHtml(sport.slug)}" aria-pressed="${sport.slug === scheduleActiveSport}">${window.escapeHtml(sport.name)}</button>`).join('');
+        }
     }
 
-    if (scheduleSportSelect) scheduleSportSelect.addEventListener('change', () => {
-        scheduleActiveSport = scheduleSportSelect.value || 'all';
+    if (scheduleSportFilters) scheduleSportFilters.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-staff-schedule-sport-chip]');
+        if (!button) return;
+        scheduleActiveSport = button.dataset.staffScheduleSportChip || 'all';
         schedulePage = 1;
+        renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
+        scheduleSportFilters.querySelectorAll('[data-staff-schedule-sport-chip]').forEach((chip) => {
+            const active = chip.dataset.staffScheduleSportChip === scheduleActiveSport;
+            chip.classList.toggle('is-active', active);
+            chip.setAttribute('aria-pressed', String(active));
+        });
+    });
+
+    if (scheduleHourPrevious) scheduleHourPrevious.addEventListener('click', () => {
+        scheduleHourOffset = nextScheduleHourOffset(scheduleHourOffset, -1, scheduleHourPageSize, scheduleHourTotal);
+        renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
+    });
+    if (scheduleHourNext) scheduleHourNext.addEventListener('click', () => {
+        scheduleHourOffset = nextScheduleHourOffset(scheduleHourOffset, 1, scheduleHourPageSize, scheduleHourTotal);
         renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
     });
 
@@ -3794,6 +4270,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         schedulePage = 1;
         renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
     });
+    window.addEventListener('resize', () => renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache));
+    if (scheduleTableWrap && 'ResizeObserver' in window) {
+        const scheduleResizeObserver = new window.ResizeObserver(() => renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache));
+        scheduleResizeObserver.observe(scheduleTableWrap);
+    }
     refreshCourtSchedule();
     document.addEventListener('inigosync:profile-ready', refreshCourtSchedule);
     function refreshVisibleCourtSchedule() {
@@ -3812,13 +4293,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.setInterval(refreshVisibleCourtSchedule, 60000);
 
     // ------------------------------------------------------------------
-    // Transaction Records — one row per payment attributed to this staff
-    // member by the staff-only RPC. The server returns the matching payment
-    // acknowledgment so initial and balance payments remain separate rows.
+    // Transaction Records — one row per completed visit with a staff time-in
+    // event, plus unattended no-show visits. The event ID identifies the
+    // staff transaction; any payment details cover only amounts collected at
+    // time-in and their matching acknowledgment.
     // ------------------------------------------------------------------
     const transactionsTableBody = document.querySelector('[data-staff-table="transactions"] tbody');
     const txSortSelect = document.querySelector('[data-staff-tx-sort]');
     const txDateInput = document.querySelector('[data-staff-tx-date]');
+    const transactionStatusLabels = {
+        completed: 'Completed',
+        unattended: 'Unattended',
+    };
     let transactionRows = [];
 
     function transactionSortRows(rows) {
@@ -3835,50 +4321,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderTransactionRows() {
         if (!transactionsTableBody) return;
         transactionSortRows(transactionRows);
-        const selectedDate = txDateInput?.value || '';
-        const rowsForDate = selectedDate
-            ? transactionRows.filter((row) => row.created_at && Number.isFinite(Date.parse(row.created_at)) && manilaDate(row.created_at) === selectedDate)
-            : transactionRows;
+        const selectedVisitDate = txDateInput?.value || '';
+        const rowsForDate = transactionRows.filter((row) => window.InigoStaffPagination.transactionMatchesDates(
+            row, '', selectedVisitDate, manilaDate));
         transactionsTableBody.innerHTML = '';
-        if (!rowsForDate.length) {
-            const emptyMessage = transactionRows.length && selectedDate
-                ? 'No transactions were recorded on this date.'
-                : 'No transactions have been recorded for your account.';
-            transactionsTableBody.innerHTML = `<tr><td colspan="8" class="staff-table-message">${emptyMessage}</td></tr>`;
-            wireFilterableTable('transactions');
-            return;
-        }
         rowsForDate.forEach((row) => {
             const index = transactionRows.indexOf(row);
-            const createdAt = row.created_at ? new Date(row.created_at) : null;
-            const validDate = createdAt && Number.isFinite(createdAt.getTime());
-            const dateText = validDate
-                ? createdAt.toLocaleDateString('en-US', { timeZone: STAFF_TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric' })
-                : '—';
-            const timeText = validDate ? formatIsoTime12h(row.created_at) : '—';
-            const source = row.source === 'walkin' ? 'Walk-in' : 'Online';
-            const minorAmount = row.gross_minor ?? row.base_minor;
+            const source = row.source === 'walkin' ? 'Walk-in' : 'Booking';
+            const visitStatus = Object.hasOwn(transactionStatusLabels, row.status) ? row.status : 'unattended';
+            const visitStatusText = transactionStatusLabels[visitStatus];
+            const checkedInAt = row.checked_in_at && Number.isFinite(Date.parse(row.checked_in_at)) ? row.checked_in_at : null;
+            const checkedOutAt = row.checked_out_at && Number.isFinite(Date.parse(row.checked_out_at)) ? row.checked_out_at : null;
+            const minorAmount = row.status === 'unattended' ? 0 : row.amount_minor;
             const amountText = minorAmount === null || minorAmount === undefined || !Number.isFinite(Number(minorAmount))
                 ? '—' : formatStaffPeso(Number(minorAmount) / 100);
             const tr = document.createElement('tr');
-            tr.dataset.status = row.source === 'walkin' ? 'walkin' : 'online';
+            tr.dataset.status = row.source === 'walkin' ? 'walkin' : 'booking';
+            tr.dataset.visitStatus = visitStatus;
             tr.dataset.rowIndex = String(index);
-            const truncated = (value) => {
-                const text = value || '—';
-                return `<span class="staff-tx-truncate" title="${window.escapeHtml(text)}">${window.escapeHtml(text)}</span>`;
-            };
+            const transactionId = row.transaction_id || '—';
+            const receiptControl = row.acknowledgment
+                ? `<button type="button" class="staff-tx-receipt-btn" data-staff-payment-ack="${index}">View receipt</button>`
+                : row.status === 'completed' && row.transaction_id
+                    ? `<button type="button" class="staff-tx-receipt-btn" data-staff-visit-record="${index}">View time-in record</button>`
+                    : '<span aria-label="Receipt unavailable">—</span>';
             tr.innerHTML = `
-                <td>${window.escapeHtml(dateText)}</td>
-                <td class="staff-cell-main">${truncated(row.customer_name)}</td>
-                <td>${truncated(row.sports)}</td>
-                <td>${truncated([row.courts, row.unit].filter(Boolean).join(' · '))}</td>
-                <td>${window.escapeHtml(timeText)}</td>
-                <td><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'online'}">${source}</span></td>
-                <td>${window.escapeHtml(amountText)}</td>
-                <td><button type="button" class="staff-tx-receipt-btn" data-staff-payment-ack="${index}"${row.acknowledgment ? '' : ' disabled title="Receipt unavailable for this payment" aria-label="Receipt unavailable for this payment"'}>View receipt</button></td>
+                <td data-label="Transaction ID"><span class="staff-tx-truncate" title="${window.escapeHtml(transactionId)}">${window.escapeHtml(transactionId)}</span></td>
+                <td data-label="Customer name" class="staff-cell-main"><span class="staff-tx-truncate" title="${window.escapeHtml(row.customer_name || '—')}">${window.escapeHtml(row.customer_name || '—')}</span></td>
+                <td data-label="Time in / time out"><div class="staff-tx-visit-times"><span>${checkedInAt ? `In ${window.escapeHtml(formatIsoTime12h(checkedInAt))}` : '—'}</span><span>${checkedOutAt ? `Out ${window.escapeHtml(formatIsoTime12h(checkedOutAt))}` : '—'}</span></div></td>
+                <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}</span></td>
+                <td data-label="Visit status"><span class="staff-status ${visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
+                <td data-label="Amount">${window.escapeHtml(amountText)}</td>
+                <td data-label="Receipt"><div class="staff-tx-actions">${receiptControl}</div></td>
             `;
             transactionsTableBody.appendChild(tr);
         });
+        const emptyStateRow = document.createElement('tr');
+        emptyStateRow.setAttribute('data-staff-empty-state', '');
+        emptyStateRow.style.display = 'none';
+        emptyStateRow.innerHTML = '<td colspan="7" class="staff-table-message"></td>';
+        transactionsTableBody.appendChild(emptyStateRow);
         wireFilterableTable('transactions');
     }
 
@@ -3892,28 +4374,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (state) state.page = 1;
         renderTransactionRows();
     });
-
     async function refreshTransactions() {
         if (!transactionsTableBody || !window.sb) return;
         let result;
         try { result = await window.sb.rpc('staff_get_involved_transactions'); }
         catch (error) { result = { error }; }
         if (result?.error) {
-            console.error('[staff] failed to load attributed transactions', result.error);
+            console.error('[staff] failed to load visit records', result.error);
             renderStaffTablePagination(document.querySelector('[data-staff-pagination="transactions"]'), 0, 1, () => {});
-            transactionsTableBody.innerHTML = '<tr><td colspan="8" class="staff-table-message">Could not load transaction records right now.</td></tr>';
+            transactionsTableBody.innerHTML = '<tr><td colspan="7" class="staff-table-message">Could not load visit records right now.</td></tr>';
             return;
         }
         const payload = normalizeRpcRow(result?.data) || {};
-        transactionRows = Array.isArray(payload.transactions) ? payload.transactions : [];
+        transactionRows = Array.isArray(payload.transactions)
+            ? payload.transactions.filter((row) => row && Object.hasOwn(transactionStatusLabels, row.status))
+            : [];
         renderTransactionRows();
     }
 
     if (transactionsTableBody) transactionsTableBody.addEventListener('click', async (event) => {
         const receiptButton = event.target.closest('[data-staff-payment-ack]');
+        const visitRecordButton = event.target.closest('[data-staff-visit-record]');
         const row = transactionRows[Number(event.target.closest('tr')?.dataset.rowIndex)];
         if (receiptButton && row?.acknowledgment) {
-            openTransactionAcknowledgment({ acknowledgment: row.acknowledgment, payment_id: row.payment_id, source: row.source });
+            openTransactionAcknowledgment({ acknowledgment: row.acknowledgment, payment_id: row.payment_id, transaction_id: row.transaction_id, source: row.source });
+        } else if (visitRecordButton && row?.transaction_id) {
+            openTransactionVisitRecord(row);
         }
     });
 

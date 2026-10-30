@@ -16,15 +16,16 @@ const overviewFilterListenerSource = source.slice(listenerStart, listenerEnd);
 
 function filterHarness({ query = '', sport = '', date = '' } = {}) {
     const rows = [
-        { status: 'completed', time_date: '2026-10-07T02:00:00Z', sports: 'Bowling', customerName: 'Past' },
-        { status: 'booked', inArrivalWindow: false, time_date: '2026-10-08T04:00:00Z', sports: 'Tennis', customerName: 'Expired' },
-        { status: 'cancelled', time_date: '2026-10-08T08:00:00Z', sports: 'Tennis', customerName: 'Cancelled' },
-        { status: 'unattended', time_date: '2026-10-08T08:00:00Z', sports: 'Tennis', customerName: 'No-show' },
-        { status: 'booked', inArrivalWindow: true, time_date: '2026-10-08T06:00:00Z', sports: 'Tennis', customerName: 'Ari' }, // active arrival window
-        { status: 'booked', inArrivalWindow: false, time_date: '2026-10-08T08:00:00Z', sports: 'Badminton', customerName: 'Bea' }, // Manila afternoon, today
-        { status: 'booked', inArrivalWindow: false, time_date: '2026-10-08T10:00:00Z', sports: 'Tennis', customerName: 'Cam' }, // Manila evening, today
-        { status: 'booked', inArrivalWindow: false, time_date: '2026-10-09T02:00:00Z', sports: 'Tennis', customerName: 'Dee' }, // Manila morning, tomorrow
-        { status: 'inplay', time_date: '2026-10-08T05:00:00Z', sports: 'Tennis', customerName: 'Live' },
+        { sourceType: 'booking', status: 'completed', time_date: '2026-10-07T02:00:00Z', sports: 'Bowling', customerName: 'Past' },
+        { sourceType: 'booking', status: 'booked', inArrivalWindow: false, time_date: '2026-10-08T04:00:00Z', sports: 'Tennis', customerName: 'Expired' },
+        { sourceType: 'booking', status: 'cancelled', time_date: '2026-10-08T08:00:00Z', sports: 'Tennis', customerName: 'Cancelled' },
+        { sourceType: 'booking', status: 'unattended', time_date: '2026-10-08T08:00:00Z', sports: 'Tennis', customerName: 'No-show' },
+        { sourceType: 'booking', status: 'booked', inArrivalWindow: true, time_date: '2026-10-08T06:00:00Z', sports: 'Tennis', customerName: 'Ari' }, // active arrival window
+        { sourceType: 'booking', status: 'booked', inArrivalWindow: false, time_date: '2026-10-08T08:00:00Z', sports: 'Badminton', customerName: 'Bea' }, // Manila afternoon, today
+        { sourceType: 'booking', status: 'booked', inArrivalWindow: false, time_date: '2026-10-08T10:00:00Z', sports: 'Tennis', customerName: 'Cam' }, // Manila evening, today
+        { sourceType: 'booking', status: 'booked', inArrivalWindow: false, time_date: '2026-10-09T02:00:00Z', sports: 'Tennis', customerName: 'Dee' }, // Manila morning, tomorrow
+        { sourceType: 'booking', status: 'inplay', time_date: '2026-10-08T05:00:00Z', sports: 'Tennis', customerName: 'Live' },
+        { sourceType: 'walkin', status: 'booked', time_date: '2026-10-08T08:00:00Z', sports: 'Tennis', customerName: 'Staff walk-in' },
     ];
     const children = [];
     const body = {
@@ -69,11 +70,11 @@ function filterHarness({ query = '', sport = '', date = '' } = {}) {
     return { context, body, children, rows, dateInput: controls['[data-staff-overview-date]'], searchInput: controls['[data-staff-overview-search]'], sportSelect: controls['[data-staff-overview-sport]'] };
 }
 
-test('Overview defaults to upcoming and in-play rows, then filters by the selected calendar date', () => {
+test('Overview defaults to today and shows customer bookings only, then filters by date', () => {
     const { context, children, dateInput } = filterHarness();
-    assert.equal(dateInput.value, '', 'date filter starts unset');
+    assert.equal(dateInput.value, '2026-10-08', 'date filter starts on the current Manila date');
     context.renderRows();
-    assert.deepEqual(children.map(row => row.source.customerName), ['Ari', 'Bea', 'Cam', 'Dee', 'Live'], 'expired and terminal rows are omitted');
+    assert.deepEqual(children.map(row => row.source.customerName), ['Ari', 'Bea', 'Cam', 'Live'], 'expired, terminal, and staff walk-in rows are omitted');
     dateInput.value = '2026-10-08';
     dateInput.onChange();
     assert.deepEqual(children.map(row => row.source.customerName), ['Ari', 'Bea', 'Cam', 'Live']);
