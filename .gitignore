@@ -7,6 +7,7 @@
 # how to recreate it locally from the placeholder template.
 database/seed/003_update_user_emails.sql
 database/seed/*.local.sql
+.local/
 
 # Generated static site output
 dist/

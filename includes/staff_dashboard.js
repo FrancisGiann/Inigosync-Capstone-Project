@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         overview: { title: 'Booking Overview', subtitle: 'Upcoming and currently active court bookings.' },
         walkin: { title: 'Walk-In Management', subtitle: 'Record a walk-in customer and print or download their receipt.' },
         schedule: { title: 'Court Schedule', subtitle: 'Hour-by-hour availability per court/unit.' },
-        transactions: { title: 'Transaction Records', subtitle: 'Completed and unattended visit records for bookings and walk-ins.' },
+        transactions: { title: 'Transaction Records', subtitle: 'Staff collections, time-in events, and unattended visits for bookings and walk-ins.' },
         // Revision S1 (implementation_plan.md, decision S7) — not in
         // .staff-nav, only reachable from the topbar dropdown's "View
         // Profile"; setActivePanel() below still works unmodified since it
@@ -919,13 +919,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const group = document.querySelector(`[data-staff-filter-group="${scopeName}"]`);
         const searchInput = document.querySelector(`[data-staff-search="${scopeName}"]`);
         const statusSelect = scopeName === 'transactions' ? document.querySelector('[data-staff-tx-status]') : null;
+        const statusMenu = scopeName === 'transactions' ? document.querySelector('[data-staff-tx-status-menu]') : null;
+        const sourceMenu = scopeName === 'transactions' ? document.querySelector('[data-staff-tx-source-menu]') : null;
         const table = document.querySelector(`[data-staff-table="${scopeName}"]`);
         const pagination = document.querySelector(`[data-staff-pagination="${scopeName}"]`);
         if (!table) return;
         let state = filterableTableState.get(scopeName);
         if (!state) {
             state = {
-                activeFilter: group?.querySelector('[data-staff-chip].is-active')?.dataset.staffFilter || 'all',
+                activeFilter: sourceMenu?.dataset.value || group?.querySelector('[data-staff-chip].is-active')?.dataset.staffFilter || 'all',
                 query: searchInput?.value.trim().toLowerCase() || '',
                 rows: [],
                 page: 1,
@@ -940,7 +942,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const dataRows = state.rows.filter((row) => !row.hasAttribute('data-staff-empty-state'));
             const matchingRows = dataRows.filter((row) => {
                 const matchesFilter = state.activeFilter === 'all' || row.dataset.status === state.activeFilter;
-                const matchesVisitStatus = !statusSelect || statusSelect.value === 'all' || row.dataset.visitStatus === statusSelect.value;
+                const matchesVisitStatus = !statusMenu || statusMenu.dataset.value === 'all' || row.dataset.visitStatus === statusMenu.dataset.value;
                 const matchesQuery = !state.query || row.textContent.toLowerCase().includes(state.query);
                 return matchesFilter && matchesVisitStatus && matchesQuery;
             });
@@ -953,11 +955,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (scopeName === 'transactions') {
                         const messageCell = row.querySelector('td');
                         const transactionDateValue = document.querySelector('[data-staff-tx-date]')?.value || '';
-                        messageCell.textContent = state.query || state.activeFilter !== 'all' || (statusSelect && statusSelect.value !== 'all')
+                        messageCell.textContent = state.query || state.activeFilter !== 'all' || (statusMenu && statusMenu.dataset.value !== 'all')
                             ? 'No transactions match your search and filters.'
                             : (transactionDateValue && transactionRows.length
                                 ? 'No transactions match the selected date.'
-                                : 'No completed or unattended visit records are available.');
+                                : (transactionView === 'unattended' ? 'No unattended visits are available.' : 'No staff time-in transactions are available.'));
                     }
                     return;
                 }
@@ -991,7 +993,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
         if (statusSelect && !state.bound) {
-            statusSelect.addEventListener('change', () => {
+            statusSelect.addEventListener('staffstatuschange', () => {
+                state.page = 1;
+                applyFilters();
+            });
+        }
+        if (sourceMenu && !state.bound) {
+            sourceMenu.querySelector('[data-staff-tx-source]')?.addEventListener('staffsourcechange', () => {
+                state.activeFilter = sourceMenu.dataset.value || 'all';
                 state.page = 1;
                 applyFilters();
             });
@@ -3169,23 +3178,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             }).format(new Date(value));
         };
         const source = row.source === 'walkin' ? 'Walk-in' : 'Booking';
-        const amount = Number.isFinite(Number(row.amount_minor)) ? formatStaffPeso(Number(row.amount_minor) / 100) : '—';
-        const notCollected = Number(row.amount_minor) === 0;
+        const referenceLabel = row.source === 'walkin' ? 'Walk-In ID' : 'Booking ID';
+        const visit = Array.isArray(row.visits) ? row.visits[0] || {} : {};
+        const amountMinor = row.amount_minor;
+        const amount = amountMinor !== null && amountMinor !== undefined && amountMinor !== '' && Number.isFinite(Number(amountMinor))
+            ? formatStaffPeso(Number(amountMinor) / 100) : '—';
+        const notCollected = amountMinor !== null && amountMinor !== undefined && amountMinor !== ''
+            && Number.isFinite(Number(amountMinor)) && Number(amountMinor) === 0;
+        const prepaid = notCollected && row.fully_paid === true;
+        const bookingTotalMinor = row.booking_total_minor;
+        const bookingTotal = bookingTotalMinor !== null && bookingTotalMinor !== undefined && bookingTotalMinor !== ''
+            && Number.isFinite(Number(bookingTotalMinor))
+            ? formatStaffPeso(Number(bookingTotalMinor) / 100) : null;
+        const detail = (label, value) => value !== null && value !== undefined && String(value).trim() !== ''
+            ? `<div class="payment-ack-meta-row"><span>${label}</span><strong>${window.escapeHtml(value)}</strong></div>`
+            : '';
         if (staffReceiptModalTitle) staffReceiptModalTitle.textContent = 'Time-In acknowledgment';
         staffReceiptModalContent.innerHTML = `<article class="payment-ack-card staff-visit-record-card" data-payment-ack-card>
             <header class="payment-ack-heading"><strong>InigoSync</strong><span>(Inigos Sports Center)</span><span class="payment-ack-address">Brgy. Bocohan, Diversion Road, Lucena City, Quezon, Philippines</span><b>TIME-IN ACKNOWLEDGMENT</b></header>
             <div class="payment-ack-rule"></div>
             <div class="payment-ack-meta">
                 <div class="payment-ack-meta-row"><span>Transaction ID</span><strong>${window.escapeHtml(row.transaction_id)}</strong></div>
+                <div class="payment-ack-meta-row"><span>${referenceLabel}</span><strong>#${window.escapeHtml(row.visit_id ?? '—')}</strong></div>
                 <div class="payment-ack-meta-row"><span>Customer</span><strong>${window.escapeHtml(row.customer_name || '—')}</strong></div>
                 <div class="payment-ack-meta-row"><span>Source</span><strong>${source}</strong></div>
+                ${detail('Sport', visit.sport)}
+                ${detail('Court', visit.court)}
+                ${detail('Unit', visit.unit)}
+                ${detail('Visit date', timestamp(visit.starts_at))}
+                ${detail('Scheduled end', timestamp(visit.ends_at))}
+                ${detail('Duration', Number.isFinite(Number(visit.duration_minutes)) && Number(visit.duration_minutes) > 0 ? `${Number(visit.duration_minutes)} minutes` : null)}
                 <div class="payment-ack-meta-row"><span>Time In</span><strong>${window.escapeHtml(timestamp(row.checked_in_at))}</strong></div>
                 <div class="payment-ack-meta-row"><span>Time Out</span><strong>${window.escapeHtml(timestamp(row.checked_out_at))}</strong></div>
             </div>
             <div class="payment-ack-rule"></div>
-            <div class="payment-ack-totals"><div class="payment-ack-total"><span>Collected at Time-In</span><strong>${window.escapeHtml(amount)}</strong></div></div>
+            <div class="payment-ack-totals">
+                ${bookingTotal ? `<div class="payment-ack-meta-row"><span>Booking total</span><strong>${window.escapeHtml(bookingTotal)}</strong></div>` : ''}
+                <div class="payment-ack-total"><span>Collected at Time-In</span><strong>${window.escapeHtml(amount)}</strong></div>
+            </div>
             <div class="payment-ack-rule"></div>
-            <p class="payment-ack-disclaimer">STAFF TIME-IN RECORD<br><span>${notCollected ? 'No payment was collected at Time-In. This record does not include any earlier booking payment.' : 'This record confirms staff Time-In and the amount collected at that time. It is not an official receipt.'}</span></p>
+            <p class="payment-ack-disclaimer">${prepaid ? 'FULL PAYMENT PAID — NO NEW PAYMENT' : notCollected ? 'NO PAYMENT COLLECTED AT TIME-IN' : 'STAFF TIME-IN RECORD'}<br><span>${prepaid ? '₱0.00 was collected at Time-In. The booking was already fully paid; this acknowledgment records attendance only and does not represent a new payment.' : notCollected ? '₱0.00 was collected at Time-In. This record confirms attendance only and does not verify any earlier payment.' : 'This record confirms staff Time-In and the amount collected at that time. It is not an official receipt.'}</span></p>
         </article>`;
         staffReceiptModalContent.scrollTop = 0;
         staffReceiptModal.setAttribute('data-open', '');
@@ -4293,26 +4325,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.setInterval(refreshVisibleCourtSchedule, 60000);
 
     // ------------------------------------------------------------------
-    // Transaction Records — one row per completed visit with a staff time-in
-    // event, plus unattended no-show visits. The event ID identifies the
-    // staff transaction; any payment details cover only amounts collected at
-    // time-in and their matching acknowledgment.
+    // Transaction Records — one row per staff time-in event (including visits
+    // still in progress), plus a separate Unattended view. The event ID
+    // identifies the staff transaction; payment details cover only amounts
+    // collected at time-in and their matching acknowledgment.
     // ------------------------------------------------------------------
     const transactionsTableBody = document.querySelector('[data-staff-table="transactions"] tbody');
-    const txSortSelect = document.querySelector('[data-staff-tx-sort]');
+    const txSortCurrent = document.querySelector('[data-staff-tx-sort-current]');
+    let txSortValue = 'date-desc';
+    let transactionView = 'transactions';
     const txDateInput = document.querySelector('[data-staff-tx-date]');
     const transactionStatusLabels = {
+        in_progress: 'In progress',
         completed: 'Completed',
         unattended: 'Unattended',
     };
     let transactionRows = [];
+    let transactionLoadError = null;
 
     function transactionSortRows(rows) {
-        const sort = txSortSelect?.value || 'date-desc';
+        const sort = txSortValue;
+        const recordTimestamp = (row) => transactionView === 'unattended'
+            ? Date.parse(Array.isArray(row.visits) ? row.visits[0]?.starts_at : '') || 0
+            : Date.parse(row.created_at) || 0;
         rows.sort((a, b) => {
             if (sort === 'name-asc') return String(a.customer_name || '').localeCompare(String(b.customer_name || ''), undefined, { sensitivity: 'base' });
             if (sort === 'name-desc') return String(b.customer_name || '').localeCompare(String(a.customer_name || ''), undefined, { sensitivity: 'base' });
-            const timeOrder = (Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0);
+            const timeOrder = recordTimestamp(a) - recordTimestamp(b);
             return sort === 'date-asc' ? timeOrder : -timeOrder;
         });
         return rows;
@@ -4322,8 +4361,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!transactionsTableBody) return;
         transactionSortRows(transactionRows);
         const selectedVisitDate = txDateInput?.value || '';
-        const rowsForDate = transactionRows.filter((row) => window.InigoStaffPagination.transactionMatchesDates(
-            row, '', selectedVisitDate, manilaDate));
+        const transactionsTable = document.querySelector('[data-staff-table="transactions"]');
+        if (transactionsTable) transactionsTable.dataset.view = transactionView;
+        const statusMenu = document.querySelector('[data-staff-tx-status-menu]');
+        const statusFilter = statusMenu?.dataset.value || 'all';
+        if (statusMenu) statusMenu.hidden = transactionView === 'unattended';
+        const visibleStatuses = transactionView === 'unattended' ? ['unattended'] : ['in_progress', 'completed'];
+        const headersForView = document.querySelectorAll('[data-staff-tx-headers]');
+        headersForView.forEach((header) => { header.hidden = header.dataset.staffTxHeaders !== transactionView; });
+        const searchInput = document.querySelector('[data-staff-search="transactions"]');
+        if (searchInput) {
+            const unattended = transactionView === 'unattended';
+            searchInput.placeholder = unattended ? 'Search customer or booking / walk-in reference…' : 'Search customer or transaction ID…';
+            searchInput.setAttribute('aria-label', unattended ? 'Search unattended visits by customer or reference' : 'Search transactions by customer or transaction ID');
+        }
+        if (transactionLoadError) {
+            transactionsTableBody.innerHTML = `<tr><td colspan="${transactionView === 'unattended' ? '5' : '7'}" class="staff-table-message" role="status">${window.escapeHtml(transactionLoadError)}</td></tr>`;
+            renderStaffTablePagination(document.querySelector('[data-staff-pagination="transactions"]'), 0, 1, () => {});
+            return;
+        }
+        const rowsForDate = transactionRows.filter((row) => {
+            const rowStatus = transactionStatusLabels[row.status] ? row.status : 'unattended';
+            return visibleStatuses.includes(rowStatus)
+                && (statusFilter === 'all' || rowStatus === statusFilter)
+                && window.InigoStaffPagination.transactionMatchesDates(row, '', selectedVisitDate, manilaDate);
+        });
         transactionsTableBody.innerHTML = '';
         rowsForDate.forEach((row) => {
             const index = transactionRows.indexOf(row);
@@ -4340,34 +4402,136 @@ document.addEventListener('DOMContentLoaded', async () => {
             tr.dataset.visitStatus = visitStatus;
             tr.dataset.rowIndex = String(index);
             const transactionId = row.transaction_id || '—';
-            const receiptControl = row.acknowledgment
+            const receiptControl = row.acknowledgment && minorAmount !== 0
                 ? `<button type="button" class="staff-tx-receipt-btn" data-staff-payment-ack="${index}">View receipt</button>`
-                : row.status === 'completed' && row.transaction_id
-                    ? `<button type="button" class="staff-tx-receipt-btn" data-staff-visit-record="${index}">View time-in record</button>`
+                : row.transaction_id
+                    ? `<button type="button" class="staff-tx-receipt-btn" data-staff-visit-record="${index}">View receipt</button>`
                     : '<span aria-label="Receipt unavailable">—</span>';
-            tr.innerHTML = `
-                <td data-label="Transaction ID"><span class="staff-tx-truncate" title="${window.escapeHtml(transactionId)}">${window.escapeHtml(transactionId)}</span></td>
-                <td data-label="Customer name" class="staff-cell-main"><span class="staff-tx-truncate" title="${window.escapeHtml(row.customer_name || '—')}">${window.escapeHtml(row.customer_name || '—')}</span></td>
-                <td data-label="Time in / time out"><div class="staff-tx-visit-times"><span>${checkedInAt ? `In ${window.escapeHtml(formatIsoTime12h(checkedInAt))}` : '—'}</span><span>${checkedOutAt ? `Out ${window.escapeHtml(formatIsoTime12h(checkedOutAt))}` : '—'}</span></div></td>
-                <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}</span></td>
-                <td data-label="Visit status"><span class="staff-status ${visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
-                <td data-label="Amount">${window.escapeHtml(amountText)}</td>
-                <td data-label="Receipt"><div class="staff-tx-actions">${receiptControl}</div></td>
-            `;
+            if (transactionView === 'unattended') {
+                const visitReference = `${source} #${row.visit_id || '—'}`;
+                const scheduled = Array.isArray(row.visits) ? row.visits[0]?.starts_at : null;
+                const scheduledText = scheduled && Number.isFinite(Date.parse(scheduled))
+                    ? new Intl.DateTimeFormat('en-PH', { timeZone: STAFF_TIME_ZONE, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(scheduled))
+                    : '—';
+                tr.innerHTML = `
+                    <td data-label="Visit reference"><span class="staff-tx-truncate" title="${window.escapeHtml(visitReference)}">${window.escapeHtml(visitReference)}</span></td>
+                    <td data-label="Customer name" class="staff-cell-main"><span class="staff-tx-truncate" title="${window.escapeHtml(row.customer_name || '—')}">${window.escapeHtml(row.customer_name || '—')}</span></td>
+                    <td data-label="Scheduled visit">${window.escapeHtml(scheduledText)}</td>
+                    <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}</span></td>
+                    <td data-label="Visit status"><span class="staff-status unattended">Unattended</span></td>
+                `;
+            } else {
+                const amountHint = Number(minorAmount) === 0
+                    ? `<small class="staff-tx-amount-note">${row.fully_paid === true ? 'Full payment paid' : 'No payment collected at Time-In'}</small>`
+                    : '';
+                tr.innerHTML = `
+                    <td data-label="Transaction ID"><span class="staff-tx-truncate" title="${window.escapeHtml(transactionId)}">${window.escapeHtml(transactionId)}</span></td>
+                    <td data-label="Customer name" class="staff-cell-main"><span class="staff-tx-truncate" title="${window.escapeHtml(row.customer_name || '—')}">${window.escapeHtml(row.customer_name || '—')}</span></td>
+                    <td data-label="Time in / time out"><div class="staff-tx-visit-times"><span>${checkedInAt ? `In ${window.escapeHtml(formatIsoTime12h(checkedInAt))}` : '—'}</span><span>${checkedOutAt ? `Out ${window.escapeHtml(formatIsoTime12h(checkedOutAt))}` : 'Out —'}</span></div></td>
+                    <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}</span></td>
+                    <td data-label="Visit status"><span class="staff-status ${visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
+                    <td data-label="Amount">${window.escapeHtml(amountText)}${amountHint}</td>
+                    <td data-label="Receipt"><div class="staff-tx-actions">${receiptControl}</div></td>
+                `;
+            }
             transactionsTableBody.appendChild(tr);
         });
         const emptyStateRow = document.createElement('tr');
         emptyStateRow.setAttribute('data-staff-empty-state', '');
         emptyStateRow.style.display = 'none';
-        emptyStateRow.innerHTML = '<td colspan="7" class="staff-table-message"></td>';
+        emptyStateRow.innerHTML = `<td colspan="${transactionView === 'unattended' ? '5' : '7'}" class="staff-table-message"></td>`;
         transactionsTableBody.appendChild(emptyStateRow);
         wireFilterableTable('transactions');
     }
 
-    if (txSortSelect) txSortSelect.addEventListener('change', () => {
+    function wireTransactionMenu(triggerSelector, optionsSelector, choiceSelector, resetSelector, onChoose) {
+        const trigger = document.querySelector(triggerSelector);
+        const options = document.querySelector(optionsSelector);
+        if (!trigger || !options) return;
+        const close = (returnFocus = false) => {
+            options.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
+            if (returnFocus) trigger.focus();
+        };
+        trigger.addEventListener('click', () => {
+            const opening = options.hidden;
+            options.hidden = !opening;
+            trigger.setAttribute('aria-expanded', String(opening));
+            if (opening) {
+                options.querySelectorAll(choiceSelector).forEach((choice) => {
+                    const menuType = triggerSelector.includes('sort') ? 'sort' : triggerSelector.includes('source') ? 'source' : 'status';
+                    const choiceKey = menuType === 'sort' ? 'staffTxSortChoice' : menuType === 'source' ? 'staffTxSourceChoice' : 'staffTxStatusChoice';
+                    const choiceValue = choice.dataset[choiceKey];
+                    const selectedValue = menuType === 'sort' ? txSortValue
+                        : document.querySelector(menuType === 'source' ? '[data-staff-tx-source-menu]' : '[data-staff-tx-status-menu]')?.dataset.value;
+                    choice.hidden = choiceValue === selectedValue;
+                });
+                options.querySelector(choiceSelector + ':not([hidden])')?.focus();
+            }
+        });
+        options.addEventListener('click', (event) => {
+            const choice = event.target.closest(choiceSelector);
+            if (!choice) return;
+            onChoose(choice);
+            close(true);
+        });
+        options.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') { event.preventDefault(); close(true); }
+        });
+        const reset = resetSelector ? document.querySelector(resetSelector) : null;
+        if (reset) reset.addEventListener('click', () => { onChoose(null); close(true); });
+    }
+    wireTransactionMenu('[data-staff-tx-sort-current]', '[data-staff-tx-sort-options]', '[data-staff-tx-sort-choice]', '', (choice) => {
+        txSortValue = choice.dataset.staffTxSortChoice;
+        txSortCurrent.querySelector('#staff-tx-sort-current-label').textContent = choice.textContent;
         const state = filterableTableState.get('transactions');
         if (state) state.page = 1;
         renderTransactionRows();
+    });
+    wireTransactionMenu('[data-staff-tx-status]', '[data-staff-tx-status-options]', '[data-staff-tx-status-choice]', '[data-staff-tx-status-reset]', (choice) => {
+        const menu = document.querySelector('[data-staff-tx-status-menu]');
+        menu.dataset.value = choice?.dataset.staffTxStatusChoice || 'all';
+        document.querySelector('#staff-tx-status-current').textContent = choice?.textContent || 'All statuses';
+        document.querySelector('[data-staff-tx-status-reset]').hidden = !choice;
+        menu.querySelector('[data-staff-tx-status]')?.dispatchEvent(new Event('staffstatuschange'));
+    });
+    wireTransactionMenu('[data-staff-tx-source]', '[data-staff-tx-source-options]', '[data-staff-tx-source-choice]', '[data-staff-tx-source-reset]', (choice) => {
+        const menu = document.querySelector('[data-staff-tx-source-menu]');
+        menu.dataset.value = choice?.dataset.staffTxSourceChoice || 'all';
+        document.querySelector('#staff-tx-source-current').textContent = choice?.textContent || 'All sources';
+        document.querySelector('[data-staff-tx-source-reset]').hidden = !choice;
+        menu.querySelector('[data-staff-tx-source]')?.dispatchEvent(new Event('staffsourcechange'));
+    });
+    function activateTransactionTab(tab) {
+        transactionView = tab.dataset.staffTxTab;
+        document.querySelectorAll('[data-staff-tx-tab]').forEach((item) => {
+            const active = item === tab;
+            item.classList.toggle('is-active', active);
+            item.setAttribute('aria-selected', String(active));
+            item.tabIndex = active ? 0 : -1;
+        });
+        document.querySelector('#staff-tx-records')?.setAttribute('aria-labelledby', tab.id);
+        const statusMenu = document.querySelector('[data-staff-tx-status-menu]');
+        statusMenu.dataset.value = 'all';
+        document.querySelector('#staff-tx-status-current').textContent = 'All statuses';
+        document.querySelector('[data-staff-tx-status-reset]').hidden = true;
+        const state = filterableTableState.get('transactions');
+        if (state) state.page = 1;
+        renderTransactionRows();
+    }
+    document.querySelectorAll('[data-staff-tx-tab]').forEach((tab) => {
+        tab.addEventListener('click', () => activateTransactionTab(tab));
+        tab.addEventListener('keydown', (event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const tabs = Array.from(document.querySelectorAll('[data-staff-tx-tab]'));
+            const index = tabs.indexOf(tab);
+            const next = event.key === 'Home' ? tabs[0]
+                : event.key === 'End' ? tabs[tabs.length - 1]
+                    : tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+            next.focus();
+            activateTransactionTab(next);
+        });
     });
     if (txDateInput) txDateInput.addEventListener('change', () => {
         const state = filterableTableState.get('transactions');
@@ -4381,14 +4545,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         catch (error) { result = { error }; }
         if (result?.error) {
             console.error('[staff] failed to load visit records', result.error);
-            renderStaffTablePagination(document.querySelector('[data-staff-pagination="transactions"]'), 0, 1, () => {});
-            transactionsTableBody.innerHTML = '<tr><td colspan="7" class="staff-table-message">Could not load visit records right now.</td></tr>';
+            transactionLoadError = 'Could not load visit records right now.';
+            renderTransactionRows();
             return;
         }
         const payload = normalizeRpcRow(result?.data) || {};
-        transactionRows = Array.isArray(payload.transactions)
-            ? payload.transactions.filter((row) => row && Object.hasOwn(transactionStatusLabels, row.status))
-            : [];
+        if (payload.schema_version !== 'visit_transactions_v1') {
+            transactionLoadError = 'Transaction records need a server update. Refresh this page after the update is applied.';
+            renderTransactionRows();
+            return;
+        }
+        const receivedRows = Array.isArray(payload.transactions) ? payload.transactions : [];
+        transactionRows = receivedRows.filter((row) => row && Object.hasOwn(transactionStatusLabels, row.status));
+        if (receivedRows.length && !transactionRows.length) {
+            transactionLoadError = 'Transaction records need a server update. Refresh this page after the update is applied.';
+            renderTransactionRows();
+            return;
+        }
+        transactionLoadError = null;
         renderTransactionRows();
     }
 

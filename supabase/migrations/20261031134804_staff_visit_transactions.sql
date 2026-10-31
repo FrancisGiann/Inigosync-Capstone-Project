@@ -89,6 +89,7 @@ begin
     select * from unattended_visits
   )
   select jsonb_build_object(
+    'schema_version', 'visit_transactions_v1',
     'transactions', coalesce(jsonb_agg(jsonb_build_object(
       'transaction_id', visits.transaction_id,
       'visit_id', visits.visit_id,
@@ -107,7 +108,10 @@ begin
   from visits
   left join internal.payment_acknowledgments ack on ack.payment_id = visits.payment_id;
 
-  return coalesce(v_result, jsonb_build_object('transactions', '[]'::jsonb));
+  return coalesce(v_result, jsonb_build_object(
+    'schema_version', 'visit_transactions_v1',
+    'transactions', '[]'::jsonb
+  ));
 end;
 $$;
 

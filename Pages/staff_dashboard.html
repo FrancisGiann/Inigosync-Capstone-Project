@@ -539,38 +539,51 @@
             <section class="staff-panel" data-staff-panel="transactions">
                 <div class="staff-card">
                     <div class="staff-card-head">
+                        <div class="staff-transaction-tabs" role="tablist" aria-label="Transaction record type">
+                            <button type="button" class="staff-transaction-tab is-active" id="staff-tx-tab-transactions" role="tab" aria-selected="true" aria-controls="staff-tx-records" data-staff-tx-tab="transactions">Transactions</button>
+                            <button type="button" class="staff-transaction-tab" id="staff-tx-tab-unattended" role="tab" aria-selected="false" aria-controls="staff-tx-records" data-staff-tx-tab="unattended" tabindex="-1">Unattended</button>
+                        </div>
                         <div class="staff-toolbar staff-transaction-toolbar">
-                            <div class="staff-transaction-primary">
-                                <label class="staff-form-group staff-sort-control"><span class="staff-form-label">Sort</span><select class="staff-select" data-staff-tx-sort><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="name-asc">Customer A–Z</option><option value="name-desc">Customer Z–A</option></select></label>
-                                <label class="staff-form-group staff-transaction-date"><span class="staff-form-label">Visit date</span><input type="date" class="staff-input" data-staff-tx-date aria-label="Filter transactions by visit date"></label>
-                                <label class="staff-form-group staff-transaction-status-filter"><span class="staff-form-label">Visit status</span><select class="staff-select" data-staff-tx-status aria-label="Filter transactions by visit status"><option value="all">All statuses</option><option value="completed">Completed</option><option value="unattended">Unattended</option></select></label>
-                            </div>
                             <div class="staff-transaction-secondary">
                                 <label class="staff-search-wrap">
                                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                     <input type="search" class="staff-search" placeholder="Search customer or transaction ID…" aria-label="Search transactions by customer or transaction ID" data-staff-search="transactions">
                                 </label>
-                                <div class="staff-filter-row" data-staff-filter-group="transactions" role="group" aria-label="Filter transactions by source">
-                                    <button type="button" class="staff-chip is-active" data-staff-chip data-staff-filter="all" aria-pressed="true">All</button>
-                                    <button type="button" class="staff-chip" data-staff-chip data-staff-filter="booking" aria-pressed="false">Booking</button>
-                                    <button type="button" class="staff-chip" data-staff-chip data-staff-filter="walkin" aria-pressed="false">Walk-in</button>
+                                <label class="staff-form-group staff-transaction-date"><span class="staff-form-label">Visit date</span><input type="date" class="staff-input" data-staff-tx-date aria-label="Filter records by visit date"></label>
+                                <div class="staff-form-group staff-transaction-menu staff-transaction-source-filter" data-staff-tx-source-menu data-value="all">
+                                    <span class="staff-form-label" id="staff-tx-source-label">Source</span>
+                                    <button type="button" class="staff-select staff-transaction-menu-trigger" data-staff-tx-source aria-expanded="false" aria-controls="staff-tx-source-options" aria-labelledby="staff-tx-source-label staff-tx-source-current"><span id="staff-tx-source-current">All sources</span></button>
+                                    <div class="staff-transaction-menu-options" id="staff-tx-source-options" data-staff-tx-source-options hidden role="group" aria-label="Source options">
+                                        <button type="button" data-staff-tx-source-choice="booking">Booking</button><button type="button" data-staff-tx-source-choice="walkin">Walk-in</button>
+                                    </div>
+                                    <button type="button" class="staff-transaction-menu-reset" data-staff-tx-source-reset hidden>Clear source filter</button>
+                                </div>
+                            </div>
+                            <div class="staff-transaction-primary">
+                                <div class="staff-form-group staff-transaction-status-filter staff-transaction-menu" data-staff-tx-status-menu data-value="all">
+                                    <span class="staff-form-label" id="staff-tx-status-label">Visit status</span>
+                                    <button type="button" class="staff-select staff-transaction-menu-trigger" data-staff-tx-status aria-expanded="false" aria-controls="staff-tx-status-options" aria-labelledby="staff-tx-status-label staff-tx-status-current"><span id="staff-tx-status-current">All statuses</span></button>
+                                    <div class="staff-transaction-menu-options" id="staff-tx-status-options" data-staff-tx-status-options hidden role="group" aria-label="Visit status options">
+                                        <button type="button" data-staff-tx-status-choice="in_progress">In progress</button><button type="button" data-staff-tx-status-choice="completed">Completed</button>
+                                    </div>
+                                    <button type="button" class="staff-transaction-menu-reset" data-staff-tx-status-reset hidden>Clear status filter</button>
+                                </div>
+                                <div class="staff-form-group staff-sort-control staff-transaction-menu" data-staff-tx-sort-menu>
+                                    <span class="staff-form-label" id="staff-tx-sort-label">Sort</span>
+                                    <button type="button" class="staff-select staff-transaction-menu-trigger" data-staff-tx-sort-current aria-expanded="false" aria-controls="staff-tx-sort-options" aria-labelledby="staff-tx-sort-label staff-tx-sort-current-label"><span id="staff-tx-sort-current-label">Newest first</span></button>
+                                    <div class="staff-transaction-menu-options" id="staff-tx-sort-options" data-staff-tx-sort-options hidden role="group" aria-label="Other sort options">
+                                        <button type="button" data-staff-tx-sort-choice="date-desc">Newest first</button><button type="button" data-staff-tx-sort-choice="date-asc">Oldest first</button><button type="button" data-staff-tx-sort-choice="name-asc">Customer A–Z</button><button type="button" data-staff-tx-sort-choice="name-desc">Customer Z–A</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="staff-table-wrap">
+                    <div class="staff-table-wrap" id="staff-tx-records" role="tabpanel" aria-labelledby="staff-tx-tab-transactions">
                         <table class="staff-table" data-staff-table="transactions">
                             <thead>
-                                <tr>
-                                    <th>Transaction ID</th>
-                                    <th>Customer Name</th>
-                                    <th>Time In / Time Out</th>
-                                    <th>Source</th>
-                                    <th>Visit Status</th>
-                                    <th>Amount</th>
-                                    <th>Receipt</th>
-                                </tr>
+                                <tr data-staff-tx-headers="transactions"><th>Transaction ID</th><th>Customer Name</th><th>Time In / Time Out</th><th>Source</th><th>Visit Status</th><th>Amount</th><th>Receipt</th></tr>
+                                <tr data-staff-tx-headers="unattended" hidden><th>Visit Reference</th><th>Customer Name</th><th>Scheduled Visit</th><th>Source</th><th>Visit Status</th></tr>
                             </thead>
                             <tbody>
                                 <tr><td colspan="7" class="staff-table-message">Loading transaction records…</td></tr>

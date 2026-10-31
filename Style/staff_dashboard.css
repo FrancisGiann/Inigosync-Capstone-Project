@@ -692,14 +692,32 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 /* Filter row / chips / search */
 .staff-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.staff-transaction-toolbar { width: 100%; align-items: stretch; justify-content: space-between; gap: 16px; }
+.staff-transaction-tabs { display: flex; gap: 10px; margin: 0 0 18px; }
+.staff-transaction-tab { min-width: 150px; min-height: 42px; padding: 8px 18px; border: 1px solid var(--color-line); border-radius: 999px; background: transparent; color: var(--color-ink-dim); font: 700 var(--fs-sm) var(--font-body); cursor: pointer; }
+.staff-transaction-tab.is-active { border-color: var(--color-primary); background: var(--color-primary); color: #14110d; }
+.staff-transaction-tab:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.staff-transaction-toolbar { width: 100%; display: grid; grid-template-columns: minmax(0, 1.7fr) repeat(4, minmax(0, 1fr)); align-items: start; gap: 12px; }
 .staff-transaction-primary, .staff-transaction-secondary { display: flex; align-items: flex-end; gap: 12px; min-width: 0; }
-.staff-transaction-primary { flex: 1 1 540px; }
-.staff-transaction-secondary { flex: 1 1 420px; justify-content: flex-end; margin-left: auto; }
-.staff-transaction-toolbar .staff-sort-control, .staff-transaction-date { flex: 1 1 150px; min-width: 130px; margin-bottom: 0; }
-.staff-transaction-status-filter { flex: 1 1 160px; min-width: 140px; margin-bottom: 0; }
-.staff-transaction-secondary .staff-search-wrap { flex: 1 1 260px; min-width: 180px; max-width: none; }
-.staff-transaction-secondary .staff-filter-row { flex: 0 1 auto; flex-wrap: wrap; }
+.staff-transaction-primary, .staff-transaction-secondary { display: contents; }
+.staff-transaction-toolbar .staff-sort-control, .staff-transaction-date, .staff-transaction-status-filter { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
+.staff-transaction-secondary .staff-search-wrap { grid-column: span 1; min-width: 0; max-width: none; }
+.staff-transaction-toolbar .staff-search-wrap { display: grid; grid-template-rows: auto 56px; align-content: start; }
+.staff-transaction-toolbar .staff-search-wrap::before { content: "Search"; display: block; margin-bottom: 8px; font-family: var(--font-display); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-faint); }
+.staff-transaction-toolbar .staff-search-wrap svg { position: relative; grid-row: 2; grid-column: 1; align-self: center; left: auto; top: auto; transform: none; margin-left: 13px; z-index: 1; }
+.staff-transaction-toolbar .staff-search,
+.staff-transaction-toolbar .staff-transaction-date .staff-input,
+.staff-transaction-toolbar .staff-transaction-menu-trigger { height: 56px; }
+.staff-transaction-toolbar .staff-search { grid-row: 2; grid-column: 1; }
+.staff-transaction-primary .staff-transaction-menu { flex: 1 1 0; }
+.staff-transaction-source-filter { margin-bottom: 0; }
+.staff-transaction-menu { position: relative; }
+.staff-transaction-status-filter[hidden] { display: none !important; }
+.staff-transaction-menu-trigger { display: flex; align-items: center; justify-content: space-between; min-height: 46px; text-align: left; cursor: pointer; }
+.staff-transaction-menu-options { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; right: 0; display: flex; flex-direction: column; padding: 5px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg-elevated); box-shadow: 0 8px 24px rgb(0 0 0 / 14%); }
+.staff-transaction-menu-options[hidden], .staff-transaction-menu-reset[hidden] { display: none !important; }
+.staff-transaction-menu-options button { border: 0; border-radius: 7px; padding: 9px 10px; color: var(--color-ink); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.staff-transaction-menu-options button:hover, .staff-transaction-menu-options button:focus-visible { background: var(--color-bg-soft); outline: none; }
+.staff-transaction-menu-reset { align-self: flex-start; border: 0; padding: 2px 0 0; color: var(--color-primary-dim); background: transparent; font: inherit; font-size: var(--fs-xs); text-decoration: underline; cursor: pointer; }
 
 .staff-filter-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -737,14 +755,19 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-table { width: 100%; border-collapse: collapse; min-width: 720px; }
 .staff-panel[data-staff-panel="transactions"] .staff-table-wrap { overflow-x: hidden; }
 .staff-table[data-staff-table="transactions"] { width: 100%; min-width: 0; table-layout: fixed; }
-.staff-table[data-staff-table="transactions"] th:nth-child(1) { width: 15%; }
-.staff-table[data-staff-table="transactions"] th:nth-child(2) { width: 19%; }
-.staff-table[data-staff-table="transactions"] th:nth-child(3) { width: 20%; }
-.staff-table[data-staff-table="transactions"] th:nth-child(4) { width: 11%; }
-.staff-table[data-staff-table="transactions"] th:nth-child(5) { width: 13%; }
-.staff-table[data-staff-table="transactions"] th:nth-child(6) { width: 10%; }
-.staff-table[data-staff-table="transactions"] th:nth-child(7) { width: 12%; }
-.staff-table[data-staff-table="transactions"] th { white-space: normal; overflow-wrap: anywhere; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(1) { width: 15%; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(2) { width: 19%; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(3) { width: 20%; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(4) { width: 11%; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(5) { width: 13%; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(6) { width: 10%; }
+.staff-table[data-staff-table="transactions"][data-view="transactions"] th:nth-child(7) { width: 12%; }
+.staff-table[data-staff-table="transactions"][data-view="unattended"] th:nth-child(1) { width: 20%; }
+.staff-table[data-staff-table="transactions"][data-view="unattended"] th:nth-child(2) { width: 23%; }
+.staff-table[data-staff-table="transactions"][data-view="unattended"] th:nth-child(3) { width: 27%; }
+.staff-table[data-staff-table="transactions"][data-view="unattended"] th:nth-child(4) { width: 15%; }
+.staff-table[data-staff-table="transactions"][data-view="unattended"] th:nth-child(5) { width: 15%; }
+.staff-table[data-staff-table="transactions"] th { padding: 12px 14px; vertical-align: middle; white-space: normal; overflow-wrap: anywhere; }
 .staff-table[data-staff-table="transactions"] td { min-width: 0; overflow: visible; overflow-wrap: anywhere; }
 
 .staff-table th {
@@ -766,6 +789,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-tx-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .staff-tx-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .staff-tx-visit-times { display: grid; gap: 4px; color: var(--color-ink-faint); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.staff-tx-amount-note { display: block; margin-top: 3px; color: var(--color-ink-faint); font-size: var(--fs-xs); }
 .staff-tx-receipt-btn {
     min-width: 64px; min-height: 36px; padding: 7px 14px; border: 0; border-radius: 999px;
     background: var(--color-primary); color: #14110d; font: 700 var(--fs-sm) var(--font-body); cursor: pointer;
@@ -830,6 +854,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-status.pending { background: rgba(255, 97, 21, 0.16); color: var(--color-primary); }
 .staff-status.confirmed { background: rgba(62, 122, 94, 0.2); color: var(--color-court-green); }
 .staff-status.completed { background: rgba(244, 239, 230, 0.12); color: var(--color-ink-dim); }
+.staff-status.in_progress { background: rgba(255, 193, 7, 0.14); color: #f0c55c; }
 .staff-status.cancelled { background: rgba(214, 72, 47, 0.16); color: var(--color-alert); }
 .staff-status.no_show { background: rgba(214, 72, 47, 0.16); color: var(--color-alert); }
 .staff-status.paid { background: rgba(62, 122, 94, 0.2); color: var(--color-court-green); }
@@ -1960,6 +1985,7 @@ html:root[data-theme] body.staff-body .staff-schedule-table td.staff-schedule-ce
 }
 
 @media (max-width: 900px) {
+    .staff-transaction-toolbar { grid-template-columns: minmax(0, 1fr); }
     .staff-table[data-staff-table="transactions"] { display: block; }
     .staff-table[data-staff-table="transactions"] thead { display: none; }
     .staff-table[data-staff-table="transactions"] tbody { display: grid; gap: 12px; }
@@ -2282,12 +2308,13 @@ html:root[data-theme] body.staff-body .staff-schedule-table td.staff-schedule-ce
     .staff-overview-filters .staff-search-wrap, .staff-overview-filter { min-width: 100%; max-width: none; }
     .staff-schedule-tools { grid-template-columns: minmax(0, 1fr); gap: 10px; }
     .staff-schedule-search, .staff-schedule-date-wrap, .staff-schedule-sort-wrap { min-width: 0; width: 100%; }
+    .staff-transaction-toolbar { grid-template-columns: minmax(0, 1fr); }
+    .staff-transaction-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .staff-transaction-tab { min-width: 0; }
     .staff-transaction-primary, .staff-transaction-secondary { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
     .staff-transaction-toolbar .staff-sort-control, .staff-transaction-date, .staff-transaction-status-filter { flex: 1 1 100%; min-width: 0; }
     .staff-transaction-secondary { margin-left: 0; }
-    .staff-transaction-secondary .staff-filter-row { width: 100%; gap: 6px; }
-    .staff-transaction-secondary .staff-search-wrap { flex: 1 1 100%; min-width: 0; }
-    .staff-transaction-secondary .staff-chip { flex: 1; padding-inline: 6px; }
+    .staff-transaction-secondary .staff-search-wrap { min-width: 0; width: 100%; }
     .staff-hour-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .staff-hour-slot { min-height: 64px; padding: 10px; }
     .staff-walkin-date-panel { align-items: flex-start; flex-wrap: wrap; padding: 11px; }

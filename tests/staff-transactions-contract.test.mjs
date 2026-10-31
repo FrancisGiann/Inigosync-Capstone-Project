@@ -7,27 +7,42 @@ const html = await readFile(new URL('../Pages/staff_dashboard.html', import.meta
 const script = await readFile(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../Style/staff_dashboard.css', import.meta.url), 'utf8');
 const receiptStyles = await readFile(new URL('../Style/paymentAcknowledgment.css', import.meta.url), 'utf8');
-const visitMigration = await readFile(new URL('../supabase/migrations/20261031010000_staff_visit_transactions.sql', import.meta.url), 'utf8');
-const legacyMigration = await readFile(new URL('../supabase/migrations/20261031000000_staff_transaction_status_and_method.sql', import.meta.url), 'utf8');
+const visitMigration = await readFile(new URL('../supabase/migrations/20261031145608_staff_transaction_records_redesign.sql', import.meta.url), 'utf8');
+const deployedVisitMigration = await readFile(new URL('../supabase/migrations/20261031134804_staff_visit_transactions.sql', import.meta.url), 'utf8');
+const legacyMigration = await readFile(new URL('../supabase/migrations/20261031134800_staff_transaction_status_and_method.sql', import.meta.url), 'utf8');
 const transactionPanelStart = html.indexOf('<section class="staff-panel" data-staff-panel="transactions"');
 const transactionPanelEnd = html.indexOf('<section class="staff-panel" data-staff-panel="profile"', transactionPanelStart);
 const transactionPanel = html.slice(transactionPanelStart, transactionPanelEnd);
 
 test('transaction toolbar and table expose the compact visit record fields', () => {
-    const headers = [...transactionPanel.matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
+    const headers = [...transactionPanel.match(/data-staff-tx-headers="transactions">([\s\S]*?)<\/tr>/)[1].matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
     assert.deepEqual(headers, ['Transaction ID', 'Customer Name', 'Time In / Time Out', 'Source', 'Visit Status', 'Amount', 'Receipt']);
+    const unattendedHeaders = [...transactionPanel.match(/data-staff-tx-headers="unattended" hidden>([\s\S]*?)<\/tr>/)[1].matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
+    assert.deepEqual(unattendedHeaders, ['Visit Reference', 'Customer Name', 'Scheduled Visit', 'Source', 'Visit Status']);
+    assert.match(transactionPanel, /role="tab"[^>]*data-staff-tx-tab="transactions">Transactions/);
+    assert.match(transactionPanel, /role="tab"[^>]*data-staff-tx-tab="unattended"[^>]*>Unattended/);
     assert.doesNotMatch(transactionPanel, /<details|>Online</);
     assert.doesNotMatch(transactionPanel, /data-staff-tx-(?:from|to)|Timed in|Timed out|Payment history/i);
     assert.equal((transactionPanel.match(/data-staff-tx-date(\s|=)/g) || []).length, 1);
     assert.match(transactionPanel, /data-staff-tx-status/);
-    assert.ok(transactionPanel.indexOf('data-staff-tx-sort') < transactionPanel.indexOf('data-staff-tx-date'));
-    assert.ok(transactionPanel.indexOf('data-staff-tx-date') < transactionPanel.indexOf('data-staff-search="transactions"'));
-    assert.ok(transactionPanel.indexOf('data-staff-search="transactions"') < transactionPanel.indexOf('data-staff-filter-group="transactions"'));
+    assert.ok(transactionPanel.indexOf('data-staff-search="transactions"') < transactionPanel.indexOf('data-staff-tx-date'));
+    assert.ok(transactionPanel.indexOf('data-staff-tx-date') < transactionPanel.indexOf('data-staff-tx-source-menu'));
+    assert.ok(transactionPanel.indexOf('data-staff-tx-source-menu') < transactionPanel.indexOf('data-staff-tx-status'));
+    assert.ok(transactionPanel.indexOf('data-staff-tx-status') < transactionPanel.indexOf('data-staff-tx-sort'));
     assert.match(transactionPanel, /data-staff-tx-sort/);
     assert.match(transactionPanel, /Search customer or transaction ID/);
-    assert.match(transactionPanel, /value="completed">Completed/);
-    assert.match(transactionPanel, /value="unattended">Unattended/);
-    assert.match(transactionPanel, /data-staff-filter="booking"/);
+    assert.match(transactionPanel, /data-staff-tx-status-choice="in_progress">In progress/);
+    assert.match(transactionPanel, /data-staff-tx-status-choice="completed">Completed/);
+    assert.match(transactionPanel, /data-staff-tx-status-menu[^>]*data-value="all"/);
+    assert.match(transactionPanel, /data-staff-tx-status-reset hidden>Clear status filter/);
+    assert.match(transactionPanel, /id="staff-tx-source-label">Source/);
+    assert.match(transactionPanel, /id="staff-tx-source-current">All sources/);
+    assert.match(transactionPanel, /data-staff-tx-source-choice="booking">Booking/);
+    assert.match(transactionPanel, /data-staff-tx-source-choice="walkin">Walk-in/);
+    assert.match(transactionPanel, /data-staff-tx-source-reset hidden>Clear source filter/);
+    assert.doesNotMatch(transactionPanel, /data-staff-filter-group="transactions"|data-staff-chip/);
+    assert.match(transactionPanel, /data-staff-tx-sort-current[^>]*aria-labelledby="staff-tx-sort-label staff-tx-sort-current-label"/);
+    assert.doesNotMatch(transactionPanel, /data-staff-tx-status-choice="unattended"/);
     assert.match(transactionPanel, /Visit date/);
     assert.match(transactionPanel, /data-staff-pagination="transactions"/);
     assert.match(html, /data-staff-pagination="overview"/);
@@ -41,12 +56,34 @@ test('staff transaction client renders actual attendance times and collected-at-
     assert.match(script, /data-staff-payment-ack/);
     assert.match(script, /row\.hasAttribute\('data-staff-empty-state'\)/);
     assert.match(script, /No transactions match your search and filters\./);
-    assert.match(script, /row\.dataset\.visitStatus === statusSelect\.value/);
+    assert.match(script, /row\.dataset\.visitStatus === statusMenu\.dataset\.value/);
     assert.match(script, /transactionStatusLabels\[visitStatus\]/);
     assert.match(script, /row\.checked_in_at/);
     assert.match(script, /row\.checked_out_at/);
     assert.match(script, /row\.amount_minor/);
     assert.match(script, /row\.status === 'unattended' \? 0 : row\.amount_minor/);
+    assert.match(script, /row\.fully_paid === true \? 'Full payment paid' : 'No payment collected at Time-In'/);
+    assert.match(script, /visibleStatuses = transactionView === 'unattended' \? \['unattended'\] : \['in_progress', 'completed'\]/);
+    assert.match(script, /const visitReference = `\$\{source\} #\$\{row\.visit_id \|\| '—'\}`/);
+    assert.match(script, /data-label="Scheduled visit"/);
+    assert.match(script, /FULL PAYMENT PAID — NO NEW PAYMENT/);
+    const unattendedRenderStart = script.indexOf("if (transactionView === 'unattended') {", script.indexOf('const receiptControl'));
+    const unattendedRenderEnd = script.indexOf('} else {', unattendedRenderStart);
+    assert.ok(unattendedRenderStart >= 0 && unattendedRenderEnd > unattendedRenderStart);
+    assert.doesNotMatch(script.slice(unattendedRenderStart, unattendedRenderEnd), /Transaction ID|Time in \/ time out|data-staff-visit-record|Receipt/);
+    assert.match(script, /receivedRows\.length && !transactionRows\.length/);
+    assert.match(script, /payload\.schema_version !== 'visit_transactions_v1'/);
+    assert.match(script, /Transaction records need a server update/);
+    assert.ok(script.indexOf("payload.schema_version !== 'visit_transactions_v1'") < script.indexOf('const receivedRows = Array.isArray(payload.transactions)'));
+    assert.match(script, /choice\.hidden = choiceValue === selectedValue/);
+    assert.match(script, /state\.activeFilter = sourceMenu\.dataset\.value \|\| 'all'/);
+    assert.match(script, /menu\.querySelector\('\[data-staff-tx-source\]'\)\?\.dispatchEvent\(new Event\('staffsourcechange'\)\)/);
+    assert.match(script, /if \(statusMenu\) statusMenu\.hidden = transactionView === 'unattended'/);
+    assert.match(script, /event\.key === 'ArrowRight' \? 1/);
+    assert.match(script, /function activateTransactionTab\(tab\)[\s\S]*?renderTransactionRows\(\);/);
+    assert.doesNotMatch(script.slice(script.indexOf('function activateTransactionTab(tab)'), script.indexOf("document.querySelectorAll('[data-staff-tx-tab]').forEach((tab)", script.indexOf('function activateTransactionTab(tab)'))), /sourceMenu\.dataset\.value\s*=/);
+    assert.match(script, /transactionView === 'unattended' \? '5' : '7'/);
+    assert.match(script, /staffstatuschange/);
     assert.doesNotMatch(script, /staff-tx-details/);
     assert.match(script, /data-label="Transaction ID"/);
     assert.match(script, /data-label="Time in \/ time out"/);
@@ -54,6 +91,12 @@ test('staff transaction client renders actual attendance times and collected-at-
 });
 
 test('transaction records fit the panel and stack into labeled cards on narrow viewports', () => {
+    assert.match(styles, /\.staff-transaction-toolbar \{[^}]*display: grid; grid-template-columns: minmax\(0, 1\.7fr\) repeat\(4, minmax\(0, 1fr\)\)/);
+    assert.match(styles, /\.staff-transaction-tab\.is-active/);
+    assert.match(styles, /\.staff-transaction-menu-options\[hidden\], \.staff-transaction-menu-reset\[hidden\] \{ display: none !important; \}/);
+    assert.match(styles, /\.staff-transaction-status-filter\[hidden\] \{ display: none !important; \}/);
+    assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.staff-transaction-toolbar \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+    assert.match(styles, /\.staff-transaction-toolbar \{ grid-template-columns: minmax\(0, 1fr\); \}/);
     assert.match(styles, /\.staff-panel\[data-staff-panel="transactions"\] \.staff-table-wrap \{ overflow-x: hidden; \}/);
     assert.match(styles, /\.staff-table\[data-staff-table="transactions"\] \{ width: 100%; min-width: 0; table-layout: fixed; \}/);
     assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.staff-table\[data-staff-table="transactions"\] tbody > tr:not\(\[data-staff-empty-state\]\)\s*\{\s*display: grid/);
@@ -132,20 +175,62 @@ test('View receipt opens the shared acknowledgment card with working print and d
 });
 
 test('visit transaction RPC uses persisted time-in event IDs and keeps no-shows free of payment data', () => {
+    assert.match(visitMigration, /'schema_version', 'visit_transactions_v1'/);
+    assert.match(visitMigration, /return coalesce\(v_result, jsonb_build_object\([\s\S]*?'schema_version', 'visit_transactions_v1',[\s\S]*?'transactions', '\[\]'::jsonb/);
     assert.match(visitMigration, /v_actor uuid := \(select auth\.uid\(\)\)/);
     assert.match(visitMigration, /p\.id = v_actor and p\.role = 'staff' and p\.status = 'active'/);
     assert.match(visitMigration, /a\.actor_id = v_actor/);
     assert.match(visitMigration, /a\.action = 'timed_in'[\s\S]*?or \(a\.action = 'collected_online_balance' and a\.details->>'time_in_recorded' = 'true'\)/);
+    assert.match(visitMigration, /b\.checked_in_at is not null[\s\S]*?w\.checked_in_at is not null/);
+    assert.match(visitMigration, /when visits\.checked_out_at is null then 'in_progress'/);
+    assert.doesNotMatch(visitMigration, /b\.status = 'completed' and b\.checked_in_at/);
     assert.match(visitMigration, /a\.id as transaction_id/);
     assert.match(visitMigration, /null::uuid as transaction_id/);
     assert.match(visitMigration, /where b\.status = 'unattended'/);
     assert.match(visitMigration, /where w\.status = 'unattended'/);
+    assert.match(visitMigration, /where b\.status = 'unattended' and b\.checked_in_at is null/);
+    assert.match(visitMigration, /where w\.status = 'unattended' and w\.checked_in_at is null/);
     assert.match(visitMigration, /null::numeric as amount_collected/);
+    assert.match(visitMigration, /b\.amount_total > 0 and b\.amount_paid >= b\.amount_total[\s\S]*?w\.amount_total > 0 and w\.amount_paid >= w\.amount_total/);
+    assert.match(visitMigration, /'fully_paid', visits\.fully_paid/);
+    assert.match(visitMigration, /'booking_total_minor', visits\.booking_total_minor/);
+    assert.match(visitMigration, /'visit_id', visits\.visit_id/);
+    assert.match(visitMigration, /'starts_at', visits\.visit_starts_at,[\s\S]*?'ends_at', visits\.visit_ends_at,[\s\S]*?'sport', visits\.visit_sport,[\s\S]*?'court', visits\.visit_court,[\s\S]*?'unit', visits\.visit_unit,[\s\S]*?'duration_minutes', visits\.visit_duration_minutes/);
+    assert.match(visitMigration, /rate_unit_snapshot is not null or b\.payment_id is not null or b\.amount_paid > 0/);
+    assert.match(visitMigration, /rate_unit_snapshot is not null or w\.payment_id is not null or w\.amount_paid > 0/);
     assert.match(visitMigration, /'checked_in_at', visits\.checked_in_at/);
     assert.match(visitMigration, /'checked_out_at', visits\.checked_out_at/);
     assert.match(visitMigration, /left join internal\.payment_acknowledgments ack on ack\.payment_id = visits\.payment_id/);
     assert.match(visitMigration, /revoke all on function public\.staff_get_involved_transactions\(\) from public, anon/);
     assert.match(visitMigration, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
+});
+
+test('deployed visit transaction migration is preserved and redesign stays in a forward migration', () => {
+    assert.match(deployedVisitMigration, /with completed_visits as/);
+    assert.match(deployedVisitMigration, /b\.status = 'completed' and b\.checked_in_at is not null/);
+    assert.match(deployedVisitMigration, /'schema_version', 'visit_transactions_v1'/);
+    assert.doesNotMatch(deployedVisitMigration, /'in_progress'|with staff_timeins as/);
+    assert.match(visitMigration, /with staff_timeins as/);
+    assert.match(visitMigration, /when visits\.checked_out_at is null then 'in_progress'/);
+});
+
+test('switching Transactions and Unattended re-renders columns, rows, and view-specific empty/error states', () => {
+    const activationStart = script.indexOf('function activateTransactionTab(tab)');
+    const activationEnd = script.indexOf("document.querySelectorAll('[data-staff-tx-tab]').forEach((tab)", activationStart);
+    const activation = script.slice(activationStart, activationEnd);
+    assert.match(activation, /transactionView = tab\.dataset\.staffTxTab/);
+    assert.match(activation, /state\.page = 1/);
+    assert.match(activation, /renderTransactionRows\(\)/);
+    assert.match(script, /header\.hidden = header\.dataset\.staffTxHeaders !== transactionView/);
+    assert.match(script, /colspan="\$\{transactionView === 'unattended' \? '5' : '7'\}" class="staff-table-message" role="status"/);
+    assert.match(script, /colspan="\$\{transactionView === 'unattended' \? '5' : '7'\}" class="staff-table-message"/);
+});
+
+test('in-progress time-in rows are returned before checkout and labeled by the client', () => {
+    assert.match(visitMigration, /where a\.actor_id = v_actor[\s\S]*?b\.checked_in_at is not null[\s\S]*?w\.checked_in_at is not null/);
+    assert.match(visitMigration, /when visits\.checked_out_at is null then 'in_progress'/);
+    assert.match(script, /in_progress: 'In progress'/);
+    assert.match(script, /visibleStatuses = transactionView === 'unattended' \? \['unattended'\] : \['in_progress', 'completed'\]/);
 });
 
 test('legacy transaction RPC retains its staff and receipt authorization rules', () => {
@@ -172,10 +257,28 @@ test('legacy transaction RPC retains its staff and receipt authorization rules',
     assert.match(legacyMigration, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
 });
 
-test('completed zero-collection visits get a time-in record and no-show rows have no receipt', () => {
+test('zero-collection prepaid receipt is built from the time-in event without creating a payment', () => {
     assert.match(visitMigration, /left join internal\.payment_acknowledgments ack on ack\.payment_id = visits\.payment_id/);
-    assert.match(script, /data-staff-visit-record/);
-    assert.match(script, /TIME-IN ACKNOWLEDGMENT/);
-    assert.match(script, /No payment was collected at Time-In/);
+    assert.match(script, /row\.acknowledgment && minorAmount !== 0[\s\S]*?row\.transaction_id[\s\S]*?data-staff-visit-record/);
+    const receiptStart = script.indexOf('function openTransactionVisitRecord(row)');
+    const receiptEnd = script.indexOf('function closeStaffReceiptModal()', receiptStart);
+    const zeroReceipt = script.slice(receiptStart, receiptEnd);
+    assert.match(zeroReceipt, /Number\(row\.amount_minor\) === 0/);
+    assert.match(zeroReceipt, /row\.fully_paid === true/);
+    assert.match(zeroReceipt, /amountMinor !== null && amountMinor !== undefined && amountMinor !== ''[\s\S]*?Number\(amountMinor\) === 0/);
+    assert.match(zeroReceipt, /bookingTotalMinor !== null && bookingTotalMinor !== undefined && bookingTotalMinor !== ''/);
+    assert.match(zeroReceipt, /FULL PAYMENT PAID — NO NEW PAYMENT/);
+    assert.match(zeroReceipt, /NO PAYMENT COLLECTED AT TIME-IN/);
+    assert.match(zeroReceipt, /₱0\.00 was collected at Time-In/);
+    assert.match(zeroReceipt, /Booking ID|Walk-In ID/);
+    assert.match(zeroReceipt, /row\.transaction_id/);
+    assert.match(zeroReceipt, /visit\.sport/);
+    assert.match(zeroReceipt, /visit\.court/);
+    assert.match(zeroReceipt, /visit\.starts_at/);
+    assert.match(zeroReceipt, /visit\.ends_at/);
+    assert.match(zeroReceipt, /row\.booking_total_minor/);
+    assert.match(zeroReceipt, /does not represent a new payment/);
+    assert.match(zeroReceipt, /does not verify any earlier payment/);
+    assert.doesNotMatch(zeroReceipt, /window\.sb|\.rpc\(|payment_id|insert into public\.payment/i);
     assert.match(script, /'<span aria-label="Receipt unavailable">—<\/span>'/);
 });

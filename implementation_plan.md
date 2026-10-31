@@ -1,5 +1,11 @@
 # Staff Portal — Revision S3 (staff personal details)
 
+## Standing development-data lifecycle rule (2026-10-31)
+
+The connected project is still in development. A feature or schema change must include a data-impact review: identify existing rows and stored snapshots that no longer match the current contract, then migrate or remove only the proven obsolete records in the same work when safe. Preserve valid current-format test bookings, payments, accounts, configuration, and their required history. Before destructive cleanup, count the exact candidates, inspect foreign keys and application/reporting references, establish a recovery path, and review the proposed row set. Afterward, verify referential integrity and the affected staff, customer, and owner views or RPCs. Never use record age alone as a deletion rule. Document any deferred cleanup with the reason and the validation still needed.
+
+---
+
 > **Current phone decision:** The 2026-09-29 amendment at the end of this
 > document replaces all SMS and phone OTP requirements below with Abstract
 > Phone Intelligence validation. See
@@ -884,4 +890,103 @@ limits to stay under Abstract's free allowance. Setup and limitations are in
 [docs/phone-validation-setup.md](docs/phone-validation-setup.md). All phone
 instructions in older revisions of this document are superseded by this section.
 
-\n
+## Development data cleanup audit (2026-10-31)
+
+The connected Supabase project is development/test data. The 35 payment records
+were confirmed linked and acknowledged, and current booking and walk-in records
+were structurally valid; preserve them and their history. The forward migration
+[`20261031141803_cleanup_legacy_development_artifacts.sql`](supabase/migrations/20261031141803_cleanup_legacy_development_artifacts.sql)
+removes only the four audited orphan legacy attendance events (`booking_timed_in`
+for missing `booking` or `walk_in_booking` rows, and `walkin_recorded` for
+missing `walk_in_booking` rows). It also drops the one-time internal cleanup
+snapshot table, which held 12 rows, had no references in current database
+function definitions or application runtime reads, and is not created by any
+recurring runtime path. The drop uses
+no `CASCADE`; the migration fails and rolls back if an unreviewed dependency
+exists. The audit guard is pinned to the four reviewed UTC `created_at`
+timestamps and requires the exact 1/1/2 action/entity distribution. The
+snapshot guard requires its reviewed UTC `captured_at` timestamp
+(`2026-09-26 12:06:26.530372+00`), one snapshot ID, and the exact per-table
+counts: `_metadata=1`, `public.booking=7`, `public.court=1`, `public.sport=1`,
+and `public.walk_in_booking=2`. These guards permit only the audited cohorts (or
+an already-removed state for idempotency), and commented dry-run queries
+list/count candidates before apply.
+
+Other audit history and all valid current-format bookings/payments remain
+untouched. No additional cleanup candidate is approved by this audit; any newly
+observed orphan or changed snapshot count is deferred for review rather than
+treated as obsolete by age or broad shape alone. Applied as remote migration
+`20261031141803` after a verified, encrypted local backup at
+`%LOCALAPPDATA%/InigoSync/database-backups/2026-10-31-legacy-cleanup.json.dpapi`
+(Windows current-user DPAPI; retain until the next reviewed cleanup). Post-apply checks
+found zero selected orphan events, no snapshot table, unchanged counts of 24
+bookings, 13 walk-ins, 35 payments, and 35 payment acknowledgments. A staff RPC
+check still returned `visit_transactions_v1` with 3 completed and 21 unattended
+records (24 total). Browser testing remains with the project manager.
+
+## Transaction Records design and implementation (2026-10-31)
+
+Current records represent two different events. A **staff-timed-in visit** has
+a staff time-in audit event, whether or not time-out has been recorded; any
+balance collected at the desk appears as its amount, including zero for a fully prepaid visit. A **no-show/unattended visit**
+has no staff time-in event, desk collection, transaction ID, or staff receipt.
+The customer's booking deposit is separate from the staff transaction amount.
+Showing both in a single seven-column transaction table therefore produces
+intentional blanks for most of the current rows (21 of 24 for the checked staff
+account). Those blanks are not evidence of missing payment records.
+
+Approved page structure: keep **Transaction Records** as the page, with two
+clearly labeled views or tabs. The [illustrative staff-transaction mockup](docs/mockups/staff-transaction-records-plan.png)
+uses the current dark/orange theme and a fixed-width table without horizontal
+scrolling:
+
+1. **Transactions** — one row per staff time-in event, including active visits
+   before time-out and completed visits. Columns: transaction ID, customer,
+   actual time in / time out (dash until time-out), source (`Booking` or
+   `Walk-in`), visit status (`In progress` or `Completed`), amount collected by
+   staff, and `View receipt`. The staff transaction receipt should combine
+   the time-in audit event with its payment acknowledgment when money was
+   collected. For a fully prepaid zero-collection visit, show `₱0.00` and a
+   staff transaction receipt marked `Prepaid / no new payment`; generating it
+   from the time-in event must not invent a second customer payment. The
+   mockup's short transaction IDs are illustrative; the actual persisted event
+   UUID must remain accessible in the detail/receipt view and search.
+2. **Unattended visits** — booking or walk-in reference, customer, scheduled
+   visit date/time, source, and `Unattended` status. Show staff collection as
+   `₱0.00` only if that column is retained in this view; omit time-in/time-out,
+   transaction ID, and receipt columns because no staff transaction happened.
+
+Both views share aligned customer/reference search, a `Source` menu, visit date,
+and newest/oldest sort; the Transactions view also searches transaction ID and
+shows a status menu for `In progress`/`Completed`. Unattended has only one
+possible status, so it has no status control. The `Source` label and its
+`All sources` default are display-only; `Booking` and `Walk-in` are selectable,
+with a clear action to restore all sources. At narrow
+widths, rows become stacked cards rather than making the table scroll
+horizontally. The approved design is implemented in the staff dashboard; active
+time-ins appear immediately with `In progress` until checkout. The previously
+applied
+[`20261031134804_staff_visit_transactions.sql`](supabase/migrations/20261031134804_staff_visit_transactions.sql)
+has been restored to match the live function definition. The forward RPC
+replacement in
+[`20261031145608_staff_transaction_records_redesign.sql`](supabase/migrations/20261031145608_staff_transaction_records_redesign.sql)
+was applied to the connected Supabase project on 2026-10-31. It returns staff-attributed
+time-in audit IDs and unattended visits separately, with no payment ID or
+receipt fields for unattended rows. Zero-collection time-in rows use the event
+ID to generate a `PREPAID — NO NEW PAYMENT` staff receipt with ₱0.00; this does
+not create a payment or acknowledgment row.
+
+The read-only live-data review on 2026-10-31 found six staff-attributed time-in
+events (five `timed_in`, one `collected_online_balance` carrying
+`time_in_recorded=true`), all joined to visits with a time-in timestamp and
+currently checked out. Thus there was no in-progress event to verify from live
+records; inclusion of future active visits is covered by the RPC contract test.
+Current booking and walk-in records, accounts, payments, acknowledgments, and
+their history remain unchanged. No additional conversion or cleanup is
+warranted for this RPC/UI contract change; the separately audited cleanup above
+is the only approved development-data cleanup. Post-apply checks found the same
+24 bookings, 13 walk-ins, 35 payments, and 35 acknowledgments. The checked
+staff RPC still returned 24 records (3 completed, 21 unattended, 0 currently
+in progress), and anonymous execution remains denied. Browser testing remains
+with the project manager. A live customer-role call was also rejected by the
+active-staff gate; no customer or payment data changed during verification.

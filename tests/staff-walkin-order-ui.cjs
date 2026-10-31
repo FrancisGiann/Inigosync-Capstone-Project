@@ -140,7 +140,7 @@ function fixture(config) {
                 }, error: null };
             }
             if (name === 'staff_get_transaction_payment_history') return { data: { source: args.p_source, id: args.p_id, payment_history: config.paymentHistory || [] }, error: null };
-            if (name === 'staff_get_involved_transactions') return { data: { transactions: config.transactions || [] }, error: null };
+            if (name === 'staff_get_involved_transactions') return { data: { schema_version: 'visit_transactions_v1', transactions: config.transactions || [] }, error: null };
             if (name === 'staff_list_notifications') {
                 const rows = config.notifications || [];
                 const search = String(args.p_search || '').toLowerCase();
@@ -223,6 +223,11 @@ async function openStaffPage(browser, { timezoneId, now, config = {}, query = ''
     const baseUrl = (process.env.STAFF_WALKIN_UI_BASE_URL || 'http://127.0.0.1:4178').replace(/\/+$/, '');
     await page.goto(`${baseUrl}/Pages/staff_dashboard.html${query}`, { waitUntil: 'domcontentloaded' });
     return { context, page };
+}
+
+async function selectTransactionSource(page, source) {
+    await page.locator('[data-staff-tx-source]').click();
+    await page.locator(`[data-staff-tx-source-choice="${source}"]:not([hidden])`).click();
 }
 
 async function openWalkinTimeStep(page, courtId = 'listing-badminton') {
@@ -1091,8 +1096,8 @@ function occupancyRow(hour, source = 'online') {
             timezoneId: 'Asia/Manila', now: '2026-09-27T01:00:00Z',
             config: { transactions: [
                 {
-                    payment_id: 102, created_at: '2026-09-27T00:55:00Z', method: 'Cash', base_minor: 5000, gross_minor: 5000,
-                    source: 'booking', customer_name: 'QA Customer', sports: 'Badminton', courts: 'Badminton', unit: 'Court 1',
+                    transaction_id: 'event-balance', visit_id: 102, created_at: '2026-09-27T00:55:00Z', status: 'completed', amount_minor: 5000,
+                    checked_in_at: '2026-09-27T00:55:00Z', source: 'booking', customer_name: 'QA Customer', visits: [{ starts_at: '2026-09-27T01:00:00Z' }],
                     acknowledgment: {
                         receipt_id: 'qa-balance', receipt_number: 'PA-BALANCE', issued_at: '2026-09-27T00:55:00Z', customer_name: 'QA Customer',
                         items: [{ sport: 'Badminton', court: 'Badminton', unit: 'Court 1', starts_at: '2026-09-27T01:00:00Z', ends_at: '2026-09-27T02:00:00Z', subtotal_minor: 10000 }],
@@ -1103,15 +1108,15 @@ function occupancyRow(hour, source = 'online') {
                     },
                 },
                 {
-                    payment_id: 101, created_at: '2026-09-26T23:55:00Z', method: 'PayMongo', base_minor: 5000, gross_minor: 5250,
-                    source: 'booking', customer_name: 'QA Customer', sports: 'Badminton', courts: 'Badminton', unit: 'Court 1',
+                    transaction_id: 'event-deposit', visit_id: 101, created_at: '2026-09-26T23:55:00Z', status: 'completed', amount_minor: 5250,
+                    checked_in_at: '2026-09-26T23:55:00Z', source: 'booking', customer_name: 'QA Customer', visits: [{ starts_at: '2026-09-27T01:00:00Z' }],
                     acknowledgment: { receipt_id: 'qa-deposit', receipt_number: 'PA-DEPOSIT', customer_name: 'QA Customer', items: [],
                         court_subtotal_minor: 10000, amount_paid_minor: 5000, remaining_balance_minor: 5000,
                         fee_minor: 250, gross_minor: 5250, payment_method: 'PayMongo', payment_status: 'paid' },
                 },
                 {
-                    payment_id: 103, created_at: '2026-09-27T00:25:00Z', method: 'Cash', base_minor: 8000, gross_minor: 8000,
-                    source: 'walkin', customer_name: 'Walk-in Guest', sports: 'Basketball', courts: 'Basketball', unit: 'Court 2',
+                    transaction_id: 'event-walkin', visit_id: 103, created_at: '2026-09-27T00:25:00Z', status: 'completed', amount_minor: 8000,
+                    checked_in_at: '2026-09-27T00:25:00Z', source: 'walkin', customer_name: 'Walk-in Guest', visits: [{ starts_at: '2026-09-27T01:00:00Z' }],
                     acknowledgment: { receipt_id: 'qa-walkin', receipt_number: 'PA-WALKIN', customer_name: 'Walk-in Guest', items: [],
                         court_subtotal_minor: 8000, amount_paid_minor: 8000, remaining_balance_minor: 0,
                         fee_minor: 0, gross_minor: 8000, payment_method: 'Cash', payment_status: 'paid' },
@@ -1122,9 +1127,9 @@ function occupancyRow(hour, source = 'online') {
         await transactionPage.locator('[data-staff-nav="transactions"]').click();
         const transactionRows = transactionPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index]');
         await transactionRows.nth(2).waitFor();
-        assert.equal(await transactionRows.count(), 3, 'one row appears per payment, including the separate balance payment and walk-in');
-        assert.deepEqual(await transactionPage.locator('[data-staff-table="transactions"] thead th').allTextContents(),
-            ['Date', 'Customer Name', 'Sports', 'Court/Unit', 'Time', 'Source', 'Amount', 'Receipt']);
+        assert.equal(await transactionRows.count(), 3, 'one row appears per completed visit event');
+        assert.deepEqual(await transactionPage.locator('[data-staff-tx-headers="transactions"] th').allTextContents(),
+            ['Transaction ID', 'Customer Name', 'Time In / Time Out', 'Source', 'Visit Status', 'Amount', 'Receipt']);
         assert.equal(await transactionPage.locator('[data-staff-tx-from], [data-staff-tx-to]').count(), 0, 'date range controls are removed');
         assert.equal(await transactionRows.nth(0).locator('[data-staff-payment-ack]').innerText(), 'View receipt');
         assert.match(await transactionRows.nth(0).innerText(), /₱50\.00/, 'amount shows the payment total');
@@ -1147,11 +1152,23 @@ function occupancyRow(hour, source = 'online') {
         assert.match(printedReceiptText, /PA-BALANCE/);
         await transactionPage.keyboard.press('Escape');
         await transactionPage.locator('[data-staff-receipt-modal]').waitFor({ state: 'hidden' });
-        await transactionPage.locator('[data-staff-tx-sort]').selectOption('date-asc');
-        assert.match(await transactionRows.nth(0).innerText(), /₱52\.50/, 'sort changes payment row order');
-        await transactionPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="walkin"]').click();
+        await transactionPage.locator('[data-staff-tx-sort-current]').click();
+        await transactionPage.locator('[data-staff-tx-sort-choice="date-asc"]').click();
+        assert.match(await transactionRows.nth(0).innerText(), /₱52\.50/, 'sort changes visit row order');
+        await selectTransactionSource(transactionPage, 'walkin');
         await transactionPage.waitForFunction(() => Array.from(document.querySelectorAll('[data-staff-table="transactions"] tbody tr[data-row-index]')).filter(row => row.style.display !== 'none').length === 1);
         assert.match(await transactionRows.filter({ hasText: 'Walk-in Guest' }).innerText(), /Walk-in/);
+        const transactionSearch = transactionPage.locator('[data-staff-search="transactions"]');
+        await transactionSearch.fill('Walk-in Guest');
+        await transactionPage.locator('[data-staff-tx-tab="unattended"]').click();
+        assert.equal(await transactionPage.locator('[data-staff-tx-status-menu]').isHidden(), true, 'Unattended hides the single-value status control');
+        assert.deepEqual(await transactionPage.locator('[data-staff-tx-headers="unattended"] th').allTextContents(),
+            ['Visit Reference', 'Customer Name', 'Scheduled Visit', 'Source', 'Visit Status']);
+        assert.equal(await transactionSearch.inputValue(), 'Walk-in Guest', 'search text remains when changing views');
+        assert.equal(await transactionPage.locator('[data-staff-tx-source-menu]').getAttribute('data-value'), 'walkin', 'source selection remains when changing views');
+        await transactionPage.locator('[data-staff-tx-tab="transactions"]').click();
+        assert.equal(await transactionPage.locator('[data-staff-tx-status-menu]').isHidden(), false, 'Transactions shows the status control');
+        await transactionPage.waitForFunction(() => Array.from(document.querySelectorAll('[data-staff-table="transactions"] tbody tr[data-row-index]')).filter(row => row.style.display !== 'none').length === 1);
         const txCall = await transactionPage.evaluate(() => window.__walkinQa.calls.find(call => call.name === 'staff_get_involved_transactions'));
         assert.deepEqual(txCall.args, undefined, 'staff identity is derived by the server from auth.uid');
         await transactionContext.context.close();
@@ -1159,8 +1176,8 @@ function occupancyRow(hour, source = 'online') {
         const filterContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
             config: { transactions: [
-                { payment_id: 201, created_at: '2026-09-27T01:00:00Z', source: 'walkin', customer_name: 'Filter Guest', sports: 'Basketball', courts: 'Basketball', unit: 'Court 2', base_minor: 10000, gross_minor: 10000 },
-                { payment_id: 202, created_at: '2026-09-27T16:30:00Z', source: 'booking', customer_name: 'Other Guest', sports: 'Tennis', courts: 'Tennis', unit: 'Court 1', base_minor: 12000, gross_minor: 12000 },
+                { transaction_id: 'event-filter', visit_id: 201, status: 'completed', created_at: '2026-09-27T01:00:00Z', checked_in_at: '2026-09-27T01:00:00Z', source: 'walkin', customer_name: 'Filter Guest', amount_minor: 0, visits: [{ starts_at: '2026-09-27T01:00:00Z' }] },
+                { transaction_id: 'event-other', visit_id: 202, status: 'completed', created_at: '2026-09-27T16:30:00Z', source: 'booking', customer_name: 'Other Guest', amount_minor: 12000, visits: [{ starts_at: '2026-09-27T16:30:00Z' }] },
             ] },
         });
         const filterPage = filterContext.page;
@@ -1169,20 +1186,27 @@ function occupancyRow(hour, source = 'online') {
         await filterRows.first().waitFor();
         assert.equal(await filterRows.count(), 2, 'transactions from all dates appear before a date is selected');
         assert.equal(await filterPage.locator('[data-staff-tx-date]').inputValue(), '');
-        await filterPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="walkin"]').click();
+        await selectTransactionSource(filterPage, 'walkin');
         const filterSearch = filterPage.locator('[data-staff-search="transactions"]');
         await filterSearch.fill('Filter Guest');
         const visibleTransactions = () => filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index]').evaluateAll(rows => rows.filter(row => row.style.display !== 'none').length);
-        assert.equal(await visibleTransactions(), 1, 'source and search filters apply to payment rows');
-        const unavailableReceipt = filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index="0"] [data-staff-payment-ack]');
-        assert.equal(await unavailableReceipt.innerText(), 'View receipt');
-        assert.equal(await unavailableReceipt.isDisabled(), true, 'View receipt is disabled when a legacy acknowledgment cannot be recovered');
+        assert.equal(await visibleTransactions(), 1, 'source and search filters apply to visit rows');
+        assert.equal(await filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index="0"] [data-staff-visit-record]').innerText(), 'View receipt');
+        await filterPage.locator('[data-staff-table="transactions"] tbody tr[data-row-index="0"] [data-staff-visit-record]').click();
+        const prepaidReceipt = await filterPage.locator('[data-staff-receipt-modal-content]').innerText();
+        assert.match(prepaidReceipt, /PREPAID — NO NEW PAYMENT/);
+        assert.match(prepaidReceipt, /₱0\.00 was collected at Time-In/);
+        assert.doesNotMatch(prepaidReceipt, /Payment ID/);
+        await filterPage.locator('[data-staff-receipt-close]').click();
         await filterPage.locator('[data-staff-tx-date]').fill('2026-09-28');
         await filterPage.locator('[data-staff-tx-date]').dispatchEvent('change');
         assert.equal(await visibleTransactions(), 0, 'date, source, and search filters compose locally');
-        await filterPage.locator('[data-staff-filter-group="transactions"] [data-staff-filter="online"]').click();
+        await selectTransactionSource(filterPage, 'booking');
         await filterSearch.fill('Other Guest');
         assert.equal(await visibleTransactions(), 1, 'changing source and search retains the selected transaction date');
+        await filterPage.locator('[data-staff-tx-source-reset]').click();
+        assert.equal(await filterPage.locator('[data-staff-tx-source-menu]').getAttribute('data-value'), 'all');
+        assert.equal(await visibleTransactions(), 1, 'clearing source keeps the current search and date filters');
         await filterPage.locator('[data-staff-tx-date]').fill('2026-09-27');
         await filterPage.locator('[data-staff-tx-date]').dispatchEvent('change');
         assert.equal(await visibleTransactions(), 0, 'changing date retains current source and search filters');
@@ -1191,20 +1215,19 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await visibleTransactions(), 1, 'clearing the date shows all dates while retaining other filters');
         await filterContext.context.close();
 
-        // RPC response for staff A's own walk-in when staff B later collects
-        // its balance contains the creator-owned original payment only.
+        // RPC response includes the staff-owned time-in visit record.
         const ownershipContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z',
             config: { transactions: [
-                { payment_id: 301, created_at: '2026-09-27T01:00:00Z', source: 'walkin', customer_name: 'A-owned Guest', sports: 'Badminton', courts: 'Badminton', unit: 'Court 1', base_minor: 10000, gross_minor: 10000,
+                { transaction_id: 'event-owned', visit_id: 301, status: 'completed', created_at: '2026-09-27T01:00:00Z', checked_in_at: '2026-09-27T01:00:00Z', source: 'walkin', customer_name: 'A-owned Guest', amount_minor: 10000, visits: [{ starts_at: '2026-09-27T01:00:00Z' }],
                     acknowledgment: { receipt_id: 'qa-owner-payment', receipt_number: 'PA-OWNER', customer_name: 'A-owned Guest', items: [], payment_status: 'paid' } },
             ] },
         });
         await ownershipContext.page.locator('[data-staff-nav="transactions"]').click();
         const ownedRows = ownershipContext.page.locator('[data-staff-table="transactions"] tbody tr[data-row-index]');
         await ownedRows.first().waitFor();
-        assert.equal(await ownedRows.count(), 1, 'staff A sees the owned original payment but not staff B’s later balance payment');
-        assert.match(await ownedRows.first().innerText(), /PA-OWNER|₱100\.00/);
+        assert.equal(await ownedRows.count(), 1, 'staff A sees the owned time-in visit record');
+        assert.match(await ownedRows.first().innerText(), /₱100\.00/);
         await ownershipContext.context.close();
 
         const unreadNotifications = Array.from({ length: 18 }, (_, index) => ({
