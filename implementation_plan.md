@@ -1248,5 +1248,5 @@ produce the expected Supabase advisor warning for intentional authenticated
 ## Verification gaps
 
 - Apply the new migration in a disposable/local Supabase database before deployment and confirm table grants, RLS, triggers, and owner selection behavior. This checkout has no local `psql`/Supabase database.
-- Run the post-migration read-only checks and five role/trigger behavior cases in `docs/account-customer-reviews-verification.sql`; static Node assertions alone cannot validate Supabase RLS, FK cascade, or trigger behavior.
+- Run the post-migration read-only checks and role/trigger behavior cases in `docs/account-customer-reviews-verification.sql`; static Node assertions alone cannot validate Supabase RLS, FK cascade, or trigger behavior. For `20261102140000_optional_featured_customer_reviews.sql`, preserve the existing ordered selection and verify saving zero to three picks plus single-item invalidation.
 - After migration, confirm `customer_review` and `public_customer_reviews` counts match the pre-migration `booking_review` distinct-customer count (zero in the supplied live snapshot), and confirm the public table exposes only safe columns. Root should seed only accounts without genuine reviews, mark all synthetic rows `is_sample = true`, and verify counts before and after.

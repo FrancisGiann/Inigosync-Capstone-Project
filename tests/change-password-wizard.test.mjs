@@ -17,7 +17,7 @@ function extractFlow(role, source) {
     };
     const ends = {
         customer: '\n});',
-        owner: '    // Owners choose exactly three written public booking reviews',
+        owner: '    // Owners choose up to three written public customer reviews',
         staff: '    async function fetchBalanceReturnRow',
     };
     const start = source.indexOf(starts[role]);

@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [migration, displayNameMigration, legacyFeaturedMigration, ownerScript, ownerHtml, landingScript, dashboardScript, landingCss] = await Promise.all([
+const [migration, displayNameMigration, legacyFeaturedMigration, optionalFeaturedMigration, ownerScript, ownerHtml, landingScript, dashboardScript, landingCss] = await Promise.all([
     readFile(new URL('../supabase/migrations/20261102120000_account_customer_reviews.sql', import.meta.url), 'utf8'),
     readFile(new URL('../supabase/migrations/20261102130000_customer_review_public_display_names.sql', import.meta.url), 'utf8'),
     readFile(new URL('../supabase/migrations/20261020022539_featured_booking_reviews.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20261102140000_optional_featured_customer_reviews.sql', import.meta.url), 'utf8'),
     readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8'),
     readFile(new URL('../Pages/owner_dashboard.html', import.meta.url), 'utf8'),
     readFile(new URL('../includes/landing-reviews.js', import.meta.url), 'utf8'),
@@ -57,19 +58,24 @@ test('public account review names are minimized, backfilled, and kept in sync pr
     assert.doesNotMatch(displayNameMigration.match(/create or replace view public\.public_featured_customer_reviews[\s\S]*?where s\.singleton = true;/i)?.[0] || '', /customer_id|booking_id|full_name|email/i);
 });
 
-test('featured review persistence is owner-only and accepts exactly three distinct written public reviews', () => {
+test('featured review persistence is owner-only and accepts up to three distinct written public reviews', () => {
     assert.match(legacyFeaturedMigration, /alter table public\.owner_featured_review_selection enable row level security/i);
     assert.match(legacyFeaturedMigration, /check \(review_ids is null or cardinality\(review_ids\) = 3\)/i);
     assert.match(migration, /internal\.is_active_owner\(\(select auth\.uid\(\)\)\)/i);
-    assert.match(migration, /cardinality\(p_review_ids\) <> 3/i);
-    assert.match(migration, /count\(distinct ids\.review_id\)[\s\S]*?<> 3/i);
-    assert.match(migration, /nullif\(btrim\(r\.comment\), ''\) is not null/i);
-    assert.match(migration, /revoke all on function public\.owner_save_featured_customer_reviews\(uuid\[\]\) from public, anon, authenticated/i);
-    assert.match(migration, /grant execute on function public\.owner_save_featured_customer_reviews\(uuid\[\]\) to authenticated/i);
+    assert.match(optionalFeaturedMigration, /check \(review_ids is null or cardinality\(review_ids\) between 0 and 3\)/i);
+    assert.match(optionalFeaturedMigration, /requested_ids uuid\[\] := coalesce\(p_review_ids, '\{\}'::uuid\[\]\)/i);
+    assert.match(optionalFeaturedMigration, /requested_count > 3/i);
+    assert.match(optionalFeaturedMigration, /count\(distinct ids\.review_id\)[\s\S]*?<> requested_count/i);
+    assert.match(optionalFeaturedMigration, /eligible_count <> requested_count/i);
+    assert.match(optionalFeaturedMigration, /nullif\(btrim\(r\.comment\), ''\) is not null/i);
+    assert.match(optionalFeaturedMigration, /revoke all on function public\.owner_save_featured_customer_reviews\(uuid\[\]\) from public, anon, authenticated/i);
+    assert.match(optionalFeaturedMigration, /grant execute on function public\.owner_save_featured_customer_reviews\(uuid\[\]\) to authenticated/i);
+    assert.match(optionalFeaturedMigration, /set review_ids = array_remove\(review_ids, old\.id\)/i);
+    assert.match(optionalFeaturedMigration, /internal\.is_active_owner\(\(select auth\.uid\(\)\)\)/i);
     assert.match(migration, /security_invoker = true/i);
 });
 
-test('owner picker uses an accessible modal and confirms changed selections at exactly three', () => {
+test('owner picker allows removing selected reviews and confirms any changed selection', () => {
     assert.match(ownerHtml, /data-featured-review-open disabled/);
     assert.match(ownerHtml, /role="dialog" aria-modal="true" aria-labelledby="featuredReviewModalTitle"/);
     assert.match(ownerHtml, /data-featured-review-slots/);
@@ -79,10 +85,14 @@ test('owner picker uses an accessible modal and confirms changed selections at e
     assert.doesNotMatch(ownerHtml, /<h3>Featured booking reviews<\/h3>/);
     assert.doesNotMatch(ownerHtml, /Choose exactly three public booking reviews/);
     assert.match(ownerHtml, /data-featured-review-save disabled/);
-    assert.match(ownerScript, /draftFeaturedReviewIds\.length !== 3/);
+    assert.match(ownerHtml, /data-featured-review-chips/);
+    assert.match(ownerHtml, /data-featured-review-clear/);
+    assert.match(ownerScript, /data-featured-review-remove/);
+    assert.match(ownerScript, /!featuredSelectionChanged\(\) \|\| savingFeaturedReviews/);
+    assert.match(ownerScript, /idsToSave\.length[\s\S]*remove all featured reviews[\s\S]*Customer feedback will remain saved/i);
     assert.match(ownerScript, /featuredSelectionChanged\(\)/);
     assert.match(ownerScript, /Discard review changes\?/);
-    assert.match(ownerScript, /Save featured reviews\?/);
+    assert.match(ownerScript, /Save homepage reviews\?/);
     assert.match(ownerScript, /window\.InigoOwnerUI\?\.close\(reviewModal\)/);
     assert.match(ownerScript, /owner_save_featured_customer_reviews/);
     assert.match(ownerScript, /review\.comment\.trim\(\)\.length > 0/);

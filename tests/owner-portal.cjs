@@ -480,12 +480,12 @@ async function verifyOwnerPaymentFlow(page) {
                         assert.equal(await page.locator('[data-featured-review-dialog]').getAttribute('aria-modal'), 'true');
                         assert.equal(await page.locator('[data-featured-review-id]').count(), 4, 'blank or whitespace-only comments are ineligible');
                         assert.equal(await page.locator('[data-admin-review-pagination]').evaluate(el => getComputedStyle(el).display), 'none', 'the single-page pager stays hidden');
-                        assert.ok(await page.locator('[data-featured-review-modal-count]').evaluate(el => el.getBoundingClientRect().top - el.previousElementSibling.getBoundingClientRect().bottom >= 8), 'selection count is spaced below the modal description');
+                        assert.ok(await page.locator('[data-featured-review-modal-count]').evaluate(el => el.getBoundingClientRect().top - el.closest('.admin-modal-body').previousElementSibling.getBoundingClientRect().bottom >= 8), 'selection count is spaced below the modal description');
                         await page.locator('[data-featured-review-id="r2"]').check();
                         await page.locator('[data-featured-review-id="r1"]').check();
-                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), true, 'fewer than three reviews cannot be saved');
+                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'a partial selection can be saved');
                         await page.locator('[data-featured-review-id="r3"]').check();
-                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'exactly three reviews enable Save');
+                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'the maximum three-review selection enables Save');
                         assert.equal(await page.locator('[data-featured-review-id="r4"]').isDisabled(), true, 'the fourth review is disabled at the three-review limit');
                         await page.locator('[data-featured-review-cancel]').click();
                         await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
@@ -494,7 +494,7 @@ async function verifyOwnerPaymentFlow(page) {
                         assert.equal(await page.locator('[data-featured-review-id]:checked').count(), 3, 'declining discard retains the draft choices');
                         await page.locator('[data-featured-review-save]').click();
                         await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
-                        assert.match(await page.locator('.owner-confirm-overlay').innerText(), /update the three reviews shown on your landing page/i);
+                        assert.match(await page.locator('.owner-confirm-overlay').innerText(), /show 3 reviews on your landing page/i);
                         assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection), [], 'selection is not written before confirmation');
                         await page.locator('.owner-confirm-overlay [data-confirm-no]').click();
                         assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), true, 'declining save keeps the picker open');
@@ -528,6 +528,23 @@ async function verifyOwnerPaymentFlow(page) {
                         await page.locator('[data-featured-review-open]').click();
                         await page.waitForFunction(() => [...document.querySelectorAll('[data-featured-review-id]:checked')].length === 3);
                         assert.equal(await page.locator('[data-owner-direct-feedback]').count(), 0, 'private feedback has no separate display');
+                        const feedbackCount = await page.evaluate(() => window.__ownerQa.tables.public_customer_reviews.length);
+                        await page.locator('[data-featured-review-chips] [data-featured-review-remove]').first().click();
+                        assert.equal(await page.locator('[data-featured-review-id]:checked').count(), 2, 'removing a chip unselects just that review');
+                        assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'the two-review selection can be saved');
+                        await page.locator('[data-featured-review-save]').click();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.locator('[data-featured-review-message]').getByText('Featured reviews saved.').waitFor();
+                        assert.equal((await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection[0].review_ids)).length, 2, 'the remaining reviews persist after one is removed');
+                        await page.locator('[data-featured-review-open]').click();
+                        await page.locator('[data-featured-review-clear]').click();
+                        assert.equal(await page.locator('[data-featured-review-id]:checked').count(), 0, 'Unselect all clears the draft selection');
+                        await page.locator('[data-featured-review-save]').click();
+                        await page.locator('.owner-confirm-overlay').getByText(/remove all featured reviews/i).waitFor();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.locator('[data-featured-review-message]').getByText('Featured reviews saved.').waitFor();
+                        assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection[0].review_ids), [], 'unselect all persists an empty selection');
+                        assert.equal(await page.evaluate(() => window.__ownerQa.tables.public_customer_reviews.length), feedbackCount, 'unselecting does not delete customer feedback');
                         assert.deepEqual(errors, [], 'review selection has no uncaught page errors');
                         console.log(`PASS featured booking review selection ${width}px ${theme}`);
                         continue;
@@ -1224,14 +1241,14 @@ async function verifyOwnerPaymentFlow(page) {
                     }
                     await page.locator('[data-admin-staff-modal-close]').first().click();
 
-                    // The owner selects and saves exactly three reviews in a deliberate order.
+                    // The owner selects and saves up to three reviews in a deliberate order.
                     await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
                     await page.locator('[data-featured-review-count]').getByText('0 of 3 selected').waitFor();
                     await page.locator('[data-featured-review-id="r2"]').check();
                     await page.locator('[data-featured-review-id="r1"]').check();
-                    assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), true, 'fewer than three reviews cannot be saved');
+                    assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'a partial selection can be saved');
                     await page.locator('[data-featured-review-id="r3"]').check();
-                    assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'exactly three reviews enable Save');
+                    assert.equal(await page.locator('[data-featured-review-save]').isDisabled(), false, 'the maximum three-review selection enables Save');
                     await page.locator('[data-featured-review-save]').click();
                     await page.locator('[data-featured-review-message]').getByText('Featured reviews saved.').waitFor();
                     assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection[0].review_ids), ['r2', 'r1', 'r3'], 'selection order persists');

@@ -538,7 +538,7 @@
                 <div class="admin-card admin-booking-reviews-card">
                     <div class="owner-featured-review-stage">
                         <svg class="owner-featured-review-art" viewBox="0 0 180 150" aria-hidden="true" focusable="false"><path d="M90 10 108 61l54 2-42 34 15 51-45-30-45 30 15-51L18 63l54-2z" fill="currentColor" opacity=".13"/><path d="m90 27 13 37 39 1-31 24 11 37-32-22-32 22 11-37-31-24 39-1z" fill="currentColor"/><circle cx="145" cy="30" r="9" fill="currentColor" opacity=".45"/><circle cx="36" cy="111" r="6" fill="currentColor" opacity=".45"/></svg>
-                        <div class="owner-featured-review-stage-copy"><p class="owner-featured-review-kicker">Homepage spotlight</p><p class="owner-featured-review-stage-title">Three customer reviews</p><p class="owner-featured-review-stage-note">Your featured reviews appear on the landing page in the order shown. Sample entries are labeled.</p></div>
+                        <div class="owner-featured-review-stage-copy"><p class="owner-featured-review-kicker">Homepage spotlight</p><p class="owner-featured-review-stage-title">Customer reviews</p><p class="owner-featured-review-stage-note">Choose up to three reviews for the landing page. Sample entries are labeled.</p></div>
                         <div class="owner-featured-review-count" data-featured-review-count aria-live="polite">Loading featured review selection…</div>
                     </div>
                     <div class="owner-featured-review-slots" data-featured-review-slots aria-live="polite" aria-busy="true"></div>
@@ -565,9 +565,13 @@
                 <div class="admin-modal-overlay owner-featured-review-overlay" data-featured-review-modal hidden>
                     <div class="admin-modal admin-edit-modal owner-featured-review-modal" role="dialog" aria-modal="true" aria-labelledby="featuredReviewModalTitle" tabindex="-1" data-featured-review-dialog>
                         <button type="button" class="admin-modal-close" data-featured-review-close aria-label="Close review chooser">×</button>
-                        <header class="admin-modal-header"><h3 id="featuredReviewModalTitle">Choose homepage reviews</h3><p class="admin-card-sub">Select three written reviews. Sample entries are labeled. Their numbers show the order on your landing page.</p></header>
+                        <header class="admin-modal-header"><h3 id="featuredReviewModalTitle">Choose homepage reviews</h3><p class="admin-card-sub">Select up to three written reviews. Remove a selected review here or unselect all. Sample entries are labeled; numbers show landing page order.</p></header>
                         <div class="admin-modal-body">
                         <p class="owner-featured-review-count owner-featured-review-modal-count" data-featured-review-modal-count aria-live="polite">0 of 3 selected</p>
+                        <section class="owner-featured-review-selected" aria-label="Selected homepage reviews">
+                            <div class="owner-featured-review-selected-head"><h4>Selected reviews</h4><button type="button" class="admin-btn-ghost" data-featured-review-clear disabled>Unselect all</button></div>
+                            <div class="owner-featured-review-chips" data-featured-review-chips aria-live="polite"><p class="admin-form-hint">No reviews selected.</p></div>
+                        </section>
                         <div class="admin-review-filter" role="group" aria-label="Filter reviews by star rating">
                         <button type="button" class="admin-chip is-active" data-admin-review-rating="all" aria-pressed="true">All ratings</button>
                         <button type="button" class="admin-chip" data-admin-review-rating="5" aria-pressed="false">5 stars</button>

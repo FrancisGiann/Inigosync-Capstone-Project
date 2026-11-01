@@ -24,7 +24,8 @@ select
      left join public.customer_review private on private.id = public.id
      where private.id is null) as orphaned_public_rows;
 
--- A configured selection is all-or-none and every selected record is written.
+-- After 20261102140000_optional_featured_customer_reviews.sql, a selection
+-- may contain zero to three ordered IDs. Every selected record must be written.
 select s.review_ids,
        cardinality(s.review_ids) as selected_count,
        count(r.id) filter (where nullif(btrim(r.comment), '') is not null) as written_selected_count
@@ -33,6 +34,19 @@ left join lateral unnest(s.review_ids) selected(review_id) on true
 left join public.public_customer_reviews r on r.id = selected.review_id
 where s.singleton = true
 group by s.review_ids;
+
+-- Snapshot the selected count and ordered-ID fingerprint before and after the
+-- optional-selection migration. An existing three-review choice must match.
+select coalesce(cardinality(review_ids), 0) as selected_count,
+       md5(coalesce(array_to_string(review_ids, ','), '')) as ordered_selection_fingerprint
+from public.owner_featured_review_selection where singleton = true;
+
+-- In a disposable database, exercise owner_save_featured_customer_reviews
+-- with NULL, empty array, and one, two, three distinct written IDs; reject
+-- four, duplicates, missing/rating-only IDs, and non-owner callers. Verify
+-- blanking or deleting one selected source review removes only that ID while
+-- preserving the order of the remaining IDs. None of these actions deletes
+-- customer_review or public_customer_reviews rows through owner selection.
 
 -- Confirm the owner summary and active MFA hook reference the current model.
 select pg_get_functiondef('public.owner_review_summary()'::regprocedure) as owner_review_summary_definition;
@@ -49,10 +63,11 @@ order by policyname;
 --    changes the same customer_review row and public projection row.
 -- 2. A different customer cannot read or update that row. A customer without
 --    a verified-email session cannot use the private table.
--- 3. An owner can save exactly three distinct written review IDs; duplicate,
---    missing, rating-only, or non-owner selections are rejected.
--- 4. If a selected customer changes comment to NULL/blank, selection becomes
---    NULL in the same transaction. Deleting that customer removes the public
---    projection through its FK and also clears the featured selection.
+-- 3. An active owner can save zero to three distinct written review IDs;
+--    duplicate, missing, rating-only, or non-owner selections are rejected.
+-- 4. If a selected customer changes comment to NULL/blank, only that ID is
+--    removed from the featured list in the same transaction. Deleting that
+--    customer removes the public projection through its FK and the matching
+--    featured ID, while leaving other selected IDs intact.
 -- 5. A service-role sample insert with is_sample=true appears in the public
 --    projection marked true; an authenticated customer cannot set that flag.

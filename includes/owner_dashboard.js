@@ -3544,7 +3544,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Owners choose exactly three written public customer reviews for the
+    // Owners choose up to three written public customer reviews for the
     // landing page. The database RPC validates and saves the ordered set.
     const reviewList = document.querySelector('[data-admin-review-list]');
     const reviewPager = document.querySelector('[data-admin-review-pagination]');
@@ -3556,6 +3556,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const reviewOpen = document.querySelector('[data-featured-review-open]');
     const reviewModal = document.querySelector('[data-featured-review-modal]');
     const reviewSlots = document.querySelector('[data-featured-review-slots]');
+    const reviewChips = document.querySelector('[data-featured-review-chips]');
+    const reviewClear = document.querySelector('[data-featured-review-clear]');
     const ownerReviewBrowser = document.querySelector('[data-owner-review-list]');
     const ownerReviewBrowserPager = document.querySelector('[data-owner-review-pagination]');
     let reviewRatingFilter = 'all';
@@ -3635,6 +3637,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return `<article class="owner-featured-review-slot${id ? ' is-filled' : ''}"><span class="owner-featured-review-slot-number">${index + 1}</span>${review ? `<div><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<div class="owner-featured-review-slot-rating" aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</div><p>“${window.escapeHtml(review.comment)}”</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></div>` : `<p>${id ? 'Loading saved review…' : 'Your next featured story goes here'}</p>`}</article>`;
         }).join('');
     }
+    function renderFeaturedReviewChips() {
+        if (!reviewChips) return;
+        reviewChips.innerHTML = draftFeaturedReviewIds.length ? draftFeaturedReviewIds.map((id, index) => {
+            const review = featuredReviewDetails.get(id);
+            const name = review?.display_name || `Review ${index + 1}`;
+            return `<span class="owner-featured-review-chip"><span>${window.escapeHtml(name)}</span><button type="button" data-featured-review-remove="${window.escapeHtml(id)}" aria-label="Remove ${window.escapeHtml(name)} from homepage reviews"${savingFeaturedReviews ? ' disabled' : ''}>×</button></span>`;
+        }).join('') : '<p class="admin-form-hint">No reviews selected. Add up to three from the list below.</p>';
+        reviewChips.querySelectorAll('[data-featured-review-remove]').forEach(button => button.addEventListener('click', () => {
+            if (savingFeaturedReviews) return;
+            const id = button.dataset.featuredReviewRemove;
+            draftFeaturedReviewIds = draftFeaturedReviewIds.filter(selectedId => selectedId !== id);
+            setFeaturedReviewStatus();
+            loadOwnerReviews();
+        }));
+    }
     async function loadOwnerReviews() {
         if (!reviewList || !window.sb) return;
         const request = ++reviewRequest;
@@ -3684,8 +3701,10 @@ document.addEventListener('DOMContentLoaded', () => {
             reviewCount.textContent = `${savedFeaturedReviewIds.length} of 3 selected`;
         }
         if (reviewModalCount) reviewModalCount.textContent = `${draftFeaturedReviewIds.length} of 3 selected`;
-        if (reviewSave) reviewSave.disabled = draftFeaturedReviewIds.length !== 3 || !featuredSelectionChanged() || savingFeaturedReviews || !featuredSelectionLoaded;
+        if (reviewSave) reviewSave.disabled = !featuredSelectionChanged() || savingFeaturedReviews || !featuredSelectionLoaded;
+        if (reviewClear) reviewClear.disabled = !draftFeaturedReviewIds.length || savingFeaturedReviews || !featuredSelectionLoaded;
         if (reviewOpen) reviewOpen.disabled = !featuredSelectionLoaded || savingFeaturedReviews;
+        renderFeaturedReviewChips();
         for (const target of [reviewMessage, reviewModalMessage]) {
             if (!target) continue;
             target.textContent = message;
@@ -3710,6 +3729,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (request !== featuredSelectionRequest) return;
                 if (detailsError) throw detailsError;
                 (details || []).forEach(review => featuredReviewDetails.set(review.id, review));
+                renderFeaturedReviewChips();
                 renderFeaturedReviewSlots();
             }
             await loadOwnerReviews();
@@ -3746,6 +3766,12 @@ document.addEventListener('DOMContentLoaded', () => {
         loadOwnerReviews();
     });
     document.querySelector('[data-featured-review-cancel]')?.addEventListener('click', () => closeFeaturedReviewModal(true));
+    reviewClear?.addEventListener('click', () => {
+        if (savingFeaturedReviews || !draftFeaturedReviewIds.length) return;
+        draftFeaturedReviewIds = [];
+        setFeaturedReviewStatus();
+        loadOwnerReviews();
+    });
     document.querySelector('[data-featured-review-close]')?.addEventListener('click', () => closeFeaturedReviewModal());
     reviewModal?.addEventListener('click', event => { if (event.target === reviewModal) closeFeaturedReviewModal(); });
     document.addEventListener('keydown', event => {
@@ -3754,14 +3780,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     reviewSave?.addEventListener('click', async () => {
-        if (draftFeaturedReviewIds.length !== 3 || !featuredSelectionChanged() || savingFeaturedReviews || !window.sb) return;
+        if (!featuredSelectionChanged() || savingFeaturedReviews || !window.sb) return;
+        const idsToSave = [...draftFeaturedReviewIds];
         const accepted = await window.InigoOwnerUI?.confirm({
-            title: 'Save featured reviews?',
-            message: 'This will update the three reviews shown on your landing page.',
-            confirmLabel: 'Save reviews',
+            title: 'Save homepage reviews?',
+            message: idsToSave.length
+                ? `This will show ${idsToSave.length} ${idsToSave.length === 1 ? 'review' : 'reviews'} on your landing page in the order shown.`
+                : 'This will remove all featured reviews from your landing page. Customer feedback will remain saved.',
+            confirmLabel: 'Save selection',
         });
         if (!accepted) return;
-        const idsToSave = [...draftFeaturedReviewIds];
         savingFeaturedReviews = true;
         if (reviewModal) reviewModal.inert = true;
         setFeaturedReviewStatus('Saving featured reviews…');
