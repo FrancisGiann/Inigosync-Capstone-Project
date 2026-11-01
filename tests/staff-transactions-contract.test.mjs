@@ -1,15 +1,22 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
 import pagination from '../includes/staffPagination.js';
 
 const html = await readFile(new URL('../Pages/staff_dashboard.html', import.meta.url), 'utf8');
 const script = await readFile(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
+const receiptHelperSource = await readFile(new URL('../includes/paymentAcknowledgment.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../Style/staff_dashboard.css', import.meta.url), 'utf8');
 const receiptStyles = await readFile(new URL('../Style/paymentAcknowledgment.css', import.meta.url), 'utf8');
 const visitMigration = await readFile(new URL('../supabase/migrations/20261031145608_staff_transaction_records_redesign.sql', import.meta.url), 'utf8');
+const receiptMigration = await readFile(new URL('../supabase/migrations/20261101011223_staff_transaction_receipt_context.sql', import.meta.url), 'utf8');
 const deployedVisitMigration = await readFile(new URL('../supabase/migrations/20261031134804_staff_visit_transactions.sql', import.meta.url), 'utf8');
 const legacyMigration = await readFile(new URL('../supabase/migrations/20261031134800_staff_transaction_status_and_method.sql', import.meta.url), 'utf8');
+const timeoutMigration = await readFile(new URL('../supabase/migrations/20261101051352_staff_early_checkout_auto_completion.sql', import.meta.url), 'utf8');
+const paidWalkinMigration = await readFile(new URL('../supabase/migrations/20261101051738_staff_paid_walkin_auto_timein.sql', import.meta.url), 'utf8');
+const walkinAttendanceMigration = await readFile(new URL('../supabase/migrations/20261101051924_staff_walkins_not_unattended.sql', import.meta.url), 'utf8');
+const walkinInvariantMigration = await readFile(new URL('../supabase/migrations/20261101133000_staff_paid_walkin_status_invariant.sql', import.meta.url), 'utf8');
 const transactionPanelStart = html.indexOf('<section class="staff-panel" data-staff-panel="transactions"');
 const transactionPanelEnd = html.indexOf('<section class="staff-panel" data-staff-panel="profile"', transactionPanelStart);
 const transactionPanel = html.slice(transactionPanelStart, transactionPanelEnd);
@@ -34,12 +41,12 @@ test('transaction toolbar and table expose the compact visit record fields', () 
     assert.match(transactionPanel, /data-staff-tx-status-choice="in_progress">In progress/);
     assert.match(transactionPanel, /data-staff-tx-status-choice="completed">Completed/);
     assert.match(transactionPanel, /data-staff-tx-status-menu[^>]*data-value="all"/);
-    assert.match(transactionPanel, /data-staff-tx-status-reset hidden>Clear status filter/);
+    assert.match(transactionPanel, /data-staff-tx-clear hidden>Clear filters/);
     assert.match(transactionPanel, /id="staff-tx-source-label">Source/);
     assert.match(transactionPanel, /id="staff-tx-source-current">All sources/);
     assert.match(transactionPanel, /data-staff-tx-source-choice="booking">Booking/);
     assert.match(transactionPanel, /data-staff-tx-source-choice="walkin">Walk-in/);
-    assert.match(transactionPanel, /data-staff-tx-source-reset hidden>Clear source filter/);
+    assert.doesNotMatch(transactionPanel, /Clear (?:status|source) filter/);
     assert.doesNotMatch(transactionPanel, /data-staff-filter-group="transactions"|data-staff-chip/);
     assert.match(transactionPanel, /data-staff-tx-sort-current[^>]*aria-labelledby="staff-tx-sort-label staff-tx-sort-current-label"/);
     assert.doesNotMatch(transactionPanel, /data-staff-tx-status-choice="unattended"/);
@@ -47,6 +54,45 @@ test('transaction toolbar and table expose the compact visit record fields', () 
     assert.match(transactionPanel, /data-staff-pagination="transactions"/);
     assert.match(html, /data-staff-pagination="overview"/);
     assert.match(html, /includes\/staffPagination\.js/);
+});
+
+test('Unattended hides the Source filter without inheriting its Transactions selection', () => {
+    assert.match(script, /transactions: \{ title: 'Transaction Records', subtitle: 'Staff transactions for bookings and walk-ins, plus unattended bookings\.' \}/);
+    assert.match(script, /Search customer or booking reference…/);
+    assert.doesNotMatch(script, /Search customer or booking \/ walk-in reference/);
+    assert.match(transactionPanel, /data-staff-tx-headers="unattended" hidden>[\s\S]*?<th>Source<\/th>/,
+        'the Unattended table retains its Source column');
+    assert.match(transactionPanel, /data-staff-tx-source-menu[^>]*data-value="all"/);
+    assert.match(script, /if \(txSourceMenu\) txSourceMenu\.hidden = transactionView === 'unattended'/);
+    assert.match(script, /scopeName === 'transactions' && transactionView === 'unattended'[\s\S]*?state\.activeFilter === 'all' \|\| row\.dataset\.status === state\.activeFilter/);
+    assert.match(script, /transactionView !== 'unattended' && \(txSourceMenu\?\.dataset\.value \|\| 'all'\) !== 'all'/,
+        'a preserved Transactions source choice does not show as an active Unattended filter');
+    assert.match(script, /menu\.dataset\.value = choice\?\.dataset\.staffTxSourceChoice \|\| 'all'/,
+        'Transactions keeps its functional Booking / Walk-in source selection');
+    assert.match(styles, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+    assert.match(styles, /\.staff-transaction-toolbar \.staff-search,[\s\S]*?\.staff-transaction-menu-trigger \{[^}]*height: 56px; min-height: 56px; background: var\(--color-bg-elevated\)/);
+    assert.match(styles, /\.staff-transaction-toolbar\[data-view="unattended"\] \[data-staff-tx-sort-menu\] \{ grid-column: 3; \}/);
+});
+
+test('Booking Overview includes both sources, a type filter, and action-priority ordering', () => {
+    const overviewStart = html.indexOf('<section class="staff-panel is-active" data-staff-panel="overview">');
+    const overviewEnd = html.indexOf('<section class="staff-panel" data-staff-panel="walkin"', overviewStart);
+    const overview = html.slice(overviewStart, overviewEnd);
+    const headers = [...overview.match(/<thead>[\s\S]*?<tr>([\s\S]*?)<\/tr>/)[1].matchAll(/<th>([^<]+)<\/th>/g)].map((match) => match[1]);
+    assert.deepEqual(headers, ['Booking ID', 'Customer Name', 'Type', 'Sport', 'Courts', 'Time', 'Balance Due', 'Actions']);
+    assert.match(overview, /data-staff-overview-type/);
+    assert.match(overview, /option value="booking">Booking/);
+    assert.match(overview, /option value="walkin">Walk-in/);
+    assert.doesNotMatch(script.slice(script.indexOf('function overviewEntries()'), script.indexOf('function renderOverviewSportOptions')), /sourceType !== 'booking'/);
+    assert.match(script, /const matchesType = !type \|\| row\.sourceType === type/);
+    assert.match(script, /if \(staffCanTimeIn\(row, status\)\) return 0;[\s\S]*?if \(status === 'inplay'\) return 1;/);
+    assert.match(script, /merged\.sort\(compareOverviewRows\)/);
+    assert.match(script, /Confirm Time-Out/);
+    assert.match(script, /await confirmStaffAction\([\s\S]*?Time-Out[\s\S]*?staff_record_time_out/);
+    assert.match(timeoutMigration, /b\.checked_out_at is null and b\.end_at<=now\(\)/);
+    assert.match(timeoutMigration, /w\.checked_out_at is null and w\.end_at<=now\(\)/);
+    assert.match(timeoutMigration, /b\.checked_out_at is not null and b\.end_at<=now\(\)/);
+    assert.match(timeoutMigration, /w\.checked_out_at is not null and w\.end_at<=now\(\)/);
 });
 
 test('staff transaction client renders actual attendance times and collected-at-check-in amounts', () => {
@@ -63,7 +109,7 @@ test('staff transaction client renders actual attendance times and collected-at-
     assert.match(script, /row\.amount_minor/);
     assert.match(script, /row\.status === 'unattended' \? 0 : row\.amount_minor/);
     assert.match(script, /row\.fully_paid === true \? 'Full payment paid' : 'No payment collected at Time-In'/);
-    assert.match(script, /visibleStatuses = transactionView === 'unattended' \? \['unattended'\] : \['in_progress', 'completed'\]/);
+    assert.match(script, /visibleStatuses = transactionView === 'unattended' \? \['unattended'\] : \['arrived', 'in_progress', 'completed'\]/);
     assert.match(script, /const visitReference = `\$\{source\} #\$\{row\.visit_id \|\| '—'\}`/);
     assert.match(script, /data-label="Scheduled visit"/);
     assert.match(script, /FULL PAYMENT PAID — NO NEW PAYMENT/);
@@ -91,10 +137,10 @@ test('staff transaction client renders actual attendance times and collected-at-
 });
 
 test('transaction records fit the panel and stack into labeled cards on narrow viewports', () => {
-    assert.match(styles, /\.staff-transaction-toolbar \{[^}]*display: grid; grid-template-columns: minmax\(0, 1\.7fr\) repeat\(4, minmax\(0, 1fr\)\)/);
+    assert.match(styles, /\.staff-transaction-toolbar \{[^}]*display: grid; grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
     assert.match(styles, /\.staff-transaction-tab\.is-active/);
     assert.match(styles, /\.staff-transaction-menu-options\[hidden\], \.staff-transaction-menu-reset\[hidden\] \{ display: none !important; \}/);
-    assert.match(styles, /\.staff-transaction-status-filter\[hidden\] \{ display: none !important; \}/);
+    assert.match(styles, /\.staff-transaction-status-filter\[hidden\], \.staff-transaction-source-filter\[hidden\] \{ display: none !important; \}/);
     assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.staff-transaction-toolbar \{ grid-template-columns: minmax\(0, 1fr\); \}/);
     assert.match(styles, /\.staff-transaction-toolbar \{ grid-template-columns: minmax\(0, 1fr\); \}/);
     assert.match(styles, /\.staff-panel\[data-staff-panel="transactions"\] \.staff-table-wrap \{ overflow-x: hidden; \}/);
@@ -147,8 +193,8 @@ test('staff table pagination shows ten rows, navigates numbered pages, and clamp
     assert.match(script, /overviewPage = 1;\s*renderFilteredOverview\(\);/);
     assert.match(script, /renderStaffTablePagination\(pagination, matchingRows\.length, state\.page/);
     assert.match(script, /renderStaffTablePagination\(overviewPagination, visible\.length, overviewPage/);
-    assert.match(script, /const timeOrder = \(Number\.isFinite\(bTime\) \? bTime : 0\) - \(Number\.isFinite\(aTime\) \? aTime : 0\);\s*return timeOrder \|\| staffOverviewIdLabel\(a\)\.localeCompare\(staffOverviewIdLabel\(b\)/,
-        'Booking Overview sorts newest first with a deterministic ID tie-break');
+    assert.match(script, /if \(Number\.isFinite\(aTime\) && aTime !== bTime\) return aTime - bTime;[\s\S]*?staffOverviewIdLabel\(a\)\.localeCompare\(staffOverviewIdLabel\(b\)/,
+        'Booking Overview orders rows within each action group by start time and then ID');
 });
 
 test('View receipt opens the shared acknowledgment card with working print and download actions', () => {
@@ -191,18 +237,21 @@ test('visit transaction RPC uses persisted time-in event IDs and keeps no-shows 
     assert.match(visitMigration, /where b\.status = 'unattended' and b\.checked_in_at is null/);
     assert.match(visitMigration, /where w\.status = 'unattended' and w\.checked_in_at is null/);
     assert.match(visitMigration, /null::numeric as amount_collected/);
-    assert.match(visitMigration, /b\.amount_total > 0 and b\.amount_paid >= b\.amount_total[\s\S]*?w\.amount_total > 0 and w\.amount_paid >= w\.amount_total/);
-    assert.match(visitMigration, /'fully_paid', visits\.fully_paid/);
-    assert.match(visitMigration, /'booking_total_minor', visits\.booking_total_minor/);
+    assert.doesNotMatch(visitMigration, /'fully_paid', visits\.fully_paid/);
+    assert.match(receiptMigration, /b\.amount_total > 0 and b\.amount_paid >= b\.amount_total[\s\S]*?w\.amount_total > 0 and w\.amount_paid >= w\.amount_total/);
+    assert.match(receiptMigration, /'fully_paid', visits\.fully_paid/);
+    assert.match(receiptMigration, /'booking_total_minor', visits\.booking_total_minor/);
     assert.match(visitMigration, /'visit_id', visits\.visit_id/);
-    assert.match(visitMigration, /'starts_at', visits\.visit_starts_at,[\s\S]*?'ends_at', visits\.visit_ends_at,[\s\S]*?'sport', visits\.visit_sport,[\s\S]*?'court', visits\.visit_court,[\s\S]*?'unit', visits\.visit_unit,[\s\S]*?'duration_minutes', visits\.visit_duration_minutes/);
-    assert.match(visitMigration, /rate_unit_snapshot is not null or b\.payment_id is not null or b\.amount_paid > 0/);
-    assert.match(visitMigration, /rate_unit_snapshot is not null or w\.payment_id is not null or w\.amount_paid > 0/);
+    assert.match(receiptMigration, /'starts_at', visits\.visit_starts_at,[\s\S]*?'ends_at', visits\.visit_ends_at,[\s\S]*?'sport', visits\.visit_sport,[\s\S]*?'court', visits\.visit_court,[\s\S]*?'unit', visits\.visit_unit,[\s\S]*?'duration_minutes', visits\.visit_duration_minutes/);
+    assert.match(receiptMigration, /rate_unit_snapshot is not null or b\.payment_id is not null or b\.amount_paid > 0/);
+    assert.match(receiptMigration, /rate_unit_snapshot is not null or w\.payment_id is not null or w\.amount_paid > 0/);
     assert.match(visitMigration, /'checked_in_at', visits\.checked_in_at/);
     assert.match(visitMigration, /'checked_out_at', visits\.checked_out_at/);
     assert.match(visitMigration, /left join internal\.payment_acknowledgments ack on ack\.payment_id = visits\.payment_id/);
     assert.match(visitMigration, /revoke all on function public\.staff_get_involved_transactions\(\) from public, anon/);
     assert.match(visitMigration, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
+    assert.match(receiptMigration, /p\.id = v_actor and p\.role = 'staff' and p\.status = 'active'/);
+    assert.match(receiptMigration, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
 });
 
 test('deployed visit transaction migration is preserved and redesign stays in a forward migration', () => {
@@ -226,11 +275,56 @@ test('switching Transactions and Unattended re-renders columns, rows, and view-s
     assert.match(script, /colspan="\$\{transactionView === 'unattended' \? '5' : '7'\}" class="staff-table-message"/);
 });
 
-test('in-progress time-in rows are returned before checkout and labeled by the client', () => {
+test('time-in rows remain visible while waiting and after play starts', () => {
     assert.match(visitMigration, /where a\.actor_id = v_actor[\s\S]*?b\.checked_in_at is not null[\s\S]*?w\.checked_in_at is not null/);
     assert.match(visitMigration, /when visits\.checked_out_at is null then 'in_progress'/);
     assert.match(script, /in_progress: 'In progress'/);
-    assert.match(script, /visibleStatuses = transactionView === 'unattended' \? \['unattended'\] : \['in_progress', 'completed'\]/);
+    assert.match(script, /visibleStatuses = transactionView === 'unattended' \? \['unattended'\] : \['arrived', 'in_progress', 'completed'\]/);
+    assert.match(html, /data-staff-tx-status-choice="arrived">Arrived · waiting/);
+    const start = script.indexOf('    function transactionDisplayStatus(row) {');
+    const end = script.indexOf('    let transactionRows =', start);
+    assert.ok(start >= 0 && end > start);
+    const context = { Date: class FixedDate extends Date { static now() { return Date.parse('2026-11-01T08:00:00Z'); } } };
+    vm.runInNewContext(`${script.slice(start, end)}\nglobalThis.status = transactionDisplayStatus;`, context);
+    const waiting = { status: 'in_progress', checked_in_at: '2026-11-01T07:45:00Z', checked_out_at: null, visits: [{ starts_at: '2026-11-01T08:30:00Z' }] };
+    assert.equal(context.status(waiting), 'arrived');
+    assert.equal(context.status({ ...waiting, visits: [{ starts_at: '2026-11-01T08:00:00Z' }] }), 'in_progress');
+    assert.equal(context.status({ ...waiting, checked_out_at: '2026-11-01T08:15:00Z' }), 'in_progress');
+});
+
+test('paid staff walk-ins time in automatically and only bookings can be unattended', () => {
+    assert.match(paidWalkinMigration, /create trigger zzzzzz_walkin_auto_time_in_paid_order\s+before insert or update on public\.walk_in_booking/);
+    assert.match(paidWalkinMigration, /new\.amount_paid >= new\.amount_total/);
+    assert.match(paidWalkinMigration, /o\.status = 'paid'/);
+    assert.match(paidWalkinMigration, /new\.checked_in_at := now\(\)/);
+    assert.match(paidWalkinMigration, /'automatic_time_in', true/);
+    assert.match(paidWalkinMigration, /set checked_in_at = p\.created_at[\s\S]*?checked_out_at = case when w\.end_at <= now\(\) then w\.end_at else null end[\s\S]*?status = case when w\.end_at <= now\(\) then 'completed' else 'confirmed' end/);
+    assert.match(paidWalkinMigration, /a\.action = 'recorded_walk_in' and a\.actor_id = o\.staff_id/);
+    assert.match(paidWalkinMigration, /a\.action = 'marked_unattended' and a\.actor_id is null/);
+    const functionStart = paidWalkinMigration.indexOf('create or replace function public.staff_get_involved_transactions()');
+    const functionBody = paidWalkinMigration.slice(functionStart);
+    assert.match(functionBody, /where b\.status = 'unattended' and b\.checked_in_at is null/);
+    assert.doesNotMatch(functionBody, /where w\.status = 'unattended'/,
+        'walk-ins cannot appear in the unattended tab');
+    assert.match(functionBody, /p\.id = v_actor and p\.role = 'staff' and p\.status = 'active'/,
+        'the replacement RPC keeps the active-staff authorization gate');
+    assert.match(functionBody, /revoke all on function public\.staff_get_involved_transactions\(\) from public, anon/);
+    assert.match(functionBody, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
+    assert.match(walkinAttendanceMigration, /create or replace function internal\.cancel_no_show_bookings\(\)/);
+    const attendanceFunction = walkinAttendanceMigration.slice(walkinAttendanceMigration.indexOf('as $$'));
+    assert.match(attendanceFunction, /update public\.booking b[\s\S]*?set status = 'unattended'/);
+    assert.doesNotMatch(attendanceFunction, /update public\.walk_in_booking/);
+    assert.match(walkinAttendanceMigration, /revoke all on function internal\.cancel_no_show_bookings\(\) from public, anon, authenticated/);
+    assert.match(walkinInvariantMigration, /status = 'completed'/,
+        'paid historical walk-ins are completed under the current attendance rule');
+    assert.match(walkinInvariantMigration, /p\.created_at <= w\.end_at/,
+        'historical conversion cannot put checkout before time-in');
+    assert.match(walkinInvariantMigration, /add constraint walk_in_booking_status_check[\s\S]*?'pending', 'confirmed', 'cancelled', 'completed'/,
+        'the database rejects unattended walk-ins');
+    assert.match(walkinInvariantMigration, /old\.status = 'pending'/,
+        'the final trigger only converts pending walk-ins to confirmed on verified settlement');
+    assert.match(walkinInvariantMigration, /owner_order\.staff_id = \(select auth\.uid\(\)\)/,
+        'the final trigger binds the authenticated marker to the order owner');
 });
 
 test('legacy transaction RPC retains its staff and receipt authorization rules', () => {
@@ -263,7 +357,6 @@ test('zero-collection prepaid receipt is built from the time-in event without cr
     const receiptStart = script.indexOf('function openTransactionVisitRecord(row)');
     const receiptEnd = script.indexOf('function closeStaffReceiptModal()', receiptStart);
     const zeroReceipt = script.slice(receiptStart, receiptEnd);
-    assert.match(zeroReceipt, /Number\(row\.amount_minor\) === 0/);
     assert.match(zeroReceipt, /row\.fully_paid === true/);
     assert.match(zeroReceipt, /amountMinor !== null && amountMinor !== undefined && amountMinor !== ''[\s\S]*?Number\(amountMinor\) === 0/);
     assert.match(zeroReceipt, /bookingTotalMinor !== null && bookingTotalMinor !== undefined && bookingTotalMinor !== ''/);
@@ -271,9 +364,13 @@ test('zero-collection prepaid receipt is built from the time-in event without cr
     assert.match(zeroReceipt, /NO PAYMENT COLLECTED AT TIME-IN/);
     assert.match(zeroReceipt, /₱0\.00 was collected at Time-In/);
     assert.match(zeroReceipt, /Booking ID|Walk-In ID/);
+    assert.match(zeroReceipt, /row\.source === 'walkin' \? 'Walk-in total' : 'Booking total'/);
+    assert.match(zeroReceipt, /row\.source === 'walkin' \? 'walk-in visit' : 'booking'/);
     assert.match(zeroReceipt, /row\.transaction_id/);
-    assert.match(zeroReceipt, /visit\.sport/);
-    assert.match(zeroReceipt, /visit\.court/);
+    assert.match(zeroReceipt, /formatLocation\(visit\)/);
+    assert.match(zeroReceipt, /location\.sport/);
+    assert.match(zeroReceipt, /location\.court/);
+    assert.match(zeroReceipt, /location\.unit/);
     assert.match(zeroReceipt, /visit\.starts_at/);
     assert.match(zeroReceipt, /visit\.ends_at/);
     assert.match(zeroReceipt, /row\.booking_total_minor/);
@@ -281,4 +378,54 @@ test('zero-collection prepaid receipt is built from the time-in event without cr
     assert.match(zeroReceipt, /does not verify any earlier payment/);
     assert.doesNotMatch(zeroReceipt, /window\.sb|\.rpc\(|payment_id|insert into public\.payment/i);
     assert.match(script, /'<span aria-label="Receipt unavailable">—<\/span>'/);
+});
+
+test('time-in acknowledgment renders booking and walk-in context without inventing a payment', () => {
+    const start = script.indexOf('function openTransactionVisitRecord(row)');
+    const end = script.indexOf('function closeStaffReceiptModal()', start);
+    const source = script.slice(start, end).trim();
+    const content = { innerHTML: '', scrollTop: 0 };
+    const receiptWindow = { escapeHtml: (value) => String(value) };
+    vm.runInNewContext(receiptHelperSource, { window: receiptWindow });
+    const context = {
+        staffReceiptModalContent: content,
+        staffReceiptModal: { hidden: true, setAttribute() {}, querySelector() { return null; } },
+        staffReceiptModalTitle: { textContent: '' },
+        staffReceiptDialog: { focus() {} },
+        staffReceiptModalLastFocus: null,
+        updateStaffModalBackground() {},
+        STAFF_TIME_ZONE: 'Asia/Manila',
+        formatStaffPeso: (amount) => `₱${amount.toFixed(2)}`,
+        window: receiptWindow,
+        document: { activeElement: null },
+    };
+    const render = vm.runInNewContext(`(${source})`, context);
+    const booking = {
+        transaction_id: 'tx-1', visit_id: 70, source: 'booking', customer_name: 'Customer',
+        checked_in_at: '2026-10-28T11:17:00+08:00', checked_out_at: '2026-10-28T11:23:00+08:00',
+        amount_minor: 0, booking_total_minor: 200, fully_paid: true,
+        visits: [{ sport: 'Basketball', court: 'Court 1', unit: 'Unit A',
+            starts_at: '2026-10-28T11:00:00+08:00', ends_at: '2026-10-28T12:00:00+08:00', duration_minutes: 60 }],
+    };
+    render(booking);
+    assert.match(content.innerHTML, /Transaction ID<\/span><strong>tx-1/);
+    assert.match(content.innerHTML, /Booking ID<\/span><strong>#70/);
+    assert.match(content.innerHTML, /Basketball|Court 1|Unit A/);
+    assert.match(content.innerHTML, /Booking total<\/span><strong>₱2\.00/);
+    assert.match(content.innerHTML, /Collected at Time-In<\/span><strong>₱0\.00/);
+    assert.match(content.innerHTML, /FULL PAYMENT PAID — NO NEW PAYMENT/);
+
+    render({ ...booking, visits: [{ sport: 'Badminton', court: 'Badminton', unit: 'Court 1' }] });
+    assert.match(content.innerHTML, /Sport<\/span><strong>Badminton/);
+    assert.match(content.innerHTML, /Court<\/span><strong>Court 1/);
+    assert.doesNotMatch(content.innerHTML, /Unit<\/span><strong>Court 1/);
+
+    render({ ...booking, source: 'walkin', visit_id: 71 });
+    assert.match(content.innerHTML, /Walk-In ID<\/span><strong>#71/);
+    assert.match(content.innerHTML, /Walk-in total<\/span><strong>₱2\.00/);
+    assert.match(content.innerHTML, /This walk-in visit is fully paid/);
+
+    render({ ...booking, fully_paid: false });
+    assert.match(content.innerHTML, /NO PAYMENT COLLECTED AT TIME-IN/);
+    assert.doesNotMatch(content.innerHTML, /FULL PAYMENT PAID — NO NEW PAYMENT/);
 });

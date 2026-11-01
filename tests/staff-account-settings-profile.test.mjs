@@ -219,3 +219,142 @@ test('delayed profile renders preserve mutable drafts while editing and repaint 
     assert.equal(elements.get('[data-staff-settings-display-address]').textContent, 'New address');
     assert.equal(elements.get('[data-staff-settings-display-emergency-name]').textContent, 'New contact');
 });
+
+function createStaffMobileAvailabilityHarness(invoke) {
+    const start = source.indexOf('    const staffMobileAvailability = {', source.indexOf('const staffSettingsMobileInput ='));
+    const end = source.indexOf("    staffSettingsMobileInput?.addEventListener('input', scheduleStaffMobileAvailability);", start);
+    assert.ok(start >= 0 && end > start, 'production mobile availability handler exists');
+    const refreshStart = source.indexOf('    function currentStaffMobileNormalized() {', end);
+    const refreshEnd = source.indexOf("    if (staffSettingsMobileInput) staffSettingsMobileInput.addEventListener('input', refreshStaffPhoneValidationUi);", refreshStart);
+    assert.ok(refreshStart >= 0 && refreshEnd > refreshStart, 'production mobile status refresh exists');
+    const input = {
+        value: '', dataset: {}, attributes: {},
+        setAttribute(name, value) { this.attributes[name] = value; },
+    };
+    const classes = new Set();
+    const status = {
+        dataset: {}, textContent: '',
+        classList: { add(name) { classes.add(name); }, remove(name) { classes.delete(name); } },
+        get hasError() { return classes.has('is-error'); },
+    };
+    const callbacks = new Map();
+    let timerId = 0;
+    const context = {
+        document: { querySelector(selector) {
+            if (selector === '[data-staff-settings-mobile]') return input;
+            if (selector === '[data-staff-phone-status]') return status;
+            return null;
+        } },
+        window: {
+            validatePhMobile(raw) {
+                const digits = String(raw).replace(/\D/g, '');
+                return /^09\d{9}$/.test(digits)
+                    ? { valid: true, normalized: digits }
+                    : { valid: false, message: 'Invalid format' };
+            },
+            sb: { functions: { invoke } },
+        },
+        setTimeout(callback) { const id = ++timerId; callbacks.set(id, callback); return id; },
+        clearTimeout(id) { callbacks.delete(id); },
+        AbortController,
+    };
+    runInNewContext(`
+        const staffSettingsMobileInput = document.querySelector('[data-staff-settings-mobile]');
+        const staffPhoneStatus = document.querySelector('[data-staff-phone-status]');
+        ${source.slice(start, end)}
+        ${source.slice(refreshStart, refreshEnd)}
+        globalThis.checkMobile = scheduleStaffMobileAvailability;
+        globalThis.refreshMobile = refreshStaffPhoneValidationUi;
+    `, context);
+    return {
+        context, input, status,
+        async runTimer() {
+            const [id, callback] = callbacks.entries().next().value || [];
+            assert.ok(callback, 'a debounced validation request is scheduled');
+            callbacks.delete(id);
+            await callback();
+        },
+    };
+}
+
+test('staff primary contact availability distinguishes duplicate, available, invalid, and service failure', async () => {
+    const duplicate = createStaffMobileAvailabilityHarness(async () => ({
+        data: { valid: false, reason: 'in_use' }, error: null,
+    }));
+    duplicate.input.value = '09171234567';
+    duplicate.context.checkMobile();
+    await duplicate.runTimer();
+    assert.equal(duplicate.input.dataset.phoneAvailability, 'duplicate');
+    assert.equal(duplicate.input.dataset.checkedPhone, undefined);
+    assert.equal(duplicate.input.attributes['aria-invalid'], 'true');
+    assert.equal(duplicate.status.dataset.state, 'in_use');
+    assert.match(duplicate.status.textContent, /already registered in this app/i);
+    assert.match(duplicate.status.textContent, /cannot use as primary contact/i);
+    const duplicateMessage = duplicate.status.textContent;
+    duplicate.context.refreshMobile();
+    assert.equal(duplicate.status.textContent, duplicateMessage, 'refresh retains the duplicate explanation');
+    assert.match(css, /\[data-staff-settings-mobile\]\[data-phone-availability="duplicate"\][\s\S]*?border-color:\s*var\(--color-alert\)/,
+        'duplicate primary numbers retain the red invalid border');
+    assert.match(css, /\[data-staff-settings-mobile\]\[data-phone-availability="failed"\][\s\S]*?border-color:\s*var\(--color-alert\)/,
+        'service failures retain the red invalid border');
+
+    const available = createStaffMobileAvailabilityHarness(async () => ({
+        data: { valid: true, normalized: '+639171234567' }, error: null,
+    }));
+    available.input.value = '09171234567';
+    available.context.checkMobile();
+    await available.runTimer();
+    assert.equal(available.input.dataset.phoneAvailability, 'available');
+    assert.equal(available.input.dataset.checkedPhone, '09171234567');
+    assert.equal(available.input.attributes['aria-invalid'], 'false');
+    assert.equal(available.status.dataset.state, 'available');
+
+    const invalid = createStaffMobileAvailabilityHarness(async () => assert.fail('invalid format must not call the service'));
+    invalid.input.value = '0912';
+    invalid.context.checkMobile();
+    assert.equal(invalid.input.dataset.phoneAvailability, 'invalid');
+    assert.equal(invalid.input.attributes['aria-invalid'], 'true');
+    assert.equal(invalid.status.dataset.state, 'invalid');
+    assert.match(invalid.status.textContent, /invalid format/i);
+
+    const failure = createStaffMobileAvailabilityHarness(async () => ({ data: null, error: new Error('offline') }));
+    failure.input.value = '09171234567';
+    failure.context.checkMobile();
+    await failure.runTimer();
+    assert.equal(failure.input.dataset.phoneAvailability, 'failed');
+    assert.equal(failure.input.dataset.checkedPhone, undefined);
+    assert.equal(failure.input.attributes['aria-invalid'], 'true');
+    assert.equal(failure.status.dataset.state, 'error');
+    assert.match(failure.status.textContent, /check failed/i);
+    assert.doesNotMatch(failure.status.textContent, /already registered/i);
+    const failureMessage = failure.status.textContent;
+    failure.context.refreshMobile();
+    assert.equal(failure.status.textContent, failureMessage, 'refresh retains the service-failure message');
+});
+
+test('staff primary contact availability ignores a stale response after the draft changes', async () => {
+    let resolveFirst;
+    const calls = [];
+    const harness = createStaffMobileAvailabilityHarness((name, options) => {
+        calls.push(options);
+        if (calls.length === 1) return new Promise(resolve => { resolveFirst = resolve; });
+        return Promise.resolve({ data: { valid: true, normalized: '+639131234567' }, error: null });
+    });
+    harness.input.value = '09171234567';
+    harness.context.checkMobile();
+    const staleRequest = harness.runTimer();
+    await Promise.resolve();
+
+    harness.input.value = '09131234567';
+    harness.context.checkMobile();
+    resolveFirst({ data: { valid: false, reason: 'in_use' }, error: null });
+    await staleRequest;
+    assert.equal(harness.status.dataset.state, 'checking');
+    assert.equal(harness.input.dataset.phoneAvailability, '');
+
+    await harness.runTimer();
+    assert.equal(calls.length, 2);
+    assert.equal(harness.input.dataset.phoneAvailability, 'available');
+    assert.equal(harness.input.dataset.checkedPhone, '09131234567');
+    assert.equal(harness.status.dataset.state, 'available');
+});

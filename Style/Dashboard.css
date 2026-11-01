@@ -404,14 +404,22 @@ html:root[data-theme] .dash-sidebar-brand .logo-text {
 
 .dash-badge-dot {
     position: absolute;
-    top: 6px;
-    right: 7px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
+    top: -4px;
+    right: -5px;
+    min-width: 18px;
+    height: 18px;
+    box-sizing: border-box;
+    padding: 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
     background: var(--color-primary);
     border: 1.5px solid var(--color-bg-elevated);
+    color: #fff;
+    font: 700 10px/1 var(--font-body);
 }
+.dash-badge-dot[hidden] { display: none; }
 
 /* .dash-feedback-btn-mobile (the standalone topbar Feedback button shown
    only below 860px) and its svg rule were removed outright by R4-1

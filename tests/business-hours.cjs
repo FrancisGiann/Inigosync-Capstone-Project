@@ -32,7 +32,7 @@ async function loadWithRpc(rpc) {
             '2026-09-30': { open_hour: 8, close_hour: 18 },
             '2026-10-01': { open_hour: 1, close_hour: 24 },
         };
-        return { data: { ...dayRules[args.p_date], is_closed: false, grace_minutes: 45, timezone: 'Asia/Manila' }, error: null };
+        return { data: { ...dayRules[args.p_date], is_closed: false, grace_minutes: 45, slot_cutoff_minutes: 17, timezone: 'Asia/Manila' }, error: null };
     });
     const hours = testHours.businessHours;
 
@@ -41,6 +41,7 @@ async function loadWithRpc(rpc) {
     assert.equal(first.openHour, 10);
     assert.equal(first.closeHour, 22);
     assert.equal(first.graceMinutes, 45);
+    assert.equal(first.slotCutoffMinutes, 17, 'the shared reader keeps the booking cutoff separate from no-show grace');
     assert.equal(first.authoritative, true);
     await hours.getForDate('2026-09-29');
     assert.equal(calls.length, 1, 'same-day rules are cached');
@@ -72,5 +73,6 @@ async function loadWithRpc(rpc) {
     assert.equal(fallback.openHour, 8);
     assert.equal(fallback.closeHour, 20);
     assert.equal(fallback.authoritative, false);
+    assert.equal(fallback.slotCutoffMinutes, 10, 'missing or offline rules keep the safe default cutoff');
     console.log('PASS business hours: Manila date, date-specific rules, cache and fallback');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -946,9 +946,10 @@ scrolling:
    `Walk-in`), visit status (`In progress` or `Completed`), amount collected by
    staff, and `View receipt`. The staff transaction receipt should combine
    the time-in audit event with its payment acknowledgment when money was
-   collected. For a fully prepaid zero-collection visit, show `₱0.00` and a
-   staff transaction receipt marked `Prepaid / no new payment`; generating it
-   from the time-in event must not invent a second customer payment. The
+   collected. For a verified fully paid zero-collection visit, show `₱0.00` and a
+   staff time-in acknowledgment with transaction ID, booking/walk-in ID, visit
+   details, and `Full payment paid`; generating it from the time-in event must
+   not invent a second customer payment. The
    mockup's short transaction IDs are illustrative; the actual persisted event
    UUID must remain accessible in the detail/receipt view and search.
 2. **Unattended visits** — booking or walk-in reference, customer, scheduled
@@ -973,8 +974,15 @@ replacement in
 was applied to the connected Supabase project on 2026-10-31. It returns staff-attributed
 time-in audit IDs and unattended visits separately, with no payment ID or
 receipt fields for unattended rows. Zero-collection time-in rows use the event
-ID to generate a `PREPAID — NO NEW PAYMENT` staff receipt with ₱0.00; this does
-not create a payment or acknowledgment row.
+ID to generate a time-in acknowledgment with ₱0.00 collected; this does not
+create a payment or acknowledgment row. The follow-up forward migration
+[`20261101011223_staff_transaction_receipt_context.sql`](supabase/migrations/20261101011223_staff_transaction_receipt_context.sql)
+was applied to the connected Supabase project on 2026-11-01. It adds verified
+current full-payment state and available visit/booking details to the RPC.
+The existing zero-collection booking in development records returns booking ID
+70, `fully_paid: true`, and `amount_minor: 0`; no records were converted or
+deleted. The acknowledgment distinguishes the booking total from the amount
+collected at time-in.
 
 The read-only live-data review on 2026-10-31 found six staff-attributed time-in
 events (five `timed_in`, one `collected_online_balance` carrying
@@ -990,3 +998,239 @@ staff RPC still returned 24 records (3 completed, 21 unattended, 0 currently
 in progress), and anonymous execution remains denied. Browser testing remains
 with the project manager. A live customer-role call was also rejected by the
 active-staff gate; no customer or payment data changed during verification.
+
+### Paid staff walk-ins start as time-ins
+
+The staff walk-in cash flow now collects tender and displays change in an
+accessible payment dialog after the staff member selects Cash and clicks
+**Complete cash payment**. Pay Online keeps its PayMongo checkout and return
+flow. Existing server paths establish authoritative payment before
+reservation confirmation: the cash order RPC creates its order as `paid`
+before inserting confirmed reservations, and `record_paymongo_paid` changes an
+online order to `paid` before confirming its pending reservations. The
+baseline migration
+[`20261101051738_staff_paid_walkin_auto_timein.sql`](supabase/migrations/20261101051738_staff_paid_walkin_auto_timein.sql)
+sets Time-In on fully paid staff walk-in reservations. The connected project
+records it at `20261101051738`, followed by the authorization gate at
+`20261101051857`. The gate allows automatic Time-In only for the active
+order-owning staff member inside the transaction-local staff walk-in RPC, or
+for the trusted PayMongo service role. The audit trigger applies the same
+authorization check. Both functions use `SECURITY DEFINER`, an empty
+`search_path`, and revoke execute from client roles.
+
+The local forward replacement
+[`20261101131600_staff_paid_walkin_auto_timein_auth_gate.sql`](supabase/migrations/20261101131600_staff_paid_walkin_auto_timein_auth_gate.sql)
+keeps the gate after the baseline on fresh migration replay. It is installed
+in development. The subsequent correction migration is recorded live as
+`20261101052310` and installs the final pending-only gate. Repository file
+timestamps use the configured Asia/Shanghai clock while MCP migration
+versions are UTC; reconcile the timestamp mapping before a CLI-managed push.
+
+The baseline included a historical conversion, which was too broad. A
+read-only reconstruction found nine converted visits: three remain confirmed
+and inside their scheduled windows, while six had a prior system
+`marked_unattended` event and had passed `end_at`. All nine had one paid staff
+order, payment, acknowledgment, and matching staff-created walk-in audit;
+payment occurred from 138 minutes before to 17 minutes after scheduled start.
+The six ended no-show rows did not have reliable attendance evidence.
+
+The correction migration
+[`20261101132200_staff_walkin_attendance_backfill_correction.sql`](supabase/migrations/20261101132200_staff_walkin_attendance_backfill_correction.sql)
+restores those six rows to `unattended` with null attendance timestamps. It
+retains their original automatic-Time-In audit events and writes six
+compensating system events. The three active confirmed paid visits remain
+timed in. The correction also limits automatic Time-In to inserts and
+pending-to-confirmed settlement, so a service-role transition from an
+unattended or terminal state cannot create attendance. Migration
+[`20261101051924_staff_walkins_not_unattended.sql`](supabase/migrations/20261101051924_staff_walkins_not_unattended.sql)
+restricts future no-show processing to customer bookings.
+The intervening
+[`20261101052431_staff_paid_walkin_status_invariant.sql`](supabase/migrations/20261101052431_staff_paid_walkin_status_invariant.sql)
+is intentionally a no-op: a proposed invariant would have reclassified
+elapsed no-shows as attended and rejected their valid `unattended` status.
+It was not applied to development. Keep that version inert on fresh replay.
+
+The effective final trigger is now also guarded against direct timestamp
+forgery. Local migration `20261101150000_staff_paid_walkin_direct_update_guard.sql`
+rejects an authenticated insert/update that sets or rewrites `checked_in_at`
+on an order-backed walk-in unless it comes from the owning active staff RPC or
+the verified service-role settlement. Its predecessor,
+`20261101141000_staff_paid_walkin_owner_gate.sql`, contains the owner-bound
+pending-to-confirmed gate. Both function-only migrations were applied through
+the Supabase apply tool; remote history recorded versions `20261101061932`
+and `20261101062227`. A concurrent remote migration at `20261101061940`
+(`staff_paid_walkin_trusted_settlement`) has a local-name counterpart at
+`20261101133100`, but its recorded version differs. The live functions were
+read back after the latest application and include the owner, active-profile,
+marker, pending-state, and direct timestamp-write checks. The authenticated
+role's direct UPDATE against a real visit was additionally denied by the
+current table grants (`permission denied for table walk_in_booking`).
+
+Development now contains 16 walk-ins, 38 payments, 38 acknowledgments, nine
+automatic-Time-In events across nine unique visits, six compensation events,
+zero unattended walk-ins, and one active timed-in walk-in. The seven rows
+without a check-in are cancelled orders whose payment attempts expired; they
+are not active transactions and should not appear in Transaction Records.
+Event validation found no duplicate events, missing visit rows, actor
+mismatches, payment/order mismatches, or missing check-in timestamps. No rows
+changed in my rollback-only security probes. Both trusted cash-owner and
+service-role settlement paths produced one audit event in the probe; no live
+PayMongo walk-in record was available, so PayMongo-specific end-to-end
+settlement remains unverified.
+The Supabase CLI and `npx` are unavailable, and remote versions differ from
+local filename timestamps (`20261101051857` remote gate vs local
+`20261101131600`, with remote `20261101052310`/`20261101052431` history and
+local `20261101132200`/`20261101133000`/`20261101133100` variants). Do not run
+`migration repair` or a CLI push until the migration definitions/provenance
+are reconciled; the currently deployed function-only guards have recorded
+remote history entries.
+
+The focused contract tests now check payment, acknowledgment, staff audit,
+correction, migration ordering, and final direct-write gate behavior.
+
+### Staff Booking Overview attendance controls
+
+The Booking Overview now includes both customer bookings and staff walk-ins,
+with an explicit Type column and a Booking/Walk-in filter. Existing customer,
+sport, court/unit, scheduled time, balance, search, date filter, and row actions
+remain. The default date filter is today's Manila date. The date picker's
+native Clear action leaves the date blank to show today and upcoming dates;
+the separate Clear filters button restores today's date. Staff can also select
+a future date explicitly. Within the selected date, actionable Time-In rows
+come first, then actionable Time-Out rows, then
+rows with no action; each group sorts by booking date and start time with a
+stable ID tie-break. A staff Time-Out requires confirmation; on success, the
+row leaves the active overview.
+
+The existing Time-In payment modal requires settlement of any outstanding
+balance before check-in, while paid walk-ins appear as active time-out-only
+rows through the existing paid-walk-in trigger. The existing one-minute
+attendance job automatically checks out active booking and walk-in rows at
+slot end. The existing notice capture creates staff ending-soon notices
+within ten minutes, and the dashboard refreshes the feed on its one-minute
+cycle.
+
+Forward migration
+[`20261101051352_staff_early_checkout_auto_completion.sql`](supabase/migrations/20261101051352_staff_early_checkout_auto_completion.sql)
+prevents the scheduled attendance job from writing a second timeout event for
+a reservation already checked out early. It preserves that reservation's
+confirmed status through the end of its originally scheduled slot, then marks
+it completed without another audit entry. A read-only development-data check
+found zero confirmed checked-in early checkouts before or after slot end in
+both `booking` and `walk_in_booking`; no records were converted or deleted.
+The Supabase CLI is unavailable in this environment, so the file was created
+using the repository timestamp convention; Supabase's apply tool recorded
+version `20261101051352`, matching the migration filename. The post-apply
+check kept 24 bookings, 16 walk-ins, nine timeout audit rows, and zero early
+checkout rows in either category. No cleanup was indicated by the observed
+records.
+
+### Earlier paid walk-in attendance rule (November 1, 2026; superseded below)
+
+The project manager clarified that a staff walk-in is automatically timed in after its full payment. Walk-ins cannot be unattended; that status applies only to customer bookings. This instruction supersedes the earlier historical attendance interpretation above. The forward migration `20261101133000_staff_paid_walkin_status_invariant.sql` applies the receipt-backed historical correction and disallows `unattended` in the walk-in status constraint. The later `20261101141000` and `20261101150000` function-only migrations finish the authorization gate and block direct timestamp writes. The earlier `20261101052431` version remains an inert local history entry. Current development counts are 16 walk-ins, 38 payments, 38 acknowledgments, zero unattended walk-ins, and one active timed-in walk-in; all nine automatic-Time-In events map to unique, internally consistent records. Remote migration history has generated versions from concurrent development work and does not match all local filename timestamps. The CLI is unavailable, so migration-history repair is deferred until provenance can be reconciled with supported tooling.
+
+### Configurable unbooked slot cutoff
+
+The owner Business Hours editor now saves a separate 0–59 minute slot cutoff (default 10), while preserving the no-show grace period for attendance handling. The shared rules reader, customer availability, staff walk-in picker and Court Schedule, trusted checkout, and staff walk-in order RPC use this setting. The deadline remains exclusive: a slot is closed at its exact configured cutoff. Migration `20261101160000_booking_slot_start_cutoff.sql` adds a constrained `slot_cutoff_minutes` column with default 10, so existing rules receive the default without changing or deleting reservations or no-show grace values.
+
+Blank cutoff input is explicitly rejected before numeric conversion. The legacy three-argument owner save RPC remains callable for older clients: new dates inherit the cutoff effective on that date, while same-date updates preserve their existing cutoff. The four-argument owner RPC is the path for intentionally changing the value.
+
+A read-only development-data review found 7 existing `booking_rule_sets` rows: 1 legacy row at 30 minutes of no-show grace, 2 rows at 35, and 4 rows at 30. No slot-cutoff values exist before the migration. Expected after migration: 7 rows, all carrying `slot_cutoff_minutes=10`, with the existing grace values unchanged. The migration was not applied to the connected database; its actual post-migration count remains pending deployment and verification.
+
+### Superseded same-day early Time-In proposal (November 1, 2026)
+
+The project manager asked to plan same-day early Time-In before applying it. This midnight proposal was superseded by the final 30-minute rule below and was never applied.
+
+1. In the staff UI, offer Time-In during that window for a confirmed customer booking. Preserve the existing full-balance collection requirement. A paid staff walk-in already receives automatic Time-In on settlement and must follow the same display states.
+2. Distinguish `checked_in_at` before `time_date` as checked in and waiting for the slot. It must remain visible near the top of Booking Overview but must not count as `In play right now` or expose Time-Out until scheduled start. Keep court occupancy tied to the reserved interval, not check-in time. At scheduled start, transition the derived display to `In play` without rewriting persisted attendance.
+3. Enforce the same local-day lower bound and existing upper bounds in trusted cash Time-In, QR balance checkout preparation, and PayMongo settlement (`record_paymongo_paid`, which can write `checked_in_at` after payment). Guard manual Time-Out on the server until scheduled start; hiding the button alone is insufficient. Keep actor, payment, no-show, and audit checks intact. Review any other entry point that writes `checked_in_at`.
+4. Add boundary tests for before midnight, midnight, before start, exact start, grace deadline, scheduled end, and Manila day rollover, plus payment and staff authorization paths. Verify the waiting state, Overview order, action availability, active count, and schedule display.
+5. Before any migration, recheck current development records for incompatible early attendance or checkout values, preserve valid same-day records, and make only evidence-backed targeted conversions. Verify counts and UI behavior before and after. Include an independent security review of payment and privileged database paths.
+
+Read-only development inspection on November 1 found 25 customer bookings and 18 walk-ins. One booking and eight walk-ins had `checked_in_at < time_date`; all nine check-ins occurred on the same Manila calendar day as their reserved slot. One confirmed walk-in was checked in while its start was still in the future. None of the nine had a Time-Out before scheduled start. These records are valid for the proposed waiting state; no cleanup is currently indicated. Recheck immediately before implementation because development data can change.
+
+A read-only check of deployed function definitions found no scheduled-start guard in `staff_record_time_out`. The deployed `record_paymongo_paid` also writes `checked_in_at` on successful balance settlement. Both need explicit treatment in the implementation; the UI and checkout preparation checks alone cannot enforce the rule.
+
+### Final 30-minute booking Time-In and scheduled walk-in Time-In (November 1, 2026)
+
+The project manager replaced the proposed full-day window with a 30-minute lead for online bookings. Staff may press Time-In from exactly 30 minutes before the reserved start, but an early arrival is shown as `Arrived · waiting`, stays in Booking Overview, is excluded from `In play right now`, and cannot be timed out before the slot starts. Transaction Records also displays an early checked-in visit as `Arrived · waiting` until its scheduled start. Paid walk-ins are confirmed at payment without attendance. Their Actions cell shows `Walk-in` before start; they never receive a manual Time-In button. The one-minute attendance job automatically records Time-In when their reserved slot is in progress, and an on-slot payment can time in immediately. Walk-ins do not become `Unattended`; if an attendance job was missed for an entire slot, the elapsed reservation is completed without a fabricated check-in and receives a system audit event. Action priority remains actionable Time-In, then actionable Time-Out, then status-only rows. The date filter defaults to today, and the native date-picker Clear action shows today and upcoming dates.
+
+Forward migration [`20261101180500_staff_scheduled_walkin_timein.sql`](supabase/migrations/20261101180500_staff_scheduled_walkin_timein.sql) moves the established cash, QR preparation, and manual Time-Out RPC bodies into the private `internal` schema with client execute revoked, then installs staff/role-gated public wrappers for the new timing rules. The paid-walk-in trigger retains its direct-write authorization guard but only checks in a newly paid visit if the slot is already in progress. A separate trusted job checks in previously paid visits at/after start and writes one `timed_in` audit event attributed to the order-owning staff member. `process_due_attendance` runs that job before scheduled Time-Out and booking no-show processing. The existing one-minute cron job remains active.
+
+Before application, development had 26 bookings (7 checked in, 1 early) and 18 walk-ins (11 checked in, 8 early). Seven walk-ins without check-in were cancelled expired orders; there were zero confirmed paid walk-ins lacking check-in and zero active balance checkout attempts. The migration changes no records at application time. Post-application counts remained 26/7/1 for bookings and 18/11/8 for walk-ins. No existing visit or audit was converted or deleted. Rollback-only SQL probes against the connected development database verified early cash/QR rejection, exact 30-minute cash Time-In and QR preparation acceptance, manual walk-in rejection, pre-start Time-Out rejection for both sources, future paid walk-ins remaining unchecked at payment, one scheduled Time-In audit event, worker idempotency, and elapsed walk-ins completing without Unattended. All probes rolled back, and post-probe checks found no new function or audit rows left behind.
+
+After deployment, another rollback-only probe confirmed that a scheduled walk-in Time-In appears exactly once in the order-owning staff member's Transaction Records response with `in_progress`, `fully_paid=true`, and zero collected at Time-In. The probe left 26 bookings, 18 walk-ins, 11 checked-in walk-ins, and zero elapsed-slot audit events unchanged. The attendance cron's first observed post-deployment run succeeded. Readback confirmed the three public timing guards, their preserved private RPC bodies, the in-slot trigger guard, restricted internal execute privileges, and the active cron job.
+
+The connected development migration tool recorded this migration as remote version `20261101101155` while the local filename uses Asia/Shanghai timestamp `20261101180500`. Existing remote/local migration-history drift remains unresolved; do not perform CLI push or migration repair until provenance is reconciled and clean replay is verified. Focused security review approved development application with this warning. The new public staff RPCs are intentionally executable by authenticated users because each validates an active staff profile; the internal RPC bodies are not executable by client roles.
+
+### Time-In payment confirmation and tender capture follow-up (November 1, 2026)
+
+For reservations with a balance, choosing Cash or Online Payment is only a
+method selection. Cash opens a POS dialog and requires sufficient tender in
+cents before the authenticated collection/Time-In RPC runs. Online Payment
+opens the hosted PayMongo checkout; a verified return opens Time-In for staff
+review and does not itself record attendance. The 30-minute booking Time-In
+gate, balance validation, late-payment/no-show handling, and automatic
+walk-in schedule behavior remain enforced server side.
+
+Forward migration
+[`20261101190000_staff_timein_cash_tender.sql`](supabase/migrations/20261101190000_staff_timein_cash_tender.sql)
+adds tender/change capture to the cash payment and acknowledgment. The follow-up
+[`20261101200000_staff_balance_settlement_attendance_boundary.sql`](supabase/migrations/20261101200000_staff_balance_settlement_attendance_boundary.sql)
+keeps verified PayMongo booking-balance settlement from writing
+`checked_in_at` and corrects its audit detail to `time_in_recorded=false`; the
+existing settlement function and its late/no-show branches remain intact. It
+also treats an active admin who owns a paid walk-in order the
+same as staff for automatic on-slot Time-In and records the actual owner role
+in the audit event. It does not permit manual walk-in Time-In or alter the
+walk-in slot window.
+
+A read-only connected-development check found 26 bookings, 18 walk-ins, and 42
+payments. The only booking with `balance_payment_method='PayMongo'` was already
+completed, checked in, and checked out; preserve this historical attendance
+record because the database cannot establish whether the customer physically
+arrived. No backfill or cleanup is included. One confirmed unpaid unchecked
+booking remains valid in the current format. Both follow-up migrations were
+applied to the connected development database after independent security
+review. The migration service recorded remote versions `20261101104413` and
+`20261101104418`, which differ from the local filename timestamps; reconcile
+the existing remote/local migration-history drift before any CLI push or fresh
+replay.
+
+After application, readback confirmed the three-argument cash RPC is callable
+by authenticated staff but not anon, its private body is not client-callable,
+and the booking/audit settlement triggers are installed. A rollback-only
+PayMongo settlement probe verified that payment leaves booking attendance
+empty and writes `time_in_recorded=false`; a second probe verified that a
+fully paid booking can be timed in exactly once afterward without another
+payment. A rollback-only cash probe entered ₱700 against a ₱650 balance and
+verified the checked-in state, ₱700 tender, ₱50 change, and matching receipt.
+The probes restored 26 bookings, 18 walk-ins, and 42 payments, including the
+historical completed PayMongo booking. The focused Node suite passed 47/47;
+JavaScript syntax checks passed. Browser automation remains unrun because
+Playwright is not installed in this checkout. The exposed staff cash RPCs
+produce the expected Supabase advisor warning for intentional authenticated
+`SECURITY DEFINER` endpoints; both validate an active staff profile.
+
+# Staff Portal — Booking Extension (2026-11-01)
+
+## Implementation
+
+- In the staff Booking Overview, checked-in hourly reservations expose a compact `+` action next to Time-Out only when the database reports immediately consecutive time is available. Opening the dialog reloads available one-hour increments through the configured closing time. Staff choose a contiguous duration, then Cash through the calculator popup or PayMongo.
+- Cash uses server-side pricing and atomically checks the existing reservation, configured operating hours, current physical slot availability, tender, payment ledger, receipt, and updated `end_at`. It retains the existing reservation ID and start time and updates the payment total/paid amount.
+- Online payment creates a 15-minute physical resource hold using the existing checkout hold/exclusion mechanism. The booking end changes only in the signed PayMongo settlement transaction after amount, attempt, staff, existing booking end, and held extension are checked. Payment confirmed after the original booking ends is marked for manual refund review without extending it. Existing PayMongo expiry reconciliation expires checkout sessions before releasing holds; PayMongo checkout sessions do not expire by themselves, so this existing scheduled worker must be deployed and running.
+- A paid extension checkout that enters manual review releases its physical hold, including amount and reservation-state mismatches. The provider payment still requires owner reconciliation or refund; the original booking is not extended in that state.
+- Booking/walk-in extension options and payment RPCs validate active staff access. The checkout Edge Function also validates the signed-in staff role and verified email session. No customer email receipt is requested.
+
+## Data impact review
+
+- Read-only inspection of the connected development project showed 27 `booking` rows, 18 `walk_in_booking` rows, and 44 `payment` rows before this additive schema change.
+- The migration adds an internal extension checkout ledger plus nullable extension metadata to checkout intent items. Existing booking, walk-in, payment, receipt, and account rows are not transformed or deleted; no existing current-format records were identified as incompatible. No data cleanup is required for this additive change.
+- The migration has not been applied to the hosted database, and there is no local Supabase CLI/psql available here. Therefore post-migration row counts and database behavior remain to be verified when the migration is applied in a disposable/local Supabase database. Re-run the three baseline counts after migration to confirm the totals remain unchanged.
+
+## Verification gaps
+
+- PayMongo extension checkout expiry depends on the existing `paymongo-expire-checkouts` worker being configured and operational. It must continue to reconcile provider state before releasing a held slot.
+- This migration was not executed against a database in this workspace; its SQL still needs local Supabase migration validation before deployment.
+- A disposable/local database integration test remains necessary for the slot exclusion race, paid-review hold release, duplicate webhook settlement, and the dynamic PayMongo function rewrite. The current Node tests exercise source contracts and UI cash arithmetic only.
+- A read-only check against the connected development database confirmed that the existing PayMongo settlement function has exactly one intended top-level insertion marker and the expected row/variable declarations. This checks integration shape only; it does not validate the new SQL at runtime.

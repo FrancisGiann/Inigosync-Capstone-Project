@@ -603,6 +603,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = Array.isArray(data) ? data[0] : data;
             if (!result || !Array.isArray(result.rows)) throw new Error('The notifications response is incomplete.');
             notifTotalCount = Number(result.total_count) || 0;
+            if (notifPage > 0 && notifPage * NOTIF_LIMIT >= notifTotalCount) {
+                notifPage = Math.max(0, Math.ceil(notifTotalCount / NOTIF_LIMIT) - 1);
+                await loadCustomerNotifications();
+                return;
+            }
             const persistentItems = result.rows.map(item => ({
                 key: String(item.key || ''), title: String(item.title || 'Notification'), body: String(item.body || ''),
                 category: String(item.category || 'Update'), created_at: item.created_at || null,
@@ -614,7 +619,11 @@ document.addEventListener('DOMContentLoaded', () => {
             syncCustomerNotificationSelection();
             const unreadCount = Number(result.unread_count) || 0;
             if (notifUnread) notifUnread.textContent = unreadCount ? `${unreadCount} unread` : '';
-            if (notifDot) notifDot.hidden = unreadCount === 0;
+            if (notifDot) {
+                notifDot.hidden = unreadCount === 0;
+                notifDot.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+                notifDot.setAttribute('aria-label', `${unreadCount} unread notifications`);
+            }
             const pageCount = Math.max(1, Math.ceil(notifTotalCount / NOTIF_LIMIT));
             if (notifPagination) notifPagination.hidden = pageCount <= 1;
             renderCustomerPageNumbers(notifPage + 1, pageCount);
@@ -629,7 +638,6 @@ document.addEventListener('DOMContentLoaded', () => {
             syncCustomerNotificationSelection();
             console.error('[dashboard] notifications could not be loaded', error);
             notifList.innerHTML = '<p class="dash-notif-empty">Notifications could not be loaded. Try again.</p>';
-            if (notifDot) notifDot.hidden = true;
         }
     }
 
@@ -1245,6 +1253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingSelectedDates = new Set(bookingState.date ? [bookingState.date] : []);
     const bookingSelectionsByDate = new Map(bookingState.date ? [[bookingState.date, []]] : []);
     const bookingAvailabilityByDate = new Map();
+    let bookingCutoffRenderTimer = null;
     let bookingCartSeq = 0;
     let bookingSummaryBackKey = null;
     let editingBookingCartKey = null;
@@ -1928,13 +1937,13 @@ document.addEventListener('DOMContentLoaded', () => {
             || message.includes('schema cache');
     }
 
-    // True when `hour` (on the currently selected date) has already
-    // started — the customer's local "now", not the server's, since this
-    // is purely a client-side UX guard (the DB doesn't know or care what a
-    // browser's clock reads).
+    // True when the ten-minute booking window for `hour` has closed. This
+    // is a client-side UX guard; checkout independently validates it server-side.
     function isSlotHourPast(hour) {
         const start = new Date(window.InigoBookingSlots.localDateHourToIso(bookingState.date, hour));
-        return start.getTime() < Date.now();
+        const isBeforeCutoff = window.InigoBookingSlots?.isBeforeStartCutoff?.(start, Date.now(), bookingRules?.slotCutoffMinutes)
+            ?? start.getTime() + (bookingRules?.slotCutoffMinutes ?? 10) * 60 * 1000 > Date.now();
+        return !isBeforeCutoff;
     }
 
     function hoursRangeForRules(rules) {
@@ -1943,6 +1952,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const close = Number(rules.closeHour);
         if (!Number.isInteger(open) || !Number.isInteger(close) || open < 0 || close > 24 || close <= open) return [];
         return Array.from({ length: close - open }, (_, index) => open + index);
+    }
+
+    function scheduleBookingCutoffRender() {
+        if (bookingCutoffRenderTimer) window.clearTimeout(bookingCutoffRenderTimer);
+        bookingCutoffRenderTimer = null;
+        const today = todayDateInputValue();
+        const availability = bookingAvailabilityByDate.get(today);
+        if (!availability?.rules?.authoritative || !availability.bookings?.ok || !availability.walkins?.ok) return;
+        const next = window.InigoBookingSlots.nextStartCutoff(today, hoursRangeForRules(availability.rules), Date.now(), availability.rules.slotCutoffMinutes);
+        if (!next) return;
+        bookingCutoffRenderTimer = window.setTimeout(() => {
+            bookingCutoffRenderTimer = null;
+            if (document.visibilityState !== 'visible') return;
+            renderTimePickers();
+            updateSummary();
+        }, Math.max(0, next.at - Date.now()));
     }
 
     function bookingHoursRange() {
@@ -2004,6 +2029,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTimePickers() {
         if (!bookSlotsGrid) return;
+        if (bookingCutoffRenderTimer) window.clearTimeout(bookingCutoffRenderTimer);
+        bookingCutoffRenderTimer = null;
         if (!bookingState.court || !bookingState.unitId) {
             bookSlotsGrid.innerHTML = '';
             if (bookSlotStatus) bookSlotStatus.textContent = 'Select a court to check availability for your chosen dates.';
@@ -2015,8 +2042,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!availability?.rules?.authoritative) return 'checking';
             const hours = hoursRangeForRules(availability.rules);
             if (!hours.includes(hour)) return 'closed';
-            if (new Date(window.InigoBookingSlots.localDateHourToIso(date, hour)).getTime() < Date.now()) return 'past';
             const slotStart = new Date(window.InigoBookingSlots.localDateHourToIso(date, hour));
+            const isBeforeCutoff = window.InigoBookingSlots?.isBeforeStartCutoff?.(slotStart, Date.now(), availability.rules.slotCutoffMinutes)
+                ?? slotStart.getTime() + (availability.rules.slotCutoffMinutes ?? 10) * 60 * 1000 > Date.now();
+            if (!isBeforeCutoff) return 'past';
             const slot = { start: slotStart, end: new Date(slotStart.getTime() + 3600000) };
             const rows = [...availability.bookings.rows, ...availability.walkins.rows];
             return rows.some((row) => courtUnitsOverlap(row.court_unit, bookingState.unit || '')
@@ -2060,7 +2089,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const disabled = status !== 'available' || slotGridLoading;
                 const label = window.InigoBusinessHours.formatHourRangeLabelShort(hour);
                 const state = selected ? 'Selected' : status === 'available' ? 'Available' : status === 'in-cart' ? 'In summary' : status === 'booked' || status === 'past' ? 'Unavailable' : 'Unavailable';
-                const spoken = status === 'past' ? 'Elapsed' : state;
+                const spoken = status === 'past' ? 'Booking window closed' : state;
                 return `<button type="button" class="dash-book-slot is-${status}${selected ? ' is-selected' : ''}" data-dash-book-slot="${date}:${hour}" aria-label="${window.escapeHtml(label)}, ${spoken}${disabled ? ', unavailable' : ''}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}><span class="dash-book-slot-time">${window.escapeHtml(label)}</span><span class="dash-book-slot-state" aria-hidden="true">${state}</span></button>`;
             }).join('') || '<p class="dash-res-state">No bookable hours are configured for this date.</p>';
             return `<section class="dash-book-day" data-dash-book-day="${window.escapeHtml(date)}"><div class="dash-book-day-heading"><h5>${window.escapeHtml(new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))}</h5><button type="button" class="dash-book-remove-day" data-dash-book-remove-day="${date}" aria-label="Remove ${date} from selected dates">Remove day</button></div><div class="dash-book-day-slots" role="group" aria-label="Available hourly times for ${date}">${buttons}</div></section>`;
@@ -2080,7 +2109,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (bookSlotStatus) bookSlotStatus.textContent = selectedCount
             ? `${selectedCount} hour${selectedCount === 1 ? '' : 's'} selected across ${[...bookingSelectionsByDate.values()].filter((hours) => hours.length).length} date${[...bookingSelectionsByDate.values()].filter((hours) => hours.length).length === 1 ? '' : 's'}. Each date has one continuous time range.`
-            : 'Choose available hours on one or more dates. Booked, elapsed, and times already in your summary cannot be selected.';
+            : 'Choose available hours on one or more dates. Booked, closed, and times already in your summary cannot be selected.';
         const currentAvailability = bookingAvailabilityByDate.get(bookingState.date);
         if (currentAvailability) {
             bookingRules = currentAvailability.rules;
@@ -2092,6 +2121,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bookAddButton.disabled = bookingCartSaving || (!canReturnToSummary
                 && (!bookingState.unitId || selectedCount === 0 || !allSelectedDatesVerified || slotGridLoading));
         }
+        scheduleBookingCutoffRender();
     }
 
     async function refreshTimePickers(forceRules = false) {
@@ -2185,10 +2215,31 @@ document.addEventListener('DOMContentLoaded', () => {
     let overviewAvailabilityGroups = new Map();
     let overviewAvailabilityEntries = [];
     let overviewAvailabilityRequest = 0;
+    let overviewAvailabilityCutoffTimer = null;
     let availabilityReturnFocus = null;
 
     function overviewHourLabel(hour) {
         return window.InigoBusinessHours.formatHourRangeLabelShort(hour);
+    }
+
+    function scheduleOverviewAvailabilityCutoff(request, date, hours, cutoffMinutes) {
+        if (overviewAvailabilityCutoffTimer) window.clearTimeout(overviewAvailabilityCutoffTimer);
+        overviewAvailabilityCutoffTimer = null;
+        if (date !== todayDateInputValue()) return;
+        const next = window.InigoBookingSlots.nextStartCutoff(date, hours, Date.now(), cutoffMinutes);
+        if (!next) return;
+        overviewAvailabilityCutoffTimer = window.setTimeout(() => {
+            overviewAvailabilityCutoffTimer = null;
+            if (document.visibilityState !== 'visible' || request !== overviewAvailabilityRequest
+                || !availabilityDialog?.open || availabilityDateInput?.value !== date) return;
+            const slot = availabilitySlots?.querySelector(`[data-dash-availability-hour="${next.hour}"]`);
+            if (Date.now() >= next.at && slot?.classList.contains('is-available')) {
+                slot.classList.remove('is-available');
+                const status = slot.querySelector('span');
+                if (status) status.textContent = 'Unavailable';
+            }
+            scheduleOverviewAvailabilityCutoff(request, date, hours, cutoffMinutes);
+        }, Math.max(0, next.at - Date.now()));
     }
 
     function renderOverviewAvailabilityCards(courts = bookCourtsCache) {
@@ -2227,6 +2278,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function refreshOverviewAvailability() {
         if (!availabilityDialog?.open || !availabilityUnitSelect || !availabilityDateInput || !availabilitySlots || !availabilityStatus) return;
+        if (overviewAvailabilityCutoffTimer) window.clearTimeout(overviewAvailabilityCutoffTimer);
+        overviewAvailabilityCutoffTimer = null;
         const request = ++overviewAvailabilityRequest;
         const selectedEntry = overviewAvailabilityEntries[Number(availabilityUnitSelect.value)];
         const court = selectedEntry?.court;
@@ -2312,8 +2365,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const hours = Array.from({ length: closeHour - openHour }, (_, i) => openHour + i)
-            .filter((hour) => date !== todayDateInputValue()
-                || new Date(window.InigoBookingSlots.localDateHourToIso(date, hour)).getTime() >= Date.now());
+            .filter((hour) => {
+                if (date !== todayDateInputValue()) return true;
+                const slotStart = new Date(window.InigoBookingSlots.localDateHourToIso(date, hour));
+                return window.InigoBookingSlots?.isBeforeStartCutoff?.(slotStart, Date.now(), rules.slotCutoffMinutes)
+                    ?? slotStart.getTime() + (rules.slotCutoffMinutes ?? 10) * 60 * 1000 > Date.now();
+            });
         if (!hours.length) {
             availabilityStatus.textContent = 'There are no future bookable hours on this date. Use Change date to choose another date.';
             return;
@@ -2326,10 +2383,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 courtUnitsOverlap(row.court_unit, selectedUnit.label)
                 && bookingWindowsOverlap(bookingTimeWindow(row), { start, end }));
             const label = isAvailable ? 'Available' : 'Unavailable';
-            return `<div class="dash-availability-slot${isAvailable ? ' is-available' : ''}" role="listitem"><strong>${window.escapeHtml(overviewHourLabel(hour))}</strong><span>${window.escapeHtml(label)}</span></div>`;
+            return `<div class="dash-availability-slot${isAvailable ? ' is-available' : ''}" data-dash-availability-hour="${hour}" role="listitem"><strong>${window.escapeHtml(overviewHourLabel(hour))}</strong><span>${window.escapeHtml(label)}</span></div>`;
         });
         availabilitySlots.innerHTML = slotRows.join('');
         availabilityStatus.textContent = `Live hourly availability for ${selectedUnit.label}. Times use the venue’s current opening hours.`;
+        scheduleOverviewAvailabilityCutoff(request, date, Array.from({ length: closeHour - openHour }, (_, index) => openHour + index), rules.slotCutoffMinutes);
     }
 
     function renderOverviewAvailabilityUnits(group) {
@@ -2400,8 +2458,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     availabilityDialog?.addEventListener('close', () => {
         overviewAvailabilityRequest += 1;
+        if (overviewAvailabilityCutoffTimer) window.clearTimeout(overviewAvailabilityCutoffTimer);
+        overviewAvailabilityCutoffTimer = null;
         availabilityReturnFocus?.focus();
         availabilityReturnFocus = null;
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && availabilityDialog?.open) refreshOverviewAvailability();
     });
 
     function updateSummary() {

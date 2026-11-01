@@ -47,6 +47,7 @@
     const CLOSE_HOUR = 20;
     const TIMEZONE = 'Asia/Manila';
     const DEFAULT_GRACE_MINUTES = 30;
+    const DEFAULT_SLOT_CUTOFF_MINUTES = 10;
     const CACHE_MS = 60 * 1000;
     const RULES_UPDATED_STORAGE_KEY = 'inigosync:booking-rules-updated';
     const rulesByDate = new Map();
@@ -67,12 +68,15 @@
         const openHour = Number(source?.open_hour);
         const closeHour = Number(source?.close_hour);
         const graceMinutes = Number(source?.grace_minutes);
+        const slotCutoffMinutes = Number(source?.slot_cutoff_minutes);
         const isClosed = source?.is_closed === true;
         return {
             openHour: Number.isInteger(openHour) && openHour >= 0 && openHour < 24 ? openHour : OPEN_HOUR,
             closeHour: Number.isInteger(closeHour) && closeHour > 0 && closeHour <= 24 ? closeHour : CLOSE_HOUR,
             isClosed,
             graceMinutes: Number.isInteger(graceMinutes) && graceMinutes >= 0 ? graceMinutes : DEFAULT_GRACE_MINUTES,
+            slotCutoffMinutes: Number.isInteger(slotCutoffMinutes) && slotCutoffMinutes >= 0 && slotCutoffMinutes <= 59
+                ? slotCutoffMinutes : DEFAULT_SLOT_CUTOFF_MINUTES,
             timezone: source?.timezone || TIMEZONE,
             authoritative,
         };

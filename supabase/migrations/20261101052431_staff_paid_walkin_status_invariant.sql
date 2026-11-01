@@ -1,0 +1,3 @@
+-- Reserved version: remote development history recorded an earlier application of the walk-in invariant at this timestamp.
+-- The final forward migration is 20261101133000_staff_paid_walkin_status_invariant.sql,
+-- sequenced after 20261101132200_staff_walkin_attendance_backfill_correction.sql.

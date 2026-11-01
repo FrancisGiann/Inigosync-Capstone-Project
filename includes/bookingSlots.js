@@ -51,5 +51,29 @@
         return groups;
     }
 
-    window.InigoBookingSlots = Object.freeze({ localDateHourToIso, nextDate, groupConsecutiveHours });
+    // Slots remain selectable for the configured number of minutes after
+    // start. The exact cutoff is closed, matching trusted server validation.
+    function normalizeCutoffMinutes(minutes) {
+        const value = Number(minutes);
+        return Number.isInteger(value) && value >= 0 && value <= 59 ? value : 10;
+    }
+
+    function isBeforeStartCutoff(start, now = Date.now(), cutoffMinutes = 10) {
+        const startMillis = start instanceof Date ? start.getTime() : Number(start);
+        const nowMillis = now instanceof Date ? now.getTime() : Number(now);
+        return Number.isFinite(startMillis) && Number.isFinite(nowMillis)
+            && nowMillis < startMillis + normalizeCutoffMinutes(cutoffMinutes) * 60 * 1000;
+    }
+
+    function nextStartCutoff(dateValue, hours, now = Date.now(), cutoffMinutes = 10) {
+        const nowMillis = now instanceof Date ? now.getTime() : Number(now);
+        if (!Number.isFinite(nowMillis)) return null;
+        const cutoffMillis = normalizeCutoffMinutes(cutoffMinutes) * 60 * 1000;
+        return Array.from(new Set((hours || []).filter((hour) => Number.isInteger(hour) && hour >= 0 && hour < 24)))
+            .map((hour) => ({ hour, at: Date.parse(localDateHourToIso(dateValue, hour)) + cutoffMillis }))
+            .filter((cutoff) => Number.isFinite(cutoff.at) && cutoff.at > nowMillis)
+            .sort((a, b) => a.at - b.at)[0] || null;
+    }
+
+    window.InigoBookingSlots = Object.freeze({ localDateHourToIso, nextDate, groupConsecutiveHours, normalizeCutoffMinutes, isBeforeStartCutoff, nextStartCutoff });
 })(window);

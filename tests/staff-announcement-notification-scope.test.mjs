@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const migration = await readFile(new URL('../supabase/migrations/20261030000000_staff_booking_notifications_and_ending_alerts.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../supabase/migrations/20261102090000_staff_notification_record_targets.sql', import.meta.url), 'utf8');
+const originalCaptureMigration = await readFile(new URL('../supabase/migrations/20261030000000_staff_booking_notifications_and_ending_alerts.sql', import.meta.url), 'utf8');
 const feed = migration.match(/create or replace function internal\.notification_feed\([\s\S]*?\$\$;/i)?.[0] || '';
-const capture = migration.match(/create or replace function internal\.capture_due_account_notices\([\s\S]*?\$\$;/i)?.[0] || '';
+const capture = originalCaptureMigration.match(/create or replace function internal\.capture_due_account_notices\([\s\S]*?\$\$;/i)?.[0] || '';
 
-test('staff notifications include only published admin announcements addressed to staff', () => {
+test('staff feed includes published admin announcements addressed to staff or both', () => {
   assert.ok(feed, 'notification feed replacement exists');
   assert.match(feed, /from internal\.app_announcements a[\s\S]*?join public\.profiles creator on creator\.id=a\.created_by/i);
   assert.match(feed, /a\.publish_at\s*<=\s*now\(\)/i);
-  assert.match(feed, /p_role\s*=\s*'staff'\s+and a\.audience\s*=\s*'staff'/i);
-  assert.doesNotMatch(feed, /p_role\s*=\s*'staff'\s+and a\.audience\s+in/i);
+  assert.match(feed, /p_role\s*=\s*'staff'\s+and a\.audience\s+in\s*\('both','staff'\)/i);
   assert.match(feed, /p_role\s*=\s*'customer' and a\.audience\s+in\s*\('both','customers'\)/i);
 });
 
@@ -20,7 +20,7 @@ test('staff feed includes maintenance, ending-soon alerts, and unattended events
   assert.match(feed, /from internal\.customer_operational_events e\s+where p_role='staff' and e\.action='unattended'/i);
   assert.match(feed, /'activity:'\|\|e\.id::text[\s\S]*?'unattended',e\.created_at/i,
     'unattended event UUIDs provide stable read keys');
-  assert.match(feed, /case when n\.category='maintenance' then '#court-schedule'/i,
+  assert.match(feed, /when n\.category='maintenance' then '#court-schedule'/i,
     'staff maintenance alerts target the staff court schedule');
   assert.doesNotMatch(feed, /e\.action in\s*\([^)]*booking_created|e\.action in\s*\([^)]*payment_recorded/i,
     'ordinary booking and payment activity stays out of the staff feed');
@@ -38,7 +38,7 @@ test('capture persists deduplicated 10-minute end alerts for active online and w
   assert.match(capture, /w\.status='confirmed' and w\.checked_in_at is not null and w\.checked_out_at is null[\s\S]*?w\.end_at>now\(\) and w\.end_at<=now\(\)\+interval '10 minutes'/i);
   assert.equal((capture.match(/on conflict\(key\) do nothing/gi) || []).length, 5,
     'all captured notices use their unique key so scheduled retries cannot duplicate them');
-  assert.match(migration, /revoke all on function internal\.capture_due_account_notices\(\) from public,anon,authenticated/i);
+  assert.match(originalCaptureMigration, /revoke all on function internal\.capture_due_account_notices\(\) from public,anon,authenticated/i);
 });
 
 test('customer announcement audience and notification read scoping are preserved', async () => {
@@ -46,6 +46,8 @@ test('customer announcement audience and notification read scoping are preserved
   assert.match(baseMigration, /cron\.schedule\('inigosync-publish-account-notices','\* \* \* \* \*',[\s\S]*?internal\.capture_due_account_notices\(\)/i,
     'the existing per-minute capture job continues to publish alerts');
   assert.match(feed, /p_role='customer' and a\.audience in \('both','customers'\)/i);
+  assert.match(feed, /p_role='staff' and a\.audience in \('both','staff'\)[\s\S]*?p_role='customer' and a\.audience in \('both','customers'\)/i,
+    'staff-only announcements stay in the staff feed, customers-only announcements stay in the customer feed, and both remains shared');
   assert.match(feed, /join public\.profiles creator on creator\.id=a\.created_by[\s\S]*?creator\.role='admin'/i);
   assert.match(migration, /revoke all on function internal\.notification_feed\(uuid,text\) from public,anon,authenticated/i);
   assert.match(baseMigration, /create or replace function public\.mark_notification_read[\s\S]*?internal\.notification_feed\(uid,account_role\)/i);
@@ -59,6 +61,7 @@ test('the admin announcement composer and separate owner activity/audit features
   const baseMigration = await readFile(new URL('../supabase/migrations/20260929035843_staff_activity_announcements_notifications.sql', import.meta.url), 'utf8');
   assert.match(html, /data-owner-announcement-form/);
   assert.match(html, /data-owner-announcement-audience/);
+  assert.match(html, /<option value="both">Customers and staff<\/option><option value="customers">Customers only<\/option><option value="staff">Staff only<\/option>/);
   assert.match(baseMigration, /create or replace function public\.owner_publish_announcement[\s\S]*?p\.role='admin'[\s\S]*?insert into internal\.app_announcements/i);
   assert.doesNotMatch(html, /data-admin-notif|data-owner-notification-modal/);
   assert.doesNotMatch(js, /refreshOwnerActivityNotifications|data-admin-notif|data-owner-notification-modal/);

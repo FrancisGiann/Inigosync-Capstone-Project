@@ -1584,6 +1584,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingRulesWeekdays = document.querySelector('[data-owner-rules-weekdays]');
     const bookingRulesEffective = document.querySelector('[data-owner-rules-effective]');
     const bookingRulesGrace = document.querySelector('[data-owner-rules-grace]');
+    const bookingRulesCutoff = document.querySelector('[data-owner-rules-cutoff]');
     const bookingRulesTimezone = document.querySelector('[data-owner-rules-timezone]');
     const bookingRulesMessage = document.querySelector('[data-owner-rules-message]');
     const bookingRulesSave = document.querySelector('[data-owner-rules-save]');
@@ -1593,10 +1594,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingRulesDialog = document.querySelector('[data-owner-rules-dialog]');
     const bookingRulesSavedEffective = document.querySelector('[data-owner-rules-saved-effective]');
     const bookingRulesSavedGrace = document.querySelector('[data-owner-rules-saved-grace]');
+    const bookingRulesSavedCutoff = document.querySelector('[data-owner-rules-saved-cutoff]');
     const bookingRulesSavedWeek = document.querySelector('[data-owner-rules-saved-week]');
     const bookingRulesUpcoming = document.querySelector('[data-owner-rules-upcoming]');
     const bookingRulesUpcomingEffective = document.querySelector('[data-owner-rules-upcoming-effective]');
     const bookingRulesUpcomingGrace = document.querySelector('[data-owner-rules-upcoming-grace]');
+    const bookingRulesUpcomingCutoff = document.querySelector('[data-owner-rules-upcoming-cutoff]');
     const bookingRulesUpcomingWeek = document.querySelector('[data-owner-rules-upcoming-week]');
     let bookingRulesModalLastFocused = null;
     let bookingRulesLoading = false;
@@ -1653,6 +1656,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return JSON.stringify({
             effectiveFrom: bookingRulesEffective?.value || '',
             graceMinutes: bookingRulesGrace?.value || '',
+            slotCutoffMinutes: bookingRulesCutoff?.value || '',
             weekdays: [...(bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]') || [])].map(row => ({
                 weekday: row.dataset.ownerRulesDay,
                 opensAt: row.querySelector('[data-owner-rules-open]')?.value || '',
@@ -1681,11 +1685,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderSavedBookingRules(rules, upcoming = null) {
         if (bookingRulesSavedEffective) bookingRulesSavedEffective.textContent = String(rules.effective_from || '').slice(0, 10) || '—';
         if (bookingRulesSavedGrace) bookingRulesSavedGrace.textContent = `${Number(rules.grace_minutes) || 0} minutes`;
+        if (bookingRulesSavedCutoff) bookingRulesSavedCutoff.textContent = `${Number.isInteger(Number(rules.slot_cutoff_minutes)) ? Number(rules.slot_cutoff_minutes) : 10} minutes`;
         renderSavedBookingWeek(rules, bookingRulesSavedWeek);
         if (bookingRulesUpcoming) bookingRulesUpcoming.hidden = !upcoming;
         if (!upcoming) return;
         if (bookingRulesUpcomingEffective) bookingRulesUpcomingEffective.textContent = String(upcoming.effective_from || '').slice(0, 10) || '—';
         if (bookingRulesUpcomingGrace) bookingRulesUpcomingGrace.textContent = String(Number(upcoming.grace_minutes) || 0);
+        if (bookingRulesUpcomingCutoff) bookingRulesUpcomingCutoff.textContent = String(Number.isInteger(Number(upcoming.slot_cutoff_minutes)) ? Number(upcoming.slot_cutoff_minutes) : 10);
         renderSavedBookingWeek(upcoming, bookingRulesUpcomingWeek);
     }
 
@@ -1713,6 +1719,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingRulesEditing = editing;
         if (bookingRulesEffective) bookingRulesEffective.disabled = !editing;
         if (bookingRulesGrace) bookingRulesGrace.disabled = !editing;
+        if (bookingRulesCutoff) bookingRulesCutoff.disabled = !editing;
         bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]').forEach(setRuleDayClosed);
         if (bookingRulesEdit) bookingRulesEdit.hidden = editing || !bookingRulesLoaded;
         if (bookingRulesCancel) bookingRulesCancel.hidden = !editing;
@@ -1750,6 +1757,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const loadedEffectiveDate = String(rules.effective_from || '').slice(0, 10);
             bookingRulesEffective.value = loadedEffectiveDate >= todayManila ? loadedEffectiveDate : todayManila;
             bookingRulesGrace.value = String(Number.isFinite(Number(rules.grace_minutes)) ? rules.grace_minutes : 30);
+            bookingRulesCutoff.value = String(Number.isInteger(Number(rules.slot_cutoff_minutes)) ? rules.slot_cutoff_minutes : 10);
             if (bookingRulesTimezone) bookingRulesTimezone.textContent = `Times are shown in ${response.timezone || 'Asia/Manila'}.`;
             const byDay = new Map(rules.weekly_hours.map(item => [Number(item.weekday), item]));
             bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]').forEach(row => {
@@ -1851,10 +1859,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!window.sb || bookingRulesLoading) return;
         const effectiveFrom = bookingRulesEffective?.value || '';
         const graceMinutes = Number(bookingRulesGrace?.value);
+        const slotCutoffRaw = String(bookingRulesCutoff?.value ?? '').trim();
+        if (!slotCutoffRaw) { setBookingRulesMessage('Enter an unbooked slot cutoff from 0 to 59 minutes.', true); bookingRulesCutoff?.focus(); return; }
+        const slotCutoffMinutes = Number(slotCutoffRaw);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) { setBookingRulesMessage('Choose the date these rules should take effect.', true); bookingRulesEffective?.focus(); return; }
         const todayManila = todayBookingRulesDate();
         if (effectiveFrom < todayManila) { setBookingRulesMessage('Choose today or a future effective date.', true); bookingRulesEffective?.focus(); return; }
         if (!Number.isInteger(graceMinutes) || graceMinutes < 0 || graceMinutes > 240) { setBookingRulesMessage('Enter a grace period from 0 to 240 minutes.', true); bookingRulesGrace?.focus(); return; }
+        if (!Number.isInteger(slotCutoffMinutes) || slotCutoffMinutes < 0 || slotCutoffMinutes > 59) { setBookingRulesMessage('Enter an unbooked slot cutoff from 0 to 59 minutes.', true); bookingRulesCutoff?.focus(); return; }
 
         const weeklyHours = [];
         for (const row of bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]') || []) {
@@ -1885,7 +1897,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const accepted = await window.InigoOwnerUI?.confirm({
             title: 'Save Business Hours?',
-            message: `Apply these opening hours and a ${graceMinutes}-minute no-show grace period from ${effectiveFrom}?`,
+            message: `Apply these opening hours, a ${graceMinutes}-minute no-show grace period, and a ${slotCutoffMinutes}-minute unbooked slot cutoff from ${effectiveFrom}?`,
             confirmLabel: 'Save Business Hours',
         });
         if (!accepted) return;
@@ -1897,6 +1909,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { error } = await window.sb.rpc('owner_save_booking_rules', {
                 p_weekly_hours: weeklyHours,
                 p_grace_minutes: graceMinutes,
+                p_slot_cutoff_minutes: slotCutoffMinutes,
                 p_effective_from: effectiveFrom,
             });
             if (error) throw error;

@@ -46,7 +46,11 @@ test('staff notification menu keeps selection controls, one read action, and pag
     assert.match(css, /\.staff-notif-select-row/);
     assert.match(css, /\.staff-notif-row\.is-selected/);
     assert.match(customerHtml, /<div class="dash-notif-list" data-dash-notif-list>/);
+    assert.match(html, /class="staff-notif-badge" data-staff-notif-dot hidden aria-label="Unread notifications" aria-live="polite" aria-atomic="true"/);
+    assert.match(customerHtml, /class="dash-badge-dot" data-dash-notif-dot hidden aria-label="Unread notifications" aria-live="polite" aria-atomic="true"/);
     assert.match(customerCss, /\.dash-notif-menu\s*\{[^}]*display: flex;\s*flex-direction: column;[^}]*overflow: hidden/s);
+    assert.match(css, /\.staff-notif-badge\s*\{[^}]*min-width: 18px;[^}]*background: var\(--color-alert\)/s);
+    assert.match(customerCss, /\.dash-badge-dot\s*\{[^}]*min-width: 18px;[^}]*background: var\(--color-primary\)/s);
     assert.match(customerCss, /\.dash-notif-list\s*\{[^}]*overflow-y: auto/s);
     assert.match(customerCss, /\.dash-notif-pagination\s*\{[^}]*flex: 0 0 auto/s);
     assert.doesNotMatch(source, /staffNotifMarkAll|staff_mark_all_notifications_read/);

@@ -57,13 +57,11 @@ function fixture(row, checkoutError = false) {
         functions: { invoke: async (name, options) => {
             qa.calls.push({ kind: 'function', name, options });
             if (window.__qaRecordBalance) await window.__qaRecordBalance({ kind: 'function', name, options });
-            if (checkoutError && options.body.channel === 'qrph') return { data: null, error: {
+            if (checkoutError && name === 'paymongo-balance-checkout') return { data: null, error: {
                 message: 'Edge Function returned a non-2xx status code',
-                context: new Response(JSON.stringify({ message: 'QR Payment is unavailable for this facility.' }), { status: 503 }),
+                context: new Response(JSON.stringify({ message: 'PayMongo checkout is unavailable in this fixture.' }), { status: 503 }),
             } };
-            return { data: options.body.channel === 'qrph'
-                ? { qr_image_url: 'data:image/png;base64,AAAA', base_minor: 5000, test_mode: true }
-                : { checkout_url: 'https://checkout.paymongo.com/qa-balance' }, error: null };
+            return { data: { checkout_url: 'https://checkout.paymongo.com/qa-balance' }, error: null };
         } },
         auth: {
             getSession: async () => ({ data: { session: { user: { id: 'qa-staff' } } } }),
@@ -79,8 +77,8 @@ function fixture(row, checkoutError = false) {
     try {
         for (const scenario of [
             { method: 'Cash' },
-            { method: 'QR Payment' },
-            { method: 'QR Payment', checkoutError: true },
+            { method: 'Online Payment' },
+            { method: 'Online Payment', checkoutError: true },
         ]) {
             const { method, checkoutError = false } = scenario;
             const context = await browser.newContext({ timezoneId: 'Asia/Manila', viewport: { width: 390, height: 844 } });
@@ -92,6 +90,9 @@ function fixture(row, checkoutError = false) {
             const errors = [];
             page.on('pageerror', error => errors.push(error.message));
             await page.route(/^https:\/\//, route => route.abort());
+            await page.route(/^https:\/\/checkout\.paymongo\.com\/qa-balance$/, route => route.fulfill({
+                status: 200, contentType: 'text/html', body: '<main>Hosted checkout fixture</main>',
+            }));
             await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript',
                 body: `window.__qaToasts=[];window.InigoLoading={show(){},hide(){}};window.InigoToast={show:(message,isError)=>window.__qaToasts.push({message,isError})};` }));
             await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript',
@@ -108,29 +109,36 @@ function fixture(row, checkoutError = false) {
             await timeIn.click();
             await page.locator('[data-staff-timein-balance]').getByText('₱50.00').waitFor();
             await page.locator(`[data-staff-timein-method="${method}"]`).check();
+            assert.equal(await page.locator('[data-staff-timein-confirm]').innerText(), 'Pay');
+            assert.equal(await page.evaluate(() => window.__balanceQa.calls.some(call => call.kind === 'function')), false,
+                `${method} selection alone performs no checkout or cash collection`);
             await page.locator('[data-staff-timein-confirm]').click();
-            await page.locator('[data-staff-confirm-modal]').waitFor({ state: 'visible' });
-            const confirmation = await page.locator('[data-staff-confirm-text]').innerText();
-            assert.match(confirmation, method === 'Cash' ? /Collect ₱50\.00 in Cash/ : /may add a transaction fee/i);
-            await page.locator('[data-staff-confirm-accept]').click();
             if (method === 'Cash') {
+                const cashModal = page.locator('[data-staff-timein-cash-modal]');
+                await cashModal.waitFor({ state: 'visible' });
+                assert.equal(await page.evaluate(() => window.__balanceQa.calls.some(call => call.name === 'staff_collect_cash_and_check_in')), false,
+                    'opening POS cash collects nothing and records no attendance');
+                await cashModal.locator('[data-staff-timein-cash-tendered]').fill('50');
+                await cashModal.locator('[data-staff-timein-cash-pay]').click();
                 await page.waitForFunction(() => window.__balanceQa.calls.some(call => call.name === 'staff_collect_cash_and_check_in'));
                 const cash = await page.evaluate(() => window.__balanceQa.calls.find(call => call.name === 'staff_collect_cash_and_check_in'));
-                assert.deepEqual(cash.args, { p_source: 'booking', p_id: '42' });
+                assert.deepEqual(cash.args, { p_source: 'booking', p_id: '42', p_cash_tendered_minor: 5000 });
                 assert.equal(await page.evaluate(() => window.__balanceQa.calls.some(call => call.kind === 'function')), false);
             } else {
-                await page.waitForTimeout(200);
+                await page.waitForFunction(() => window.__balanceQa.calls.some(call => call.kind === 'function'));
                 const online = calls.find(call => call.name === 'paymongo-balance-checkout');
-                assert.deepEqual(online?.options.body, { source: 'booking', id: '42', channel: 'qrph' });
+                assert.deepEqual(online?.options.body, { source: 'booking', id: '42' });
                 assert.equal(calls.some(call => call.name === 'staff_collect_cash_and_check_in'), false);
                 if (checkoutError) {
-                    await page.waitForFunction(() => window.__qaToasts.at(-1)?.message === 'QR Payment is unavailable for this facility.');
-                    assert.equal(await page.locator('[data-staff-timein-qr-panel]').isVisible(), false,
-                        'failed QR checkout never displays a payment QR');
+                    await page.waitForFunction(() => window.__qaToasts.at(-1)?.message === 'PayMongo checkout is unavailable in this fixture.');
+                    assert.equal(await page.locator('[data-staff-timein-modal]').isVisible(), true,
+                        'failed checkout leaves the attendance modal available for retry');
                     assert.equal(await page.locator('[data-staff-receipt-modal]').isVisible(), false,
                         'failed QR checkout never displays a payment acknowledgment');
                 } else {
-                    await page.locator('[data-staff-timein-qr-panel]').waitFor({ state: 'visible' });
+                    await page.waitForURL('https://checkout.paymongo.com/qa-balance');
+                    assert.equal(await page.evaluate(() => window.__balanceQa.calls.some(call => call.name === 'staff_collect_cash_and_check_in')), false,
+                        'opening hosted checkout does not record attendance');
                 }
             }
             if (method === 'Cash') assert.equal(await page.evaluate(() => window.__balanceQa.calls.some(call => call.table === 'payment' && call.kind === 'insert')), false);

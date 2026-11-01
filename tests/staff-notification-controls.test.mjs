@@ -48,7 +48,7 @@ test('staff notification loader requests the selected page and updates paginatio
     const calls = [];
     const context = {
         staffNotifList: { innerHTML: '', querySelectorAll: () => [], addEventListener() {} },
-        staffNotifDot: { hidden: true },
+        staffNotifDot: { hidden: true, textContent: '', setAttribute(name, value) { this[name] = value; } },
         staffNotifSelect: { value: 'all', addEventListener() {} },
         staffNotifSelectedLabel: { textContent: '' },
         staffNotifMarkSelected: { disabled: false },
@@ -87,9 +87,37 @@ test('staff notification loader requests the selected page and updates paginatio
     assert.equal(context.staffNotifPagination.hidden, false);
     assert.equal(context.staffNotifPrev.disabled, false);
     assert.equal(context.staffNotifNext.disabled, true);
+    assert.equal(context.staffNotifDot.textContent, '4');
+    assert.equal(context.staffNotifDot.hidden, false);
     assert.match(context.staffNotifList.innerHTML, /Older notice/);
     assert.deepEqual(Array.from(context.selectedStaffNotifKeys), []);
     assert.equal(context.staffNotifSelect.value, 'none');
+});
+
+test('staff notification loader backs up to the last valid page when the feed shrinks', async () => {
+    const start = source.indexOf('    async function loadStaffNotifications() {');
+    const end = source.indexOf('    if (staffNotifTrigger && staffNotif) {', start);
+    const calls = [];
+    const context = {
+        staffNotifList: { innerHTML: '', querySelectorAll: () => [], addEventListener() {} },
+        staffNotifDot: { hidden: true, textContent: '', setAttribute(name, value) { this[name] = value; } },
+        staffNotifSelect: { value: 'none', addEventListener() {} }, staffNotifSelectedLabel: { textContent: '' }, staffNotifMarkSelected: { disabled: false, addEventListener() {} },
+        staffNotifPagination: { hidden: false }, staffNotifPageNumbers: {}, staffNotifPrev: { disabled: false }, staffNotifNext: { disabled: false },
+        staffNotifGeneration: 0, staffNotifUnreadCount: 0, staffNotifPage: 2, staffNotifTotalCount: 0,
+        staffNotifItems: [], selectedStaffNotifKeys: new Set(), STAFF_NOTIF_LIMIT: 10,
+        staffNotifMarkSelectedInProgress: false,
+        syncStaffNotificationSelection() {}, renderStaffPageNumbers() {}, renderStaffNotification: item => item.title,
+        window: { escapeHtml: String, sb: { rpc: async (_name, args) => {
+            calls.push(args.p_offset);
+            return { data: { rows: [{ key: `page-${args.p_offset}`, title: 'Remaining notice', read_at: null }], total_count: 10, unread_count: 1 }, error: null };
+        } } }, Math, Number, String, console,
+    };
+    runInNewContext(`${source.slice(start, end)}\nglobalThis.load = loadStaffNotifications;`, context);
+    await context.load();
+
+    assert.deepEqual(calls, [20, 0]);
+    assert.equal(context.staffNotifPage, 0);
+    assert.match(context.staffNotifList.innerHTML, /Remaining notice/);
 });
 
 test('staff notification page controls move backward and forward within available pages', () => {

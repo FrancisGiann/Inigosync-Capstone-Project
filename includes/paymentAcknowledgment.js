@@ -54,13 +54,40 @@
         return '';
     }
 
+    function stripSportPrefix(value, sport) {
+        const label = String(value || '').trim();
+        if (!label || !sport) return label;
+        const suffix = label.slice(sport.length);
+        if (label.slice(0, sport.length).toLocaleLowerCase() !== sport.toLocaleLowerCase()
+            || (suffix && !/^[\s\-–—:]/.test(suffix))) return label;
+        const remainder = suffix.replace(/^[\s\-–—:]+/, '').trim();
+        if (!remainder) return '';
+        return /^court(?:\s|$)/i.test(remainder) ? remainder : label;
+    }
+
+    function formatLocation(item = {}) {
+        const sport = String(item.sport || '').trim();
+        const rawCourt = String(item.court || '').trim();
+        const rawUnit = String(item.unit || '').trim();
+        const court = stripSportPrefix(rawCourt, sport);
+        const unit = stripSportPrefix(rawUnit, sport);
+        const genericCourt = !court || court.toLocaleLowerCase() === sport.toLocaleLowerCase()
+            || court.toLocaleLowerCase() === 'court';
+        const courtLabel = genericCourt && unit && unit.toLocaleLowerCase() !== sport.toLocaleLowerCase()
+            ? unit
+            : (court || (rawCourt.toLocaleLowerCase() === 'court' ? rawCourt : ''));
+        const hasDistinctUnit = rawCourt && unit
+            && unit.toLocaleLowerCase() !== courtLabel.toLocaleLowerCase()
+            && unit.toLocaleLowerCase() !== sport.toLocaleLowerCase();
+        return { sport, court: courtLabel, unit: hasDistinctUnit ? unit : '' };
+    }
+
     function renderItem(item, itemReferenceLabel = '') {
-        const court = item.court || item.unit || '';
+        const location = formatLocation(item);
         const place = [
-            item.sport ? `<div class="payment-ack-item-field"><span>Sport:</span><strong>${escape(item.sport)}</strong></div>` : '',
-            court ? `<div class="payment-ack-item-field"><span>Court:</span><strong>${escape(court)}</strong></div>` : '',
-            item.unit && item.court && item.unit !== item.court
-                ? `<div class="payment-ack-item-field"><span>Unit:</span><strong>${escape(item.unit)}</strong></div>` : '',
+            location.sport ? `<div class="payment-ack-item-field"><span>Sport:</span><strong>${escape(location.sport)}</strong></div>` : '',
+            location.court ? `<div class="payment-ack-item-field"><span>Court:</span><strong>${escape(location.court)}</strong></div>` : '',
+            location.unit ? `<div class="payment-ack-item-field"><span>Unit:</span><strong>${escape(location.unit)}</strong></div>` : '',
         ].filter(Boolean).join('') || '<strong class="payment-ack-place">Court access</strong>';
         const day = dateTime(item.starts_at, { dateStyle: 'medium' });
         const from = dateTime(item.starts_at, { timeStyle: 'short' });
@@ -198,5 +225,5 @@
         return true;
     }
 
-    window.InigoPaymentAcknowledgment = { render, print, money, paymentMethod, paymentStatus };
+    window.InigoPaymentAcknowledgment = { render, print, money, paymentMethod, paymentStatus, formatLocation };
 })();

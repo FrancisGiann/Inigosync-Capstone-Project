@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         overview: { title: 'Booking Overview', subtitle: 'Upcoming and currently active court bookings.' },
         walkin: { title: 'Walk-In Management', subtitle: 'Record a walk-in customer and print or download their receipt.' },
         schedule: { title: 'Court Schedule', subtitle: 'Hour-by-hour availability per court/unit.' },
-        transactions: { title: 'Transaction Records', subtitle: 'Staff collections, time-in events, and unattended visits for bookings and walk-ins.' },
+        transactions: { title: 'Transaction Records', subtitle: 'Staff transactions for bookings and walk-ins, plus unattended bookings.' },
         // Revision S1 (implementation_plan.md, decision S7) — not in
         // .staff-nav, only reachable from the topbar dropdown's "View
         // Profile"; setActivePanel() below still works unmodified since it
@@ -312,6 +312,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const result = Array.isArray(data) ? data[0] : data;
             if (!result || !Array.isArray(result.rows)) throw new Error('The notifications response is incomplete.');
             staffNotifTotalCount = Number(result.total_count) || 0;
+            if (staffNotifPage > 0 && staffNotifPage * STAFF_NOTIF_LIMIT >= staffNotifTotalCount) {
+                staffNotifPage = Math.max(0, Math.ceil(staffNotifTotalCount / STAFF_NOTIF_LIMIT) - 1);
+                await loadStaffNotifications();
+                return;
+            }
             staffNotifItems = result.rows.map(item => ({
                 key: String(item.key || ''), title: String(item.title || 'Notification'), body: String(item.body || ''),
                 category: String(item.category || 'Update'), created_at: item.created_at || null,
@@ -322,7 +327,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? staffNotifItems.map(item => renderStaffNotification(item, escape)).join('')
                 : '<p class="staff-notif-empty">No notifications yet.</p>';
             staffNotifUnreadCount = Number(result.unread_count) || 0;
-            if (staffNotifDot) staffNotifDot.hidden = staffNotifUnreadCount === 0;
+            if (staffNotifDot) {
+                staffNotifDot.hidden = staffNotifUnreadCount === 0;
+                staffNotifDot.textContent = staffNotifUnreadCount > 99 ? '99+' : String(staffNotifUnreadCount);
+                staffNotifDot.setAttribute('aria-label', `${staffNotifUnreadCount} unread notifications`);
+            }
             syncStaffNotificationSelection();
             const pageCount = Math.max(1, Math.ceil(staffNotifTotalCount / STAFF_NOTIF_LIMIT));
             if (staffNotifPagination) staffNotifPagination.hidden = pageCount <= 1;
@@ -334,7 +343,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('[staff dashboard] notifications could not be loaded', error);
             staffNotifItems = [];
             staffNotifList.innerHTML = '<p class="staff-notif-empty">Notifications could not be loaded. Try again.</p>';
-            if (staffNotifDot) staffNotifDot.hidden = true;
         }
     }
 
@@ -469,8 +477,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!href) return;
             const target = new URL(href, window.location.href);
             if (target.origin !== window.location.origin) return;
-            const targetPanel = ({ '#booking-overview': 'overview', '#court-schedule': 'schedule', '#transactions': 'transactions' })[target.hash];
+            const targetPanel = ({ '#booking-overview': 'overview', '#court-schedule': 'schedule', '#transactions': 'transactions' })[target.hash.split('?')[0]];
             if (targetPanel && document.querySelector(`[data-staff-panel="${targetPanel}"]`)) setActivePanel(targetPanel);
+            if (targetPanel === 'transactions') {
+                const route = new URLSearchParams(target.hash.split('?')[1] || '');
+                const targetView = route.get('view');
+                const targetTab = document.querySelector(`[data-staff-tx-tab="${targetView === 'unattended' ? 'unattended' : 'transactions'}"]`);
+                if (targetTab) activateTransactionTab(targetTab);
+                if (txDateInput) txDateInput.value = '';
+                if (txStatusMenu) {
+                    txStatusMenu.dataset.value = 'all';
+                    document.querySelector('#staff-tx-status-current').textContent = 'All statuses';
+                }
+                if (txSourceMenu) {
+                    txSourceMenu.dataset.value = 'all';
+                    document.querySelector('#staff-tx-source-current').textContent = 'All sources';
+                }
+                renderTransactionRows();
+                if (txSearchInput) {
+                    const exactTransactionId = route.get('transaction_id');
+                    const exactVisitId = route.get('visit_id');
+                    txSearchInput.value = exactTransactionId || exactVisitId || route.get('search') || '';
+                    txSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    const state = filterableTableState.get('transactions');
+                    if (state && exactTransactionId) {
+                        state.exactIdField = 'transactionId';
+                        state.exactId = exactTransactionId.toLowerCase();
+                    } else if (state && exactVisitId) {
+                        state.exactIdField = 'visitId';
+                        state.exactId = exactVisitId.toLowerCase();
+                    } else if (state && route.get('no_transaction') === '1') {
+                        state.exactIdField = 'transactionId';
+                        state.exactId = '__no_visible_transaction__';
+                    }
+                    if (state) renderTransactionRows();
+                }
+            }
         } catch (error) {
             openButton.disabled = false;
             console.error('[staff dashboard] notification read state could not be saved', error);
@@ -652,9 +694,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ------------------------------------------------------------------
     // Revision S1, decision S1 — status is DERIVED, never written (besides
     // checked_in_at itself):
-    //   Booked      - not checked in, still within the 30-minute grace
-    //                 window of time_date (covers both "hasn't started yet"
-    //                 and "just started, hasn't been walked over to yet").
+    //   Booked      - not checked in; Time-In opens 30 minutes before start.
+    //   Arrived     - checked in before the scheduled start; waiting for play.
     //   In play     - checked in, now < end (rowWindow's end).
     //   Completed   - checked in, now >= end or the server has stored an
     //                 exit at the scheduled end.
@@ -672,14 +713,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (row.checked_out_at) return 'completed';
         if (row.checked_in_at) {
-            const { end } = rowWindow(row);
+            const { start, end } = rowWindow(row);
+            if (Date.now() < start.getTime()) return 'arrived';
             return Date.now() >= end.getTime() ? 'completed' : 'inplay';
         }
 
         return 'booked';
     }
 
-    const STAFF_STATUS_LABELS = { booked: 'Booked', inplay: 'In play', completed: 'Completed', unattended: 'Unattended', cancelled: 'Cancelled' };
+    const STAFF_STATUS_LABELS = { booked: 'Booked', arrived: 'Arrived · waiting', inplay: 'In play', completed: 'Completed', unattended: 'Unattended', cancelled: 'Cancelled' };
     function staffStatusLabel(status) {
         return STAFF_STATUS_LABELS[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown');
     }
@@ -687,8 +729,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Time-In is offered only for a booked row that hasn't been checked in,
     // from the lead-in window through the scheduled end. This keeps old
     // pending rows visible without offering a check-in for an expired slot.
-    const TIME_IN_LEAD_MINUTES = 15;
+    const TIME_IN_LEAD_MINUTES = 30;
     function staffCanTimeIn(row, status) {
+        // Paid walk-ins time in automatically when their reserved slot starts.
+        if (row.sourceType !== 'booking') return false;
         if (status !== 'booked') return false;
         if (row.checked_in_at) return false;
         const startMs = new Date(row.time_date).getTime();
@@ -929,6 +973,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             state = {
                 activeFilter: sourceMenu?.dataset.value || group?.querySelector('[data-staff-chip].is-active')?.dataset.staffFilter || 'all',
                 query: searchInput?.value.trim().toLowerCase() || '',
+                exactIdField: null,
+                exactId: null,
                 rows: [],
                 page: 1,
                 bound: false,
@@ -941,9 +987,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const emptyStateRow = state.rows.find((row) => row.hasAttribute('data-staff-empty-state'));
             const dataRows = state.rows.filter((row) => !row.hasAttribute('data-staff-empty-state'));
             const matchingRows = dataRows.filter((row) => {
-                const matchesFilter = state.activeFilter === 'all' || row.dataset.status === state.activeFilter;
+                const matchesFilter = (scopeName === 'transactions' && transactionView === 'unattended')
+                    || state.activeFilter === 'all' || row.dataset.status === state.activeFilter;
                 const matchesVisitStatus = !statusMenu || statusMenu.dataset.value === 'all' || row.dataset.visitStatus === statusMenu.dataset.value;
-                const matchesQuery = !state.query || row.textContent.toLowerCase().includes(state.query);
+                const matchesExactId = scopeName === 'transactions' && state.exactIdField
+                    ? row.dataset[state.exactIdField] === state.exactId
+                    : null;
+                const matchesQuery = state.exactIdField
+                    ? matchesExactId
+                    : (!state.query || row.textContent.toLowerCase().includes(state.query)
+                        || (scopeName === 'transactions' && row.dataset.visitId === state.query));
                 return matchesFilter && matchesVisitStatus && matchesQuery;
             });
             const page = window.InigoStaffPagination.paginateRows(matchingRows, state.page);
@@ -955,7 +1008,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (scopeName === 'transactions') {
                         const messageCell = row.querySelector('td');
                         const transactionDateValue = document.querySelector('[data-staff-tx-date]')?.value || '';
-                        messageCell.textContent = state.query || state.activeFilter !== 'all' || (statusMenu && statusMenu.dataset.value !== 'all')
+                        messageCell.textContent = state.exactIdField === 'transactionId' && state.exactId === '__no_visible_transaction__'
+                            ? 'No matching time-in transaction is available to your account.'
+                            : state.query || state.activeFilter !== 'all' || (statusMenu && statusMenu.dataset.value !== 'all')
                             ? 'No transactions match your search and filters.'
                             : (transactionDateValue && transactionRows.length
                                 ? 'No transactions match the selected date.'
@@ -988,6 +1043,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (searchInput && !state.bound) {
             searchInput.addEventListener('input', () => {
                 state.query = searchInput.value.trim().toLowerCase();
+                state.exactIdField = null;
+                state.exactId = null;
                 state.page = 1;
                 applyFilters();
             });
@@ -1022,11 +1079,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     const overviewPagination = document.querySelector('[data-staff-pagination="overview"]');
     const overviewSearchInput = document.querySelector('[data-staff-overview-search]');
     const overviewSportSelect = document.querySelector('[data-staff-overview-sport]');
+    const overviewTypeSelect = document.querySelector('[data-staff-overview-type]');
     const overviewDateInput = document.querySelector('[data-staff-overview-date]');
-    // Booking Overview opens on the current business-local date. Staff can
-    // clear or change this filter to review other eligible reservations.
-    if (overviewDateInput && !overviewDateInput.value) overviewDateInput.value = todayDateInputValue();
+    const overviewClearButton = document.querySelector('[data-staff-overview-clear]');
+    let overviewDateManuallyChanged = false;
+    // Keep the picker anchored to the current business-local date. This is
+    // both the default date filter and the earliest date staff can select.
+    // Once staff edit the date, preserve their choice (including an empty
+    // value from the native picker's Clear action) across picker interaction
+    // and refreshes. A selected date that becomes stale is clamped to today.
+    function refreshOverviewDateBoundary() {
+        if (!overviewDateInput) return;
+        const today = todayDateInputValue();
+        overviewDateInput.min = today;
+        if (!overviewDateManuallyChanged || (overviewDateInput.value && overviewDateInput.value < today)) {
+            overviewDateInput.value = today;
+        }
+    }
+    function updateOverviewClearButton() {
+        if (!overviewClearButton) return;
+        overviewClearButton.hidden = !(
+            (overviewSearchInput?.value || '').trim()
+            || (overviewSportSelect?.value || '')
+            || (overviewTypeSelect?.value || '')
+            || Boolean(overviewDateInput && overviewDateInput.value !== todayDateInputValue())
+        );
+    }
+    refreshOverviewDateBoundary();
+    if (overviewTypeSelect) overviewTypeSelect.value = '';
+    updateOverviewClearButton();
+    overviewDateInput?.addEventListener('focus', () => { refreshOverviewDateBoundary(); updateOverviewClearButton(); });
+    overviewDateInput?.addEventListener('pointerdown', () => { refreshOverviewDateBoundary(); updateOverviewClearButton(); });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) { refreshOverviewDateBoundary(); updateOverviewClearButton(); }
+    });
     let overviewRows = [];
+    const staffExtensionAvailabilityCache = new Map();
     let overviewPage = 1;
     let overviewRefreshGeneration = 0;
 
@@ -1040,15 +1128,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return overviewRows
             .map((row, index) => ({ row, index }))
             .filter(({ row }) => {
-                // Booking Overview is the customer reservation queue. Staff
-                // walk-ins remain available in their own workflow and stats.
-                if (row.sourceType !== 'booking') return false;
                 const status = staffDerivedStatus(row);
                 if (status === 'cancelled' || status === 'completed' || status === 'unattended') return false;
-                if (status === 'inplay') return true;
+                if (status === 'arrived' || status === 'inplay') return true;
                 if (status !== 'booked') return false;
                 const start = new Date(row.time_date).getTime();
-                return start >= now || staffCanTimeIn(row, status);
+                // Keep a paid walk-in visible while the scheduled-start job
+                // records its automatic Time-In.
+                return start >= now || staffCanTimeIn(row, status)
+                    || (row.sourceType === 'walkin' && now < rowWindow(row).end.getTime());
             });
     }
 
@@ -1059,10 +1147,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             .map(({ row }) => String(row.sports || '').trim())
             .filter(Boolean)))
             .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-        overviewSportSelect.innerHTML = '<option value="">All sports</option>' + sports.map((sport) =>
+        overviewSportSelect.innerHTML = '<option value="" disabled hidden>All sports</option>' + sports.map((sport) =>
             `<option value="${window.escapeHtml(sport)}">${window.escapeHtml(sport)}</option>`
         ).join('');
         overviewSportSelect.value = sports.includes(selected) ? selected : '';
+        updateOverviewClearButton();
     }
 
     function overviewMatchesDate(row, dateFilter) {
@@ -1076,13 +1165,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!overviewTableBody) return;
         const query = (overviewSearchInput?.value || '').trim().toLocaleLowerCase();
         const sport = overviewSportSelect?.value || '';
+        const type = overviewTypeSelect?.value || '';
         const dateFilter = overviewDateInput?.value || '';
         const visible = entries.filter(({ row }) => {
             const matchesSearch = !query
                 || String(row.customerName || '').toLocaleLowerCase().includes(query)
                 || staffOverviewIdLabel(row).toLocaleLowerCase().includes(query);
             const matchesSport = !sport || String(row.sports || '').trim() === sport;
-            return matchesSearch && matchesSport && overviewMatchesDate(row, dateFilter);
+            const matchesType = !type || row.sourceType === type;
+            return matchesSearch && matchesSport && matchesType && overviewMatchesDate(row, dateFilter);
         });
 
         overviewTableBody.innerHTML = '';
@@ -1095,8 +1186,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!visible.length) {
             const message = entries.length
                 ? 'No bookings match these filters.'
-                : 'No bookings found.';
-            overviewTableBody.innerHTML = `<tr><td colspan="7" class="staff-table-message">${message}</td></tr>`;
+                : 'No reservations found.';
+            overviewTableBody.innerHTML = `<tr><td colspan="8" class="staff-table-message">${message}</td></tr>`;
             return;
         }
         page.rows.forEach(({ row, index }) => {
@@ -1185,8 +1276,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function staffActionCellHtml(row, status) {
         if (staffCanTimeIn(row, status)) return '<button type="button" class="staff-mini-btn is-primary" data-staff-action="timein">Time-In</button>';
-        if (status === 'inplay') return '<button type="button" class="staff-mini-btn" data-staff-action="timeout">Time-Out</button>';
+        if (status === 'inplay') {
+            const canOfferExtension = staffCanOfferExtension(row);
+            return `<span class="staff-overview-actions"><button type="button" class="staff-mini-btn is-primary" data-staff-action="timeout">Time-Out</button>${canOfferExtension ? '<button type="button" class="staff-extension-plus" data-staff-action="extend" aria-label="Extend booking" title="Extend booking">+</button>' : ''}</span>`;
+        }
+        if (status === 'booked' && row.sourceType === 'walkin') return '<span class="staff-status booked">Walk-in</span>';
         return `<span class="staff-status ${window.escapeHtml(status)}">${window.escapeHtml(staffStatusLabel(status))}</span>`;
+    }
+
+    function staffCanOfferExtension(row) {
+        const target = row && rowTableTarget(row);
+        if (!row?.raw?.checked_in_at || !target?.idValue) return false;
+        return staffExtensionAvailabilityCache.get(`${row.sourceType}:${target.idValue}`) === true;
     }
 
     function staffHasOverviewAction(row) {
@@ -1206,6 +1307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // escaped before it touches innerHTML.
     function renderOverviewRow(row) {
         const status = staffDerivedStatus(row);
+        const typeLabel = row.sourceType === 'walkin' ? 'Walk-in' : 'Booking';
         const fallbackName = row.sourceType === 'walkin' ? 'Walk-in customer' : 'Customer';
         const customerName = window.escapeHtml(row.customerName || fallbackName);
         const courtLabel = window.escapeHtml(row.courts || '—');
@@ -1221,6 +1323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         tr.innerHTML = `
             <td class="staff-cell-ref">${window.escapeHtml(staffOverviewIdLabel(row))}</td>
             <td class="staff-cell-main">${customerName}</td>
+            <td>${typeLabel}</td>
             <td>${window.escapeHtml(row.sports || '—')}</td>
             <td>${courtLabel}${unitLabel}</td>
             <td>${window.escapeHtml(formatOverviewTimeCell(row))}</td>
@@ -1228,6 +1331,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td>${staffActionCellHtml(row, status)}</td>
         `;
         return tr;
+    }
+
+    function compareOverviewRows(a, b) {
+        const priority = (row) => {
+            const status = staffDerivedStatus(row);
+            if (staffCanTimeIn(row, status)) return 0;
+            if (status === 'inplay') return 1;
+            return 2;
+        };
+        const aPriority = priority(a);
+        const bPriority = priority(b);
+        if (aPriority !== bPriority) return aPriority - bPriority;
+
+        // Keep each action group chronological, then sort no-action rows by
+        // booking start time so the next reservations remain easy to scan.
+        const aTime = Date.parse(a.time_date);
+        const bTime = Date.parse(b.time_date);
+        if (Number.isFinite(aTime) !== Number.isFinite(bTime)) return Number.isFinite(aTime) ? -1 : 1;
+        if (Number.isFinite(aTime) && aTime !== bTime) return aTime - bTime;
+
+        return staffOverviewIdLabel(a).localeCompare(staffOverviewIdLabel(b), undefined, { numeric: true, sensitivity: 'base' });
     }
 
     async function refreshBookingOverview() {
@@ -1238,17 +1362,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (generation !== overviewRefreshGeneration || !isOverviewVisible()) return;
         if (!bookingsRes.ok) {
             renderStaffTablePagination(overviewPagination, 0, overviewPage, () => {});
-            overviewTableBody.innerHTML = '<tr><td colspan="7" class="staff-table-message">Could not load bookings right now.</td></tr>';
+            overviewTableBody.innerHTML = '<tr><td colspan="8" class="staff-table-message">Could not load reservations right now.</td></tr>';
             return;
         }
 
         const merged = mergeBookingRows(bookingsRes.rows, walkinsRes.ok ? walkinsRes.rows : []);
-        merged.sort((a, b) => {
-            const aTime = Date.parse(a.time_date);
-            const bTime = Date.parse(b.time_date);
-            const timeOrder = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
-            return timeOrder || staffOverviewIdLabel(a).localeCompare(staffOverviewIdLabel(b), undefined, { sensitivity: 'base' });
-        });
+        merged.sort(compareOverviewRows);
 
         const nameMap = await fetchProfileNamesByIds(merged.filter((r) => r.sourceType === 'booking').map((r) => r.customerId));
         if (generation !== overviewRefreshGeneration || !isOverviewVisible()) return;
@@ -1257,18 +1376,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         overviewRows = merged;
+        staffExtensionAvailabilityCache.clear();
+        const extensionCandidates = merged.filter((row) => staffDerivedStatus(row) === 'inplay'
+            && row.raw?.checked_in_at);
+        await Promise.all(extensionCandidates.map(async (row) => {
+            const target = rowTableTarget(row);
+            if (!target?.idValue) return;
+            const key = `${row.sourceType}:${target.idValue}`;
+            try {
+                const availability = await window.sb.rpc('staff_booking_extension_options', {
+                    p_source: row.sourceType === 'booking' ? 'booking' : 'walkin', p_id: String(target.idValue),
+                });
+                staffExtensionAvailabilityCache.set(key, Array.isArray(availability?.data?.options)
+                    && availability.data.options.length > 0 && !availability.error);
+            } catch { staffExtensionAvailabilityCache.set(key, false); }
+        }));
+        if (generation !== overviewRefreshGeneration || !isOverviewVisible()) return;
         renderOverviewStats(merged);
         const entries = overviewEntries();
         renderOverviewSportOptions(entries);
         renderFilteredOverview(entries);
     }
 
-    [overviewSearchInput, overviewSportSelect, overviewDateInput].forEach((control) => {
+    [overviewSearchInput, overviewSportSelect, overviewTypeSelect, overviewDateInput].forEach((control) => {
         if (!control) return;
-        control.addEventListener(control === overviewSearchInput ? 'input' : 'change', () => {
+        const handleChange = () => {
+            if (control === overviewDateInput) {
+                overviewDateManuallyChanged = true;
+                refreshOverviewDateBoundary();
+            }
+            updateOverviewClearButton();
             overviewPage = 1;
             renderFilteredOverview();
-        });
+        };
+        if (control === overviewDateInput) {
+            // Native date pickers can emit input before change when staff use
+            // their Clear action. Track either event so an explicit blank is
+            // never mistaken for an untouched default.
+            control.addEventListener('input', handleChange);
+            control.addEventListener('change', handleChange);
+        } else {
+            control.addEventListener(control === overviewSearchInput ? 'input' : 'change', handleChange);
+        }
+    });
+    overviewClearButton?.addEventListener('click', () => {
+        if (overviewSearchInput) overviewSearchInput.value = '';
+        if (overviewSportSelect) overviewSportSelect.value = '';
+        if (overviewTypeSelect) overviewTypeSelect.value = '';
+        if (overviewDateInput) overviewDateInput.value = todayDateInputValue();
+        overviewDateManuallyChanged = false;
+        updateOverviewClearButton();
+        overviewPage = 1;
+        renderFilteredOverview();
     });
 
     // Revision S2 (implementation_plan.md, decisions S11/S14) — Time-In no
@@ -1290,7 +1449,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // dashboard stays open. todayRange() is timezone anchored, so this also
     // rolls the four counters over after Asia/Manila midnight.
     window.setInterval(() => {
-        if (isOverviewVisible()) refreshBookingOverview();
+        if (isOverviewVisible()) {
+            refreshOverviewDateBoundary();
+            updateOverviewClearButton();
+            refreshBookingOverview();
+        }
     }, 60000);
     document.addEventListener('visibilitychange', () => {
         if (isOverviewVisible()) refreshBookingOverview();
@@ -1301,8 +1464,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // single-page form (duration 1/2/3h + start time + Cash/QR Ph) with a
     // 6-step wizard: ① Customer -> ② Sport -> ③ Court -> ④ Schedule ->
     // ⑤ Summary -> ⑥ Payment & confirmation. On
-    // success the wizard is swapped for a receipt card (Download PNG /
-    // Print / New walk-in).
+    // success the acknowledgment opens in a receipt popup with Download PNG
+    // and Print; closing it resets the wizard to Customer.
     // ------------------------------------------------------------------
     const walkinWizardWrap = document.querySelector('[data-staff-walkin-wizard-wrap]');
     const walkinReceiptWrap = document.querySelector('[data-staff-walkin-receipt-wrap]');
@@ -1338,6 +1501,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinPaymentOptionEls = document.querySelectorAll('[data-staff-walkin-step="6"] [data-staff-payment-option]');
     const walkinCashUnavailableEl = document.querySelector('[data-staff-walkin-cash-unavailable]');
     const walkinOnlineUnavailableEl = document.querySelector('[data-staff-walkin-online-unavailable]');
+    const walkinCashInstruction = document.querySelector('[data-staff-walkin-cash-instruction]');
     const walkinAcknowledgmentNote = document.querySelector('[data-staff-walkin-acknowledgment-note]');
 
     const walkinSummaryName = document.querySelector('[data-staff-walkin-summary-name]');
@@ -1347,10 +1511,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const walkinPaymentLinesEl = document.querySelector('[data-staff-walkin-payment-lines]');
     const walkinSummaryPayment = document.querySelector('[data-staff-walkin-summary-payment]');
     const walkinSummaryTotals = document.querySelectorAll('[data-staff-walkin-summary-total], [data-staff-walkin-payment-total]');
-    const walkinCashDetails = document.querySelector('[data-staff-walkin-cash-details]');
     const walkinCashTenderedInput = document.querySelector('[data-staff-walkin-cash-tendered]');
     const walkinCashValidation = document.querySelector('[data-staff-walkin-cash-validation]');
     const walkinCashChange = document.querySelector('[data-staff-walkin-cash-change]');
+    const walkinCashModal = document.querySelector('[data-staff-walkin-cash-modal]');
+    const walkinCashDialog = document.querySelector('[data-staff-walkin-cash-dialog]');
+    const walkinCashDueEl = document.querySelector('[data-staff-walkin-cash-due]');
+    const walkinCashPayBtn = document.querySelector('[data-staff-walkin-cash-pay]');
 
     const WALKIN_STEP_COUNT = 6;
     let walkinWizardStep = 1;
@@ -1383,6 +1550,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         payment: 'cash',
     };
     let walkinBusinessRules = null;
+    let walkinCutoffRenderTimer = null;
     let walkinCustomerSearchTimer = null;
     let walkinMobileCheckTimer = null;
     let walkinMobileCheckRevision = 0;
@@ -1393,6 +1561,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let walkinQrPollTimer = null;
     let activeWalkinQr = null;
     let walkinQrCheckInFlight = false;
+    let walkinCashPayConfirmed = false;
+    let walkinSubmissionInFlight = false;
 
     // { ok, rows } — today's bookings/walk-ins for the CURRENTLY selected
     // court, refreshed by refreshWalkinTimeSlots() below. Same shape as
@@ -1415,8 +1585,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         const walkinOnlineOption = document.querySelector('[data-staff-walkin-online-option]');
         if (walkinOnlineOption) walkinOnlineOption.hidden = !staffOnlineEnabled;
-        const timeInQrOption = document.querySelector('[data-staff-timein-qr-option]');
-        if (timeInQrOption) timeInQrOption.hidden = !staffQrphEnabled;
+        const timeInOnlineOption = document.querySelector('[data-staff-timein-online-option]');
+        if (timeInOnlineOption) timeInOnlineOption.hidden = !staffOnlineEnabled;
         if (walkinOnlineUnavailableEl) walkinOnlineUnavailableEl.hidden = staffOnlineEnabled;
         if (walkinCashUnavailableEl) walkinCashUnavailableEl.hidden = staffCashEnabled;
         if (!staffCashEnabled && walkinState.payment === 'cash') walkinState.payment = staffOnlineEnabled ? 'paymongo' : null;
@@ -1433,7 +1603,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             timeInSelectedMethod = null;
             if (timeInModalRow && timeInModalIsOpen) renderTimeInModal(timeInModalRow);
         }
-        if (!staffQrphEnabled && timeInSelectedMethod === 'QR Payment') {
+        if (!staffCashEnabled && timeInCashModal && !timeInCashModal.hidden) closeTimeInCashModal();
+        if (!staffOnlineEnabled && timeInSelectedMethod === 'Online Payment') {
             timeInSelectedMethod = null;
             if (timeInModalRow && timeInModalIsOpen) renderTimeInModal(timeInModalRow);
         }
@@ -1480,8 +1651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             walkinSaveBtn.hidden = walkinWizardStep !== WALKIN_STEP_COUNT;
             walkinSaveBtn.disabled = !walkinStepIsReady(WALKIN_STEP_COUNT) || !walkinBusinessRules?.authoritative
                 || (walkinState.payment === 'cash' && !staffCashEnabled)
-                || (walkinState.payment === 'paymongo' && !staffOnlineEnabled)
-                || (walkinState.payment === 'cash' && !walkinCashTenderIsValid());
+                || (walkinState.payment === 'paymongo' && !staffOnlineEnabled);
         }
         if (walkinBackBtn) walkinBackBtn.textContent = walkinWizardStep === 2 && editingWalkinItemIndex !== null
             ? 'Cancel edit' : addingWalkinItem && walkinWizardStep >= 2 && walkinWizardStep <= 4
@@ -2045,14 +2215,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function isWalkinHourPast(hour) {
         const slot = hourWindow(hour, todayDateInputValue());
-        const now = Date.now();
-        if (slot.end.getTime() <= now) return true;
-        const configuredGraceMinutes = Number(walkinBusinessRules?.graceMinutes);
-        const graceMinutes = Number.isInteger(configuredGraceMinutes) && configuredGraceMinutes >= 0
-            ? configuredGraceMinutes : 30;
-        // Time-In and no-show rules use this same inclusive deadline:
-        // the slot remains eligible at start + grace, then closes after it.
-        return now > slot.start.getTime() + graceMinutes * 60 * 1000;
+        const isBeforeCutoff = window.InigoBookingSlots?.isBeforeStartCutoff?.(slot.start, Date.now(), walkinBusinessRules?.slotCutoffMinutes)
+            ?? slot.start.getTime() + (walkinBusinessRules?.slotCutoffMinutes ?? 10) * 60 * 1000 > Date.now();
+        return !isBeforeCutoff;
     }
 
     // Bookings match the same "same unit, or both no-unit" rule
@@ -2112,7 +2277,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         return 'open';
     }
 
+    function scheduleWalkinCutoffRender() {
+        if (walkinCutoffRenderTimer) window.clearTimeout(walkinCutoffRenderTimer);
+        walkinCutoffRenderTimer = null;
+        if (walkinSelectionDate !== todayDateInputValue() || !walkinBusinessRules?.authoritative) return;
+        const next = window.InigoBookingSlots?.nextStartCutoff?.(walkinSelectionDate, walkinHoursForDay, Date.now(), walkinBusinessRules?.slotCutoffMinutes);
+        if (!next) return;
+        walkinCutoffRenderTimer = window.setTimeout(() => {
+            walkinCutoffRenderTimer = null;
+            if (document.visibilityState !== 'visible') return;
+            renderWalkinTimeSlots();
+            updateWalkinSummary();
+            renderWalkinWizard();
+        }, Math.max(0, next.at - Date.now()));
+    }
+
     function renderWalkinTimeSlots() {
+        if (walkinCutoffRenderTimer) window.clearTimeout(walkinCutoffRenderTimer);
+        walkinCutoffRenderTimer = null;
         if (!walkinHourGrid || !window.InigoBusinessHours) return;
         if (!walkinState.court) {
             walkinHourGrid.innerHTML = '<p class="staff-form-hint">Select a sport and court first.</p>';
@@ -2238,6 +2420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? `${currentSelection.length} consecutive hour${currentSelection.length === 1 ? '' : 's'} selected.`
                 : 'Select an available hour. Choose any end hour to extend the booking continuously.';
         }
+        scheduleWalkinCutoffRender();
     }
 
     async function refreshWalkinTimeSlots(forceRules = false) {
@@ -2504,7 +2687,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function walkinCashTenderMinor() {
         const raw = String(walkinCashTenderedInput?.value || '').trim();
-        if (!/^(?:\d+)(?:\.\d{1,2})?$/.test(raw)) return null;
+        if (!/^(?:\d+)(?:\.\d{0,2})?$/.test(raw)) return null;
         const [whole, fraction = ''] = raw.split('.');
         const minor = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
         return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
@@ -2516,12 +2699,123 @@ document.addEventListener('DOMContentLoaded', async () => {
         return due !== null && tendered !== null && tendered >= due;
     }
 
+    let walkinCashModalLastFocus = null;
+    function updateWalkinCashModal() {
+        const dueMinor = walkinCashDueMinor();
+        const tenderedMinor = walkinCashTenderMinor();
+        const valid = dueMinor !== null && tenderedMinor !== null && tenderedMinor >= dueMinor;
+        if (walkinCashDueEl) walkinCashDueEl.textContent = dueMinor === null ? 'Confirm at front desk' : formatStaffPeso(dueMinor / 100);
+        if (walkinCashChange) walkinCashChange.textContent = valid ? formatStaffPeso((tenderedMinor - dueMinor) / 100) : '—';
+        if (walkinCashValidation) {
+            walkinCashValidation.textContent = dueMinor === null
+                ? 'A confirmed total is required before collecting cash.'
+                : tenderedMinor === null ? 'Enter the cash received to calculate change.'
+                    : tenderedMinor < dueMinor ? `Enter at least ${formatStaffPeso(dueMinor / 100)}.`
+                        : `Change due: ${formatStaffPeso((tenderedMinor - dueMinor) / 100)}.`;
+            walkinCashValidation.setAttribute('aria-invalid', dueMinor !== null && tenderedMinor !== null && tenderedMinor < dueMinor ? 'true' : 'false');
+        }
+        if (walkinCashPayBtn) walkinCashPayBtn.disabled = !valid || walkinSubmissionInFlight;
+        return valid;
+    }
+
+    function openWalkinCashModal() {
+        if (!walkinCashModal || !walkinCashDialog || !walkinCashTenderedInput) return;
+        walkinCashModalLastFocus = document.activeElement;
+        walkinCashTenderedInput.value = '';
+        walkinCashModal.setAttribute('data-open', '');
+        walkinCashModal.hidden = false;
+        updateStaffModalBackground();
+        updateWalkinCashModal();
+        walkinCashTenderedInput.focus();
+    }
+
+    function closeWalkinCashModal({ restoreFocus = true } = {}) {
+        if (!walkinCashModal) return;
+        walkinCashModal.hidden = true;
+        walkinCashModal.removeAttribute('data-open');
+        updateStaffModalBackground();
+        if (restoreFocus && walkinCashModalLastFocus?.isConnected) walkinCashModalLastFocus.focus();
+        walkinCashModalLastFocus = null;
+    }
+
+    function sanitizeWalkinCashTender() {
+        if (!walkinCashTenderedInput) return;
+        const original = walkinCashTenderedInput.value;
+        const position = walkinCashTenderedInput.selectionStart;
+        let clean = original.replace(/[^\d.]/g, '');
+        const decimalAt = clean.indexOf('.');
+        if (decimalAt >= 0) clean = `${clean.slice(0, decimalAt + 1)}${clean.slice(decimalAt + 1).replace(/\./g, '').slice(0, 2)}`;
+        if (clean.startsWith('.')) clean = `0${clean}`;
+        walkinCashTenderedInput.value = clean;
+        if (position !== null && clean.length !== original.length) {
+            const removedBefore = original.slice(0, position).length - original.slice(0, position).replace(/[^\d.]/g, '').length;
+            const prefixedZero = original.startsWith('.') && position > 0 ? 1 : 0;
+            const caret = Math.max(0, position - removedBefore + prefixedZero);
+            walkinCashTenderedInput.setSelectionRange(caret, caret);
+        }
+        updateWalkinSummary();
+        updateWalkinCashModal();
+        renderWalkinWizard();
+    }
+
     if (walkinCashTenderedInput) {
-        walkinCashTenderedInput.addEventListener('input', () => {
-            updateWalkinSummary();
-            renderWalkinWizard();
+        walkinCashTenderedInput.addEventListener('input', sanitizeWalkinCashTender);
+        walkinCashTenderedInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (walkinCashPayBtn && !walkinCashPayBtn.disabled) walkinCashPayBtn.click();
+                return;
+            }
+            if (event.key.length === 1 && !/[\d.]/.test(event.key)) event.preventDefault();
+            if (event.key === '.' && walkinCashTenderedInput.value.includes('.')) event.preventDefault();
+            if (/\d/.test(event.key) && walkinCashTenderedInput.value.includes('.')
+                && walkinCashTenderedInput.value.split('.')[1].length >= 2
+                && walkinCashTenderedInput.selectionStart === walkinCashTenderedInput.selectionEnd
+                && walkinCashTenderedInput.selectionStart > walkinCashTenderedInput.value.indexOf('.')) event.preventDefault();
         });
     }
+
+    if (walkinCashModal) {
+        walkinCashModal.addEventListener('click', (event) => {
+            const key = event.target.closest('[data-staff-cash-key]')?.dataset.staffCashKey;
+            if (event.target === walkinCashModal || event.target.closest('[data-staff-walkin-cash-close], [data-staff-walkin-cash-cancel]')) {
+                closeWalkinCashModal();
+                return;
+            }
+            if (!key || !walkinCashTenderedInput) return;
+            if (key === 'Enter') {
+                if (walkinCashPayBtn && !walkinCashPayBtn.disabled) walkinCashPayBtn.click();
+                return;
+            }
+            const start = walkinCashTenderedInput.selectionStart ?? walkinCashTenderedInput.value.length;
+            const end = walkinCashTenderedInput.selectionEnd ?? start;
+            let value = walkinCashTenderedInput.value;
+            if (key === 'Backspace') {
+                if (start === end && start > 0) walkinCashTenderedInput.setRangeText('', start - 1, end, 'end');
+                else walkinCashTenderedInput.setRangeText('', start, end, 'end');
+            } else if (key === '.' && value.includes('.')) return;
+            else if (key === '.' || /^\d$/.test(key)) {
+                const dot = value.indexOf('.');
+                if (dot >= 0 && start === end && start > dot && value.slice(dot + 1).length >= 2) return;
+                walkinCashTenderedInput.setRangeText(key, start, end, 'end');
+            }
+            walkinCashTenderedInput.dispatchEvent(new Event('input', { bubbles: true }));
+            walkinCashTenderedInput.focus();
+        });
+        walkinCashModal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeWalkinCashModal();
+            }
+        });
+    }
+    if (walkinCashPayBtn) walkinCashPayBtn.addEventListener('click', () => {
+        if (walkinCashPayBtn.disabled || !walkinCashTenderIsValid() || walkinSubmissionInFlight) return;
+        walkinCashPayConfirmed = true;
+        closeWalkinCashModal({ restoreFocus: false });
+        walkinSaveBtn?.focus();
+        walkinSaveBtn?.click();
+    });
 
     // ---- Step 5 — Summary and line editing ----
     function walkinHoursSelected() {
@@ -2562,23 +2856,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             : 'Cash';
         walkinSummaryTotals.forEach((el) => { el.textContent = subtotal === null ? 'Confirm at front desk' : formatStaffPeso(subtotal); });
         if (walkinOnlineFeeNote) walkinOnlineFeeNote.hidden = walkinState.payment !== 'paymongo';
-        if (walkinCashDetails) walkinCashDetails.hidden = walkinState.payment !== 'cash';
-        if (walkinCashTenderedInput) {
-            walkinCashTenderedInput.disabled = walkinState.payment !== 'cash';
-        }
-        const dueMinor = walkinCashDueMinor();
-        const tenderedMinor = walkinCashTenderMinor();
-        const cashValid = dueMinor !== null && tenderedMinor !== null && tenderedMinor >= dueMinor;
-        if (walkinCashChange) walkinCashChange.textContent = cashValid
-            ? formatStaffPeso((tenderedMinor - dueMinor) / 100) : '—';
-        if (walkinCashValidation) {
-            walkinCashValidation.textContent = dueMinor === null
-                ? 'A confirmed total is required before collecting cash.'
-                : tenderedMinor === null ? 'Enter the cash received to calculate change.'
-                    : tenderedMinor < dueMinor ? `Enter at least ${formatStaffPeso(dueMinor / 100)}.`
-                        : `Cash received: ${formatStaffPeso(tenderedMinor / 100)}.`;
-            walkinCashValidation.setAttribute('aria-invalid', dueMinor !== null && tenderedMinor !== null && tenderedMinor < dueMinor ? 'true' : 'false');
-        }
+        if (walkinCashInstruction) walkinCashInstruction.hidden = walkinState.payment !== 'cash';
+        updateWalkinCashModal();
         if (walkinAcknowledgmentNote) walkinAcknowledgmentNote.textContent = walkinState.payment === 'paymongo'
             ? 'A payment acknowledgment is available only after PayMongo verifies the full payment.'
             : 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.';
@@ -2947,7 +3226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (result.receipt) {
             stopWalkinQrPolling();
             activeWalkinQr = null;
-            renderStaffReceipt(result.receipt);
+            showWalkinOrderReceipt(result.receipt);
             window.InigoToast?.show('PayMongo confirmed payment. The acknowledgment is ready to print or download.');
             refreshBookingOverview();
             refreshCourtSchedule();
@@ -3064,12 +3343,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function showWalkinAcknowledgment(orderId) {
         walkinLastOrderId = orderId;
         const result = await loadWalkinAcknowledgment(orderId);
-        if (walkinWizardWrap) walkinWizardWrap.hidden = true;
-        if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
         if (result.receipt) {
-            renderStaffReceipt(result.receipt);
+            showWalkinOrderReceipt(result.receipt);
             return true;
         }
+        if (walkinWizardWrap) walkinWizardWrap.hidden = true;
+        if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
         if (walkinReceiptEl) {
             walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending"><h3>Payment acknowledgment pending</h3><p>${window.escapeHtml(result.error)}</p><button type="button" class="staff-btn-ghost" data-staff-receipt-retry="${window.escapeHtml(orderId)}">Check payment again</button><button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button></div>`;
         }
@@ -3082,6 +3361,104 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffReceiptModalTitle = document.querySelector('[data-staff-receipt-modal-title]');
     const staffShell = document.querySelector('.staff-shell');
     let staffReceiptModalLastFocus = null;
+    let staffReceiptModalPurpose = null;
+    const celebratedStaffReceipts = new Set();
+
+    function claimStaffPaymentCelebration(receipt) {
+        const receiptId = receipt?.receipt_id || receipt?.receipt_number || receipt?.id
+            || receipt?.source_id || receipt?.order_id || receipt?.walkin_order_id;
+        if (!receiptId) return false;
+        const key = `inigosync:staff-payment-celebrated:${String(receiptId)}`;
+        if (celebratedStaffReceipts.has(key)) return false;
+        try {
+            if (window.sessionStorage?.getItem(key) === '1') return false;
+            window.sessionStorage?.setItem(key, '1');
+        } catch { /* The in-memory guard still prevents replay for this page. */ }
+        celebratedStaffReceipts.add(key);
+        return true;
+    }
+
+    function playStaffPaymentSuccessSound() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        try {
+            const audio = new AudioContextClass();
+            const now = audio.currentTime;
+            audio.resume().catch(() => {});
+            [659.25, 880, 1046.5].forEach((frequency, index) => {
+                const oscillator = audio.createOscillator();
+                const gain = audio.createGain();
+                const start = now + index * 0.12;
+                oscillator.type = 'sine';
+                oscillator.frequency.value = frequency;
+                gain.gain.setValueAtTime(0.0001, start);
+                gain.gain.exponentialRampToValueAtTime(0.055, start + 0.025);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.24);
+                oscillator.connect(gain);
+                gain.connect(audio.destination);
+                oscillator.start(start);
+                oscillator.stop(start + 0.25);
+            });
+            window.setTimeout(() => audio.close().catch(() => {}), 850);
+        } catch { /* Audio support and playback restrictions are non-fatal. */ }
+    }
+
+    function showStaffPaymentConfetti() {
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || !staffReceiptDialog) return;
+        staffReceiptDialog.querySelector('[data-staff-payment-celebration]')?.remove();
+        const canvas = document.createElement('canvas');
+        canvas.dataset.staffPaymentCelebration = '';
+        canvas.setAttribute('aria-hidden', 'true');
+        staffReceiptDialog.appendChild(canvas);
+        const context = canvas.getContext('2d');
+        if (!context) { canvas.remove(); return; }
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const width = staffReceiptDialog.clientWidth;
+        const height = staffReceiptDialog.clientHeight;
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        const colors = ['#e4ad43', '#55a77c', '#7ea8d8', '#e58c78', '#f3d87c'];
+        const pieces = Array.from({ length: 90 }, () => ({
+            x: Math.random() * width, y: -Math.random() * height * 0.55,
+            vx: (Math.random() - 0.5) * 3.2, vy: 2.2 + Math.random() * 3.8,
+            size: 4 + Math.random() * 5, angle: Math.random() * Math.PI,
+            spin: (Math.random() - 0.5) * 0.16, color: colors[Math.floor(Math.random() * colors.length)],
+        }));
+        const start = performance.now();
+        const draw = (time) => {
+            if (!canvas.isConnected) return;
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.save();
+            context.scale(ratio, ratio);
+            pieces.forEach(piece => {
+                piece.x += piece.vx;
+                piece.y += piece.vy;
+                piece.angle += piece.spin;
+                context.save();
+                context.translate(piece.x, piece.y);
+                context.rotate(piece.angle);
+                context.fillStyle = piece.color;
+                context.fillRect(-piece.size / 2, -piece.size / 2, piece.size, piece.size * 0.65);
+                context.restore();
+            });
+            context.restore();
+            if (time - start < 1900) window.requestAnimationFrame(draw);
+            else canvas.remove();
+        };
+        window.requestAnimationFrame(draw);
+    }
+
+    function showWalkinOrderReceipt(receipt) {
+        if (!showImmediatePaymentAcknowledgment(receipt, 'walkin')) return false;
+        if (walkinWizardWrap) walkinWizardWrap.hidden = true;
+        if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
+        staffReceiptModalPurpose = 'walkin-order';
+        if (claimStaffPaymentCelebration(receipt)) {
+            playStaffPaymentSuccessSound();
+            showStaffPaymentConfetti();
+        }
+        return true;
+    }
 
     function updateStaffModalBackground() {
         const profileModal = document.querySelector('[data-staff-settings-profile-modal]');
@@ -3089,6 +3466,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (staffShell) staffShell.inert = Boolean(
             (staffReceiptModal && !staffReceiptModal.hidden)
             || (timeModal && !timeModal.hidden)
+            || (walkinCashModal && !walkinCashModal.hidden)
             || (profileModal && !profileModal.hidden)
         );
     }
@@ -3120,6 +3498,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         const profileDialog = profileModal?.querySelector('[data-staff-settings-profile-dialog]');
         const timeModal = document.querySelector('[data-staff-timein-modal]');
         const timeDialog = timeModal?.querySelector('[data-staff-timein-dialog]');
+        const timeCashModal = document.querySelector('[data-staff-timein-cash-modal]');
+        const timeCashDialog = timeCashModal?.querySelector('[data-staff-timein-cash-dialog]');
+        if (timeCashModal && !timeCashModal.hidden) {
+            containStaffDialogTab(event, timeCashDialog);
+            return;
+        }
+        if (walkinCashModal && !walkinCashModal.hidden) {
+            containStaffDialogTab(event, walkinCashDialog);
+            return;
+        }
         if (staffConfirmModal && !staffConfirmModal.hidden) containStaffDialogTab(event, staffConfirmDialog);
         else if (staffReceiptModal && !staffReceiptModal.hidden) containStaffDialogTab(event, staffReceiptDialog);
         else if (timeModal && !timeModal.hidden) containStaffDialogTab(event, timeDialog);
@@ -3180,6 +3568,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const source = row.source === 'walkin' ? 'Walk-in' : 'Booking';
         const referenceLabel = row.source === 'walkin' ? 'Walk-In ID' : 'Booking ID';
         const visit = Array.isArray(row.visits) ? row.visits[0] || {} : {};
+        const location = window.InigoPaymentAcknowledgment.formatLocation(visit);
         const amountMinor = row.amount_minor;
         const amount = amountMinor !== null && amountMinor !== undefined && amountMinor !== '' && Number.isFinite(Number(amountMinor))
             ? formatStaffPeso(Number(amountMinor) / 100) : '—';
@@ -3202,9 +3591,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="payment-ack-meta-row"><span>${referenceLabel}</span><strong>#${window.escapeHtml(row.visit_id ?? '—')}</strong></div>
                 <div class="payment-ack-meta-row"><span>Customer</span><strong>${window.escapeHtml(row.customer_name || '—')}</strong></div>
                 <div class="payment-ack-meta-row"><span>Source</span><strong>${source}</strong></div>
-                ${detail('Sport', visit.sport)}
-                ${detail('Court', visit.court)}
-                ${detail('Unit', visit.unit)}
+                ${detail('Sport', location.sport)}
+                ${detail('Court', location.court)}
+                ${detail('Unit', location.unit)}
                 ${detail('Visit date', timestamp(visit.starts_at))}
                 ${detail('Scheduled end', timestamp(visit.ends_at))}
                 ${detail('Duration', Number.isFinite(Number(visit.duration_minutes)) && Number(visit.duration_minutes) > 0 ? `${Number(visit.duration_minutes)} minutes` : null)}
@@ -3213,11 +3602,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
             <div class="payment-ack-rule"></div>
             <div class="payment-ack-totals">
-                ${bookingTotal ? `<div class="payment-ack-meta-row"><span>Booking total</span><strong>${window.escapeHtml(bookingTotal)}</strong></div>` : ''}
+                ${bookingTotal ? `<div class="payment-ack-meta-row"><span>${row.source === 'walkin' ? 'Walk-in total' : 'Booking total'}</span><strong>${window.escapeHtml(bookingTotal)}</strong></div>` : ''}
+                ${prepaid ? '<div class="payment-ack-meta-row"><span>Remaining balance</span><strong>₱0.00</strong></div>' : ''}
                 <div class="payment-ack-total"><span>Collected at Time-In</span><strong>${window.escapeHtml(amount)}</strong></div>
             </div>
             <div class="payment-ack-rule"></div>
-            <p class="payment-ack-disclaimer">${prepaid ? 'FULL PAYMENT PAID — NO NEW PAYMENT' : notCollected ? 'NO PAYMENT COLLECTED AT TIME-IN' : 'STAFF TIME-IN RECORD'}<br><span>${prepaid ? '₱0.00 was collected at Time-In. The booking was already fully paid; this acknowledgment records attendance only and does not represent a new payment.' : notCollected ? '₱0.00 was collected at Time-In. This record confirms attendance only and does not verify any earlier payment.' : 'This record confirms staff Time-In and the amount collected at that time. It is not an official receipt.'}</span></p>
+            <p class="payment-ack-disclaimer">${prepaid ? 'FULL PAYMENT PAID — NO NEW PAYMENT' : notCollected ? 'NO PAYMENT COLLECTED AT TIME-IN' : 'STAFF TIME-IN RECORD'}<br><span>${prepaid ? `₱0.00 was collected at Time-In. This ${row.source === 'walkin' ? 'walk-in visit' : 'booking'} is fully paid; this acknowledgment records attendance only and does not represent a new payment.` : notCollected ? '₱0.00 was collected at Time-In. This record confirms attendance only and does not verify any earlier payment.' : 'This record confirms staff Time-In and the amount collected at that time. It is not an official receipt.'}</span></p>
         </article>`;
         staffReceiptModalContent.scrollTop = 0;
         staffReceiptModal.setAttribute('data-open', '');
@@ -3230,12 +3620,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function closeStaffReceiptModal() {
         if (!staffReceiptModal) return;
+        const resetWalkin = staffReceiptModalPurpose === 'walkin-order';
+        staffReceiptModalPurpose = null;
         if (staffReceiptModalTitle) staffReceiptModalTitle.textContent = 'Payment acknowledgment';
         staffReceiptModal.removeAttribute('data-open');
         staffReceiptModal.hidden = true;
         updateStaffModalBackground();
         staffReceiptModalContent?.replaceChildren();
-        if (staffReceiptModalLastFocus?.focus) staffReceiptModalLastFocus.focus();
+        staffReceiptDialog?.querySelector('[data-staff-payment-celebration]')?.remove();
+        if (resetWalkin) {
+            if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
+            if (walkinWizardWrap) walkinWizardWrap.hidden = false;
+            resetWalkinWizard();
+            walkinNameInput?.focus();
+        } else if (staffReceiptModalLastFocus?.focus) staffReceiptModalLastFocus.focus();
         staffReceiptModalLastFocus = null;
     }
 
@@ -3276,6 +3674,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (button.disabled) return;
+        if (walkinState.payment === 'cash' && !walkinCashPayConfirmed) {
+            openWalkinCashModal();
+            return;
+        }
+        walkinCashPayConfirmed = false;
+        if (walkinSubmissionInFlight) return;
         if (!window.sb || !window.inigosyncProfile) {
             window.InigoToast?.show('Unable to reach the server. Try again shortly.', true);
             return;
@@ -3310,12 +3714,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const walkinTotal = walkinState.items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
-        const walkinConfirmMessage = walkinState.payment === 'cash'
-            ? `Collect ${formatStaffPeso(walkinTotal)} in Cash and save this walk-in payment?`
-            : `Continue to PayMongo checkout for ${formatStaffPeso(walkinTotal)}? The customer can choose an enabled online payment method. Any processing fee is shown before payment. The reservation and acknowledgment are confirmed only after PayMongo verifies the full payment.`;
-        if (!await confirmStaffAction(walkinConfirmMessage,
-            walkinState.payment === 'cash' ? 'Confirm Cash Payment' : 'Confirm Online Payment',
-            walkinState.payment === 'cash' ? 'Complete cash payment' : 'Continue to checkout')) return;
+        walkinSubmissionInFlight = true;
+        if (walkinState.payment === 'paymongo') {
+            const walkinConfirmMessage = `Continue to PayMongo checkout for ${formatStaffPeso(walkinTotal)}? The customer can choose an enabled online payment method. Any processing fee is shown before payment. The reservation and acknowledgment are confirmed only after PayMongo verifies the full payment.`;
+            if (!await confirmStaffAction(walkinConfirmMessage, 'Confirm Online Payment', 'Continue to checkout')) {
+                walkinSubmissionInFlight = false;
+                return;
+            }
+        }
 
         button.disabled = true;
         const originalText = button.textContent;
@@ -3342,6 +3748,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 refreshBookingOverview();
                 refreshCourtSchedule();
                 refreshTransactions();
+                walkinSubmissionInFlight = false;
+                button.disabled = false;
+                button.textContent = 'Continue to PayMongo';
             }
             return;
         }
@@ -3357,6 +3766,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) { create = { error }; }
         const order = normalizeRpcRow(create?.data);
         if (create?.error || !order?.order_id) {
+            walkinSubmissionInFlight = false;
             button.disabled = false;
             button.textContent = originalText;
             if (isWalkinGuestMobileConflictError(create?.error)) {
@@ -3381,6 +3791,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         refreshTransactions();
         button.disabled = false;
         button.textContent = originalText;
+        walkinSubmissionInFlight = false;
     }, true);
 
     // Event delegation — the receipt markup is fully replaced on every
@@ -3492,11 +3903,149 @@ document.addEventListener('DOMContentLoaded', async () => {
     const timeInBalanceEl = document.querySelector('[data-staff-timein-balance]');
     const timeInNoteEl = document.querySelector('[data-staff-timein-note]');
     const timeInPaymentWrap = document.querySelector('[data-staff-timein-payment-wrap]');
-    const timeInQrPanel = document.querySelector('[data-staff-timein-qr-panel]');
+    const timeInPaymentUnavailableEl = document.querySelector('[data-staff-timein-payment-unavailable]');
     const timeInPaymentOptionEls = document.querySelectorAll('[data-staff-timein-payment-wrap] [data-staff-payment-option]');
     const timeInConfirmBtn = document.querySelector('[data-staff-timein-confirm]');
     const timeInCancelBtn = document.querySelector('[data-staff-timein-cancel]');
     const timeInCloseBtn = document.querySelector('[data-staff-timein-close]');
+    const timeInCashModal = document.querySelector('[data-staff-timein-cash-modal]');
+    const timeInCashDialog = document.querySelector('[data-staff-timein-cash-dialog]');
+    const timeInCashTenderInput = document.querySelector('[data-staff-timein-cash-tendered]');
+    const timeInCashDueEl = document.querySelector('[data-staff-timein-cash-due]');
+    const timeInCashChangeEl = document.querySelector('[data-staff-timein-cash-change]');
+    const timeInCashValidationEl = document.querySelector('[data-staff-timein-cash-validation]');
+    const timeInCashPayBtn = document.querySelector('[data-staff-timein-cash-pay]');
+    const staffExtensionModal = document.querySelector('[data-staff-extension-modal]');
+    const staffExtensionDialog = document.querySelector('[data-staff-extension-dialog]');
+    const staffExtensionSummary = document.querySelector('[data-staff-extension-summary]');
+    const staffExtensionDuration = document.querySelector('[data-staff-extension-duration]');
+    const staffExtensionAvailability = document.querySelector('[data-staff-extension-availability]');
+    const staffExtensionNext = document.querySelector('[data-staff-extension-next]');
+    const staffExtensionCharge = document.querySelector('[data-staff-extension-charge]');
+    const staffExtensionCashOpen = document.querySelector('[data-staff-extension-cash-open]');
+    const staffExtensionCashReceived = document.querySelector('[data-staff-extension-cash-received]');
+    const staffExtensionCashModal = document.querySelector('[data-staff-extension-cash-modal]');
+    const staffExtensionCashDialog = document.querySelector('[data-staff-extension-cash-dialog]');
+    const staffExtensionCashInput = document.querySelector('[data-staff-extension-cash-tendered]');
+    const staffExtensionCashDue = document.querySelector('[data-staff-extension-cash-due]');
+    const staffExtensionCashChange = document.querySelector('[data-staff-extension-cash-change]');
+    const staffExtensionCashValidation = document.querySelector('[data-staff-extension-cash-validation]');
+    const staffExtensionCashConfirm = document.querySelector('[data-staff-extension-cash-confirm]');
+    const staffExtensionPay = document.querySelector('[data-staff-extension-pay]');
+    const staffExtensionPaymentError = document.querySelector('[data-staff-extension-payment-error]');
+    let staffExtensionRow = null;
+    let staffExtensionOptions = [];
+    let staffExtensionSelected = null;
+    let staffExtensionStep = 'duration';
+    let staffExtensionCashTenderMinor = null;
+    let staffExtensionCashLastFocus = null;
+
+    function closeStaffExtensionModal() {
+        if (!staffExtensionModal) return;
+        closeStaffExtensionCashCalculator(false);
+        staffExtensionModal.hidden = true;
+        staffExtensionModal.removeAttribute('data-open');
+        staffExtensionRow = null;
+        staffExtensionOptions = [];
+        staffExtensionSelected = null;
+        staffExtensionCashTenderMinor = null;
+        updateStaffModalBackground();
+    }
+
+    async function openStaffExtensionModal(row, trigger) {
+        const target = rowTableTarget(row);
+        if (!target.idValue || !staffExtensionModal || !window.sb) return;
+        staffExtensionRow = row;
+        staffExtensionStep = 'duration';
+        staffExtensionOptions = [];
+        staffExtensionNext.disabled = true;
+        staffExtensionCashTenderMinor = null;
+        staffExtensionCashOpen.hidden = true;
+        staffExtensionCashReceived.hidden = true;
+        document.querySelectorAll('[data-staff-extension-method]').forEach((input) => { input.checked = false; });
+        document.querySelector('[data-staff-extension-cash-option]').hidden = !staffCashEnabled;
+        document.querySelector('[data-staff-extension-online-option]').hidden = !staffOnlineEnabled;
+        staffExtensionCashInput.value = '';
+        staffExtensionAvailability.textContent = 'Checking live availability…';
+        staffExtensionDuration.replaceChildren();
+        document.querySelectorAll('[data-staff-extension-step]').forEach((el) => { el.hidden = el.dataset.staffExtensionStep !== 'duration'; });
+        staffExtensionSummary.textContent = `${row.customerName || 'Customer'} · ${row.courts || 'Court'}${row.unit ? ` · ${row.unit}` : ''}`;
+        staffExtensionModal.hidden = false;
+        staffExtensionModal.setAttribute('data-open', '');
+        staffExtensionModal.dataset.returnFocus = trigger?.getAttribute('aria-label') || '';
+        updateStaffModalBackground();
+        staffExtensionDialog?.focus();
+        const result = await window.sb.rpc('staff_booking_extension_options', {
+            p_source: row.sourceType === 'booking' ? 'booking' : 'walkin', p_id: String(target.idValue),
+        });
+        if (staffExtensionRow !== row) return;
+        if (result?.error || !Array.isArray(result?.data?.options)) {
+            staffExtensionAvailability.textContent = result?.error?.message || 'Could not check extension availability.';
+            return;
+        }
+        staffExtensionOptions = result.data.options.filter((option) => Number.isInteger(Number(option.duration_minutes))
+            && Number(option.amount_minor) > 0);
+        staffExtensionOptions.forEach((option) => {
+            const item = document.createElement('option');
+            item.value = String(option.duration_minutes);
+            item.textContent = `${Number(option.duration_minutes) / 60} hour${Number(option.duration_minutes) === 60 ? '' : 's'} · ${formatStaffPeso(Number(option.amount_minor) / 100)}`;
+            item.dataset.amountMinor = String(option.amount_minor);
+            staffExtensionDuration.append(item);
+        });
+        if (!staffExtensionOptions.length) {
+            staffExtensionAvailability.textContent = 'No immediately consecutive time is available.';
+            return;
+        }
+        staffExtensionAvailability.textContent = 'Available time is checked again when payment is submitted.';
+        staffExtensionSelected = staffExtensionOptions[0];
+        staffExtensionNext.disabled = false;
+    }
+
+    function selectedStaffExtension() {
+        return staffExtensionOptions.find((option) => Number(option.duration_minutes) === Number(staffExtensionDuration?.value)) || null;
+    }
+
+    function updateStaffExtensionCashCalculator() {
+        const due = Number(staffExtensionSelected?.amount_minor);
+        const tendered = parseCashTenderMinor(staffExtensionCashInput?.value);
+        const valid = Number.isSafeInteger(due) && due > 0 && tendered !== null && tendered >= due;
+        if (staffExtensionCashDue) staffExtensionCashDue.textContent = Number.isSafeInteger(due) ? formatStaffPeso(due / 100) : '—';
+        if (staffExtensionCashChange) staffExtensionCashChange.textContent = valid ? formatStaffPeso((tendered - due) / 100) : '—';
+        if (staffExtensionCashValidation) staffExtensionCashValidation.textContent = tendered === null ? 'Enter the cash received to calculate change.'
+            : tendered < due ? `Enter at least ${formatStaffPeso(due / 100)}.`
+                : `Change due: ${formatStaffPeso((tendered - due) / 100)}.`;
+        if (staffExtensionCashConfirm) staffExtensionCashConfirm.disabled = !valid;
+        return valid;
+    }
+
+    function openStaffExtensionCashCalculator() {
+        if (!staffExtensionCashModal || !staffExtensionSelected) return;
+        staffExtensionCashLastFocus = document.activeElement;
+        staffExtensionCashInput.value = staffExtensionCashTenderMinor === null ? '' : (staffExtensionCashTenderMinor / 100).toFixed(2);
+        staffExtensionCashModal.hidden = false;
+        staffExtensionCashModal.setAttribute('data-open', '');
+        updateStaffModalBackground();
+        updateStaffExtensionCashCalculator();
+        staffExtensionCashDialog?.focus();
+        staffExtensionCashInput?.focus();
+    }
+
+    function closeStaffExtensionCashCalculator(restoreFocus = true) {
+        if (!staffExtensionCashModal || staffExtensionCashModal.hidden) return;
+        staffExtensionCashModal.hidden = true;
+        staffExtensionCashModal.removeAttribute('data-open');
+        updateStaffModalBackground();
+        if (restoreFocus && staffExtensionCashLastFocus?.isConnected) staffExtensionCashLastFocus.focus();
+        staffExtensionCashLastFocus = null;
+    }
+
+    function parseCashTenderMinor(value) {
+        const raw = String(value || '').trim();
+        if (!/^(?:\d+)(?:\.\d{0,2})?$/.test(raw)) return null;
+        const [whole, fraction = ''] = raw.split('.');
+        const minor = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+        return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
+    }
 
     const TIMEIN_MODAL_CLOSE_DELAY_MS = 250;
     let timeInModalHideTimer = null;
@@ -3506,6 +4055,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let timeInSelectedMethod = null;
     let timeInRefreshSeq = 0;
     let timeInQrPollTimer = null;
+    let timeInCashTenderDueMinor = null;
+    let timeInCashSubmitting = false;
+    let timeInPaymentInFlight = false;
+    let timeInCashModalLastFocus = null;
 
     // { table, idField, idValue } for either source type — booking_id for a
     // booking (same column timeInBooking() used pre-S2), or whichever
@@ -3569,7 +4122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (radio) radio.checked = false;
         });
         if (timeInPaymentWrap) timeInPaymentWrap.hidden = !needsPayment;
-        if (timeInQrPanel) timeInQrPanel.hidden = true;
+        if (timeInPaymentUnavailableEl) timeInPaymentUnavailableEl.hidden = !needsPayment || staffCashEnabled || staffOnlineEnabled;
         if (timeInConfirmBtn) timeInConfirmBtn.hidden = false;
 
         if (timeInNoteEl) {
@@ -3586,10 +4139,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (timeInConfirmBtn) {
             if (needsPayment) {
-                timeInConfirmBtn.textContent = timeInSelectedMethod === 'QR Payment'
-                    ? `Show QR for ${formatStaffPeso(info.balance)}`
-                    : `Collect ${formatStaffPeso(info.balance)} & Time-In`;
-                timeInConfirmBtn.disabled = true;
+                timeInConfirmBtn.textContent = 'Pay';
+                timeInConfirmBtn.disabled = !timeInSelectedMethod
+                    || (timeInSelectedMethod === 'Cash' && !staffCashEnabled)
+                    || (timeInSelectedMethod === 'Online Payment' && !staffOnlineEnabled);
             } else {
                 timeInConfirmBtn.textContent = 'Time-In';
                 timeInConfirmBtn.disabled = false;
@@ -3640,6 +4193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function closeTimeInModal() {
         if (!timeInModalIsOpen || !timeInModal) return;
+        if (timeInCashModal && !timeInCashModal.hidden) closeTimeInCashModal({ restoreFocus: false });
         timeInModalIsOpen = false;
         timeInRefreshSeq += 1;
         if (timeInQrPollTimer) { window.clearInterval(timeInQrPollTimer); timeInQrPollTimer = null; }
@@ -3673,6 +4227,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!tr) return;
             const row = getRows()[Number(tr.dataset.rowIndex)];
             if (!row) return;
+            if (btn.dataset.staffAction === 'extend') {
+                await openStaffExtensionModal(row, btn);
+                return;
+            }
             if (btn.dataset.staffAction === 'timein') {
                 openTimeInModal(row);
                 return;
@@ -3680,6 +4238,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (btn.dataset.staffAction === 'timeout') {
                 const target = rowTableTarget(row);
                 if (!target.idValue || !window.sb) return;
+                const confirmed = await confirmStaffAction(
+                    `Time out ${row.customerName || (row.sourceType === 'walkin' ? 'this walk-in customer' : 'this customer')} now? The reservation will disappear from this overview.`,
+                    'Confirm Time-Out',
+                    'Time-Out'
+                );
+                if (!confirmed) return;
                 btn.disabled = true;
                 btn.textContent = 'Recording…';
                 const source = row.sourceType === 'booking' ? 'booking' : 'walkin';
@@ -3700,6 +4264,131 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    document.querySelector('[data-staff-extension-close]')?.addEventListener('click', closeStaffExtensionModal);
+    document.querySelector('[data-staff-extension-cash-close]')?.addEventListener('click', () => closeStaffExtensionCashCalculator());
+    document.querySelector('[data-staff-extension-cash-cancel]')?.addEventListener('click', () => closeStaffExtensionCashCalculator());
+    document.querySelector('[data-staff-extension-cash-open]')?.addEventListener('click', openStaffExtensionCashCalculator);
+    staffExtensionModal?.addEventListener('click', (event) => {
+        if (event.target === staffExtensionModal) closeStaffExtensionModal();
+    });
+    staffExtensionCashModal?.addEventListener('click', (event) => {
+        if (event.target === staffExtensionCashModal) closeStaffExtensionCashCalculator();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (staffExtensionCashModal && !staffExtensionCashModal.hidden) closeStaffExtensionCashCalculator();
+        else if (staffExtensionModal && !staffExtensionModal.hidden) closeStaffExtensionModal();
+    });
+    document.querySelector('[data-staff-extension-back]')?.addEventListener('click', () => {
+        staffExtensionStep = 'duration';
+        document.querySelectorAll('[data-staff-extension-step]').forEach((el) => { el.hidden = el.dataset.staffExtensionStep !== 'duration'; });
+    });
+    staffExtensionNext?.addEventListener('click', () => {
+        staffExtensionSelected = selectedStaffExtension();
+        if (!staffExtensionSelected) return;
+        document.querySelectorAll('[data-staff-extension-method]').forEach((input) => { input.checked = false; });
+        staffExtensionCashTenderMinor = null;
+        staffExtensionCashOpen.hidden = true;
+        staffExtensionCashReceived.hidden = true;
+        staffExtensionStep = 'payment';
+        staffExtensionCharge.textContent = formatStaffPeso(Number(staffExtensionSelected.amount_minor) / 100);
+        document.querySelectorAll('[data-staff-extension-step]').forEach((el) => { el.hidden = el.dataset.staffExtensionStep !== 'payment'; });
+        staffExtensionPay.disabled = true;
+    });
+    staffExtensionDuration?.addEventListener('change', () => { staffExtensionSelected = selectedStaffExtension(); });
+    document.querySelectorAll('[data-staff-extension-method]').forEach((radio) => radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+        if (radio.value === 'cash') {
+            staffExtensionCashOpen.hidden = false;
+            staffExtensionCashReceived.hidden = staffExtensionCashTenderMinor === null;
+            staffExtensionCashReceived.textContent = staffExtensionCashTenderMinor === null
+                ? '' : `Cash received: ${formatStaffPeso(staffExtensionCashTenderMinor / 100)}.`;
+            staffExtensionPay.disabled = staffExtensionCashTenderMinor === null
+                || staffExtensionCashTenderMinor < Number(staffExtensionSelected?.amount_minor);
+            openStaffExtensionCashCalculator();
+        } else {
+            staffExtensionCashOpen.hidden = true;
+            staffExtensionCashReceived.hidden = true;
+            staffExtensionPay.disabled = false;
+        }
+    }));
+    staffExtensionCashInput?.addEventListener('input', updateStaffExtensionCashCalculator);
+    staffExtensionCashConfirm?.addEventListener('click', () => {
+        if (!updateStaffExtensionCashCalculator()) return;
+        staffExtensionCashTenderMinor = parseCashTenderMinor(staffExtensionCashInput.value);
+        staffExtensionCashReceived.hidden = false;
+        staffExtensionCashReceived.textContent = `Cash received: ${formatStaffPeso(staffExtensionCashTenderMinor / 100)}.`;
+        staffExtensionPay.disabled = false;
+        closeStaffExtensionCashCalculator();
+    });
+    staffExtensionCashDialog?.addEventListener('click', (event) => {
+        const key = event.target.closest('[data-staff-extension-cash-key]')?.dataset.staffExtensionCashKey;
+        if (!key) return;
+        event.preventDefault();
+        const current = staffExtensionCashInput.value;
+        if (key === 'Enter') { if (!staffExtensionCashConfirm.disabled) staffExtensionCashConfirm.click(); return; }
+        if (key === 'Backspace') staffExtensionCashInput.value = current.slice(0, -1);
+        else if (key === '.') { if (!current.includes('.')) staffExtensionCashInput.value = current ? `${current}.` : '0.'; }
+        else if (/^\d$/.test(key) && current.replace('.', '').length < 12) staffExtensionCashInput.value = current + key;
+        updateStaffExtensionCashCalculator();
+        staffExtensionCashInput.focus();
+    });
+    staffExtensionCashInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !staffExtensionCashConfirm.disabled) {
+            event.preventDefault(); staffExtensionCashConfirm.click();
+        }
+    });
+    staffExtensionPay?.addEventListener('click', async () => {
+        const row = staffExtensionRow;
+        const option = selectedStaffExtension();
+        const method = document.querySelector('[data-staff-extension-method]:checked')?.value;
+        const target = row && rowTableTarget(row);
+        if (!row || !option || !target?.idValue || !['cash', 'online'].includes(method)) return;
+        staffExtensionPay.disabled = true;
+        staffExtensionPay.textContent = 'Processing…';
+        if (staffExtensionPaymentError) staffExtensionPaymentError.hidden = true;
+        let popup = null;
+        if (method === 'online') popup = window.open('about:blank', '_blank', 'noopener');
+        let result;
+        try {
+            if (method === 'cash') {
+                result = await window.sb.rpc('staff_collect_cash_for_booking_extension', {
+                    p_source: row.sourceType === 'booking' ? 'booking' : 'walkin', p_id: String(target.idValue),
+                    p_duration_minutes: Number(option.duration_minutes), p_cash_tendered_minor: staffExtensionCashTenderMinor,
+                });
+            } else {
+                result = await window.sb.functions.invoke('staff-booking-extension-checkout', { body: {
+                    source: row.sourceType === 'booking' ? 'booking' : 'walkin', id: String(target.idValue),
+                    duration_minutes: Number(option.duration_minutes),
+                } });
+                const checkoutUrl = result?.data?.checkout_url;
+                if (!result?.error && /^https:\/\/checkout\.paymongo\.com\//.test(String(checkoutUrl || ''))) {
+                    if (popup) popup.location.replace(checkoutUrl); else window.location.assign(checkoutUrl);
+                    window.InigoToast?.show('Complete payment in PayMongo. The booking extends after payment is verified.');
+                    closeStaffExtensionModal();
+                    return;
+                }
+                if (!result?.error) result = { error: new Error('PayMongo did not return a valid checkout link.') };
+            }
+        } catch (error) { result = { error }; }
+        if (popup && !popup.closed) popup.close();
+        staffExtensionPay.disabled = false;
+        staffExtensionPay.textContent = 'Pay and extend';
+        if (result?.error || (method === 'cash' && result?.data?.ok !== true)) {
+            const message = result?.error?.message || result?.data?.message || 'Could not complete the extension payment.';
+            staffExtensionPaymentError.textContent = message;
+            staffExtensionPaymentError.hidden = false;
+            window.InigoToast?.show(message, true);
+            return;
+        }
+        const ack = result?.data?.receipt;
+        if (ack && showImmediatePaymentAcknowledgment(ack, row.sourceType === 'booking' ? 'booking' : 'walkin')
+            && claimStaffPaymentCelebration(ack)) showStaffPaymentConfetti();
+        closeStaffExtensionModal();
+        window.InigoToast?.show('Booking extended and cash payment recorded.');
+        refreshBookingOverview(); refreshCourtSchedule(); refreshTransactions();
+    });
+
     if (timeInCloseBtn) timeInCloseBtn.addEventListener('click', closeTimeInModal);
     if (timeInCancelBtn) timeInCancelBtn.addEventListener('click', closeTimeInModal);
 
@@ -3719,9 +4408,120 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && timeInModalIsOpen) closeTimeInModal();
-    });
+    function timeInCashTenderMinor() {
+        const raw = String(timeInCashTenderInput?.value || '').trim();
+        if (!/^(?:\d+)(?:\.\d{0,2})?$/.test(raw)) return null;
+        const [whole, fraction = ''] = raw.split('.');
+        const minor = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+        return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
+    }
+
+    function updateTimeInCashModal() {
+        const dueMinor = timeInCashTenderDueMinor;
+        const tenderedMinor = timeInCashTenderMinor();
+        const valid = Number.isSafeInteger(dueMinor) && tenderedMinor !== null && tenderedMinor >= dueMinor;
+        if (timeInCashDueEl) timeInCashDueEl.textContent = Number.isSafeInteger(dueMinor) ? formatStaffPeso(dueMinor / 100) : '—';
+        if (timeInCashChangeEl) timeInCashChangeEl.textContent = valid ? formatStaffPeso((tenderedMinor - dueMinor) / 100) : '—';
+        if (timeInCashValidationEl) {
+            timeInCashValidationEl.textContent = !Number.isSafeInteger(dueMinor) ? 'A confirmed balance is required before collecting cash.'
+                : tenderedMinor === null ? 'Enter the cash received to calculate change.'
+                    : tenderedMinor < dueMinor ? `Enter at least ${formatStaffPeso(dueMinor / 100)}.`
+                        : `Change due: ${formatStaffPeso((tenderedMinor - dueMinor) / 100)}.`;
+            timeInCashValidationEl.setAttribute('aria-invalid', Number.isSafeInteger(dueMinor) && tenderedMinor !== null && tenderedMinor < dueMinor ? 'true' : 'false');
+        }
+        if (timeInCashPayBtn) timeInCashPayBtn.disabled = !valid || timeInCashSubmitting || timeInPaymentInFlight || !staffCashEnabled;
+        return valid;
+    }
+
+    function openTimeInCashModal(due) {
+        if (!timeInCashModal || !timeInCashDialog || !timeInCashTenderInput || !staffCashEnabled) return false;
+        const dueMinor = Math.round(Number(due) * 100);
+        if (!Number.isSafeInteger(dueMinor) || dueMinor <= 0) return false;
+        timeInCashTenderDueMinor = dueMinor;
+        timeInCashModalLastFocus = document.activeElement;
+        timeInCashTenderInput.value = '';
+        timeInCashModal.hidden = false;
+        timeInCashModal.setAttribute('data-open', '');
+        updateStaffModalBackground();
+        updateTimeInCashModal();
+        timeInCashTenderInput.focus();
+        return true;
+    }
+
+    function closeTimeInCashModal({ restoreFocus = true } = {}) {
+        if (!timeInCashModal) return;
+        timeInCashModal.hidden = true;
+        timeInCashModal.removeAttribute('data-open');
+        updateStaffModalBackground();
+        if (restoreFocus && timeInCashModalLastFocus?.isConnected) timeInCashModalLastFocus.focus();
+        timeInCashModalLastFocus = null;
+        timeInCashTenderDueMinor = null;
+        if (timeInCashTenderInput) timeInCashTenderInput.value = '';
+    }
+
+    function sanitizeTimeInCashTender() {
+        if (!timeInCashTenderInput) return;
+        const original = timeInCashTenderInput.value;
+        let clean = original.replace(/[^\d.]/g, '');
+        const decimalAt = clean.indexOf('.');
+        if (decimalAt >= 0) clean = `${clean.slice(0, decimalAt + 1)}${clean.slice(decimalAt + 1).replace(/\./g, '').slice(0, 2)}`;
+        if (clean.startsWith('.')) clean = `0${clean}`;
+        timeInCashTenderInput.value = clean;
+        updateTimeInCashModal();
+    }
+
+    if (timeInCashTenderInput) {
+        timeInCashTenderInput.addEventListener('input', sanitizeTimeInCashTender);
+        timeInCashTenderInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (timeInCashPayBtn && !timeInCashPayBtn.disabled) timeInCashPayBtn.click();
+                return;
+            }
+            if (event.key.length === 1 && !/[\d.]/.test(event.key)) event.preventDefault();
+            if (event.key === '.' && timeInCashTenderInput.value.includes('.')) event.preventDefault();
+            if (/\d/.test(event.key) && timeInCashTenderInput.value.includes('.')
+                && timeInCashTenderInput.value.split('.')[1].length >= 2
+                && timeInCashTenderInput.selectionStart === timeInCashTenderInput.selectionEnd
+                && timeInCashTenderInput.selectionStart > timeInCashTenderInput.value.indexOf('.')) event.preventDefault();
+        });
+    }
+
+    if (timeInCashModal) {
+        timeInCashModal.addEventListener('click', (event) => {
+            const key = event.target.closest('[data-staff-timein-cash-key]')?.dataset.staffTimeinCashKey;
+            if (event.target === timeInCashModal || event.target.closest('[data-staff-timein-cash-close], [data-staff-timein-cash-cancel]')) {
+                if (!timeInCashSubmitting) closeTimeInCashModal();
+                return;
+            }
+            if (!key || !timeInCashTenderInput) return;
+            if (key === 'Enter') {
+                if (timeInCashPayBtn && !timeInCashPayBtn.disabled) timeInCashPayBtn.click();
+                return;
+            }
+            const start = timeInCashTenderInput.selectionStart ?? timeInCashTenderInput.value.length;
+            const end = timeInCashTenderInput.selectionEnd ?? start;
+            const value = timeInCashTenderInput.value;
+            if (key === 'Backspace') {
+                if (start === end && start > 0) timeInCashTenderInput.setRangeText('', start - 1, end, 'end');
+                else timeInCashTenderInput.setRangeText('', start, end, 'end');
+            } else if (key === '.' && value.includes('.')) return;
+            else if (key === '.' || /^\d$/.test(key)) {
+                const dot = value.indexOf('.');
+                if (dot >= 0 && start === end && start > dot && value.slice(dot + 1).length >= 2) return;
+                timeInCashTenderInput.setRangeText(key, start, end, 'end');
+            }
+            timeInCashTenderInput.dispatchEvent(new Event('input', { bubbles: true }));
+            timeInCashTenderInput.focus();
+        });
+        timeInCashModal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !timeInCashSubmitting) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeTimeInCashModal();
+            }
+        });
+    }
 
     timeInPaymentOptionEls.forEach((option) => {
         option.addEventListener('click', () => {
@@ -3733,18 +4533,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             radio.checked = true;
             timeInSelectedMethod = radio.dataset.staffTimeinMethod;
             if (timeInConfirmBtn) {
-                const info = timeInPaymentInfo(timeInModalRow);
-                timeInConfirmBtn.disabled = false;
-                timeInConfirmBtn.textContent = timeInSelectedMethod === 'QR Payment'
-                    ? `Show QR for ${formatStaffPeso(info.balance)}`
-                    : `Collect ${formatStaffPeso(info.balance)} & Time-In`;
+                timeInConfirmBtn.textContent = 'Pay';
+                timeInConfirmBtn.disabled = !timeInSelectedMethod
+                    || (timeInSelectedMethod === 'Cash' && !staffCashEnabled)
+                    || (timeInSelectedMethod === 'Online Payment' && !staffOnlineEnabled);
             }
         });
     });
 
     if (timeInConfirmBtn) {
         timeInConfirmBtn.addEventListener('click', async () => {
-            if (timeInConfirmBtn.disabled || !timeInModalRow || !window.sb) return;
+            if (timeInConfirmBtn.disabled || !timeInModalRow || !window.sb || timeInPaymentInFlight) return;
             const cachedRow = timeInModalRow;
             const target = rowTableTarget(cachedRow);
             if (!target.idField || target.idValue === null || target.idValue === undefined) {
@@ -3752,12 +4551,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             const source = cachedRow.sourceType === 'booking' ? 'booking' : 'walkin';
+            timeInPaymentInFlight = true;
             timeInConfirmBtn.disabled = true;
             timeInConfirmBtn.textContent = 'Checking payment…';
-
             const freshResult = await fetchFreshTimeInRow(cachedRow);
             if (freshResult.error) {
-                timeInConfirmBtn.disabled = false;
+                timeInPaymentInFlight = false;
                 renderTimeInModal(cachedRow);
                 window.InigoToast?.show(freshResult.error, true);
                 return;
@@ -3766,42 +4565,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             timeInModalRow = row;
             const info = timeInPaymentInfo(row);
             const needsPayment = info.total !== null && info.balance > 0;
-            if (needsPayment && !timeInSelectedMethod) {
+            if (needsPayment && (!timeInSelectedMethod
+                || (timeInSelectedMethod === 'Cash' && !staffCashEnabled)
+                || (timeInSelectedMethod === 'Online Payment' && !staffOnlineEnabled))) {
+                timeInPaymentInFlight = false;
                 renderTimeInModal(row);
-                window.InigoToast?.show('Choose Cash or QR Payment first.', true);
+                window.InigoToast?.show('Choose an available payment method first.', true);
                 return;
             }
 
-            const confirmation = needsPayment
-                ? timeInSelectedMethod === 'QR Payment'
-                    ? `Show a QR Ph code for ${formatStaffPeso(info.balance)}? PayMongo may add a transaction fee, shown before the customer authorizes payment. Attendance and a receipt are recorded only after PayMongo confirms payment.`
-                    : `Collect ${formatStaffPeso(info.balance)} in Cash and record Time-In?`
-                : `Record Time-In for ${row.customerName || 'this customer'}?`;
-            if (!await confirmStaffAction(confirmation,
-                needsPayment && timeInSelectedMethod === 'QR Payment' ? 'Confirm QR Payment' : 'Confirm Time-In',
-                needsPayment && timeInSelectedMethod === 'QR Payment' ? 'Show QR' : needsPayment ? 'Collect cash' : 'Time-In')) {
+            if (needsPayment && timeInSelectedMethod === 'Cash') {
+                timeInPaymentInFlight = false;
                 timeInConfirmBtn.disabled = false;
-                timeInConfirmBtn.textContent = needsPayment
-                    ? timeInSelectedMethod === 'QR Payment' ? `Show QR for ${formatStaffPeso(info.balance)}` : `Collect ${formatStaffPeso(info.balance)} & Time-In`
-                    : 'Time-In';
+                timeInConfirmBtn.textContent = 'Pay';
+                if (!openTimeInCashModal(info.balance)) window.InigoToast?.show('Cash payment is unavailable.', true);
                 return;
             }
 
-            if (needsPayment && timeInSelectedMethod === 'QR Payment') {
-                timeInConfirmBtn.textContent = 'Preparing QR…';
+            if (needsPayment && timeInSelectedMethod === 'Online Payment') {
+                timeInConfirmBtn.textContent = 'Opening checkout…';
                 let checkout;
                 try {
                     checkout = await window.sb.functions.invoke('paymongo-balance-checkout', {
-                        body: { source, id: String(target.idValue), channel: 'qrph' },
+                        body: { source, id: String(target.idValue) },
                     });
-                } catch (error) {
-                    checkout = { error };
-                }
-                const qrImageUrl = checkout?.data?.qr_image_url;
-                if (checkout?.error || typeof qrImageUrl !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(qrImageUrl)) {
-                    timeInConfirmBtn.disabled = false;
+                } catch (error) { checkout = { error }; }
+                const checkoutUrl = checkout?.data?.checkout_url;
+                if (checkout?.error || typeof checkoutUrl !== 'string' || !/^https:\/\/checkout\.paymongo\.com\//.test(checkoutUrl)) {
+                    timeInPaymentInFlight = false;
                     renderTimeInModal(row);
-                    let message = checkout?.error?.message || checkout?.data?.message || 'Could not prepare QR Ph payment.';
+                    let message = checkout?.error?.message || checkout?.data?.message || 'Could not open PayMongo checkout.';
                     try {
                         const response = checkout?.error?.context;
                         if (response && typeof response.clone === 'function') {
@@ -3812,80 +4605,117 @@ document.addEventListener('DOMContentLoaded', async () => {
                     window.InigoToast?.show(message, true);
                     return;
                 }
-                const safeImage = window.escapeHtml(qrImageUrl);
-                const testUrl = typeof checkout.data.qr_test_url === 'string'
-                    && checkout.data.qr_test_url.startsWith('https://test.paymongo.com/')
-                    ? `<a class="staff-btn-ghost" href="${window.escapeHtml(checkout.data.qr_test_url)}" target="_blank" rel="noopener noreferrer">Open PayMongo sandbox simulator</a>` : '';
-                if (timeInQrPanel) {
-                    timeInQrPanel.hidden = false;
-                    const testMode = checkout.data.test_mode === true;
-                    const amountText = formatStaffPeso(Number(checkout.data.base_minor) / 100 || info.balance);
-                    timeInQrPanel.innerHTML = `<div class="staff-timein-qr-code"><img class="staff-timein-qr-image" src="${safeImage}" alt="${testMode ? 'PayMongo test QR Ph code. Do not scan or pay.' : 'Dynamic QR Ph payment code'}"></div><div class="staff-timein-qr-copy"><span class="staff-form-label">PayMongo · QR Ph${testMode ? ' · SANDBOX' : ''}</span><h4>${testMode ? 'Simulate sandbox payment' : 'Scan to pay'}</h4>${testMode ? `<p class="staff-walkin-qr-warning" role="alert">Test QR: Do not scan or pay.${testUrl ? ' Use the simulator.' : ' Simulator unavailable.'}</p>` : `<p>Scan to pay ${window.escapeHtml(amountText)}. The reservation will be marked paid and timed in after PayMongo confirms payment.</p>`}${testUrl}<p class="staff-walkin-qr-status" role="status" aria-live="polite" data-staff-timein-qr-status>Waiting for PayMongo confirmation…</p><button type="button" class="staff-btn-ghost" data-staff-timein-qr-check>Check payment status</button></div>`;
-                    timeInConfirmBtn.hidden = true;
-                    timeInPaymentWrap.hidden = true;
-                }
-                const checkQr = async () => {
-                    if (!timeInModalIsOpen || !timeInModalRow || timeInModalRow !== row) return;
-                    const fresh = await fetchFreshTimeInRow(row);
-                    if (fresh.error) return;
-                    if (!timeInBalanceConfirmed(fresh.row)) return;
-                    if (timeInQrPollTimer) { window.clearInterval(timeInQrPollTimer); timeInQrPollTimer = null; }
-                    const status = timeInQrPanel?.querySelector('[data-staff-timein-qr-status]');
-                    if (status) status.textContent = 'Payment confirmed. Loading acknowledgment…';
-                    let history;
-                    try {
-                        history = await window.sb.rpc('staff_get_transaction_payment_history', {
-                            p_source: source,
-                            p_id: String(target.idValue),
-                        });
-                    } catch { history = null; }
-                    const rows = normalizeRpcRow(history?.data)?.payment_history || [];
-                    const paymentId = fresh.row.raw.balance_payment_id;
-                    const tx = rows.find(item => String(item.payment_id) === String(paymentId));
-                    if (tx?.acknowledgment && showImmediatePaymentAcknowledgment(tx.acknowledgment, source)) {
-                        closeTimeInModal();
-                        window.InigoToast?.show('PayMongo confirmed payment. The acknowledgment is ready to print or download.');
-                    } else if (status) status.textContent = 'Payment is confirmed. Refresh the transaction list to view its acknowledgment.';
-                    refreshBookingOverview();
-                    refreshCourtSchedule();
-                    refreshTransactions();
-                };
-                timeInQrPanel?.querySelector('[data-staff-timein-qr-check]')?.addEventListener('click', checkQr);
-                if (checkout.data.test_mode !== true) timeInQrPollTimer = window.setInterval(checkQr, 2500);
-                timeInConfirmBtn.disabled = true;
+                window.location.assign(checkoutUrl);
                 return;
             }
 
-            timeInConfirmBtn.textContent = needsPayment ? 'Collecting cash…' : 'Confirming attendance…';
-            let collection;
+            if (!needsPayment && !await confirmStaffAction(
+                `Record Time-In for ${row.customerName || 'this customer'}?`,
+                'Confirm Time-In',
+                'Time-In'
+            )) {
+                timeInPaymentInFlight = false;
+                renderTimeInModal(row);
+                return;
+            }
+
+            let result;
             try {
-                collection = await window.sb.rpc('staff_collect_cash_and_check_in', {
+                result = await window.sb.rpc('staff_collect_cash_and_check_in', {
                     p_source: source,
                     p_id: String(target.idValue),
+                    p_cash_tendered_minor: null,
                 });
-            } catch (error) {
-                collection = { error };
-            }
-            if (collection?.error || collection?.data?.ok === false || collection?.data?.success === false) {
-                timeInConfirmBtn.disabled = false;
+            } catch (error) { result = { error }; }
+            if (result?.error || result?.data?.ok === false || result?.data?.success === false) {
+                timeInPaymentInFlight = false;
                 renderTimeInModal(row);
-                window.InigoToast?.show(collection?.error?.message || collection?.data?.message || 'Could not confirm payment and attendance.', true);
+                window.InigoToast?.show(result?.error?.message || result?.data?.message || 'Could not confirm attendance.', true);
                 return;
             }
-
-            if (needsPayment) {
-                window.InigoToast?.show(`Timed in · ${formatStaffPeso(info.balance)} collected in Cash.`);
-                if (collection.data?.receipt) showImmediatePaymentAcknowledgment(collection.data.receipt, source);
-            } else {
-                window.InigoToast?.show('Timed in.');
-            }
-
+            window.InigoToast?.show('Timed in.');
             closeTimeInModal();
             refreshBookingOverview();
             refreshCourtSchedule();
             refreshTransactions();
         });
     }
+
+    if (timeInCashPayBtn) timeInCashPayBtn.addEventListener('click', async () => {
+        if (timeInCashPayBtn.disabled || !updateTimeInCashModal() || timeInCashSubmitting || !timeInModalRow || !window.sb) return;
+        const tenderedMinor = timeInCashTenderMinor();
+        const cachedRow = timeInModalRow;
+        const target = rowTableTarget(cachedRow);
+        if (!Number.isSafeInteger(tenderedMinor) || !target.idValue || !staffCashEnabled) return;
+        timeInCashSubmitting = true;
+        timeInPaymentInFlight = true;
+        timeInCashPayBtn.disabled = true;
+        timeInCashPayBtn.textContent = 'Paying…';
+        let freshResult;
+        try { freshResult = await fetchFreshTimeInRow(cachedRow); }
+        catch (error) { freshResult = { error: error.message || 'Could not refresh payment status.' }; }
+        if (freshResult.error) {
+            timeInCashSubmitting = false;
+            timeInPaymentInFlight = false;
+            timeInCashPayBtn.textContent = 'Pay';
+            updateTimeInCashModal();
+            window.InigoToast?.show(freshResult.error, true);
+            return;
+        }
+        const row = freshResult.row;
+        const info = timeInPaymentInfo(row);
+        const dueMinor = info.total === null ? null : Math.round(info.balance * 100);
+        timeInModalRow = row;
+        timeInCashTenderDueMinor = dueMinor;
+        updateTimeInCashModal();
+        if (!Number.isSafeInteger(dueMinor) || dueMinor <= 0 || tenderedMinor < dueMinor) {
+            timeInCashSubmitting = false;
+            timeInPaymentInFlight = false;
+            timeInCashPayBtn.textContent = 'Pay';
+            if (dueMinor <= 0) {
+                closeTimeInCashModal({ restoreFocus: false });
+                renderTimeInModal(row);
+                window.InigoToast?.show('The balance is already paid. Review and confirm Time-In.', true);
+            }
+            return;
+        }
+        let result;
+        try {
+            result = await window.sb.rpc('staff_collect_cash_and_check_in', {
+                p_source: row.sourceType === 'booking' ? 'booking' : 'walkin',
+                p_id: String(target.idValue),
+                p_cash_tendered_minor: tenderedMinor,
+            });
+        } catch (error) { result = { error }; }
+        if (result?.error || result?.data?.ok === false || result?.data?.success === false) {
+            timeInCashSubmitting = false;
+            timeInPaymentInFlight = false;
+            timeInCashPayBtn.textContent = 'Pay';
+            updateTimeInCashModal();
+            window.InigoToast?.show(result?.error?.message || result?.data?.message || 'Could not confirm payment and attendance.', true);
+            return;
+        }
+        timeInCashSubmitting = false;
+        closeTimeInCashModal({ restoreFocus: false });
+        window.InigoToast?.show(`Timed in · ${formatStaffPeso(dueMinor / 100)} collected in Cash.`);
+        if (result.data?.receipt
+            && showImmediatePaymentAcknowledgment(result.data.receipt, row.sourceType === 'booking' ? 'booking' : 'walkin')
+            && claimStaffPaymentCelebration(result.data.receipt)) {
+            showStaffPaymentConfetti();
+        }
+        closeTimeInModal();
+        timeInPaymentInFlight = false;
+        refreshBookingOverview();
+        refreshCourtSchedule();
+        refreshTransactions();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && timeInModalIsOpen) {
+            if (timeInCashModal && !timeInCashModal.hidden) closeTimeInCashModal();
+            else closeTimeInModal();
+        }
+    });
 
     // ------------------------------------------------------------------
     // Court Schedule — Revision S1, decision S5. Per-unit hourly
@@ -3915,6 +4745,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let scheduleActiveSport = 'all';
     let scheduleDate = todayDateInputValue();
+    let scheduleCutoffRenderTimer = null;
     let schedulePage = 1;
     let scheduleHourOffset = 0;
     let scheduleHourPageSize = 4;
@@ -4050,11 +4881,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Past takes priority over booked (same precedence
     // includes/Dashboard.js's own slotHourStatus() uses for the Overview
-    // peek strip) — an elapsed hour reads as past regardless of whether it
-    // was ever booked.
+    // peek strip) — a closed booking window reads unavailable regardless of
+    // whether the slot was ever booked.
     function scheduleCellInfo(row, hour, dateBase, bookings, walkins) {
         const slot = hourWindow(hour, dateBase);
-        if (scheduleDate === todayDateInputValue() && slot.start.getTime() < Date.now()) {
+        const isBeforeCutoff = window.InigoBookingSlots?.isBeforeStartCutoff?.(slot.start, Date.now(), scheduleRulesCache?.slotCutoffMinutes)
+            ?? slot.start.getTime() + (scheduleRulesCache?.slotCutoffMinutes ?? 10) * 60 * 1000 > Date.now();
+        if (scheduleDate === todayDateInputValue() && !isBeforeCutoff) {
             return { cls: 'is-unavailable', label: 'Unavailable', title: '' };
         }
 
@@ -4090,8 +4923,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { cls: 'is-open', title: '' };
     }
 
+    function scheduleCourtScheduleCutoffRender(hours, date) {
+        if (scheduleCutoffRenderTimer) window.clearTimeout(scheduleCutoffRenderTimer);
+        scheduleCutoffRenderTimer = null;
+        if (date !== todayDateInputValue()) return;
+        const next = window.InigoBookingSlots?.nextStartCutoff?.(date, hours, Date.now(), scheduleRulesCache?.slotCutoffMinutes);
+        if (!next) return;
+        scheduleCutoffRenderTimer = window.setTimeout(() => {
+            scheduleCutoffRenderTimer = null;
+            if (document.visibilityState !== 'visible' || scheduleDate !== date) return;
+            renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
+        }, Math.max(0, next.at - Date.now()));
+    }
+
     function renderCourtSchedule(courts, bookings, walkins) {
         if (!scheduleTable || !window.InigoCourtsData || !window.InigoBusinessHours) return;
+        if (scheduleCutoffRenderTimer) window.clearTimeout(scheduleCutoffRenderTimer);
+        scheduleCutoffRenderTimer = null;
         const openHour = Number(scheduleRulesCache?.openHour ?? window.InigoBusinessHours.OPEN_HOUR ?? 8);
         const closeHour = Number(scheduleRulesCache?.closeHour ?? window.InigoBusinessHours.CLOSE_HOUR ?? 20);
         const allHours = scheduleRulesCache?.isClosed || closeHour <= openHour ? [] : Array.from({ length: closeHour - openHour }, (_, index) => openHour + index);
@@ -4193,6 +5041,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const context = row.rowLabel === unitName ? '' : `<small>${window.escapeHtml(row.court.sportName || row.court.name)}</small>`;
             return `<tr><th scope="row" class="staff-schedule-identity${photo ? ' has-photo' : ''}">${photo ? `<span class="staff-schedule-photo">${photo}</span>` : ''}<span class="staff-schedule-identity-copy"><strong>${window.escapeHtml(unitName)}</strong>${context}</span></th>${cells}</tr>`;
         }).join('');
+        scheduleCourtScheduleCutoffRender(allHours, dateBase);
     }
 
     async function renderScheduleSportOptions() {
@@ -4336,12 +5185,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     let transactionView = 'transactions';
     const txDateInput = document.querySelector('[data-staff-tx-date]');
     const transactionStatusLabels = {
+        arrived: 'Arrived · waiting',
         in_progress: 'In progress',
         completed: 'Completed',
         unattended: 'Unattended',
     };
+    function transactionDisplayStatus(row) {
+        if (row.status !== 'in_progress' || !row.checked_in_at || row.checked_out_at) return row.status;
+        const start = Date.parse(Array.isArray(row.visits) ? row.visits[0]?.starts_at : '');
+        return Number.isFinite(start) && Date.now() < start ? 'arrived' : row.status;
+    }
     let transactionRows = [];
     let transactionLoadError = null;
+    const txSearchInput = document.querySelector('[data-staff-search="transactions"]');
+    const txSourceMenu = document.querySelector('[data-staff-tx-source-menu]');
+    const txStatusMenu = document.querySelector('[data-staff-tx-status-menu]');
+    const txClearButton = document.querySelector('[data-staff-tx-clear]');
+
+    function updateTransactionClearButton() {
+        if (!txClearButton) return;
+        txClearButton.hidden = !(txSearchInput?.value.trim()
+            || txDateInput?.value
+            || (transactionView !== 'unattended' && (txSourceMenu?.dataset.value || 'all') !== 'all')
+            || (txStatusMenu?.dataset.value || 'all') !== 'all'
+            || txSortValue !== 'date-desc');
+    }
 
     function transactionSortRows(rows) {
         const sort = txSortValue;
@@ -4363,16 +5231,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const selectedVisitDate = txDateInput?.value || '';
         const transactionsTable = document.querySelector('[data-staff-table="transactions"]');
         if (transactionsTable) transactionsTable.dataset.view = transactionView;
+        const transactionToolbar = document.querySelector('[data-transaction-toolbar]');
+        if (transactionToolbar) transactionToolbar.dataset.view = transactionView;
+        if (txSourceMenu) txSourceMenu.hidden = transactionView === 'unattended';
         const statusMenu = document.querySelector('[data-staff-tx-status-menu]');
         const statusFilter = statusMenu?.dataset.value || 'all';
         if (statusMenu) statusMenu.hidden = transactionView === 'unattended';
-        const visibleStatuses = transactionView === 'unattended' ? ['unattended'] : ['in_progress', 'completed'];
+        const visibleStatuses = transactionView === 'unattended' ? ['unattended'] : ['arrived', 'in_progress', 'completed'];
         const headersForView = document.querySelectorAll('[data-staff-tx-headers]');
         headersForView.forEach((header) => { header.hidden = header.dataset.staffTxHeaders !== transactionView; });
         const searchInput = document.querySelector('[data-staff-search="transactions"]');
         if (searchInput) {
             const unattended = transactionView === 'unattended';
-            searchInput.placeholder = unattended ? 'Search customer or booking / walk-in reference…' : 'Search customer or transaction ID…';
+            searchInput.placeholder = unattended ? 'Search customer or booking reference…' : 'Search customer or transaction ID…';
             searchInput.setAttribute('aria-label', unattended ? 'Search unattended visits by customer or reference' : 'Search transactions by customer or transaction ID');
         }
         if (transactionLoadError) {
@@ -4381,7 +5252,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const rowsForDate = transactionRows.filter((row) => {
-            const rowStatus = transactionStatusLabels[row.status] ? row.status : 'unattended';
+            const displayStatus = transactionDisplayStatus(row);
+            const rowStatus = transactionStatusLabels[displayStatus] ? displayStatus : 'unattended';
             return visibleStatuses.includes(rowStatus)
                 && (statusFilter === 'all' || rowStatus === statusFilter)
                 && window.InigoStaffPagination.transactionMatchesDates(row, '', selectedVisitDate, manilaDate);
@@ -4390,7 +5262,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         rowsForDate.forEach((row) => {
             const index = transactionRows.indexOf(row);
             const source = row.source === 'walkin' ? 'Walk-in' : 'Booking';
-            const visitStatus = Object.hasOwn(transactionStatusLabels, row.status) ? row.status : 'unattended';
+            const displayStatus = transactionDisplayStatus(row);
+            const visitStatus = Object.hasOwn(transactionStatusLabels, displayStatus) ? displayStatus : 'unattended';
             const visitStatusText = transactionStatusLabels[visitStatus];
             const checkedInAt = row.checked_in_at && Number.isFinite(Date.parse(row.checked_in_at)) ? row.checked_in_at : null;
             const checkedOutAt = row.checked_out_at && Number.isFinite(Date.parse(row.checked_out_at)) ? row.checked_out_at : null;
@@ -4400,6 +5273,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const tr = document.createElement('tr');
             tr.dataset.status = row.source === 'walkin' ? 'walkin' : 'booking';
             tr.dataset.visitStatus = visitStatus;
+            tr.dataset.visitId = String(row.visit_id ?? '');
+            tr.dataset.transactionId = String(row.transaction_id ?? '').toLowerCase();
             tr.dataset.rowIndex = String(index);
             const transactionId = row.transaction_id || '—';
             const receiptControl = row.acknowledgment && minorAmount !== 0
@@ -4486,21 +5361,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         txSortCurrent.querySelector('#staff-tx-sort-current-label').textContent = choice.textContent;
         const state = filterableTableState.get('transactions');
         if (state) state.page = 1;
+        updateTransactionClearButton();
         renderTransactionRows();
     });
-    wireTransactionMenu('[data-staff-tx-status]', '[data-staff-tx-status-options]', '[data-staff-tx-status-choice]', '[data-staff-tx-status-reset]', (choice) => {
+    wireTransactionMenu('[data-staff-tx-status]', '[data-staff-tx-status-options]', '[data-staff-tx-status-choice]', '', (choice) => {
         const menu = document.querySelector('[data-staff-tx-status-menu]');
         menu.dataset.value = choice?.dataset.staffTxStatusChoice || 'all';
         document.querySelector('#staff-tx-status-current').textContent = choice?.textContent || 'All statuses';
-        document.querySelector('[data-staff-tx-status-reset]').hidden = !choice;
         menu.querySelector('[data-staff-tx-status]')?.dispatchEvent(new Event('staffstatuschange'));
+        updateTransactionClearButton();
     });
-    wireTransactionMenu('[data-staff-tx-source]', '[data-staff-tx-source-options]', '[data-staff-tx-source-choice]', '[data-staff-tx-source-reset]', (choice) => {
+    wireTransactionMenu('[data-staff-tx-source]', '[data-staff-tx-source-options]', '[data-staff-tx-source-choice]', '', (choice) => {
         const menu = document.querySelector('[data-staff-tx-source-menu]');
         menu.dataset.value = choice?.dataset.staffTxSourceChoice || 'all';
         document.querySelector('#staff-tx-source-current').textContent = choice?.textContent || 'All sources';
-        document.querySelector('[data-staff-tx-source-reset]').hidden = !choice;
         menu.querySelector('[data-staff-tx-source]')?.dispatchEvent(new Event('staffsourcechange'));
+        updateTransactionClearButton();
     });
     function activateTransactionTab(tab) {
         transactionView = tab.dataset.staffTxTab;
@@ -4514,7 +5390,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const statusMenu = document.querySelector('[data-staff-tx-status-menu]');
         statusMenu.dataset.value = 'all';
         document.querySelector('#staff-tx-status-current').textContent = 'All statuses';
-        document.querySelector('[data-staff-tx-status-reset]').hidden = true;
+        updateTransactionClearButton();
         const state = filterableTableState.get('transactions');
         if (state) state.page = 1;
         renderTransactionRows();
@@ -4536,6 +5412,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (txDateInput) txDateInput.addEventListener('change', () => {
         const state = filterableTableState.get('transactions');
         if (state) state.page = 1;
+        renderTransactionRows();
+        updateTransactionClearButton();
+    });
+    if (txSearchInput) txSearchInput.addEventListener('input', updateTransactionClearButton);
+    if (txClearButton) txClearButton.addEventListener('click', () => {
+        if (txSearchInput) txSearchInput.value = '';
+        if (txDateInput) txDateInput.value = '';
+        if (txSourceMenu) {
+            txSourceMenu.dataset.value = 'all';
+            document.querySelector('#staff-tx-source-current').textContent = 'All sources';
+        }
+        if (txStatusMenu) {
+            txStatusMenu.dataset.value = 'all';
+            document.querySelector('#staff-tx-status-current').textContent = 'All statuses';
+        }
+        txSortValue = 'date-desc';
+        const sortLabel = document.querySelector('#staff-tx-sort-current-label');
+        if (sortLabel) sortLabel.textContent = 'Newest first';
+        const state = filterableTableState.get('transactions');
+        if (state) {
+            state.query = '';
+            state.exactIdField = null;
+            state.exactId = null;
+            state.activeFilter = 'all';
+            state.page = 1;
+        }
+        updateTransactionClearButton();
         renderTransactionRows();
     });
     async function refreshTransactions() {
@@ -4956,9 +5859,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 if (request !== staffMobileAvailability.request || window.validatePhMobile?.(staffSettingsMobileInput.value.trim())?.normalized !== parsed.normalized) return;
                 if (error) throw new Error(await staffPhoneFunctionErrorMessage(error));
+                if (data?.reason === 'in_use') {
+                    staffSettingsMobileInput.dataset.phoneAvailability = 'duplicate';
+                    delete staffSettingsMobileInput.dataset.checkedPhone;
+                    staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
+                    if (staffPhoneStatus) {
+                        staffPhoneStatus.dataset.state = 'in_use';
+                        staffPhoneStatus.classList.add('is-error');
+                        staffPhoneStatus.textContent = 'Already registered in this app · cannot use as primary contact';
+                    }
+                    return;
+                }
                 if (data?.valid !== true || data.normalized !== `+63${parsed.normalized.slice(1)}`) {
-                    const message = data?.reason === 'in_use' ? 'This number is already linked to another account.' : 'Could not check this number. Try again.';
-                    throw new Error(message);
+                    staffSettingsMobileInput.dataset.phoneAvailability = 'failed';
+                    delete staffSettingsMobileInput.dataset.checkedPhone;
+                    staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
+                    if (staffPhoneStatus) {
+                        staffPhoneStatus.dataset.state = 'error';
+                        staffPhoneStatus.classList.add('is-error');
+                        staffPhoneStatus.textContent = 'Could not check this number. Try again.';
+                    }
+                    return;
                 }
                 staffSettingsMobileInput.dataset.phoneAvailability = 'available';
                 staffSettingsMobileInput.setAttribute('aria-invalid', 'false');
@@ -4966,9 +5887,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'available'; staffPhoneStatus.classList.remove('is-error'); staffPhoneStatus.textContent = 'Valid · available'; }
             } catch (error) {
                 if (controller.signal.aborted || request !== staffMobileAvailability.request) return;
-                staffSettingsMobileInput.dataset.phoneAvailability = 'invalid';
+                staffSettingsMobileInput.dataset.phoneAvailability = 'failed';
                 staffSettingsMobileInput.setAttribute('aria-invalid', 'true');
-                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'invalid'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = 'Check failed · retry'; }
+                delete staffSettingsMobileInput.dataset.checkedPhone;
+                if (staffPhoneStatus) { staffPhoneStatus.dataset.state = 'error'; staffPhoneStatus.classList.add('is-error'); staffPhoneStatus.textContent = 'Check failed · retry'; }
             }
         }, 500);
     }
@@ -5246,7 +6168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             staffPhoneStatus.textContent = 'Invalid format';
         } else if (staffSettingsMobileInput.dataset.phoneAvailability === 'available') {
             staffPhoneStatus.textContent = 'Valid · available';
-        } else if (staffSettingsMobileInput.dataset.phoneAvailability === 'invalid') {
+        } else if (['invalid', 'duplicate', 'failed'].includes(staffSettingsMobileInput.dataset.phoneAvailability)) {
             // Keep the specific red message from the completed format or DB check.
         } else {
             staffPhoneStatus.textContent = 'Checking…';
@@ -5500,6 +6422,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isHidden = input.type === 'password';
             input.type = isHidden ? 'text' : 'password';
             btn.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+            btn.setAttribute('aria-pressed', String(isHidden));
+            btn.dataset.passwordVisible = String(isHidden);
         });
     });
 
@@ -5602,6 +6526,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (toggle?.matches('[data-staff-toggle-password]')) {
                 input.type = 'password';
                 toggle.setAttribute('aria-label', 'Show password');
+                toggle.setAttribute('aria-pressed', 'false');
+                toggle.dataset.passwordVisible = 'false';
             }
         });
         goToStaffPwStep(1);
@@ -5732,6 +6658,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!isSchemaMismatchError(result.error)) break;
         }
         return { error: lastError?.message || 'Could not refresh the reservation after checkout.' };
+    }
+
+    const extensionReturnUrl = new URL(window.location.href);
+    const extensionReturnKind = extensionReturnUrl.searchParams.get('extension_checkout');
+    if (extensionReturnKind) {
+        const attemptId = extensionReturnUrl.searchParams.get('attempt_id');
+        extensionReturnUrl.searchParams.delete('extension_checkout');
+        extensionReturnUrl.searchParams.delete('attempt_id');
+        window.history.replaceState({}, document.title,
+            `${extensionReturnUrl.pathname}${extensionReturnUrl.search}${extensionReturnUrl.hash}`);
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(attemptId || '')) || !window.sb) {
+            window.InigoToast?.show('Could not identify the extension checkout returned from PayMongo.', true);
+        } else if (extensionReturnKind === 'cancel') {
+            window.InigoToast?.show('PayMongo checkout was cancelled. The booking was not extended.');
+        } else if (extensionReturnKind === 'return') {
+            let result = null;
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+                const response = await window.sb.rpc('staff_booking_extension_result', { p_attempt_id: attemptId });
+                if (!response.error && response.data?.status === 'paid') { result = response.data; break; }
+                if (response.data?.status === 'review') { result = response.data; break; }
+                await new Promise((resolve) => window.setTimeout(resolve, 1500));
+            }
+            if (result?.status === 'paid' && result.receipt) {
+                if (showImmediatePaymentAcknowledgment(result.receipt, result.source)
+                    && claimStaffPaymentCelebration(result.receipt)) showStaffPaymentConfetti();
+                window.InigoToast?.show('PayMongo confirmed payment and the booking was extended.');
+            } else if (result?.status === 'review') {
+                window.InigoToast?.show('PayMongo reports payment after the original booking ended. The booking was not extended; contact the owner to reconcile or refund the payment.', true);
+            } else {
+                window.InigoToast?.show('Payment is still processing or needs review. The booking has not been extended.', true);
+            }
+        }
+        refreshBookingOverview(); refreshCourtSchedule(); refreshTransactions();
     }
 
     const balanceReturnUrl = new URL(window.location.href);

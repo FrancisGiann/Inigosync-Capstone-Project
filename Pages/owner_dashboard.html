@@ -456,11 +456,11 @@
                 <div class="admin-card owner-booking-rules-card">
                     <div class="owner-booking-rules-summary">
                         <div class="owner-rules-summary-head">
-                            <dl class="owner-rules-saved-meta"><div><dt>Effective from</dt><dd data-owner-rules-saved-effective>Loading…</dd></div><div><dt>No-show grace period</dt><dd data-owner-rules-saved-grace>Loading…</dd></div></dl>
+                            <dl class="owner-rules-saved-meta"><div><dt>Effective from</dt><dd data-owner-rules-saved-effective>Loading…</dd></div><div><dt>No-show grace period</dt><dd data-owner-rules-saved-grace>Loading…</dd></div><div><dt>Unbooked slot cutoff</dt><dd data-owner-rules-saved-cutoff>Loading…</dd></div></dl>
                             <div class="admin-form-actions owner-rules-launch"><button type="button" class="admin-btn-save owner-rules-edit" data-owner-rules-edit hidden>Edit Business Hours</button></div>
                         </div>
                         <ul class="owner-rules-saved-week" data-owner-rules-saved-week aria-label="Current saved weekly hours"></ul>
-                        <div class="owner-rules-upcoming" data-owner-rules-upcoming hidden><h4>Scheduled changes</h4><p>Effective from <strong data-owner-rules-upcoming-effective></strong> · <span data-owner-rules-upcoming-grace></span>-minute no-show grace period</p><ul class="owner-rules-saved-week" data-owner-rules-upcoming-week aria-label="Scheduled weekly hours"></ul></div>
+                        <div class="owner-rules-upcoming" data-owner-rules-upcoming hidden><h4>Scheduled changes</h4><p>Effective from <strong data-owner-rules-upcoming-effective></strong> · <span data-owner-rules-upcoming-grace></span>-minute no-show grace period · <span data-owner-rules-upcoming-cutoff></span>-minute unbooked slot cutoff</p><ul class="owner-rules-saved-week" data-owner-rules-upcoming-week aria-label="Scheduled weekly hours"></ul></div>
                     </div>
                 </div>
                 <div class="admin-modal-overlay owner-rules-modal-overlay" data-owner-rules-modal hidden>
@@ -471,6 +471,7 @@
                     <div class="owner-booking-rules-meta">
                         <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
                         <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required disabled><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Unbooked slot cutoff</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="59" step="1" inputmode="numeric" data-owner-rules-cutoff required disabled><span>minutes</span></span><span class="admin-form-hint">A slot closes this many minutes after it starts if it is still unbooked (0–59 minutes).</span></label>
                         <p class="admin-form-hint owner-rules-timezone" data-owner-rules-timezone>Times are shown in Asia/Manila.</p>
                     </div>
                     <div class="owner-rules-table-wrap">

@@ -207,8 +207,8 @@ function courtsFixture() {
     return `window.InigoCourtsData={getCourts:async()=>${JSON.stringify(courts)},getSports:async()=>${JSON.stringify(sports)},resolveCourtUnits:c=>({pickerLabel:'Choose a court',units:c.bookableUnits}),invalidateCourts(){},monogramFor:()=>'',slugify:s=>s};`;
 }
 
-async function openStaffPage(browser, { timezoneId, now, config = {}, query = '', pauseClock = false }) {
-    const context = await browser.newContext({ timezoneId, viewport: { width: 1280, height: 900 } });
+async function openStaffPage(browser, { timezoneId, now, config = {}, query = '', pauseClock = false, reducedMotion = 'no-preference' }) {
+    const context = await browser.newContext({ timezoneId, viewport: { width: 1280, height: 900 }, reducedMotion });
     const page = await context.newPage();
     page.setDefaultTimeout(12000);
     await page.clock.install({ time: new Date(now) });
@@ -243,12 +243,16 @@ async function openWalkinTimeStep(page, courtId = 'listing-badminton') {
 async function selectWalkinCourt(page, courtId) {
     const court = courts.find(item => item.id === courtId);
     assert.ok(court, `fixture contains court ${courtId}`);
-    const sportValue = court.sportSlug;
+    const sportValue = court.slug || court.sportSlug;
     await page.locator(`[data-staff-walkin-sport-card="${sportValue}"]`).click();
-    const choiceIndex = courts.filter(item => item.sportSlug === sportValue)
-        .slice(0, courts.filter(item => item.sportSlug === sportValue).findIndex(item => item.id === courtId))
+    const matchingCourts = courts.filter(item => court.slug
+        ? item.slug === court.slug
+        : item.sportSlug === sportValue);
+    const choiceIndex = matchingCourts
+        .slice(0, matchingCourts.findIndex(item => item.id === courtId))
         .reduce((count, item) => count + item.bookableUnits.length, 0);
-    await page.locator('[data-staff-walkin-unit-select]').selectOption(String(choiceIndex));
+    await page.locator('[data-staff-walkin-next]').click();
+    await page.locator(`[data-staff-walkin-court-card="${choiceIndex}"]`).click();
 }
 
 async function resolveStaffConfirm(page, { accept = false, title, message } = {}) {
@@ -370,9 +374,126 @@ function occupancyRow(hour, source = 'online') {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
         const errors = [];
+        if (process.env.STAFF_WALKIN_FOCUS === 'cash-receipt') {
+            const focusedContext = await openStaffPage(browser, {
+                timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
+            });
+            const focusedPage = focusedContext.page;
+            const receiptModal = focusedPage.locator('[data-staff-receipt-modal]');
+            const submitCashWalkin = async name => {
+                await focusedPage.locator('[data-staff-nav="walkin"]').click();
+                await focusedPage.locator('[data-staff-walkin-name]').fill(name);
+                await focusedPage.locator('[data-staff-walkin-next]').click();
+                await selectWalkinCourt(focusedPage, 'listing-badminton');
+                await focusedPage.locator('[data-staff-walkin-next]').click();
+                await focusedPage.locator('[data-staff-walkin-hour="9"]').click();
+                await focusedPage.locator('[data-staff-walkin-next]').click();
+                await focusedPage.locator('[data-staff-walkin-next]').click();
+                await focusedPage.locator('[data-staff-walkin-save]').click();
+                const cashModal = focusedPage.locator('[data-staff-walkin-cash-modal]');
+                await cashModal.waitFor({ state: 'visible' });
+                await cashModal.locator('[data-staff-walkin-cash-tendered]').fill('400');
+                await cashModal.locator('[data-staff-walkin-cash-pay]').click();
+                await receiptModal.waitFor({ state: 'visible' });
+            };
+            await submitCashWalkin('Receipt Popup Guest');
+            const receipt = receiptModal.locator('.payment-ack-card');
+            await receipt.waitFor();
+            assert.match(await receipt.innerText(), /PAYMENT ACKNOWLEDGEMENT/);
+            assert.equal(await focusedPage.locator('[data-staff-walkin-receipt-wrap]').isVisible(), false,
+                'successful cash acknowledgment stays out of the inline wizard area');
+            assert.equal(await receiptModal.locator('[data-staff-receipt-download]').isVisible(), true);
+            assert.equal(await receiptModal.locator('[data-staff-receipt-print]').isVisible(), true);
+            assert.equal(await receiptModal.locator('[data-staff-receipt-new-walkin]').count(), 0);
+            assert.equal(await focusedPage.locator('.staff-shell').evaluate(element => element.inert), true,
+                'the staff page background is inert while the acknowledgment is open');
+            await receiptModal.locator('[data-staff-receipt-dialog]').evaluate(element => element.focus());
+            await focusedPage.keyboard.press('Tab');
+            assert.equal(await receiptModal.locator('[data-staff-receipt-close]').evaluate(element => document.activeElement === element), true,
+                'Tab from the dialog container moves focus to its first control');
+            await focusedPage.keyboard.press('Shift+Tab');
+            assert.equal(await receiptModal.locator('[data-staff-receipt-print]').evaluate(element => document.activeElement === element), true,
+                'Shift+Tab wraps from the first control to the last control');
+            await focusedPage.keyboard.press('Tab');
+            assert.equal(await receiptModal.locator('[data-staff-receipt-close]').evaluate(element => document.activeElement === element), true,
+                'Tab wraps from the last control to the first control');
+            await focusedPage.locator('[data-staff-payment-celebration]').waitFor({ state: 'attached' });
+            assert.equal(await focusedPage.evaluate(() => sessionStorage.getItem('inigosync:staff-payment-celebrated:qa-receipt')), '1');
+            await focusedPage.keyboard.press('Escape');
+            assert.equal(await receiptModal.isVisible(), false);
+            assert.equal(await focusedPage.locator('.staff-shell').evaluate(element => element.inert), false,
+                'closing the dialog removes background inertness');
+            assert.equal(await focusedPage.locator('[data-staff-walkin-wizard-wrap]').isVisible(), true);
+            assert.equal(await focusedPage.locator('[data-staff-walkin-step="1"]').evaluate(panel => panel.classList.contains('is-active')), true);
+            assert.equal(await focusedPage.locator('[data-staff-walkin-name]').inputValue(), '');
+            assert.equal(await focusedPage.locator('[data-staff-walkin-name]').evaluate(element => document.activeElement === element), true,
+                'Escape restores focus to the reset Customer step');
+
+            await submitCashWalkin('Celebration Replay Guest');
+            assert.equal(await focusedPage.locator('[data-staff-payment-celebration]').count(), 0,
+                'the same paid receipt does not replay confetti on a second acknowledgment');
+            assert.equal(await focusedPage.evaluate(() => sessionStorage.getItem('inigosync:staff-payment-celebrated:qa-receipt')), '1');
+            await receiptModal.click({ position: { x: 5, y: 5 } });
+            assert.equal(await receiptModal.isVisible(), false, 'backdrop click dismisses the repeated receipt');
+            assert.equal(await focusedPage.locator('[data-staff-walkin-step="1"]').evaluate(panel => panel.classList.contains('is-active')), true,
+                'backdrop close resets the wizard to Customer step 1');
+            assert.equal(await focusedPage.locator('[data-staff-walkin-name]').inputValue(), '',
+                'backdrop close clears the prior customer and payment state');
+            assert.deepEqual(errors, []);
+            await focusedContext.context.close();
+            const onlineReturnContext = await openStaffPage(browser, {
+                timezoneId: 'Asia/Manila', now: '2026-09-27T00:30:00Z',
+                query: '?walkin_checkout=return&order=a25dc45b-40ba-4b5b-96d6-4487dbe7a526',
+                reducedMotion: 'reduce',
+                config: { paymentStatus: 'paid', paymentMethod: 'PayMongo', ackItems: [{
+                    sport: 'Badminton', court: 'Badminton', unit: 'Court 1', starts_at: '2026-09-27T01:00:00Z',
+                    ends_at: '2026-09-27T02:00:00Z', subtotal_minor: 10000,
+                }] },
+            });
+            await onlineReturnContext.page.locator('[data-staff-receipt-modal]').waitFor({ state: 'visible' });
+            assert.equal(await onlineReturnContext.page.locator('[data-staff-walkin-receipt-wrap]').isVisible(), false,
+                'confirmed PayMongo walk-in payments open the same acknowledgment popup');
+            assert.match(await onlineReturnContext.page.locator('[data-staff-receipt-modal] .payment-ack-card').innerText(), /Payment status\s+Paid/);
+            assert.equal(await onlineReturnContext.page.locator('[data-staff-payment-celebration]').count(), 0,
+                'reduced-motion preference suppresses receipt confetti');
+            assert.equal(await onlineReturnContext.page.evaluate(() => sessionStorage.getItem('inigosync:staff-payment-celebrated:qa-receipt')), '1',
+                'reduced-motion preference still claims the receipt celebration to prevent replay');
+            await onlineReturnContext.context.close();
+
+            const pendingReturnContext = await openStaffPage(browser, {
+                timezoneId: 'Asia/Manila', now: '2026-09-27T00:30:00Z',
+                query: '?walkin_checkout=return&order=a25dc45b-40ba-4b5b-96d6-4487dbe7a526',
+                config: { paymentStatus: 'pending', paymentMethod: 'PayMongo', ackItems: [{
+                    sport: 'Badminton', court: 'Badminton', unit: 'Court 1', starts_at: '2026-09-27T01:00:00Z',
+                    ends_at: '2026-09-27T02:00:00Z', subtotal_minor: 10000,
+                }] },
+            });
+            await pendingReturnContext.page.locator('.staff-receipt-pending').waitFor();
+            assert.equal(await pendingReturnContext.page.locator('[data-staff-receipt-modal]').isVisible(), false,
+                'pending payment does not open the paid-receipt popup');
+            assert.equal(await pendingReturnContext.page.locator('[data-staff-payment-celebration]').count(), 0);
+            assert.equal(await pendingReturnContext.page.evaluate(() => sessionStorage.getItem('inigosync:staff-payment-celebrated:qa-receipt')), null,
+                'pending payment does not claim or replay the celebration');
+            await pendingReturnContext.context.close();
+
+            const errorReturnContext = await openStaffPage(browser, {
+                timezoneId: 'Asia/Manila', now: '2026-09-27T00:30:00Z',
+                query: '?walkin_checkout=return&order=a25dc45b-40ba-4b5b-96d6-4487dbe7a526',
+                config: { ackError: true },
+            });
+            await errorReturnContext.page.locator('.staff-receipt-pending').waitFor();
+            assert.equal(await errorReturnContext.page.locator('[data-staff-receipt-modal]').isVisible(), false,
+                'acknowledgment error does not open the paid-receipt popup');
+            assert.equal(await errorReturnContext.page.locator('[data-staff-payment-celebration]').count(), 0);
+            assert.equal(await errorReturnContext.page.evaluate(() => sessionStorage.getItem('inigosync:staff-payment-celebrated:qa-receipt')), null,
+                'acknowledgment error does not claim or replay the celebration');
+            await errorReturnContext.context.close();
+            console.log('PASS focused staff receipt popup, focus handling, close reset, and paid-state celebration checks');
+            return;
+        }
         const continuousRangeContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:00:00Z', pauseClock: true,
-            config: { bookings: [occupancyRow(10)] },
+            config: { occupancyRows: [occupancyRow(10)] },
         });
         const continuousRangePage = continuousRangeContext.page;
         await openWalkinTimeStep(continuousRangePage);
@@ -435,8 +556,8 @@ function occupancyRow(hour, source = 'online') {
             const footer = card.querySelector('.staff-wizard-nav').getBoundingClientRect();
             return { viewportHeight: innerHeight, cardHeight: card.getBoundingClientRect().height, footerBottom: footer.bottom };
         });
-        assert.ok(shortViewportFooter.cardHeight <= 120, `short mobile viewport caps the card minimum (${JSON.stringify(shortViewportFooter)})`);
-        assert.ok(shortViewportFooter.footerBottom <= shortViewportFooter.viewportHeight, `the action footer stays visible in a short mobile viewport (${JSON.stringify(shortViewportFooter)})`);
+        assert.ok(shortViewportFooter.cardHeight <= 120.1, `short mobile viewport caps the card minimum within subpixel rounding (${JSON.stringify(shortViewportFooter)})`);
+        assert.ok(shortViewportFooter.footerBottom <= shortViewportFooter.viewportHeight + 1, `the action footer stays visible within subpixel rounding in a short mobile viewport (${JSON.stringify(shortViewportFooter)})`);
         await customerStepPage.setViewportSize({ width: 360, height: 780 });
         assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'an empty customer name blocks Next');
         await customerStepPage.locator('[data-staff-walkin-name]').fill('Guest Customer');
@@ -446,7 +567,7 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), true, 'Next stays blocked while availability is pending');
         assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'pending status does not change customer card height');
         await customerStepPage.waitForFunction(() => document.querySelector('[data-staff-walkin-mobile-status]').dataset.state === 'available');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), 'Number is available.');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), 'Valid · available');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-mobile-status]').getAttribute('aria-label'),
             await customerStepPage.locator('[data-staff-walkin-mobile-status]').innerText(), 'the complete validation result stays accessible when visually clamped');
         assertCardHeightStable(await customerCard.evaluate(el => el.getBoundingClientRect().height), blankMobileCardHeight, 'available status does not change customer card height');
@@ -576,12 +697,12 @@ function occupancyRow(hour, source = 'online') {
         assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', 'Table 1', 'Table 2'], 'sport selection immediately shows its available units');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select] option[value=""]').isHidden(), true, 'the prompt is hidden from the native choice list');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select] option[value=""]').evaluate(option => option.disabled), true, 'the prompt cannot be selected as a unit');
-        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('0');
+        await customerStepPage.locator('[data-staff-walkin-court-card="0"]').click();
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Table Tennis · Table 1', 'unit selection resolves its parent court listing');
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-court-card="0"] .staff-walkin-court-radio').isChecked(), true, 'the hidden unit select synchronizes the checked court radio');
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-court-card="0"] .staff-walkin-court-radio').isChecked(), true, 'the visible court card selects its radio');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-court-card="0"] img').getAttribute('src'), 'https://fixture.test/units/table-tennis-1.jpg', 'court cards use configured unit photos');
-        await customerStepPage.locator('[data-staff-walkin-court-card="1"] .staff-walkin-court-radio').click();
-        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select]').inputValue(), '1', 'the native court radio synchronizes the hidden unit select');
+        await customerStepPage.locator('[data-staff-walkin-court-card="1"]').click();
+        assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select]').inputValue(), '1', 'the selected card keeps the hidden compatibility select synchronized');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Table Tennis · Table 2', 'court radio selection updates the walk-in unit');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-court-card="1"] .staff-walkin-court-radio').evaluate(radio => document.activeElement === radio), true, 'court focus is restored after the selected card rerenders');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-next]').isDisabled(), false, 'selecting an actual unit enables progression to Schedule');
@@ -597,16 +718,21 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Select a court first.', 'changing sport clears the prior court selection');
         await customerStepPage.locator('[data-staff-walkin-sport-card="volleyball"]').click();
         assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', 'Court 1'], 'Volleyball shows its actual verified unit');
-        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('0');
+        await customerStepPage.locator('[data-staff-walkin-next]').click();
+        await customerStepPage.locator('[data-staff-walkin-court-card="0"]').click();
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Volleyball · Court 1', 'Volleyball uses its verified Court 1 label, not the previous sport’s tables');
         assert.equal(await customerStepPage.locator('[data-staff-walkin-unit-select]').isHidden(), true, 'later sport changes keep the compatibility select hidden');
+        await customerStepPage.locator('[data-staff-walkin-back]').click();
         await customerStepPage.locator('[data-staff-walkin-sport-card="bowling-duckpin"]').click();
         assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', ...Array.from({ length: 8 }, (_, index) => `Lane ${index + 1}`)], 'Duckpin lists only its 8 verified lanes');
-        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('0');
+        await customerStepPage.locator('[data-staff-walkin-next]').click();
+        await customerStepPage.locator('[data-staff-walkin-court-card="0"]').click();
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Bowling — Duckpin · Lane 1', 'Duckpin lane selection resolves to the Duckpin listing');
+        await customerStepPage.locator('[data-staff-walkin-back]').click();
         await customerStepPage.locator('[data-staff-walkin-sport-card="bowling-tenpin"]').click();
         assert.deepEqual(await customerStepPage.locator('[data-staff-walkin-unit-select] option').allTextContents(), ['Choose an available unit', ...Array.from({ length: 12 }, (_, index) => `Lane ${index + 1}`)], 'Ten-Pin lists only its 12 verified lanes');
-        await customerStepPage.locator('[data-staff-walkin-unit-select]').selectOption('11');
+        await customerStepPage.locator('[data-staff-walkin-next]').click();
+        await customerStepPage.locator('[data-staff-walkin-court-card="11"]').click();
         assert.equal(await customerStepPage.locator('[data-staff-walkin-current-court]').innerText(), 'Bowling — Ten-Pin · Lane 12', 'Ten-Pin lane selection resolves to the Ten-Pin listing');
         await customerStepContext.context.close();
 
@@ -744,14 +870,18 @@ function occupancyRow(hour, source = 'online') {
         assert.match(setReviewText, /3 hrs/);
         assert.match(setReviewText, /1 hr/);
         assert.doesNotMatch(setReviewText, /\bsets?\b/i, 'staff review describes reservations in hours');
-        await setPage.locator('[data-staff-walkin-cash-tendered]').fill('200');
-        assert.equal(await setPage.locator('[data-staff-walkin-save]').isDisabled(), false, 'the full ₱200 order tender enables cash completion');
         assert.equal(await setPage.locator('[data-staff-walkin-save]').isVisible(), true, 'the payment action is visible in the step footer');
         assert.equal(await setPage.locator('[data-staff-walkin-save]').evaluate(button => button.closest('.staff-wizard-nav') !== button.closest('.staff-wizard-panel')),
             true, 'payment action is outside the scrollable step body');
         assert.equal(await setPage.locator('[data-staff-walkin-next]').isVisible(), false, 'the final step hides Next while keeping payment in the footer');
         await setPage.locator('[data-staff-walkin-save]').click();
-        await resolveStaffConfirm(setPage, { accept: true });
+        const setCashModal = setPage.locator('[data-staff-walkin-cash-modal]');
+        await setCashModal.waitFor({ state: 'visible' });
+        assert.match(await setCashModal.locator('[data-staff-walkin-cash-due]').innerText(), /₱200\.00/);
+        const setCashTender = setCashModal.locator('[data-staff-walkin-cash-tendered]');
+        await setCashTender.fill('200');
+        assert.equal(await setCashModal.locator('[data-staff-walkin-cash-pay]').isDisabled(), false, 'the full ₱200 order tender enables modal Pay');
+        await setCashModal.locator('[data-staff-walkin-cash-pay]').click();
         const setReceipt = setPage.locator('[data-staff-walkin-receipt] .payment-ack-card');
         await setReceipt.waitFor();
         assert.match(await setReceipt.innerText(), /PAYMENT ACKNOWLEDGEMENT/);
@@ -810,23 +940,42 @@ function occupancyRow(hour, source = 'online') {
         assert.equal(lineCount, 2, 'review should show both reservation lines');
         assert.match(await page.locator('[data-staff-walkin-summary-total]').innerText(), /₱350\.00/);
         assert.equal(await page.locator('[data-staff-walkin-online-option]').count(), 1, 'Pay Online is available beside Cash');
-        const cashTender = page.locator('[data-staff-walkin-cash-tendered]');
-        assert.equal(await page.locator('[data-staff-walkin-save]').isDisabled(), true, 'cash cannot be saved before tender is entered');
-        await cashTender.fill('349.99');
-        assert.equal(await page.locator('[data-staff-walkin-save]').isDisabled(), true, 'cash below the amount due is rejected');
-        assert.match(await page.locator('[data-staff-walkin-cash-validation]').innerText(), /Enter at least ₱350\.00/);
-        await cashTender.fill('400');
-        assert.match(await page.locator('[data-staff-walkin-cash-change]').innerText(), /₱50\.00/);
-        assert.equal(await page.locator('[data-staff-walkin-save]').isDisabled(), false, 'sufficient tender enables cash save');
+        assert.equal(await page.locator('[data-staff-walkin-save]').isDisabled(), false, 'cash method selection remains available before tender is entered');
         await page.locator('[data-staff-walkin-save]').click();
-        await resolveStaffConfirm(page, { accept: true });
-        const walkinReceipt = page.locator('[data-staff-walkin-receipt] .payment-ack-card');
+        const cashModal = page.locator('[data-staff-walkin-cash-modal]');
+        await cashModal.waitFor({ state: 'visible' });
+        const cashTender = cashModal.locator('[data-staff-walkin-cash-tendered]');
+        assert.match(await cashModal.locator('[data-staff-walkin-cash-due]').innerText(), /₱350\.00/);
+        assert.equal(await cashModal.locator('[data-staff-walkin-cash-pay]').isDisabled(), true, 'Pay starts disabled until tender covers the total');
+        await cashTender.fill('349.99');
+        assert.equal(await cashModal.locator('[data-staff-walkin-cash-pay]').isDisabled(), true, 'cash below the amount due is rejected');
+        assert.match(await cashModal.locator('[data-staff-walkin-cash-validation]').innerText(), /Enter at least ₱350\.00/);
+        await cashTender.fill('400');
+        assert.match(await cashModal.locator('[data-staff-walkin-cash-change]').innerText(), /₱50\.00/);
+        assert.equal(await cashModal.locator('[data-staff-walkin-cash-pay]').isDisabled(), false, 'sufficient tender enables modal Pay');
+        await cashModal.locator('[data-staff-walkin-cash-pay]').evaluate(button => { button.click(); button.click(); });
+        const receiptModal = page.locator('[data-staff-receipt-modal]');
+        await receiptModal.waitFor({ state: 'visible' });
+        assert.equal(await page.locator('[data-staff-walkin-receipt-wrap]').isVisible(), false,
+            'a paid cash receipt is shown in the popup, not beneath the walk-in wizard');
+        assert.equal(await page.locator('[data-staff-walkin-wizard-wrap]').isVisible(), false,
+            'the completed payment step stays hidden behind the receipt popup');
+        const walkinReceipt = receiptModal.locator('.payment-ack-card');
         await walkinReceipt.waitFor();
         assert.match(await walkinReceipt.innerText(), /PAYMENT ACKNOWLEDGEMENT/);
         assert.match(await walkinReceipt.innerText(), /TOTAL PAID/);
         assert.match(await walkinReceipt.innerText(), /Cash tendered\s+₱400\.00/);
         assert.match(await walkinReceipt.innerText(), /Change due\s+₱50\.00/);
-        await verifyThermalReceiptPrint(page, '[data-staff-walkin-receipt] .payment-ack-card', 'walk-in receipt');
+        assert.equal(await receiptModal.locator('[data-staff-receipt-download]').isVisible(), true,
+            'the popup keeps the receipt download action accessible');
+        assert.equal(await receiptModal.locator('[data-staff-receipt-print]').isVisible(), true,
+            'the popup keeps the receipt print action accessible');
+        assert.equal(await receiptModal.locator('[data-staff-receipt-new-walkin]').count(), 0,
+            'the popup footer only offers receipt actions');
+        await page.locator('[data-staff-payment-celebration]').waitFor({ state: 'attached' });
+        assert.equal(await page.evaluate(() => sessionStorage.getItem('inigosync:staff-payment-celebrated:qa-receipt')), '1',
+            'the paid receipt claims its celebration key so it cannot replay on a later view');
+        await verifyThermalReceiptPrint(page, '[data-staff-receipt-modal] .payment-ack-card', 'walk-in receipt');
         const saved = await page.evaluate(() => ({
             createCalls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order_quoted'),
             legacyCalls: window.__walkinQa.calls.filter(call => call.kind === 'rpc' && call.name === 'staff_create_walkin_order'),
@@ -842,6 +991,16 @@ function occupancyRow(hour, source = 'online') {
         assert.deepEqual(saved.items.map(item => item.starts_at), ['2026-09-27T01:00:00.000Z', '2026-09-27T04:00:00.000Z'], 'slot timestamps should use Manila wall time even when device timezone is Honolulu');
         assert.equal(saved.ackCalls.length, 1, 'cash receipt is fetched from the canonical acknowledgment RPC');
         assert.deepEqual(saved.writes, [], 'the browser must not write walk_in_booking rows directly');
+        await receiptModal.locator('[data-staff-receipt-close]').click();
+        assert.equal(await receiptModal.isVisible(), false, 'the close control dismisses the paid acknowledgment popup');
+        assert.equal(await page.locator('[data-staff-walkin-wizard-wrap]').isVisible(), true,
+            'closing the receipt returns to the walk-in wizard');
+        assert.equal(await page.locator('[data-staff-walkin-step="1"]').evaluate(panel => panel.classList.contains('is-active')), true,
+            'closing the receipt resets the wizard to Customer step 1');
+        assert.equal(await page.locator('[data-staff-walkin-name]').inputValue(), '',
+            'closing the receipt clears the previous customer and payment state');
+        assert.equal(await page.locator('[data-staff-walkin-receipt-wrap]').isVisible(), false,
+            'the paid receipt is not left inline after the popup closes');
         await context.close();
 
         const onlineContext = await openStaffPage(browser, {
@@ -928,132 +1087,89 @@ function occupancyRow(hour, source = 'online') {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:30:00Z', query: '?walkin_checkout=return&order=a25dc45b-40ba-4b5b-96d6-4487dbe7a526',
             config: { paymentStatus: 'paid', paymentMethod: 'PayMongo', ackItems: ackItem },
         });
-        await paidReturn.page.locator('[data-staff-panel="walkin"].is-active .payment-ack-card').waitFor();
+        const paidReturnModal = paidReturn.page.locator('[data-staff-receipt-modal]');
+        await paidReturnModal.waitFor({ state: 'visible' });
+        assert.equal(await paidReturn.page.locator('[data-staff-walkin-receipt-wrap]').isVisible(), false,
+            'a confirmed PayMongo return uses the same popup receipt flow as cash');
         assert.equal(new URL(paidReturn.page.url()).searchParams.has('order'), false);
-        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /Subtotal \(this payment\)\s+₱350\.00/);
-        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /TOTAL PAID\s+₱350\.00/);
-        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /Payment status\s+Paid/);
-        assert.match(await paidReturn.page.locator('.payment-ack-card').innerText(), /NOT AN OFFICIAL RECEIPT/);
+        assert.match(await paidReturnModal.locator('.payment-ack-card').innerText(), /Subtotal \(this payment\)\s+₱350\.00/);
+        assert.match(await paidReturnModal.locator('.payment-ack-card').innerText(), /TOTAL PAID\s+₱350\.00/);
+        assert.match(await paidReturnModal.locator('.payment-ack-card').innerText(), /Payment status\s+Paid/);
+        assert.match(await paidReturnModal.locator('.payment-ack-card').innerText(), /NOT AN OFFICIAL RECEIPT/);
         await paidReturn.context.close();
 
-        const timeInQrContext = await openStaffPage(browser, {
+        const timeInOnlineContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:45:00Z',
-            config: {
-                testMode: true, qrTestUrl: 'https://test.paymongo.com/qrph/timein-fixture',
-                bookings: [{ booking_id: 77, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
-                    time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
-                    status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
-                    rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12, payment_method: 'PayMongo' }],
-            },
+            config: { bookings: [{ booking_id: 77, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
+                time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
+                status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
+                rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12, payment_method: 'PayMongo' }] },
         });
-        const timeInQrPage = timeInQrContext.page;
-        await timeInQrPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
-        await timeInQrPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
-        await timeInQrPage.locator('[data-staff-timein-method="QR Payment"]').click();
-        await timeInQrPage.locator('[data-staff-timein-confirm]').click();
-        await resolveStaffConfirm(timeInQrPage, { accept: true, title: 'Confirm QR Payment' });
-        const timeInQrPanel = timeInQrPage.locator('[data-staff-timein-qr-panel]');
-        await timeInQrPanel.locator('.staff-timein-qr-image').waitFor();
-        assert.equal(await timeInQrPanel.locator('.staff-walkin-qr-warning[role="alert"]').count(), 1, 'Time-In sandbox displays one concise safety warning');
-        assert.match(await timeInQrPanel.locator('.staff-walkin-qr-warning').innerText(), /Test QR: Do not scan or pay\. Use the simulator\./i);
-        assert.equal(await timeInQrPanel.getByRole('link', { name: 'Open PayMongo sandbox simulator' }).getAttribute('href'),
-            'https://test.paymongo.com/qrph/timein-fixture', 'Time-In keeps its existing sandbox simulator link');
-        const timeInDesktopLayout = await timeInQrPanel.evaluate(panel => ({
-            panelWidth: panel.getBoundingClientRect().width,
-            modalWidth: panel.closest('.staff-modal').getBoundingClientRect().width,
-            viewportWidth: window.innerWidth,
-            scrollWidth: document.documentElement.scrollWidth,
-        }));
-        assert.ok(timeInDesktopLayout.modalWidth > 900, 'Time-In QR view expands to a full-width desktop card');
-        assert.ok(timeInDesktopLayout.panelWidth < timeInDesktopLayout.modalWidth, 'Time-In QR card remains inset within the expanded modal');
-        assert.ok(timeInDesktopLayout.scrollWidth <= timeInDesktopLayout.viewportWidth, 'Time-In desktop QR view does not overflow horizontally');
-        await timeInQrPage.setViewportSize({ width: 390, height: 844 });
-        const timeInMobileLayout = await timeInQrPanel.evaluate(panel => ({
-            panelWidth: panel.getBoundingClientRect().width,
-            imageWidth: panel.querySelector('.staff-timein-qr-code').getBoundingClientRect().width,
-            viewportWidth: window.innerWidth,
-            scrollWidth: document.documentElement.scrollWidth,
-        }));
-        assert.ok(timeInMobileLayout.panelWidth > 300, `Time-In QR card fills the mobile modal width: ${JSON.stringify(timeInMobileLayout)}`);
-        assert.ok(timeInMobileLayout.imageWidth <= timeInMobileLayout.panelWidth, 'Time-In QR image fits within its mobile card');
-        assert.ok(timeInMobileLayout.scrollWidth <= timeInMobileLayout.viewportWidth, 'Time-In mobile QR view does not overflow horizontally');
-        await timeInQrContext.context.close();
+        const timeInOnlinePage = timeInOnlineContext.page;
+        await timeInOnlinePage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
+        await timeInOnlinePage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
+        assert.equal(await timeInOnlinePage.locator('[data-staff-timein-confirm]').innerText(), 'Pay');
+        assert.equal(await timeInOnlinePage.locator('[data-staff-timein-confirm]').isDisabled(), true);
+        await timeInOnlinePage.locator('[data-staff-timein-method="Online Payment"]').click();
+        assert.equal(await timeInOnlinePage.evaluate(() => window.__walkinQa.calls.filter(call => call.kind === 'function' && call.name === 'paymongo-balance-checkout').length), 0,
+            'selecting Online Payment alone does not open checkout');
+        assert.equal(await timeInOnlinePage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length), 0,
+            'method selection does not collect payment or time in');
+        await timeInOnlinePage.locator('[data-staff-timein-confirm]').click();
+        await timeInOnlinePage.waitForFunction(() => window.__walkinQa.calls.some(call => call.kind === 'function' && call.name === 'paymongo-balance-checkout'));
+        const timeInCheckout = await timeInOnlinePage.evaluate(() => window.__walkinQa.calls.find(call => call.kind === 'function' && call.name === 'paymongo-balance-checkout'));
+        assert.deepEqual(timeInCheckout.options.body, { source: 'booking', id: '77' }, 'Time-In uses hosted checkout with no QR channel override');
+        assert.equal(await timeInOnlinePage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length), 0,
+            'opening hosted checkout does not record attendance');
+        await timeInOnlineContext.context.close();
 
-        const untrustedTimeInQrContext = await openStaffPage(browser, {
+        const timeInCashContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:45:00Z',
-            config: {
-                testMode: true, qrTestUrl: 'https://attacker.example/simulator',
-                bookings: [{ booking_id: 78, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
-                    time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
-                    status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
-                    rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12, payment_method: 'PayMongo' }],
-            },
+            config: { bookings: [{ booking_id: 78, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
+                time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
+                status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
+                rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12, payment_method: 'PayMongo' }] },
         });
-        const untrustedTimeInPage = untrustedTimeInQrContext.page;
-        await untrustedTimeInPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
-        await untrustedTimeInPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
-        await untrustedTimeInPage.locator('[data-staff-timein-method="QR Payment"]').click();
-        await untrustedTimeInPage.locator('[data-staff-timein-confirm]').click();
-        await resolveStaffConfirm(untrustedTimeInPage, { accept: true, title: 'Confirm QR Payment' });
-        const untrustedTimeInPanel = untrustedTimeInPage.locator('[data-staff-timein-qr-panel]');
-        await untrustedTimeInPanel.locator('.staff-timein-qr-image').waitFor();
-        assert.equal(await untrustedTimeInPanel.getByRole('link', { name: 'Open PayMongo sandbox simulator' }).count(), 0,
-            'Time-In does not link an untrusted simulator URL');
-        assert.match(await untrustedTimeInPanel.locator('.staff-walkin-qr-warning').innerText(), /Test QR: Do not scan or pay\. Simulator unavailable\./i,
-            'Time-In clearly warns when its simulator URL is unavailable');
-        await untrustedTimeInQrContext.context.close();
+        const timeInCashPage = timeInCashContext.page;
+        await timeInCashPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
+        await timeInCashPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
+        await timeInCashPage.locator('[data-staff-timein-method="Cash"]').click();
+        assert.equal(await timeInCashPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length), 0,
+            'choosing Cash only selects a method');
+        await timeInCashPage.locator('[data-staff-timein-confirm]').click();
+        const timeInCashModal = timeInCashPage.locator('[data-staff-timein-cash-modal]');
+        await timeInCashModal.waitFor({ state: 'visible' });
+        assert.match(await timeInCashModal.locator('[data-staff-timein-cash-due]').innerText(), /₱50\.00/);
+        const timeInTender = timeInCashModal.locator('[data-staff-timein-cash-tendered]');
+        await timeInTender.fill('49.99');
+        assert.equal(await timeInCashModal.locator('[data-staff-timein-cash-pay]').isDisabled(), true);
+        assert.equal(await timeInCashPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length), 0,
+            'opening the POS cash popup performs no payment or attendance operation');
+        await timeInTender.fill('60');
+        assert.match(await timeInCashModal.locator('[data-staff-timein-cash-change]').innerText(), /₱10\.00/);
+        await timeInCashModal.locator('[data-staff-timein-cash-pay]').evaluate(button => { button.click(); button.click(); });
+        await timeInCashPage.waitForFunction(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length === 1);
+        const timeInCashCall = await timeInCashPage.evaluate(() => window.__walkinQa.calls.find(call => call.name === 'staff_collect_cash_and_check_in'));
+        assert.equal(timeInCashCall.args.p_cash_tendered_minor, 6000, 'cash confirmation sends tender in integer cents');
+        await timeInCashContext.context.close();
 
         const timeInPaidContext = await openStaffPage(browser, {
             timezoneId: 'Asia/Manila', now: '2026-09-27T00:45:00Z',
-            config: {
-                testMode: true, qrTestUrl: 'https://test.paymongo.com/qrph/paid-fixture',
-                bookings: [{ booking_id: 79, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
-                    time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
-                    status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 50,
-                    balance_payment_id: 513, rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12 }],
-                paymentHistory: [{ payment_id: 513, acknowledgment: {
-                    receipt_id: 'qa-balance-receipt', receipt_number: 'QA-BAL-513', transaction_id: 513,
-                    source_id: 79, payment_status: 'paid', payment_method: 'PayMongo', issued_at: '2026-09-27T01:01:00+08:00',
-                    subtotal: 50, fee: 0, total: 50, court_subtotal_minor: 5000, amount_paid_minor: 5000,
-                    remaining_balance_minor: 0, fee_minor: 0, gross_minor: 5000,
-                    items: [{ reservation_id: 79, sport: 'Badminton', court: 'Badminton', unit: 'Court 1',
-                        starts_at: '2026-09-27T01:00:00+08:00', ends_at: '2026-09-27T02:00:00+08:00',
-                        duration_minutes: 60, rate_unit: '/hr', rate_quantity: 1, subtotal_minor: 5000 }],
-                    disclaimer: 'Payment acknowledgment and entry pass — not a BIR invoice or official receipt.',
-                } }],
-            },
+            query: '?balance_checkout=return&source=booking&id=79',
+            config: { bookings: [{ booking_id: 79, customer_id: 'qa-customer', sports: 'Badminton', courts: 'Badminton', court_unit: 'Court 1',
+                time_date: '2026-09-27T01:00:00Z', end_at: '2026-09-27T02:00:00Z', duration_minutes: 60,
+                status: 'confirmed', checked_in_at: null, checked_out_at: null, amount_total: 100, amount_paid: 100,
+                balance_payment_id: 513, rate_unit_snapshot: '/hr', rate_quantity: 1, payment_id: 12 }] },
         });
         const timeInPaidPage = timeInPaidContext.page;
-        await timeInPaidPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').waitFor();
-        await timeInPaidPage.locator('[data-staff-table="overview"] tbody tr[data-row-index] [data-staff-action="timein"]').click();
-        await timeInPaidPage.locator('[data-staff-timein-method="QR Payment"]').click();
+        await timeInPaidPage.locator('[data-staff-timein-modal]').waitFor({ state: 'visible' });
+        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length), 0,
+            'confirmed checkout return opens Time-In for review without immediately recording attendance');
         await timeInPaidPage.locator('[data-staff-timein-confirm]').click();
-        await resolveStaffConfirm(timeInPaidPage, { accept: true, title: 'Confirm QR Payment' });
-        await timeInPaidPage.locator('[data-staff-timein-qr-panel]').waitFor({ state: 'visible' });
-        await timeInPaidPage.locator('[data-staff-timein-qr-check]').click();
-        await timeInPaidPage.waitForTimeout(50);
-        assert.equal(await timeInPaidPage.locator('[data-staff-receipt-modal]').isVisible(), false,
-            'an unconfirmed balance never presents a receipt');
-        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_get_transaction_payment_history').length), 0,
-            'acknowledgment history is not queried while the provider payment is pending');
-        await timeInPaidPage.evaluate(() => {
-            window.__walkinQa.config.bookings[0].amount_paid = 100;
-        });
-        await timeInPaidPage.locator('[data-staff-timein-qr-check]').click();
-        const timeInReceipt = timeInPaidPage.locator('[data-staff-receipt-modal]');
-        await timeInReceipt.waitFor({ state: 'visible' });
-        assert.match(await timeInReceipt.innerText(), /QA-BAL-513/);
-        assert.match(await timeInReceipt.innerText(), /Payment status\s+Paid/);
-        assert.equal(await timeInReceipt.locator('[data-staff-receipt-download]').count(), 1,
-            'confirmed saved acknowledgment includes its download action');
-        assert.equal(await timeInReceipt.locator('[data-staff-receipt-print]').count(), 1,
-            'confirmed saved acknowledgment includes its print action');
-        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_get_transaction_payment_history').length), 1,
-            'one confirmed payment loads one saved acknowledgment');
-        await timeInPaidPage.locator('[data-staff-receipt-close]').click();
-        await timeInPaidPage.waitForTimeout(50);
-        assert.equal(await timeInPaidPage.evaluate(() => window.__walkinQa.calls.filter(call => call.name === 'staff_get_transaction_payment_history').length), 1,
-            'closing the receipt does not retrieve or create a duplicate acknowledgment');
+        await resolveStaffConfirm(timeInPaidPage, { accept: true, title: 'Confirm Time-In' });
+        await timeInPaidPage.waitForFunction(() => window.__walkinQa.calls.filter(call => call.name === 'staff_collect_cash_and_check_in').length === 1);
+        const paidTimeInCall = await timeInPaidPage.evaluate(() => window.__walkinQa.calls.find(call => call.name === 'staff_collect_cash_and_check_in'));
+        assert.equal(paidTimeInCall.args.p_cash_tendered_minor, null, 'fully paid reservations do not invent cash tender');
         await timeInPaidContext.context.close();
 
         if (process.env.WALKIN_QR_ONLY === '1') {
@@ -1138,8 +1254,9 @@ function occupancyRow(hour, source = 'online') {
         await receiptDialog.waitFor();
         assert.match(await receiptDialog.innerText(), /PA-BALANCE/);
         assert.match(await receiptDialog.innerText(), /Sport:\s+Badminton/);
-        assert.match(await receiptDialog.innerText(), /Court:\s+Badminton/);
-        assert.match(await receiptDialog.innerText(), /Unit:\s+Court 1/);
+        assert.match(await receiptDialog.innerText(), /Court:\s+Court 1/);
+        assert.doesNotMatch(await receiptDialog.innerText(), /Unit:\s+Court 1/,
+            'the promoted unit is not repeated as a second location field');
         assert.equal(await transactionPage.locator('[data-staff-receipt-print]').count(), 1, 'receipt modal has a print action');
         assert.equal(await transactionPage.locator('[data-staff-receipt-download]').count(), 1, 'receipt modal has a download action');
         await verifyThermalReceiptPrint(transactionPage, '.payment-ack-card', 'booking acknowledgment');

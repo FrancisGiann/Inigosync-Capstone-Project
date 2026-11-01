@@ -22,6 +22,58 @@ test('maps facility-local hours and midnight boundaries correctly on a non-Manil
     assert.equal(slots.localDateHourToIso('2026-03-10', 24), '2026-03-10T16:00:00.000Z');
     });
 
+test('slots remain selectable until strictly before start plus ten minutes', () => {
+    const start = Date.parse('2026-11-01T05:00:00.000Z');
+    assert.equal(slots.isBeforeStartCutoff(start, start - 60_000, 10), true, 'a slot one minute before start remains selectable');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 9 * 60_000 + 59_999), true, 'one millisecond before the cutoff stays open');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 10 * 60_000), false, 'the exact cutoff is closed');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 10 * 60_000 + 1), false, 'times after the cutoff stay closed');
+});
+
+test('next slot cutoff timer skips an exact deadline and selects the following slot', () => {
+    const date = '2026-11-01';
+    const start = Date.parse('2026-11-01T05:00:00.000Z');
+    assert.deepEqual(JSON.parse(JSON.stringify(slots.nextStartCutoff(date, [13, 14], start + 5 * 60_000))),
+        { hour: 13, at: start + 10 * 60_000 });
+    assert.deepEqual(JSON.parse(JSON.stringify(slots.nextStartCutoff(date, [13, 14], start + 10 * 60_000))),
+        { hour: 14, at: start + 70 * 60_000 });
+});
+
+test('configured slot cutoffs close immediately at the exact deadline and stay capped at 59 minutes', () => {
+    const start = Date.parse('2026-11-01T05:00:00.000Z');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 5 * 60_000 - 1, 5), true, 'the 1:04:59 example stays available with a five-minute cutoff');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 5 * 60_000, 5), false, 'the exact 1:05 configurable cutoff is closed');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 59 * 60_000, 59), false, '59-minute cutoff is closed at its exact boundary');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 59 * 60_000 - 1, 59), true, 'one millisecond before a 59-minute cutoff remains open');
+    assert.equal(slots.isBeforeStartCutoff(start, start, 0), false, 'zero-minute cutoff closes at slot start');
+    assert.equal(slots.isBeforeStartCutoff(start, start + 10 * 60_000, 60), false, 'out-of-range client values safely use the 10-minute default');
+    assert.deepEqual(JSON.parse(JSON.stringify(slots.nextStartCutoff('2026-11-01', [13], start + 10 * 60_000, 15))),
+        { hour: 13, at: start + 15 * 60_000 });
+});
+
+test('customer and staff availability use the same strict start cutoff as the server RPCs', () => {
+    const dashboard = readFileSync(new URL('../includes/Dashboard.js', import.meta.url), 'utf8');
+    const staff = readFileSync(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8');
+    const staffHtml = readFileSync(new URL('../Pages/staff_dashboard.html', import.meta.url), 'utf8');
+    const migration = readFileSync(new URL('../supabase/migrations/20261101160000_booking_slot_start_cutoff.sql', import.meta.url), 'utf8');
+    assert.match(dashboard, /isBeforeStartCutoff\?\.\(slotStart, Date\.now\(\), availability\.rules\.slotCutoffMinutes\)/, 'customer booking selection closes at the configured cutoff');
+    assert.match(dashboard, /localDateHourToIso\(date, hour\)[\s\S]{0,180}isBeforeStartCutoff\?\.\(slotStart, Date\.now\(\), rules\.slotCutoffMinutes\)/, 'customer availability overview closes at the configured cutoff');
+    assert.match(dashboard, /function isSlotHourPast\(hour\) \{[\s\S]*?isBeforeStartCutoff/, 'customer legacy slot status uses the same cutoff');
+    assert.match(dashboard, /function scheduleBookingCutoffRender\(\) \{[\s\S]*?renderTimePickers\(\);\s*updateSummary\(\);/, 'customer booking grid rerenders from cached availability at the next cutoff');
+    assert.match(dashboard, /function scheduleOverviewAvailabilityCutoff\([\s\S]*?slot\.classList\.remove\('is-available'\)[\s\S]*?scheduleOverviewAvailabilityCutoff\(request, date, hours, cutoffMinutes\)/, 'customer overview closes its cached available row at cutoff without refetching');
+    assert.ok(staff.includes('window.InigoBookingSlots?.isBeforeStartCutoff?.(slot.start, Date.now(), walkinBusinessRules?.slotCutoffMinutes)')
+        && staff.includes('return !isBeforeCutoff;'), 'staff walk-in selection uses the shared cutoff');
+    assert.match(staff, /function scheduleCellInfo\([\s\S]*?isBeforeStartCutoff[\s\S]*?function renderCourtSchedule\(/, 'staff Court Schedule uses the same cutoff for current-day availability');
+    assert.match(staff, /function scheduleWalkinCutoffRender\(\) \{[\s\S]*?renderWalkinTimeSlots\(\);[\s\S]*?updateWalkinSummary\(\);/, 'staff walk-in grid rerenders from cached occupancy at the next cutoff');
+    assert.match(staff, /function scheduleCourtScheduleCutoffRender\([\s\S]*?renderCourtSchedule\(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache\)/, 'staff Court Schedule rerenders from cached occupancy at the next cutoff');
+    assert.match(staffHtml, /businessHours\.js[\s\S]*?bookingSlots\.js[\s\S]*?staff_dashboard\.js/, 'staff loads the shared cutoff helper before its dashboard');
+    assert.match(migration, /add column if not exists slot_cutoff_minutes integer not null default 10/, 'existing rules are backfilled to the ten-minute default');
+    assert.match(migration, /check \(slot_cutoff_minutes between 0 and 59\)/, 'the database enforces the supported cutoff range');
+    assert.match(migration, /p_slot_cutoff_minutes not between 0 and 59/, 'the owner save RPC validates the same range');
+    assert.match(migration, /v_start\+make_interval\(mins=>internal\.booking_slot_cutoff_for_date\(v_start_local::date\)\)<=now\(\)/, 'staff walk-in validation uses the shared configured cutoff');
+    assert.match(migration, /v_start\+make_interval\(mins=>internal\.booking_slot_cutoff_for_date\(v_start_local::date\)\)<=now\(\)/, 'trusted customer checkout uses the shared configured cutoff');
+});
+
 test('booking picker is wired to authoritative availability and keeps checkout server-owned', () => {    const html = readFileSync(new URL('../Pages/user_dashboard.html', import.meta.url), 'utf8');
     const dashboard = readFileSync(new URL('../includes/Dashboard.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     assert.match(html, /data-dash-book-sports/);
@@ -56,6 +108,8 @@ test('schedule slot rendering distinguishes selected, available, booked, and ela
     const end = dashboard.indexOf('\n    async function refreshTimePickers', start);
     assert.ok(start >= 0 && end > start, 'schedule rendering function is present');
     const date = '2099-10-26'; const rules = { authoritative: true, isClosed: false, openHour: 8, closeHour: 12 }; const rows = { ok: true, rows: [{ time_date: '2099-10-26T12:00:00.000Z', end_at: '2099-10-26T13:00:00.000Z', court_unit: 'Court 1' }] }; const globalCheckbox = { indeterminate: false }; const context = { Date: class TestDate extends Date { static now() { return new Date('2099-10-26T10:30:00.000Z').getTime(); } }, bookingSelectedDates: new Set([date]), bookingSelectionsByDate: new Map([[date, [8]]]), hoursRangeForRules(rules) { return Array.from({ length: rules.closeHour - rules.openHour }, (_, index) => rules.openHour + index); }, bookingTimeWindow(row) { return { start: new Date(row.time_date), end: new Date(new Date(row.time_date).getTime() + 3600000) }; }, bookingWindowsOverlap(a, b) { return a.start < b.end && b.start < a.end; }, courtUnitsOverlap() { return true; }, bookingAvailabilityByDate: new Map([[date, { rules, bookings: rows, walkins: rows }]]), bookSlotsGrid: { innerHTML: '', querySelectorAll(selector) { return selector.includes('data-indeterminate') ? [globalCheckbox] : []; } },        bookSelectAllSlots: null,        bookSlotStatus: { textContent: '' },        bookAddButton: { disabled: true },        bookingState: { court: 'Basketball', unitId: 'unit-1', date, selectedHours: [8], startHour: 8, endHour: 9, unit: 'Court 1' },        bookingRules: rules,        slotGridBookings: rows,        slotGridWalkins: rows,        isSlotHourInBookingCart: () => false,        window: {            escapeHtml: (value) => String(value),            InigoBookingSlots: { localDateHourToIso(date, hour) { const mappedHour = hour === 8 ? 11 : hour === 9 ? 12 : hour === 10 ? 9 : hour === 11 ? 13 : hour; return new Date(`${date}T${String(mappedHour).padStart(2, '0')}:00:00Z`).toISOString(); } }, InigoBusinessHours: { formatHourRangeLabelShort: (hour) => `${hour}:00–${hour + 1}:00` },        },        bookingCartSaving: false,        slotGridLoading: false,        plainSummaryBackMode: false,        bookingCart: [],    };
+    context.bookingCutoffRenderTimer = null;
+    context.scheduleBookingCutoffRender = () => {};
     runInNewContext(`${dashboard.slice(start, end)}\nglobalThis.render = renderTimePickers;
     `, context);
     context.render();
@@ -95,6 +149,8 @@ test('availability refresh trims a selected run at its first blocker', () => {
         slotGridLoading: false, bookingCartSaving: false, bookingCart: [], plainSummaryBackMode: false,
         window: { escapeHtml: String, InigoBookingSlots: { localDateHourToIso: (day, hour) => new Date(`${day}T${String(hour).padStart(2, '0')}:00:00Z`).toISOString() }, InigoBusinessHours: { formatHourRangeLabelShort: (hour) => `${hour}:00–${hour + 1}:00` } },
     };
+    context.bookingCutoffRenderTimer = null;
+    context.scheduleBookingCutoffRender = () => {};
     runInNewContext(`${dashboard.slice(start, end)}\nglobalThis.render = renderTimePickers;`, context);
     context.render();
     assert.deepEqual(Array.from(context.bookingSelectionsByDate.get(date)), [8], 'hours after an unavailable interior hour are removed from the pending run');
@@ -278,6 +334,8 @@ test('cart hours are unavailable for the same unit and date, while the item bein
     const end = dashboard.indexOf('\n    async function refreshTimePickers', start);
     assert.ok(start >= 0 && end > start, 'cart-aware schedule rendering is present');
     const date = '2099-10-26'; const rules = { authoritative: true, isClosed: false, openHour: 8, closeHour: 12 }; const rows = { ok: true, rows: [{ time_date: '2099-10-26T09:00:00.000Z', end_at: '2099-10-26T10:00:00.000Z', court_unit: 'Court 1' }] }; const context = { bookingSelectedDates: new Set([date]), bookingSelectionsByDate: new Map([[date, []]]), bookingAvailabilityByDate: new Map([[date, { rules, bookings: rows, walkins: rows }]]), hoursRangeForRules(rules) { return Array.from({ length: rules.closeHour - rules.openHour }, (_, index) => rules.openHour + index); }, bookingTimeWindow(row) { return { start: new Date(row.time_date), end: new Date(new Date(row.time_date).getTime() + 3600000) }; }, bookingWindowsOverlap(a, b) { return a.start < b.end && b.start < a.end; }, courtUnitsOverlap() { return true; }, bookSlotsGrid: { innerHTML: '' },        bookSelectAllSlots: { checked: false, indeterminate: false, disabled: false },        bookSlotStatus: { textContent: '' },        bookAddButton: { disabled: true },        bookingState: { court: 'Basketball', unit: 'Court 1', unitId: 'unit-1', date, selectedHours: [], startHour: null, endHour: null },        bookingRules: { authoritative: true, isClosed: false },        slotGridBookings: { ok: true, rows: [] },        slotGridWalkins: { ok: true, rows: [] },        bookingHoursRange: () => [8, 9, 10, 11],        slotHourStatus: (hour) => ({ 8: 'available', 9: 'booked', 10: 'past', 11: 'available' })[hour],        findBookCourt: () => ({ id: 'listing-1' }),        sameCourtName: (a, b) => String(a).toLowerCase() === String(b).toLowerCase(),        window: {            escapeHtml: (value) => String(value),            InigoBookingSlots: { localDateHourToIso(date, hour) { return new Date(`${date}T${String(hour).padStart(2, '0')}:00:00Z`).toISOString(); } }, InigoBusinessHours: { formatHourRangeLabelShort: (hour) => `${hour}:00–${hour + 1}:00` },        },        bookingCartSaving: false,        slotGridLoading: false,        plainSummaryBackMode: false,        editingBookingCartKey: null,        bookingCart: [            { key: 'cart-1', listingId: 'listing-1', unitId: 'unit-1', date: '2099-10-26', startHour: 11, endHour: 11 },            { key: 'other-date', listingId: 'listing-1', unitId: 'unit-1', date: '2099-10-27', startHour: 8, endHour: 8 },            { key: 'other-unit', listingId: 'listing-1', unitId: 'unit-2', date: '2099-10-26', startHour: 8, endHour: 8 },        ],    };
+    context.bookingCutoffRenderTimer = null;
+    context.scheduleBookingCutoffRender = () => {};
     runInNewContext(`${dashboard.slice(start, end)}\nglobalThis.render = renderTimePickers;
     `, context);
     context.render();
@@ -367,7 +425,7 @@ test('booking controls accumulate two court units, remove a summary row, and sub
     assert.ok(start >= 0 && end > start, `expected dashboard block: ${startText}`);
     return dashboard.slice(start, end).trim();
     };
-    const snippets = [        between('function cancelBookingCartEdit() {', '\n    function formatDate'),        between('function selectedBookingCartItem(startHour, endHourExclusive, key = null) {', '\n    function bookingCartItemsConflict'),        between('function bookingCartItemsConflict(a, b) {', '\n    function renderBookingCart'),        between('function renderBookingCart() {', '\n    function removeBookingCartItem'),        between('function removeBookingCartItem(key) {', '\n    async function submitBookingCart'),        between('async function submitBookingCart() {', '\n    if (bookAddButton) {'),        between("if (bookAddButton) {\n        bookAddButton.addEventListener('click', async () => {", '\n    if (bookCartItemsEl)'),        between('if (bookCartItemsEl) {', '\n    bookingCartDetailsList?.addEventListener'),        between('function updateSummary() {', '\n    if (bookSlotsGrid)'),        between('function renderBookWizard() {', '\n    function goToBookStep'),        between('function goToBookStep(step) {', '\n    function openBookingCartDetails'),        between('paymentOptions.forEach((option) => {', '\n    // ------------------------------------------------------------------\n    // Step 3 — hourly slot availability'),        between("if (bookSubmit) {\n        bookSubmit.addEventListener('click', () => {", '\n    bookingFeeContinue?.addEventListener'),    ];
+    const snippets = [        between('function cancelBookingCartEdit() {', '\n    function formatDate'),        between('function selectedBookingCartItem(startHour, endHourExclusive, key = null) {', '\n    function bookingCartItemsConflict'),        between('function bookingCartItemsConflict(a, b) {', '\n    function renderBookingCart'),        between('function renderBookingCart() {', '\n    function removeBookingCartItem'),        between('function removeBookingCartItem(key) {', '\n    async function submitBookingCart'),        between('async function submitBookingCart() {', '\n    if (bookAddButton) {'),        between("if (bookAddButton) {\n        bookAddButton.addEventListener('click', async () => {", '\n    if (bookCartItemsEl)'),        between('if (bookCartItemsEl) {', '\n    bookingCartDetailsList?.addEventListener'),        between('function updateSummary() {', '\n    if (bookSlotsGrid)'),        between('function renderBookWizard() {', '\n    function goToBookStep'),        between('function goToBookStep(step) {', '\n    function openBookingCartDetails'),        between('paymentOptions.forEach((option) => {', '\n    // ------------------------------------------------------------------\n    // Step 3 — hourly slot availability'),        between('function closePaymentTermsDialog(accepted = false) {', '\n    // Step 3 — hourly slot availability'),        between("if (bookSubmit) {\n        bookSubmit.addEventListener('click', () => {", '\n    bookingFeeContinue?.addEventListener'),    ];
     class MockButton {        constructor() { this.listeners = new Map();
     this.disabled = false;
     this.textContent = '';
@@ -398,6 +456,9 @@ test('booking controls accumulate two court units, remove a summary row, and sub
     } };
     const paymentTermsOpen = { focused: false, focus() { this.focused = true;
     }, addEventListener() {} };
+    const paymentTermsAgree = new MockButton();
+    const paymentTermsDecline = new MockButton();
+    const paymentTermsDialog = { open: false, listeners: new Map(), showModal() { this.open = true; }, close() { this.open = false; this.listeners.get('close')?.(); }, addEventListener(type, handler) { this.listeners.set(type, handler); } };
     const paymentRadios = [];
     const paymentOptions = ['downpayment', 'full'].map((paymentType) => {        const radio = { dataset: { dashPayment: paymentType }, listeners: new Map(),            addEventListener(type, callback) { this.listeners.set(type, callback);
     } };
@@ -432,7 +493,7 @@ test('booking controls accumulate two court units, remove a summary row, and sub
     if (selector === '[data-dash-book-edit-cancel]') return returnSummaryButtons;
     return [];
     },    };
-    const context = {        document,        Date,        Set,        Map,        Number,        String,        console,        bookingState,        bookingCart,        bookingSelectedDates: new Set([bookingState.date]), bookingSelectionsByDate: new Map([[bookingState.date, []]]), bookingAvailabilityByDate: new Map([[bookingState.date, { rules: { authoritative: true, openHour: 8, closeHour: 24 }, bookings: { ok: true, rows: [] }, walkins: { ok: true, rows: [] } }]]),        bookCourtsCache: courts,        bookSelectedUnitIndex: 0,        bookingCartSeq: 0,        editingBookingCartKey: null,        addingBookingFromSummary: false,        plainSummaryBackMode: false,        bookingCartSaving: false,        slotGridLoading: false,        bookingCartBar: null,        bookingCartDetailsModal: null,        bookingCartDetailsList: null,        bookingCartDetailsDialog: null,        bookingRemoveConfirmation,        bookingRemoveConfirmationDialog: { querySelectorAll: () => [removeCancel, removeConfirm] },        bookingRemoveConfirmationDescription: removeDescription,        handleBookingDialogKeydown() {},        formatDate: date => date,        bookCartItemsEl,        updateSummary() {},        bookingNavButton: null,        bookingRules: { authoritative: true, openHour: 8, closeHour: 24 },        slotGridBookings: { ok: true, rows: [] },        slotGridWalkins: { ok: true, rows: [] },        bookAddButton,        bookSubmit,        bookCartPanel: { hidden: true },        bookCartItemsEl,        bookCartCountEl,        bookCartEmpty,        bookStepPanels: panels,        bookWizardStep: 1,        summaryPayment: { textContent: '' },        summaryGross: { textContent: '' },        summaryTotal: { textContent: '' },        downpaymentDesc: { textContent: '' },        paymentModeHint: { textContent: '' },        paymentOptions,        paymentTermsAccepted,        paymentTermsOpen,        paymentTermsDialog: null,        paymentTermsAgree: null,        paymentTermsDecline: null,        paymentTermsStatus: null,        paymentTermsDialogAgreed: false,        paymentTermsReturnFocus: null,        paymentAcceptanceSignature: null,        paymentReceiptItems: null,        summaryBalance: null,        openBookingFeeConfirmation: (...args) => calls.push(['fee-confirmation', ...args]),        bookingPaymentModal: null,        closeBookingPayment() {},        findBookCourt(name) { return courts.find((court) => court.name === name) || null;
+    const context = {        document,        Date,        Set,        Map,        Number,        String,        console,        bookingState,        bookingCart,        bookingSelectedDates: new Set([bookingState.date]), bookingSelectionsByDate: new Map([[bookingState.date, []]]), bookingAvailabilityByDate: new Map([[bookingState.date, { rules: { authoritative: true, openHour: 8, closeHour: 24 }, bookings: { ok: true, rows: [] }, walkins: { ok: true, rows: [] } }]]),        bookCourtsCache: courts,        bookSelectedUnitIndex: 0,        bookingCartSeq: 0,        editingBookingCartKey: null,        addingBookingFromSummary: false,        plainSummaryBackMode: false,        bookingCartSaving: false,        slotGridLoading: false,        bookingCartBar: null,        bookingCartDetailsModal: null,        bookingCartDetailsList: null,        bookingCartDetailsDialog: null,        bookingRemoveConfirmation,        bookingRemoveConfirmationDialog: { querySelectorAll: () => [removeCancel, removeConfirm] },        bookingRemoveConfirmationDescription: removeDescription,        handleBookingDialogKeydown() {},        formatDate: date => date,        bookCartItemsEl,        updateSummary() {},        bookingNavButton: null,        bookingRules: { authoritative: true, openHour: 8, closeHour: 24 },        slotGridBookings: { ok: true, rows: [] },        slotGridWalkins: { ok: true, rows: [] },        bookAddButton,        bookSubmit,        bookCartPanel: { hidden: true },        bookCartItemsEl,        bookCartCountEl,        bookCartEmpty,        bookStepPanels: panels,        bookWizardStep: 1,        summaryPayment: { textContent: '' },        summaryGross: { textContent: '' },        summaryTotal: { textContent: '' },        downpaymentDesc: { textContent: '' },        paymentModeHint: { textContent: '' },        paymentOptions,        paymentTermsAccepted,        paymentTermsOpen,        paymentTermsDialog,        paymentTermsAgree,        paymentTermsDecline,        paymentTermsStatus: null,        paymentTermsDialogAgreed: false,        paymentTermsReturnFocus: null,        paymentAcceptanceSignature: null,        paymentReceiptItems: null,        summaryBalance: null,        openBookingFeeConfirmation: (...args) => calls.push(['fee-confirmation', ...args]),        bookingPaymentModal: null,        closeBookingPayment() {},        findBookCourt(name) { return courts.find((court) => court.name === name) || null;
     },        bookSportChoiceKey: (court) => court.name.toLowerCase(),        formatDate: (date) => date,        formatDateForServer: (date) => date,        courtUnitsOverlap: (a, b) => !a || !b || a === b,        bookingHourlyAmount: (hours) => Number(bookingState.rateDay) * hours,        bookingRangeFitsRules: (item, rules) => rules.authoritative && item.startHour >= rules.openHour && item.endHour + 1 <= rules.closeHour,        refreshTimePickers: async () => {},        renderTimePickers() {},        paintBookPreview() {},        renderCourtChoices() {},        fetchDayOccupancy: async () => ({ ok: true, rows: [] }),        window: {            escapeHtml: (value) => String(value),            InigoCourtsData: {                resolveCourtUnits: (court) => ({ units: unitsByCourt[court.name] || [] }),                getCourts: async () => courts,            },            InigoAppSettings: { getSettings: async () => currentSettings },            InigoBookingSlots: {                groupConsecutiveHours(hours) { return slots.groupConsecutiveHours(hours);
     },                localDateHourToIso(date, hour) { return `${date}T${String(hour).padStart(2, '0')}:00:00Z`;
     },            },            InigoBusinessHours: {                formatHourLabel: (hour) => `${hour}:00`,                getForDate: async () => ({ authoritative: true, openHour: 8, closeHour: 24 }),            },            InigoToast: { show: (message, error) => messages.push({ message, error: Boolean(error) }) },            inigosyncProfile: { role: 'customer' },            sb: { functions: { invoke: async (...args) => { calls.push(args);
@@ -497,6 +558,11 @@ test('booking controls accumulate two court units, remove a summary row, and sub
     assert.equal(calls.some(([name]) => name === 'paymongo-checkout'), false, 'direct submit also refuses unaccepted terms');
     paymentTermsAccepted.checked = true;
     paymentTermsAccepted.changeListener();
+    assert.equal(paymentTermsAccepted.checked, false, 'requesting to review terms does not accept them');
+    assert.equal(paymentTermsDialog.open, true, 'checking the control opens the terms dialog');
+    assert.equal(bookSubmit.disabled, true, 'checkout remains disabled until explicit agreement');
+    await paymentTermsAgree.click();
+    assert.equal(paymentTermsAccepted.checked, true, 'the explicit Agree action records acceptance');
     assert.equal(bookSubmit.disabled, false, 'acceptance change enables the current checkout');
     await bookSubmit.click();
     assert.equal(calls.at(-1)[0], 'fee-confirmation', 'accepted terms enable the confirmation step');

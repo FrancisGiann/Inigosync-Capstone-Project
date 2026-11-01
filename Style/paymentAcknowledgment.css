@@ -20,7 +20,7 @@
 .payment-ack-heading strong { font-size: 18px; letter-spacing: .04em; }
 .payment-ack-heading span { font-size: 10px; }
 .payment-ack-heading b { margin-top: 1mm; font-size: 11px; letter-spacing: .08em; }
-.payment-ack-rule { width: 100%; border-top: 1px dashed #555; }
+.payment-ack-rule { width: 100%; border-top: 1px solid #b8b8b8; }
 .payment-ack-meta { display: grid; gap: 1.2mm; }
 .payment-ack-meta-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 2mm; }
 .payment-ack-meta-row > span, .payment-ack-meta-row > strong { min-width: 0; overflow-wrap: anywhere; }

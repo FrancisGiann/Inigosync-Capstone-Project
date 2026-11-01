@@ -31,23 +31,8 @@ begin
         then coalesce(nullif(pg_catalog.btrim(profile.full_name), ''), profile.email, 'Customer')
         else coalesce(nullif(pg_catalog.btrim(profile.full_name), ''), nullif(pg_catalog.btrim(w.customer_name), ''), 'Guest')
       end as customer_name,
-      case when a.entity_type = 'booking' then b.sports else w.sports end as visit_sport,
-      case when a.entity_type = 'booking' then b.courts else w.courts end as visit_court,
-      case when a.entity_type = 'booking' then b.court_unit else w.court_unit end as visit_unit,
-      case when a.entity_type = 'booking' then b.end_at else w.end_at end as visit_ends_at,
-      case when a.entity_type = 'booking' then b.duration_minutes else w.duration_minutes end as visit_duration_minutes,
-      case when a.entity_type = 'booking'
-        then case when b.amount_total > 0 and (b.rate_unit_snapshot is not null or b.payment_id is not null or b.amount_paid > 0)
-          then round(b.amount_total * 100)::bigint end
-        else case when w.amount_total > 0 and (w.rate_unit_snapshot is not null or w.payment_id is not null or w.amount_paid > 0)
-          then round(w.amount_total * 100)::bigint end
-      end as booking_total_minor,
       coalesce(nullif(a.details->>'cash_collected', '')::numeric,
         nullif(a.details->>'base_minor', '')::numeric / 100, 0) as amount_collected,
-      coalesce(case when a.entity_type = 'booking'
-        then b.amount_total > 0 and b.amount_paid >= b.amount_total
-        else w.amount_total > 0 and w.amount_paid >= w.amount_total
-      end, false) as fully_paid,
       nullif(a.details->>'payment_id', '')::bigint as payment_id
     from public.audit_log a
     left join public.booking b
@@ -75,15 +60,7 @@ begin
       b.checked_out_at,
       'booking'::text as source,
       coalesce(nullif(pg_catalog.btrim(profile.full_name), ''), profile.email, 'Customer') as customer_name,
-      b.sports as visit_sport,
-      b.courts as visit_court,
-      b.court_unit as visit_unit,
-      b.end_at as visit_ends_at,
-      b.duration_minutes as visit_duration_minutes,
-      case when b.amount_total > 0 and (b.rate_unit_snapshot is not null or b.payment_id is not null or b.amount_paid > 0)
-        then round(b.amount_total * 100)::bigint end as booking_total_minor,
       null::numeric as amount_collected,
-      false as fully_paid,
       null::bigint as payment_id
     from public.booking b
     left join public.profiles profile on profile.id = b.customer_id
@@ -100,15 +77,7 @@ begin
       w.checked_out_at,
       'walkin'::text as source,
       coalesce(nullif(pg_catalog.btrim(profile.full_name), ''), nullif(pg_catalog.btrim(w.customer_name), ''), 'Guest') as customer_name,
-      w.sports as visit_sport,
-      w.courts as visit_court,
-      w.court_unit as visit_unit,
-      w.end_at as visit_ends_at,
-      w.duration_minutes as visit_duration_minutes,
-      case when w.amount_total > 0 and (w.rate_unit_snapshot is not null or w.payment_id is not null or w.amount_paid > 0)
-        then round(w.amount_total * 100)::bigint end as booking_total_minor,
       null::numeric as amount_collected,
-      false as fully_paid,
       null::bigint as payment_id
     from public.walk_in_booking w
     left join public.profiles profile on profile.id = w.customer_id
@@ -132,17 +101,8 @@ begin
         when visits.checked_out_at is null then 'in_progress'
         else 'completed' end,
       'amount_minor', case when visits.amount_collected is null then null else round(visits.amount_collected * 100)::bigint end,
-      'fully_paid', visits.fully_paid,
-      'booking_total_minor', visits.booking_total_minor,
       'payment_id', visits.payment_id,
-      'visits', jsonb_build_array(jsonb_build_object(
-        'starts_at', visits.visit_starts_at,
-        'ends_at', visits.visit_ends_at,
-        'sport', visits.visit_sport,
-        'court', visits.visit_court,
-        'unit', visits.visit_unit,
-        'duration_minutes', visits.visit_duration_minutes
-      )),
+      'visits', jsonb_build_array(jsonb_build_object('starts_at', visits.visit_starts_at)),
       'acknowledgment', ack.payload
     ) order by visits.created_at desc nulls last, visits.visit_id desc), '[]'::jsonb)
   ) into v_result

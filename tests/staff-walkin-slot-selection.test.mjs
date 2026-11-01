@@ -54,6 +54,7 @@ function makePicker(blockedHours = []) {
         walkinOpenWindowsEl: status,
         walkinCurrentRangeEl: { textContent: '' },
         walkinBusinessRules: { authoritative: true, isClosed: false },
+        walkinCutoffRenderTimer: null,
         walkinBookings: { ok: true },
         walkinWalkins: { ok: true },
         walkinHoursForDay: hours,
@@ -64,6 +65,7 @@ function makePicker(blockedHours = []) {
         walkinTimeRangeLabel: () => '',
         updateWalkinSummary() {},
         renderWalkinWizard() {},
+        scheduleWalkinCutoffRender() {},
         window: {
             escapeHtml: String,
             InigoBusinessHours: { formatHourLabel: (hour) => `${hour}:00` },

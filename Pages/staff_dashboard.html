@@ -128,7 +128,7 @@
                 <div class="staff-notif" data-staff-notif>
                     <button type="button" class="staff-icon-btn" data-staff-notif-trigger aria-label="Notifications" aria-expanded="false">
                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 8.5c0-3.5-2.7-6-6-6s-6 2.5-6 6c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.7 19a2.3 2.3 0 0 0 4.6 0" stroke="currentColor" stroke-width="1.7"/></svg>
-                        <span class="staff-notif-dot" data-staff-notif-dot hidden></span>
+                        <span class="staff-notif-badge" data-staff-notif-dot hidden aria-label="Unread notifications" aria-live="polite" aria-atomic="true"></span>
                     </button>
                     <div class="staff-notif-menu" data-staff-notif-menu role="region" aria-label="Notifications">
                         <div class="staff-notif-menu-head"><span>Notifications</span></div>
@@ -231,11 +231,12 @@
                     <div class="staff-card-head">
                         <div>
                             <h3>Bookings</h3>
-                            <p class="staff-card-description">Customer bookings for today and upcoming dates, including those currently in play.</p>
+                            <p class="staff-card-description">Bookings and walk-ins for today and upcoming dates, including visits currently in play.</p>
                         </div>
+                        <button type="button" class="staff-overview-clear" data-staff-overview-clear hidden>Clear filters</button>
                     </div>
 
-                    <div class="staff-overview-filters" aria-label="Filter bookings">
+                    <div class="staff-overview-filters" aria-label="Filter bookings and walk-ins">
                         <label class="staff-search-wrap">
                             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                             <input type="search" class="staff-search" placeholder="Search customer or booking ID…" aria-label="Search customer or booking ID" data-staff-overview-search>
@@ -243,7 +244,15 @@
                         <label class="staff-overview-filter">
                             <span>Sport</span>
                             <select class="staff-select" aria-label="Filter by sport" data-staff-overview-sport>
-                                <option value="">All sports</option>
+                                <option value="" disabled hidden>All sports</option>
+                            </select>
+                        </label>
+                        <label class="staff-overview-filter">
+                            <span>Type</span>
+                            <select class="staff-select" aria-label="Filter by booking type" data-staff-overview-type>
+                                <option value="" disabled hidden>All types</option>
+                                <option value="booking">Booking</option>
+                                <option value="walkin">Walk-in</option>
                             </select>
                         </label>
                         <label class="staff-overview-filter">
@@ -258,6 +267,7 @@
                                 <tr>
                                     <th>Booking ID</th>
                                     <th>Customer Name</th>
+                                    <th>Type</th>
                                     <th>Sport</th>
                                     <th>Courts</th>
                                     <th>Time</th>
@@ -266,7 +276,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="7" class="staff-table-message">Loading bookings…</td></tr>
+                                <tr><td colspan="8" class="staff-table-message">Loading reservations…</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -438,12 +448,7 @@
                                     <p class="staff-form-hint" data-staff-walkin-cash-unavailable hidden>Cash collection is unavailable. Ask the owner to enable Cash in Payment Configuration.</p>
                                     <p class="staff-form-hint" data-staff-walkin-online-unavailable hidden>Online checkout is unavailable. Ask the owner to enable Card, GCash, or QR Ph in Payment Configuration.</p>
                                 </div>
-                                <div class="staff-form-group" data-staff-walkin-cash-details>
-                                    <label class="staff-form-label" for="staffWalkinCashTendered">Amount tendered</label>
-                                    <input id="staffWalkinCashTendered" class="staff-input" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" data-staff-walkin-cash-tendered autocomplete="off">
-                                    <p class="staff-form-hint" data-staff-walkin-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
-                                    <div class="staff-summary-row"><span>Change due</span><strong data-staff-walkin-cash-change>—</strong></div>
-                                </div>
+                                <p class="staff-form-hint" data-staff-walkin-cash-instruction>Enter the amount received when you complete the cash payment.</p>
                                 <p class="staff-form-hint" data-staff-walkin-online-fee-note hidden>PayMongo shows available online payment methods, any processing fee, and the final total before the customer pays.</p>
                                 <p class="staff-form-hint" data-staff-walkin-acknowledgment-note>Payment acknowledgment and entry pass — not a BIR invoice or official receipt.</p>
                             </div>
@@ -464,6 +469,8 @@
                     <div data-staff-walkin-receipt></div>
                 </div>
             </section>
+
+
 
             <!-- ============================================================
                  COURT SCHEDULE PANEL — Revision S1, decision S5. Per-unit
@@ -543,7 +550,8 @@
                             <button type="button" class="staff-transaction-tab is-active" id="staff-tx-tab-transactions" role="tab" aria-selected="true" aria-controls="staff-tx-records" data-staff-tx-tab="transactions">Transactions</button>
                             <button type="button" class="staff-transaction-tab" id="staff-tx-tab-unattended" role="tab" aria-selected="false" aria-controls="staff-tx-records" data-staff-tx-tab="unattended" tabindex="-1">Unattended</button>
                         </div>
-                        <div class="staff-toolbar staff-transaction-toolbar">
+                        <button type="button" class="staff-overview-clear staff-transaction-clear" data-staff-tx-clear hidden>Clear filters</button>
+                        <div class="staff-toolbar staff-transaction-toolbar" data-transaction-toolbar data-view="transactions">
                             <div class="staff-transaction-secondary">
                                 <label class="staff-search-wrap">
                                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -556,7 +564,6 @@
                                     <div class="staff-transaction-menu-options" id="staff-tx-source-options" data-staff-tx-source-options hidden role="group" aria-label="Source options">
                                         <button type="button" data-staff-tx-source-choice="booking">Booking</button><button type="button" data-staff-tx-source-choice="walkin">Walk-in</button>
                                     </div>
-                                    <button type="button" class="staff-transaction-menu-reset" data-staff-tx-source-reset hidden>Clear source filter</button>
                                 </div>
                             </div>
                             <div class="staff-transaction-primary">
@@ -564,9 +571,8 @@
                                     <span class="staff-form-label" id="staff-tx-status-label">Visit status</span>
                                     <button type="button" class="staff-select staff-transaction-menu-trigger" data-staff-tx-status aria-expanded="false" aria-controls="staff-tx-status-options" aria-labelledby="staff-tx-status-label staff-tx-status-current"><span id="staff-tx-status-current">All statuses</span></button>
                                     <div class="staff-transaction-menu-options" id="staff-tx-status-options" data-staff-tx-status-options hidden role="group" aria-label="Visit status options">
-                                        <button type="button" data-staff-tx-status-choice="in_progress">In progress</button><button type="button" data-staff-tx-status-choice="completed">Completed</button>
+                                        <button type="button" data-staff-tx-status-choice="arrived">Arrived · waiting</button><button type="button" data-staff-tx-status-choice="in_progress">In progress</button><button type="button" data-staff-tx-status-choice="completed">Completed</button>
                                     </div>
-                                    <button type="button" class="staff-transaction-menu-reset" data-staff-tx-status-reset hidden>Clear status filter</button>
                                 </div>
                                 <div class="staff-form-group staff-sort-control staff-transaction-menu" data-staff-tx-sort-menu>
                                     <span class="staff-form-label" id="staff-tx-sort-label">Sort</span>
@@ -742,8 +748,9 @@
                             <span class="staff-form-label">Current password</span>
                             <div class="staff-input-wrap">
                                 <input type="password" class="staff-input" placeholder="Enter current password" data-staff-pw-current>
-                                <button type="button" class="staff-toggle-visibility" data-staff-toggle-password aria-label="Show password">
-                                    <svg viewBox="0 0 24 24" width="18" height="18"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                                <button type="button" class="staff-toggle-visibility" data-staff-toggle-password data-password-visible="false" aria-label="Show password" aria-pressed="false">
+                                    <svg class="staff-eye-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                                    <svg class="staff-eye-closed" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m3 3 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                 </button>
                             </div>
                         </div>
@@ -755,8 +762,9 @@
                             <span class="staff-form-label">New password</span>
                             <div class="staff-input-wrap">
                                 <input type="password" class="staff-input" placeholder="Create a new password" minlength="8" maxlength="15" autocomplete="new-password" data-staff-pw-new aria-describedby="staffPwRules">
-                                <button type="button" class="staff-toggle-visibility" data-staff-toggle-password aria-label="Show password">
-                                    <svg viewBox="0 0 24 24" width="18" height="18"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                                <button type="button" class="staff-toggle-visibility" data-staff-toggle-password data-password-visible="false" aria-label="Show password" aria-pressed="false">
+                                    <svg class="staff-eye-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                                    <svg class="staff-eye-closed" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m3 3 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                 </button>
                             </div>
                             <ul class="staff-pw-rules" id="staffPwRules" data-staff-pw-rules aria-label="Password requirements">
@@ -771,8 +779,9 @@
                             <span class="staff-form-label">Confirm new password</span>
                             <div class="staff-input-wrap">
                                 <input type="password" class="staff-input" placeholder="Re-enter new password" data-staff-pw-confirm>
-                                <button type="button" class="staff-toggle-visibility" data-staff-toggle-password aria-label="Show password">
-                                    <svg viewBox="0 0 24 24" width="18" height="18"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                                <button type="button" class="staff-toggle-visibility" data-staff-toggle-password data-password-visible="false" aria-label="Show password" aria-pressed="false">
+                                    <svg class="staff-eye-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+                                    <svg class="staff-eye-closed" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m3 3 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                                 </button>
                             </div>
                         </div>
@@ -790,6 +799,31 @@
     </div>
 </div>
 
+<div class="staff-modal-overlay staff-walkin-cash-overlay" data-staff-walkin-cash-modal hidden>
+    <section class="staff-modal staff-walkin-cash-modal" role="dialog" aria-modal="true" aria-labelledby="staffWalkinCashTitle" aria-describedby="staffWalkinCashHelp" tabindex="-1" data-staff-walkin-cash-dialog>
+        <button type="button" class="staff-modal-close" data-staff-walkin-cash-close aria-label="Close cash payment">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <h3 id="staffWalkinCashTitle">Cash payment</h3>
+        <p id="staffWalkinCashHelp" class="staff-form-hint">Enter the cash received. Change is calculated automatically.</p>
+        <div class="staff-summary-row staff-walkin-cash-amount"><span>Amount due</span><strong data-staff-walkin-cash-due>—</strong></div>
+        <label class="staff-form-label" for="staffWalkinCashTendered">Amount received</label>
+        <input id="staffWalkinCashTendered" class="staff-input staff-walkin-cash-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="staffWalkinCashValidation" data-staff-walkin-cash-tendered>
+        <div class="staff-summary-row"><span>Change</span><strong data-staff-walkin-cash-change>—</strong></div>
+        <p class="staff-form-hint" id="staffWalkinCashValidation" data-staff-walkin-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
+        <div class="staff-walkin-cash-keypad" role="group" aria-label="Amount received keypad" data-staff-walkin-cash-keypad>
+            <button type="button" data-staff-cash-key="1">1</button><button type="button" data-staff-cash-key="2">2</button><button type="button" data-staff-cash-key="3">3</button>
+            <button type="button" data-staff-cash-key="4">4</button><button type="button" data-staff-cash-key="5">5</button><button type="button" data-staff-cash-key="6">6</button>
+            <button type="button" data-staff-cash-key="7">7</button><button type="button" data-staff-cash-key="8">8</button><button type="button" data-staff-cash-key="9">9</button>
+            <button type="button" data-staff-cash-key=".">.</button><button type="button" data-staff-cash-key="0">0</button><button type="button" data-staff-cash-key="Backspace" aria-label="Delete last digit">⌫</button>
+            <button type="button" class="staff-walkin-cash-enter" data-staff-cash-key="Enter">Enter</button>
+        </div>
+        <footer class="staff-form-actions staff-walkin-cash-footer">
+            <button type="button" class="staff-btn-ghost" data-staff-walkin-cash-cancel>Cancel</button>
+            <button type="button" class="staff-btn-primary" data-staff-walkin-cash-pay disabled>Pay</button>
+        </footer>
+    </section>
+</div>
                 <div class="staff-modal-overlay" data-staff-settings-profile-modal hidden>
                     <section class="staff-modal staff-profile-modal" role="dialog" aria-modal="true" aria-labelledby="staffProfileModalTitle" tabindex="-1" data-staff-settings-profile-dialog>
                         <button type="button" class="staff-modal-close" data-staff-settings-profile-close aria-label="Close personal information editor">
@@ -797,52 +831,65 @@
                         </button>
                         <header class="staff-modal-header"><h3 id="staffProfileModalTitle">Personal Information</h3><p class="staff-form-hint">Full name, birthdate, and gender are managed by the owner. Contact details and emergency contact fields can be updated here.</p></header>
                         <div class="staff-modal-body">
-                        <div class="staff-form-row">
-                            <div class="staff-form-group">
-                                <label class="staff-form-label" for="staff-settings-name">Full name</label>
-                                <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name readonly aria-readonly="true">
+                        <section class="staff-profile-section" aria-labelledby="staffProfileIdentityHeading">
+                            <h4 id="staffProfileIdentityHeading" class="staff-profile-section-title">Identity</h4>
+                            <div class="staff-form-row">
+                                <div class="staff-form-group staff-profile-identity-name">
+                                    <label class="staff-form-label" for="staff-settings-name">Full name</label>
+                                    <input id="staff-settings-name" type="text" class="staff-input" data-staff-settings-name readonly aria-readonly="true">
+                                </div>
+                                <div class="staff-form-row staff-profile-identity-details">
+                                    <div class="staff-form-group">
+                                        <label class="staff-form-label" for="staff-settings-birthdate">Birthdate</label>
+                                        <input id="staff-settings-birthdate" type="date" class="staff-input" data-staff-settings-birthdate readonly aria-readonly="true">
+                                    </div>
+                                    <div class="staff-form-group">
+                                        <label class="staff-form-label" for="staff-settings-gender">Gender</label>
+                                        <select id="staff-settings-gender" class="staff-select" data-staff-settings-gender disabled aria-readonly="true">
+                                            <option value="">Select…</option>
+                                            <option>Male</option>
+                                            <option>Female</option>
+                                            <option>Prefer not to say</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="staff-form-group">
-                                <div class="phone-field-heading"><label class="staff-form-label" for="staff-settings-mobile">Contact number</label><span id="staff-phone-status" class="staff-phone-status phone-field-status" data-staff-phone-status aria-live="polite">Optional · format and availability check</span></div>
-                                <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-invalid="false" aria-describedby="staff-phone-status">
-                            </div>
-                        </div>
+                        </section>
                         <!-- Revision S3 — address/birthdate/gender/emergency
                              contact (database/schema/018_staff_details.sql).
                              Loaded by loadStaffProfileDetails(). Address and
                              emergency contact values are mutable; full name,
                              birthdate, and gender remain display-only. -->
-                        <div class="staff-form-group">
-                            <span class="staff-form-label">Address<span class="staff-textarea-ellipsis" data-staff-address-overflow aria-hidden="true" hidden>…</span></span>
-                            <div class="staff-textarea-wrap">
-                                <textarea class="staff-input staff-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-staff-settings-address readonly aria-readonly="true"></textarea>
+                        <section class="staff-profile-section" aria-labelledby="staffProfileContactHeading">
+                            <h4 id="staffProfileContactHeading" class="staff-profile-section-title">Contact details</h4>
+                            <div class="staff-form-row">
+                                <div class="staff-form-group">
+                                    <label class="staff-form-label" for="staff-settings-mobile">Contact number</label>
+                                    <input id="staff-settings-mobile" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-mobile aria-invalid="false" aria-describedby="staff-phone-status">
+                                    <span id="staff-phone-status" class="staff-phone-status phone-field-status" data-staff-phone-status aria-live="polite">Optional · format and availability check</span>
+                                </div>
+                                <div class="staff-form-group">
+                                    <label class="staff-form-label" for="staff-settings-address">Address<span class="staff-textarea-ellipsis" data-staff-address-overflow aria-hidden="true" hidden>…</span></label>
+                                    <div class="staff-textarea-wrap">
+                                        <textarea id="staff-settings-address" class="staff-input staff-textarea" rows="2" placeholder="House/Unit, Street, Barangay, City" data-staff-settings-address readonly aria-readonly="true"></textarea>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="staff-form-row">
-                            <div class="staff-form-group">
-                                <span class="staff-form-label">Birthdate</span>
-                                <input type="date" class="staff-input" data-staff-settings-birthdate readonly aria-readonly="true">
+                        </section>
+                        <section class="staff-profile-section" aria-labelledby="staffProfileEmergencyHeading">
+                            <h4 id="staffProfileEmergencyHeading" class="staff-profile-section-title">Emergency contact</h4>
+                            <div class="staff-form-row">
+                                <div class="staff-form-group">
+                                    <label class="staff-form-label" for="staff-settings-emergency-name">Contact name</label>
+                                    <input id="staff-settings-emergency-name" type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name readonly aria-readonly="true">
+                                </div>
+                                <div class="staff-form-group">
+                                    <label class="staff-form-label" for="staff-settings-emergency-number">Contact number</label>
+                                    <input id="staff-settings-emergency-number" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number aria-invalid="false" aria-describedby="staff-emergency-phone-status">
+                                    <span id="staff-emergency-phone-status" class="staff-phone-status phone-field-status" data-staff-emergency-phone-status data-state="neutral" aria-live="polite">Optional · shared contacts allowed</span>
+                                </div>
                             </div>
-                            <div class="staff-form-group">
-                                <span class="staff-form-label">Gender</span>
-                                <select class="staff-select" data-staff-settings-gender disabled aria-readonly="true">
-                                    <option value="">Select…</option>
-                                    <option>Male</option>
-                                    <option>Female</option>
-                                    <option>Prefer not to say</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="staff-form-row">
-                            <div class="staff-form-group">
-                                <span class="staff-form-label">Emergency contact name</span>
-                                <input type="text" class="staff-input" placeholder="Maria Cruz" data-staff-settings-emergency-name readonly aria-readonly="true">
-                            </div>
-                            <div class="staff-form-group">
-                                <div class="phone-field-heading"><label class="staff-form-label" for="staff-settings-emergency-number">Emergency contact number</label><span id="staff-emergency-phone-status" class="staff-phone-status phone-field-status" data-staff-emergency-phone-status data-state="neutral" aria-live="polite">Optional · shared contacts allowed</span></div>
-                                <input id="staff-settings-emergency-number" type="tel" class="staff-input" placeholder="09XX XXX XXXX" data-staff-settings-emergency-number aria-invalid="false" aria-describedby="staff-emergency-phone-status">
-                            </div>
-                        </div>
+                        </section>
                         <p class="staff-form-hint" data-staff-settings-details-hint hidden>Address, birthdate, gender, and emergency contact aren't available yet — ask the owner to run database update 018.</p>
                         </div>
                         <div class="staff-form-actions staff-modal-footer">
@@ -869,14 +916,15 @@
      .admin-modal-overlay/.admin-modal, ported here since no modal shell
      existed on this page yet (see Style/staff_dashboard.css). -->
 <div class="staff-modal-overlay" data-staff-timein-modal hidden>
-    <div class="staff-modal" role="dialog" aria-modal="true" aria-labelledby="staffTimeInModalTitle" tabindex="-1" data-staff-timein-dialog>
+    <div class="staff-modal staff-timein-dialog" role="dialog" aria-modal="true" aria-labelledby="staffTimeInModalTitle" tabindex="-1" data-staff-timein-dialog>
+        <header class="staff-timein-header">
+            <h3 id="staffTimeInModalTitle">Time-In</h3>
         <button type="button" class="staff-modal-close" data-staff-timein-close aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
+        </header>
 
-        <h3 id="staffTimeInModalTitle">Time-In</h3>
-
-        <div class="staff-timein-body">
+        <div class="staff-timein-body staff-modal-body">
             <div class="staff-summary-row"><span>Customer</span><strong data-staff-timein-customer>—</strong></div>
             <div class="staff-summary-row"><span>Court</span><strong data-staff-timein-court>—</strong></div>
             <div class="staff-summary-row"><span>Date</span><strong data-staff-timein-date>—</strong></div>
@@ -891,8 +939,7 @@
 
             <p class="staff-form-hint" data-staff-timein-note hidden></p>
 
-            <!-- Balance > 0 only — no manual amount entry, just a required
-                 Cash / QR Payment choice.
+            <!-- Balance > 0 only — method selection does not collect payment.
                  Neither radio is preselected (unlike the walk-in wizard's
                  own Step 4, which defaults to Cash). -->
             <div class="staff-payment-options" data-staff-timein-payment-wrap hidden>
@@ -902,22 +949,94 @@
                         Cash
                     </span>
                 </label>
-                <label class="staff-payment-option" data-staff-payment-option data-staff-timein-qr-option>
+                <label class="staff-payment-option" data-staff-payment-option data-staff-timein-online-option>
                     <span class="staff-payment-option-head">
-                        <input type="radio" name="staff-timein-payment" data-staff-timein-method="QR Payment">
-                        QR Payment
+                        <input type="radio" name="staff-timein-payment" data-staff-timein-method="Online Payment">
+                        Online Payment
                     </span>
-                    <p>Scan a PayMongo QR Ph code. A PayMongo transaction fee may apply and is shown before you authorize payment.</p>
+                    <p>Open secure PayMongo checkout. The customer can choose an available online payment method.</p>
                 </label>
             </div>
-            <div class="staff-timein-qr-panel" data-staff-timein-qr-panel hidden></div>
+            <p class="staff-form-hint" data-staff-timein-payment-unavailable hidden>Payment is unavailable. Ask the owner to enable Cash or an online payment method in Payment Configuration.</p>
         </div>
 
-        <div class="staff-form-actions">
+        <footer class="staff-form-actions staff-timein-footer">
             <button type="button" class="staff-btn-ghost" data-staff-timein-cancel>Cancel</button>
             <button type="button" class="staff-btn-primary" data-staff-timein-confirm disabled>Time-In</button>
-        </div>
+        </footer>
     </div>
+</div>
+
+<div class="staff-modal-overlay staff-walkin-cash-overlay" data-staff-timein-cash-modal hidden>
+    <section class="staff-modal staff-walkin-cash-modal" role="dialog" aria-modal="true" aria-labelledby="staffTimeInCashTitle" aria-describedby="staffTimeInCashHelp" tabindex="-1" data-staff-timein-cash-dialog>
+        <button type="button" class="staff-modal-close" data-staff-timein-cash-close aria-label="Close cash payment">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <h3 id="staffTimeInCashTitle">Cash payment</h3>
+        <p id="staffTimeInCashHelp" class="staff-form-hint">Enter the cash received. Change is calculated automatically.</p>
+        <div class="staff-summary-row staff-walkin-cash-amount"><span>Amount due</span><strong data-staff-timein-cash-due>—</strong></div>
+        <label class="staff-form-label" for="staffTimeInCashTendered">Amount received</label>
+        <input id="staffTimeInCashTendered" class="staff-input staff-walkin-cash-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="staffTimeInCashValidation" data-staff-timein-cash-tendered>
+        <div class="staff-summary-row"><span>Change</span><strong data-staff-timein-cash-change>—</strong></div>
+        <p class="staff-form-hint" id="staffTimeInCashValidation" data-staff-timein-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
+        <div class="staff-walkin-cash-keypad" role="group" aria-label="Amount received keypad" data-staff-timein-cash-keypad>
+            <button type="button" data-staff-timein-cash-key="1">1</button><button type="button" data-staff-timein-cash-key="2">2</button><button type="button" data-staff-timein-cash-key="3">3</button>
+            <button type="button" data-staff-timein-cash-key="4">4</button><button type="button" data-staff-timein-cash-key="5">5</button><button type="button" data-staff-timein-cash-key="6">6</button>
+            <button type="button" data-staff-timein-cash-key="7">7</button><button type="button" data-staff-timein-cash-key="8">8</button><button type="button" data-staff-timein-cash-key="9">9</button>
+            <button type="button" data-staff-timein-cash-key=".">.</button><button type="button" data-staff-timein-cash-key="0">0</button><button type="button" data-staff-timein-cash-key="Backspace" aria-label="Delete last digit">⌫</button>
+            <button type="button" class="staff-walkin-cash-enter" data-staff-timein-cash-key="Enter">Enter</button>
+        </div>
+        <footer class="staff-form-actions staff-walkin-cash-footer">
+            <button type="button" class="staff-btn-ghost" data-staff-timein-cash-cancel>Cancel</button>
+            <button type="button" class="staff-btn-primary" data-staff-timein-cash-pay disabled>Pay</button>
+        </footer>
+    </section>
+</div>
+
+<div class="staff-modal-overlay" data-staff-extension-modal hidden>
+    <section class="staff-modal staff-extension-dialog" role="dialog" aria-modal="true" aria-labelledby="staffExtensionTitle" tabindex="-1" data-staff-extension-dialog>
+        <button type="button" class="staff-modal-close" data-staff-extension-close aria-label="Close booking extension"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <h3 id="staffExtensionTitle">Extend booking</h3>
+        <p class="staff-form-hint" data-staff-extension-summary></p>
+        <div data-staff-extension-step="duration">
+            <label class="staff-form-label" for="staffExtensionDuration">Available extension</label>
+            <select class="staff-input" id="staffExtensionDuration" data-staff-extension-duration></select>
+            <p class="staff-form-hint" data-staff-extension-availability role="status" aria-live="polite">Checking live availability…</p>
+            <button type="button" class="staff-btn-primary" data-staff-extension-next disabled>Continue to payment</button>
+        </div>
+        <div data-staff-extension-step="payment" hidden>
+            <div class="staff-summary-row"><span>Extension charge</span><strong data-staff-extension-charge>—</strong></div>
+            <div class="staff-payment-options">
+                <label class="staff-payment-option" data-staff-extension-cash-option><span class="staff-payment-option-head"><input type="radio" name="staff-extension-payment" value="cash" data-staff-extension-method> Cash</span></label>
+                <label class="staff-payment-option" data-staff-extension-online-option><span class="staff-payment-option-head"><input type="radio" name="staff-extension-payment" value="online" data-staff-extension-method> PayMongo</span><p>Open secure online checkout. The booking extends after PayMongo confirms payment.</p></label>
+            </div>
+            <button type="button" class="staff-btn-ghost" data-staff-extension-cash-open hidden>Open cash calculator</button>
+            <p class="staff-form-hint" data-staff-extension-cash-received hidden></p>
+            <p class="staff-form-hint" data-staff-extension-payment-error hidden role="alert"></p>
+            <footer class="staff-form-actions"><button type="button" class="staff-btn-ghost" data-staff-extension-back>Back</button><button type="button" class="staff-btn-primary" data-staff-extension-pay disabled>Pay and extend</button></footer>
+        </div>
+    </section>
+</div>
+
+<div class="staff-modal-overlay staff-walkin-cash-overlay" data-staff-extension-cash-modal hidden>
+    <section class="staff-modal staff-walkin-cash-modal" role="dialog" aria-modal="true" aria-labelledby="staffExtensionCashTitle" aria-describedby="staffExtensionCashHelp" tabindex="-1" data-staff-extension-cash-dialog>
+        <button type="button" class="staff-modal-close" data-staff-extension-cash-close aria-label="Close cash calculator"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <h3 id="staffExtensionCashTitle">Cash payment</h3>
+        <p id="staffExtensionCashHelp" class="staff-form-hint">Enter the cash received. Change is calculated automatically.</p>
+        <div class="staff-summary-row staff-walkin-cash-amount"><span>Amount due</span><strong data-staff-extension-cash-due>—</strong></div>
+        <label class="staff-form-label" for="staffExtensionCashTendered">Amount received</label>
+        <input id="staffExtensionCashTendered" class="staff-input staff-walkin-cash-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="staffExtensionCashValidation" data-staff-extension-cash-tendered>
+        <div class="staff-summary-row"><span>Change</span><strong data-staff-extension-cash-change>—</strong></div>
+        <p class="staff-form-hint" id="staffExtensionCashValidation" data-staff-extension-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
+        <div class="staff-walkin-cash-keypad" role="group" aria-label="Amount received keypad" data-staff-extension-cash-keypad>
+            <button type="button" data-staff-extension-cash-key="1">1</button><button type="button" data-staff-extension-cash-key="2">2</button><button type="button" data-staff-extension-cash-key="3">3</button>
+            <button type="button" data-staff-extension-cash-key="4">4</button><button type="button" data-staff-extension-cash-key="5">5</button><button type="button" data-staff-extension-cash-key="6">6</button>
+            <button type="button" data-staff-extension-cash-key="7">7</button><button type="button" data-staff-extension-cash-key="8">8</button><button type="button" data-staff-extension-cash-key="9">9</button>
+            <button type="button" data-staff-extension-cash-key=".">.</button><button type="button" data-staff-extension-cash-key="0">0</button><button type="button" data-staff-extension-cash-key="Backspace" aria-label="Delete last digit">⌫</button>
+            <button type="button" class="staff-walkin-cash-enter" data-staff-extension-cash-key="Enter">Enter</button>
+        </div>
+        <footer class="staff-form-actions staff-walkin-cash-footer"><button type="button" class="staff-btn-ghost" data-staff-extension-cash-cancel>Cancel</button><button type="button" class="staff-btn-primary" data-staff-extension-cash-confirm disabled>Confirm cash</button></footer>
+    </section>
 </div>
 
 <div class="staff-modal-overlay staff-receipt-modal" data-staff-receipt-modal hidden>
@@ -970,6 +1089,8 @@
 <!-- Shared operating-hours helpers — must load before staff_dashboard.js,
      whose Court Schedule and walk-in hourly slots read window.InigoBusinessHours. -->
 <script src="../includes/businessHours.js"></script>
+<!-- Shared slot cutoff helper used by customer and staff availability. -->
+<script src="../includes/bookingSlots.js"></script>
 <script src="../includes/staffPagination.js"></script>
 <!-- Locally generated payment QR; checkout URLs stay on PayMongo and are
      encoded in the browser without a third-party QR service. -->

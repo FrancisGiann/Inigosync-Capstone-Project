@@ -51,7 +51,7 @@ function fixture() {
     auditEvents.push({ event_id: 'owner-event-1', source: 'owner_activity', created_at: '2026-09-01T10:00:00Z', action: 'Owner profile updated', category: 'owner', actor_id: 'qa-owner', actor_name: 'QA Owner', actor_role: 'admin', target_type: 'settings', target_id: null, amount: null, summary: 'The owner updated their account settings.' });
     auditEvents.push({ event_id: 'session-event-1', source: 'customer_operational_events', created_at: '2026-09-02T10:00:00Z', action: 'sign_out', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-out observed' });
     auditEvents.push({ event_id: 'session-event-2', source: 'customer_operational_events', created_at: '2026-09-02T11:00:00Z', action: 'sign_in', category: 'account', actor_id: 'qa-staff', actor_name: 'QA Staff', actor_role: 'staff', target_type: 'account_session', target_id: null, amount: null, summary: 'App sign-in observed' });
-    const ownerRules = { timezone: 'Asia/Manila', rules: [{ effective_from: '2026-01-01', grace_minutes: 30, weekly_hours: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, opens_at: '08:00:00', closes_at: '22:00:00', is_closed: false })) }] };
+    const ownerRules = { timezone: 'Asia/Manila', rules: [{ effective_from: '2026-01-01', grace_minutes: 30, slot_cutoff_minutes: 10, weekly_hours: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, opens_at: '08:00:00', closes_at: '22:00:00', is_closed: false })) }] };
     const state = window.__ownerQa = { calls: [], ownerActivityOrQueries: [], failReorder: false, failSeen: false, failOwnerPrivateWrite: false, toastMessages: [], failFeaturedSelection: window.__ownerQaFailFeaturedSelection === true, phoneInUse: false };
     state.auditEvents = auditEvents;
     const data = {
@@ -185,7 +185,7 @@ function fixture() {
             if (name === 'owner_get_booking_rules') return { data: ownerRules, error: null };
             if (name === 'owner_save_booking_rules') {
                 state.savedBookingRules = args;
-                ownerRules.rules = [...ownerRules.rules, { effective_from: args.p_effective_from, grace_minutes: args.p_grace_minutes, weekly_hours: args.p_weekly_hours }];
+                ownerRules.rules = [...ownerRules.rules, { effective_from: args.p_effective_from, grace_minutes: args.p_grace_minutes, slot_cutoff_minutes: args.p_slot_cutoff_minutes, weekly_hours: args.p_weekly_hours }];
                 return { data: null, error: null };
             }
             if (name === 'owner_income_period') return { data: [{ income: { day: 100, month: 200, year: 300 }[args.p_period] }], error: null };
@@ -223,6 +223,7 @@ async function verifyOwnerScheduleFlow(page, width) {
     await page.locator('[data-owner-rules-edit]').waitFor({ state: 'visible' });
     assert.equal(await page.locator('[data-owner-rules-saved-effective]').innerText(), '2026-01-01', 'current effective date is shown');
     assert.equal(await page.locator('[data-owner-rules-saved-grace]').innerText(), '30 minutes', 'current grace period is shown');
+    assert.equal(await page.locator('[data-owner-rules-saved-cutoff]').innerText(), '10 minutes', 'current unbooked slot cutoff is shown separately');
     assert.match(await page.locator('[data-owner-rules-saved-week]').innerText(), /Monday\s+08:00–22:00/, 'current weekly hours are shown');
     const buttonPlacement = await page.locator('[data-owner-rules-edit]').evaluate(button => {
         const buttonBox = button.getBoundingClientRect();
@@ -288,6 +289,7 @@ async function verifyOwnerScheduleFlow(page, width) {
     await page.locator('[data-owner-rules-edit]').click();
     await page.locator('[data-owner-rules-effective]').fill(date);
     await page.locator('[data-owner-rules-grace]').fill('45');
+    await page.locator('[data-owner-rules-cutoff]').fill('17');
     for (let weekday = 1; weekday <= 7; weekday += 1) {
         const row = page.locator(`[data-owner-rules-day="${weekday}"]`);
         await row.locator('[data-owner-rules-open]').selectOption(`${String(weekday + 8).padStart(2, '0')}:00`);
@@ -301,6 +303,7 @@ async function verifyOwnerScheduleFlow(page, width) {
     assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), true, 'saved future schedule appears in the summary');
     assert.equal(await page.locator('[data-owner-rules-upcoming-effective]').innerText(), date);
     assert.equal(await page.locator('[data-owner-rules-upcoming-grace]').innerText(), '45');
+    assert.equal(await page.locator('[data-owner-rules-upcoming-cutoff]').innerText(), '17');
     assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–22:00/);
 }
 
@@ -804,6 +807,16 @@ async function verifyOwnerPaymentFlow(page) {
                     }
                     assert.equal(await page.locator('[data-owner-rules-effective]').isDisabled(), false, 'Edit enables effective date');
                     assert.equal(await page.locator('[data-owner-rules-grace]').isDisabled(), false, 'Edit enables grace period');
+                    assert.equal(await page.locator('[data-owner-rules-cutoff]').isDisabled(), false, 'Edit enables the unbooked slot cutoff');
+                    assert.equal(await page.locator('[data-owner-rules-cutoff]').getAttribute('min'), '0');
+                    assert.equal(await page.locator('[data-owner-rules-cutoff]').getAttribute('max'), '59');
+                    await page.locator('[data-owner-rules-cutoff]').fill('');
+                    await page.locator('[data-owner-rules-save]').click();
+                    assert.match(await page.locator('[data-owner-rules-message]').innerText(), /unbooked slot cutoff from 0 to 59 minutes/i,
+                        'a blank cutoff is rejected rather than coerced to zero');
+                    assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.rpc === 'owner_save_booking_rules')), false,
+                        'blank cutoff never reaches the owner save RPC');
+                    await page.locator('[data-owner-rules-cutoff]').fill('10');
                     assert.equal(await page.locator('[data-owner-rules-open]').first().isDisabled(), false, 'Edit enables weekly hours');
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('40');
@@ -864,6 +877,7 @@ async function verifyOwnerPaymentFlow(page) {
                     await page.locator('[data-owner-rules-edit]').click();
                     await page.locator('[data-owner-rules-effective]').fill(futureScheduleDate);
                     await page.locator('[data-owner-rules-grace]').fill('45');
+                    await page.locator('[data-owner-rules-cutoff]').fill('23');
                     for (let weekday = 1; weekday <= 7; weekday += 1) {
                         const dayRow = page.locator(`[data-owner-rules-day="${weekday}"]`);
                         await dayRow.locator('[data-owner-rules-open]').selectOption(`${String(weekday + 8).padStart(2, '0')}:00`);
@@ -884,6 +898,7 @@ async function verifyOwnerPaymentFlow(page) {
                     const savedSchedule = await page.evaluate(() => window.__ownerQa.savedBookingRules);
                     assert.equal(savedSchedule.p_effective_from, futureScheduleDate);
                     assert.equal(savedSchedule.p_grace_minutes, 45);
+                    assert.equal(savedSchedule.p_slot_cutoff_minutes, 23, 'owner save sends the independent configurable slot cutoff');
                     assert.equal(savedSchedule.p_weekly_hours.length, 7);
                     assert.deepEqual(savedSchedule.p_weekly_hours.map(day => [day.weekday, day.opens_at, day.closes_at]),
                         Array.from({ length: 7 }, (_, index) => [index + 1, `${String(index + 9).padStart(2, '0')}:00`, index === 0 ? '24:00' : '22:00']),
@@ -897,6 +912,7 @@ async function verifyOwnerPaymentFlow(page) {
                     assert.equal(await page.locator('[data-owner-rules-upcoming]').isVisible(), true, 'main card shows a future-dated saved schedule');
                     assert.equal(await page.locator('[data-owner-rules-upcoming-effective]').innerText(), futureScheduleDate, 'scheduled summary refreshes its effective date');
                     assert.equal(await page.locator('[data-owner-rules-upcoming-grace]').innerText(), '45', 'scheduled summary refreshes its grace period');
+                    assert.equal(await page.locator('[data-owner-rules-upcoming-cutoff]').innerText(), '23', 'scheduled summary refreshes the slot cutoff');
                     assert.match(await page.locator('[data-owner-rules-upcoming-week]').innerText(), /Monday\s+09:00–24:00/, 'scheduled summary refreshes its midnight close');
 
                     // Profile modal must be visible, focusable, close, and restore focus.
