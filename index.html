@@ -296,11 +296,29 @@
 
             <div class="about-reviews reveal" id="testimonials">
                 <div class="section-inner">
-                    <p class="eyebrow">Verified booking reviews</p>
+                    <p class="eyebrow">Customer reviews</p>
                     <h2 class="section-title">What visitors say about Iñigos.</h2>
+                    <p class="section-intro onsite-reviews-intro">Some feedback here is generated presentation content.</p>
                     <div class="onsite-reviews-layout">
-                        <p class="onsite-reviews-status" data-onsite-reviews-status role="status" aria-live="polite">Loading customer reviews…</p>
-                        <div class="testimonial-grid" data-onsite-review-grid aria-label="Verified booking reviews" aria-busy="true"></div>
+                        <div class="onsite-reviews-controls" role="group" aria-label="Filter reviews by rating">
+                            <div class="onsite-review-rating-strip">
+                                <span class="onsite-review-rating-label">Filter by rating:</span>
+                                <div class="onsite-review-rating-buttons">
+                                    <button type="button" class="onsite-review-all-button is-active" data-review-all aria-label="Show featured reviews" aria-pressed="true">All</button>
+                                    <button type="button" class="onsite-review-rating-button" data-review-rating="5" aria-label="Show 5-star reviews" aria-pressed="false" title="5-star reviews"></button>
+                                    <button type="button" class="onsite-review-rating-button" data-review-rating="4" aria-label="Show 4-star reviews" aria-pressed="false" title="4-star reviews"></button>
+                                    <button type="button" class="onsite-review-rating-button" data-review-rating="3" aria-label="Show 3-star reviews" aria-pressed="false" title="3-star reviews"></button>
+                                    <button type="button" class="onsite-review-rating-button" data-review-rating="2" aria-label="Show 2-star reviews" aria-pressed="false" title="2-star reviews"></button>
+                                    <button type="button" class="onsite-review-rating-button" data-review-rating="1" aria-label="Show 1-star reviews" aria-pressed="false" title="1-star reviews"></button>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="onsite-reviews-status" data-onsite-reviews-status role="status" aria-live="polite" hidden></p>
+                        <div class="onsite-review-carousel" role="group" aria-label="Review carousel">
+                            <button type="button" class="onsite-review-arrow" data-review-previous aria-label="Show newer reviews" disabled><span aria-hidden="true">←</span></button>
+                            <div class="testimonial-grid" data-onsite-review-grid role="region" aria-label="Customer reviews" aria-live="polite" aria-busy="true"></div>
+                            <button type="button" class="onsite-review-arrow" data-review-next aria-label="Show older reviews"><span aria-hidden="true">→</span></button>
+                        </div>
                     </div>
                 </div>
             </div>

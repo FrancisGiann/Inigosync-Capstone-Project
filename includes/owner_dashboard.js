@@ -3544,7 +3544,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Owners choose exactly three written public booking reviews for the
+    // Owners choose exactly three written public customer reviews for the
     // landing page. The database RPC validates and saves the ordered set.
     const reviewList = document.querySelector('[data-admin-review-list]');
     const reviewPager = document.querySelector('[data-admin-review-pagination]');
@@ -3582,7 +3582,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const request = ++ownerReviewBrowserRequest;
         ownerReviewBrowserLoading = true;
         ownerReviewBrowser.setAttribute('aria-busy', 'true');
-        let query = window.sb.from('public_booking_reviews').select('id,rating,comment,created_at', { count: 'exact' })
+        let query = window.sb.from('public_customer_reviews').select('id,rating,comment,is_sample,created_at,display_name', { count: 'exact' })
             .order('created_at', { ascending: false }).range(ownerReviewBrowserPage * REVIEW_PAGE_SIZE, (ownerReviewBrowserPage + 1) * REVIEW_PAGE_SIZE - 1);
         if (ownerReviewBrowserFilter !== 'all') query = query.eq('rating', Number(ownerReviewBrowserFilter));
         try {
@@ -3604,7 +3604,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const date = review.created_at ? new Date(review.created_at) : null;
                 const dateText = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : 'Date unavailable';
                 const datetime = review.created_at ? ` datetime="${window.escapeHtml(review.created_at)}"` : '';
-                return `<article class="admin-review-item owner-review-browser-item"><div class="admin-review-item-head"><strong>Verified customer</strong><span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span></div>${comment}<time${datetime}>${window.escapeHtml(dateText)}</time></article>`;
+                const sampleBadge = review.is_sample ? '<span class="owner-review-sample-badge">Sample review</span>' : '';
+                return `<article class="admin-review-item owner-review-browser-item"><div class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span></div>${comment}<time${datetime}>${window.escapeHtml(dateText)}</time></article>`;
             }).join('') : '<p class="admin-form-hint">No customer reviews match this filter yet.</p>';
             const pages = Math.max(1, Math.ceil((count || 0) / REVIEW_PAGE_SIZE));
             if (ownerReviewBrowserPager) ownerReviewBrowserPager.hidden = (count || 0) <= REVIEW_PAGE_SIZE;
@@ -3630,14 +3631,15 @@ document.addEventListener('DOMContentLoaded', () => {
         reviewSlots.innerHTML = Array.from({ length: 3 }, (_, index) => {
             const id = savedFeaturedReviewIds[index];
             const review = id ? featuredReviewDetails.get(id) : null;
-            return `<article class="owner-featured-review-slot${id ? ' is-filled' : ''}"><span class="owner-featured-review-slot-number">${index + 1}</span>${review ? `<div><div class="owner-featured-review-slot-rating" aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</div><p>“${window.escapeHtml(review.comment)}”</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></div>` : `<p>${id ? 'Loading saved review…' : 'Your next featured story goes here'}</p>`}</article>`;
+            const sampleBadge = review?.is_sample ? '<span class="owner-review-sample-badge">Sample review</span>' : '';
+            return `<article class="owner-featured-review-slot${id ? ' is-filled' : ''}"><span class="owner-featured-review-slot-number">${index + 1}</span>${review ? `<div><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<div class="owner-featured-review-slot-rating" aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</div><p>“${window.escapeHtml(review.comment)}”</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></div>` : `<p>${id ? 'Loading saved review…' : 'Your next featured story goes here'}</p>`}</article>`;
         }).join('');
     }
     async function loadOwnerReviews() {
         if (!reviewList || !window.sb) return;
         const request = ++reviewRequest;
         reviewList.setAttribute('aria-busy', 'true');
-        let query = window.sb.from('public_booking_reviews').select('id,rating,comment,created_at', { count: 'exact' })
+        let query = window.sb.from('public_customer_reviews').select('id,rating,comment,is_sample,created_at,display_name', { count: 'exact' })
             .not('comment', 'is', null).neq('comment', '')
             .order('created_at', { ascending: false }).range(reviewPage * REVIEW_PAGE_SIZE, (reviewPage + 1) * REVIEW_PAGE_SIZE - 1);
         if (reviewRatingFilter !== 'all') query = query.eq('rating', Number(reviewRatingFilter));
@@ -3658,7 +3660,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const checked = selectedIndex >= 0;
             const selectionOrder = checked ? `<span class="owner-featured-review-order" aria-label="Featured review ${selectedIndex + 1}">${selectedIndex + 1}</span>` : '';
             const disabled = (!checked && featuredReviewIds.length >= 3) || savingFeaturedReviews || !featuredSelectionLoaded;
-            return `<label class="admin-review-item owner-featured-review-item${checked ? ' is-selected' : ''}"><input type="checkbox" data-featured-review-id="${window.escapeHtml(review.id)}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''} aria-label="${checked ? 'Remove' : 'Add'} this ${Number(review.rating)} star review${selectionOrder ? `; selected ${selectedIndex + 1} of 3` : ''}"><span class="owner-featured-review-content"><span class="admin-review-item-head"><strong>Verified customer</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></span><span class="owner-featured-review-comment">${window.escapeHtml(review.comment)}</span><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></span>${selectionOrder}</label>`;
+            const sampleBadge = review.is_sample ? '<span class="owner-review-sample-badge">Sample review</span>' : '';
+            return `<label class="admin-review-item owner-featured-review-item${checked ? ' is-selected' : ''}"><input type="checkbox" data-featured-review-id="${window.escapeHtml(review.id)}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''} aria-label="${checked ? 'Remove' : 'Add'} this ${Number(review.rating)} star review${selectionOrder ? `; selected ${selectedIndex + 1} of 3` : ''}"><span class="owner-featured-review-content"><span class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></span><span class="owner-featured-review-comment">${window.escapeHtml(review.comment)}</span><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></span>${selectionOrder}</label>`;
         }).join('') : '<p class="admin-form-hint">No eligible reviews with written comments are available yet.</p>';
         reviewList.querySelectorAll('[data-featured-review-id]').forEach((checkbox) => checkbox.addEventListener('change', () => {
             const id = checkbox.dataset.featuredReviewId;
@@ -3703,7 +3706,7 @@ document.addEventListener('DOMContentLoaded', () => {
             featuredSelectionLoaded = true;
             setFeaturedReviewStatus();
             if (savedFeaturedReviewIds.length) {
-                const { data: details, error: detailsError } = await window.sb.from('public_booking_reviews').select('id,rating,comment,created_at').in('id', savedFeaturedReviewIds);
+                const { data: details, error: detailsError } = await window.sb.from('public_customer_reviews').select('id,rating,comment,is_sample,created_at,display_name').in('id', savedFeaturedReviewIds);
                 if (request !== featuredSelectionRequest) return;
                 if (detailsError) throw detailsError;
                 (details || []).forEach(review => featuredReviewDetails.set(review.id, review));
@@ -3763,7 +3766,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (reviewModal) reviewModal.inert = true;
         setFeaturedReviewStatus('Saving featured reviews…');
         try {
-            const { error } = await window.sb.rpc('owner_save_featured_booking_reviews', { p_review_ids: idsToSave });
+            const { error } = await window.sb.rpc('owner_save_featured_customer_reviews', { p_review_ids: idsToSave });
             if (error) throw error;
             savedFeaturedReviewIds = idsToSave;
             draftFeaturedReviewIds = [...idsToSave];

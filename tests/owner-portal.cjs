@@ -59,7 +59,7 @@ function fixture() {
             { id: '00000000-0000-4000-8000-000000000001', title: 'A very long featured tournament title that would otherwise push the card actions down and make its neighbors uneven', meta: 'First', tag: 'Event', image_url: null, display_order: 1, is_published: true, created_at: '2026-09-01T00:00:00Z' },
             { id: '00000000-0000-4000-8000-000000000002', title: 'Second slide', meta: 'Second', tag: null, image_url: null, display_order: 2, is_published: true, created_at: '2026-09-02T00:00:00Z' },
         ],
-        public_booking_reviews: [
+        public_customer_reviews: [
             { id: 'r1', display_name: 'Alex', rating: 5, comment: 'Great', created_at: '2026-09-01T00:00:00Z' },
             { id: 'r2', display_name: 'Bo', rating: 3, comment: 'Okay', created_at: '2026-09-02T00:00:00Z' },
             { id: 'r3', display_name: 'Casey', rating: 4, comment: 'Superb courts', created_at: '2026-09-03T00:00:00Z' },
@@ -158,7 +158,7 @@ function fixture() {
                 return { data: { court_id: courtId, version: 1 }, error: null };
             }
             if (name === 'admin_reorder_slides') return state.failReorder ? { data: null, error: { message: 'Simulated reorder failure' } } : { data: args.p_ids, error: null };
-            if (name === 'owner_save_featured_booking_reviews') {
+            if (name === 'owner_save_featured_customer_reviews') {
                 const selection = data.owner_featured_review_selection[0] || { singleton: true };
                 selection.review_ids = args.p_review_ids;
                 data.owner_featured_review_selection[0] = selection;
@@ -453,12 +453,12 @@ async function verifyOwnerPaymentFlow(page) {
                         assert.equal(await page.locator('[data-owner-review-list] .owner-review-browser-item').count(), 5, 'the read-only browser shows every public review before opening the chooser');
                         assert.equal(await page.locator('[data-owner-review-list] input').count(), 0, 'the read-only browser has no selection controls');
                         assert.equal(await page.locator('[data-owner-review-pagination]').evaluate(el => getComputedStyle(el).display), 'none', 'pagination stays hidden below ten reviews');
-                        await page.evaluate(() => window.__ownerQa.tables.public_booking_reviews.push(...Array.from({ length: 5 }, (_, index) => ({ id: `page10-${index}`, rating: 2, comment: null, created_at: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00Z` }))));
+                        await page.evaluate(() => window.__ownerQa.tables.public_customer_reviews.push(...Array.from({ length: 5 }, (_, index) => ({ id: `page10-${index}`, rating: 2, comment: null, created_at: `2026-09-${String(index + 1).padStart(2, '0')}T00:00:00Z` }))));
                         await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
                         await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
                         await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 10);
                         assert.equal(await page.locator('[data-owner-review-pagination]').evaluate(el => getComputedStyle(el).display), 'none', 'pagination stays hidden at exactly ten reviews');
-                        await page.evaluate(() => window.__ownerQa.tables.public_booking_reviews.push({ id: 'page11', rating: 2, comment: null, created_at: '2026-09-07T00:00:00Z' }));
+                        await page.evaluate(() => window.__ownerQa.tables.public_customer_reviews.push({ id: 'page11', rating: 2, comment: null, created_at: '2026-09-07T00:00:00Z' }));
                         await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
                         await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
                         await page.locator('[data-owner-review-pagination]').waitFor({ state: 'visible' });
@@ -466,7 +466,7 @@ async function verifyOwnerPaymentFlow(page) {
                         await page.locator('[data-owner-review-next]').click();
                         await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 1);
                         assert.equal(await page.locator('[data-owner-review-page-numbers] [aria-current="page"]').innerText(), '2', 'the eleventh review appears on page two');
-                        await page.evaluate(() => { window.__ownerQa.tables.public_booking_reviews = window.__ownerQa.tables.public_booking_reviews.filter(review => !review.id.startsWith('page10-') && review.id !== 'page11'); });
+                        await page.evaluate(() => { window.__ownerQa.tables.public_customer_reviews = window.__ownerQa.tables.public_customer_reviews.filter(review => !review.id.startsWith('page10-') && review.id !== 'page11'); });
                         await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
                         await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
                         await page.waitForFunction(() => document.querySelectorAll('[data-owner-review-list] .owner-review-browser-item').length === 5);
@@ -503,7 +503,7 @@ async function verifyOwnerPaymentFlow(page) {
                         await page.locator('[data-featured-review-message]').getByText('Featured reviews saved.').waitFor();
                         assert.equal(await page.locator('[data-featured-review-modal]').isVisible(), false, 'saved selection closes the picker');
                         assert.deepEqual(await page.evaluate(() => window.__ownerQa.tables.owner_featured_review_selection[0].review_ids), ['r2', 'r1', 'r3'], 'selection order persists');
-                        await page.evaluate(() => window.__ownerQa.tables.public_booking_reviews.push({ id: 'r6', rating: 2, comment: null, created_at: '2026-09-06T00:00:00Z' }));
+                        await page.evaluate(() => window.__ownerQa.tables.public_customer_reviews.push({ id: 'r6', rating: 2, comment: null, created_at: '2026-09-06T00:00:00Z' }));
                         await page.locator('[data-admin-nav="overview"]').first().evaluate(el => el.click());
                         await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
                         assert.equal(await page.locator('[data-featured-review-slots] .owner-featured-review-slot.is-filled').count(), 3, 'saved reviews are shown in the three homepage slots');

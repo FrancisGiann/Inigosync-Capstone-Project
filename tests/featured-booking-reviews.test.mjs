@@ -2,22 +2,70 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [migration, ownerScript, ownerHtml, landingScript] = await Promise.all([
+const [migration, displayNameMigration, legacyFeaturedMigration, ownerScript, ownerHtml, landingScript, dashboardScript, landingCss] = await Promise.all([
+    readFile(new URL('../supabase/migrations/20261102120000_account_customer_reviews.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20261102130000_customer_review_public_display_names.sql', import.meta.url), 'utf8'),
     readFile(new URL('../supabase/migrations/20261020022539_featured_booking_reviews.sql', import.meta.url), 'utf8'),
     readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8'),
     readFile(new URL('../Pages/owner_dashboard.html', import.meta.url), 'utf8'),
     readFile(new URL('../includes/landing-reviews.js', import.meta.url), 'utf8'),
+    readFile(new URL('../includes/Dashboard.js', import.meta.url), 'utf8'),
+    readFile(new URL('../Style/LandingNight.css', import.meta.url), 'utf8'),
 ]);
 
+test('account reviews are editable once per customer and publish only safe, sample-labeled fields', () => {
+    assert.match(migration, /customer_id uuid not null unique references auth\.users\(id\)/i);
+    assert.match(migration, /is_sample boolean not null default false/i);
+    assert.match(migration, /create policy customer_review_customer_insert[\s\S]*customer_id = \(select auth\.uid\(\)\)/i);
+    assert.match(migration, /create policy customer_review_customer_update[\s\S]*customer_id = \(select auth\.uid\(\)\)/i);
+    assert.match(migration, /new\.is_sample := false/i);
+    assert.match(migration, /create table if not exists public\.public_customer_reviews[\s\S]*is_sample boolean/i);
+    const publicProjection = migration.slice(migration.indexOf('create table if not exists public.public_customer_reviews')).split(');')[0];
+    assert.doesNotMatch(publicProjection, /customer_id|booking_id/i);
+    assert.match(migration, /row_number\(\) over \(partition by r\.customer_id order by r\.created_at desc, r\.id desc\)/i);
+    assert.match(migration, /drop table if exists public\.booking_review/i);
+    assert.match(migration, /id uuid primary key references public\.customer_review\(id\) on delete cascade/i);
+    assert.match(migration, /create policy email_mfa_required on public\.customer_review as restrictive[\s\S]*internal\.has_verified_email_session\(\)/i);
+    assert.match(migration, /create trigger customer_review_clear_featured_on_blank after update of comment/i);
+    assert.match(migration, /create trigger customer_review_clear_featured_on_delete after delete/i);
+    assert.match(migration, /where singleton = true and old\.id = any\(review_ids\)/i);
+    assert.match(migration, /perform pg_advisory_xact_lock\(174698, 1\)/i);
+    const activeMfaHook = migration.match(/create or replace function internal\.enforce_email_mfa_pre_request\(\)[\s\S]*?\$\$;/i)?.[0] || '';
+    assert.match(activeMfaHook, /'public_customer_reviews', 'public_featured_customer_reviews'/i);
+    assert.doesNotMatch(activeMfaHook, /public_booking_reviews/i);
+    const summaryFunction = migration.match(/create or replace function public\.owner_review_summary\(\)[\s\S]*?\$\$;/i)?.[0] || '';
+    assert.match(summaryFunction, /from public\.public_customer_reviews/i);
+    assert.doesNotMatch(summaryFunction, /booking_review/i);
+    assert.match(dashboardScript, /from\('customer_review'\)\.upsert\(payload, \{ onConflict: 'customer_id' \}\)/);
+    assert.doesNotMatch(dashboardScript, /from\('booking_review'\)|my_booking_reviews|data-dash-review-booking/);
+});
+
+test('public account review names are minimized, backfilled, and kept in sync privately', () => {
+    assert.match(displayNameMigration, /add column if not exists display_name text/i);
+    assert.match(displayNameMigration, /update public\.public_customer_reviews published[\s\S]*?internal\.customer_review_public_display_name\(profile\.full_name, profile\.first_name, profile\.last_name\)/i);
+    assert.match(displayNameMigration, /split_part\(profile_first_name, ' ', 1\)[\s\S]*?split_part\(full_name, ' ', 1\)[\s\S]*?regexp_replace\(full_name, '\^\.\*\[\[:space:\]\]'/i);
+    assert.match(displayNameMigration, /profile_first_name ~ '\^\[\[:alpha:\]\]\[\[:alpha:\]\[:digit:\]''’\.\-\]\*\$'/i);
+    assert.match(displayNameMigration, /case when structured_last_name ~[\s\S]*?then structured_last_name[\s\S]*?when full_last_name ~/i);
+    assert.match(displayNameMigration, /upper\(left\(last_name, 1\)\)/i);
+    assert.match(displayNameMigration, /display_name !~ '@'/i);
+    assert.match(displayNameMigration, /display_name !~\* '\^\[0-9a-f\]\{8\}/i);
+    assert.match(displayNameMigration, /display_name !~ '\^\[\+\(\)0-9 \.\-\]\{7,\}\$'/i);
+    assert.match(displayNameMigration, /after update of full_name, first_name, last_name on public\.profiles/i);
+    assert.match(displayNameMigration, /security definer[\s\S]*?set search_path = ''/i);
+    assert.match(displayNameMigration, /revoke all on function public\.sync_customer_review_public_display_name\(\) from public, anon, authenticated/i);
+    assert.match(displayNameMigration, /security_invoker = true[\s\S]*?r\.display_name/i);
+    assert.doesNotMatch(displayNameMigration.match(/create or replace view public\.public_featured_customer_reviews[\s\S]*?where s\.singleton = true;/i)?.[0] || '', /customer_id|booking_id|full_name|email/i);
+});
+
 test('featured review persistence is owner-only and accepts exactly three distinct written public reviews', () => {
-    assert.match(migration, /alter table public\.owner_featured_review_selection enable row level security/i);
-    assert.match(migration, /check \(review_ids is null or cardinality\(review_ids\) = 3\)/i);
+    assert.match(legacyFeaturedMigration, /alter table public\.owner_featured_review_selection enable row level security/i);
+    assert.match(legacyFeaturedMigration, /check \(review_ids is null or cardinality\(review_ids\) = 3\)/i);
     assert.match(migration, /internal\.is_active_owner\(\(select auth\.uid\(\)\)\)/i);
     assert.match(migration, /cardinality\(p_review_ids\) <> 3/i);
     assert.match(migration, /count\(distinct ids\.review_id\)[\s\S]*?<> 3/i);
     assert.match(migration, /nullif\(btrim\(r\.comment\), ''\) is not null/i);
-    assert.match(migration, /revoke all on function public\.owner_save_featured_booking_reviews\(uuid\[\]\) from public, anon, authenticated/i);
-    assert.match(migration, /grant execute on function public\.owner_save_featured_booking_reviews\(uuid\[\]\) to authenticated/i);
+    assert.match(migration, /revoke all on function public\.owner_save_featured_customer_reviews\(uuid\[\]\) from public, anon, authenticated/i);
+    assert.match(migration, /grant execute on function public\.owner_save_featured_customer_reviews\(uuid\[\]\) to authenticated/i);
     assert.match(migration, /security_invoker = true/i);
 });
 
@@ -36,21 +84,56 @@ test('owner picker uses an accessible modal and confirms changed selections at e
     assert.match(ownerScript, /Discard review changes\?/);
     assert.match(ownerScript, /Save featured reviews\?/);
     assert.match(ownerScript, /window\.InigoOwnerUI\?\.close\(reviewModal\)/);
-    assert.match(ownerScript, /owner_save_featured_booking_reviews/);
+    assert.match(ownerScript, /owner_save_featured_customer_reviews/);
     assert.match(ownerScript, /review\.comment\.trim\(\)\.length > 0/);
     assert.match(ownerScript, /async function loadOwnerReviewBrowser\(force = false\)/);
     assert.match(ownerScript, /\(!force && ownerReviewBrowserLoading\) \|\| \(!force && ownerReviewBrowserLoaded\)/);
     assert.match(ownerScript, /event\.detail === 'feedback'[\s\S]*?loadOwnerReviewBrowser\(true\)/);
-    assert.match(ownerScript, /from\('public_booking_reviews'\)\.select\('id,rating,comment,created_at', \{ count: 'exact' \}\)[\s\S]*?ownerReviewBrowserPage \* REVIEW_PAGE_SIZE/);
+    assert.match(ownerScript, /from\('public_customer_reviews'\)\.select\('id,rating,comment,is_sample,created_at,display_name', \{ count: 'exact' \}\)[\s\S]*?ownerReviewBrowserPage \* REVIEW_PAGE_SIZE/);
+    assert.match(ownerScript, /window\.escapeHtml\(review\.display_name \|\| 'Customer'\)/);
+    assert.match(ownerScript, /owner-review-sample-badge/);
+    assert.match(ownerScript, /owner-featured-review-slot[\s\S]*?review\.display_name \|\| 'Customer'/);
     assert.match(ownerScript, /No written comment/);
     assert.match(ownerScript, /data-owner-review-rating/);
     assert.doesNotMatch(ownerScript, /from\('feedback'\)/);
     assert.doesNotMatch(ownerHtml, /data-owner-direct-feedback|Direct customer feedback/);
 });
 
-test('landing page reads only the saved public selection in display order', () => {
-    assert.match(landingScript, /from\('public_featured_booking_reviews'\)/);
+test('landing page defaults to the saved selection and browses only public review fields', () => {
+    assert.match(landingScript, /from\('public_featured_customer_reviews'\)/);
     assert.match(landingScript, /order\('display_order', \{ ascending: true \}\)/);
-    assert.doesNotMatch(landingScript, /from\('public_booking_reviews'\)/);
+    assert.match(landingScript, /from\('public_customer_reviews'\)\.select\('rating,comment,is_sample,created_at,display_name'\)/);
+    assert.match(landingScript, /sourceLabel\.textContent = review\.display_name \|\| 'Customer'/);
+    assert.doesNotMatch(landingScript, /onsite-review-sample-badge/);
+    assert.match(landingScript, /readMore\.hidden = quote\.scrollHeight <= quote\.clientHeight \+ 1/);
+    assert.match(landingScript, /dialogClose\.setAttribute\('aria-label', 'Close full review'\)/);
+    assert.match(landingScript, /\.range\(offset, offset \+ PAGE_SIZE - 1\)/);
+    assert.match(landingScript, /\.eq\('rating'/);
+    assert.match(landingScript, /max-width: 700px[\s\S]*max-width: 900px/);
+    assert.match(landingScript, /if \(position \+ count < featuredReviews\.length\)[\s\S]*position \+= 1/);
+    assert.match(landingScript, /position === 0 && \(!browsing \|\| Boolean\(selectedRating\)\)/);
+    assert.match(landingScript, /if \(!selectedRating\)[\s\S]*incoming = incoming\.filter\(review => !featuredKeys\.has\(reviewKey\(review\)\)\)/);
+    assert.match(landingScript, /order\('created_at', \{ ascending: false \}\)/);
+    assert.match(landingScript, /next\?\.addEventListener/);
+    assert.match(landingScript, /previous\?\.addEventListener/);
+    assert.match(landingScript, /No written comment\./);
+    assert.match(landingScript, /There are no additional public reviews beyond the featured picks\./);
+    assert.match(landingScript, /There are no public \$\{selectedRating\}-star reviews yet\./);
+    assert.doesNotMatch(landingScript, /select\([^)]*(customer_id|booking_id|full_name|email)/);
     assert.match(landingScript, /No featured reviews yet/);
+});
+
+test('landing review controls use a rating strip and bounded carousel without legacy filters', async () => {
+    const landingHtml = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+    assert.match(landingHtml, /data-review-rating="5"[\s\S]*data-review-rating="1"/);
+    assert.match(landingHtml, /data-review-all[^>]*aria-pressed="true">All/);
+    assert.match(landingHtml, /Filter by rating:/);
+    assert.match(landingHtml, /Some feedback here is generated presentation content\./);
+    assert.doesNotMatch(landingHtml, /Verified booking reviews|Verified customer/);
+    assert.match(landingHtml, /onsite-review-carousel[\s\S]*data-review-previous[\s\S]*data-onsite-review-grid[\s\S]*data-review-next/);
+    assert.doesNotMatch(landingHtml, /data-review-mode|data-review-rating-filter|data-review-load-more/);
+    assert.match(landingCss, /body\.landing-night::before\s*\{[^}]*z-index:\s*-1;/);
+    assert.match(landingCss, /\.landing-night \.about-story-band\s*\{[^}]*background:/);
+    assert.match(landingCss, /\.landing-night \.site-footer\s*\{[^}]*background:/);
+    assert.match(landingHtml, /<div class="footer-grid">[\s\S]*?<div class="footer-map-block"/);
 });

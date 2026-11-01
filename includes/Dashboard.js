@@ -714,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ------------------------------------------------------------------
-    // Feedback modal (§2, D7 — implementation_plan.md). ONE modal, TWO
+    // Account review modal. ONE modal, TWO
     // triggers already in the markup: the sidebar card's "Give Feedback"
     // button (desktop/tablet) and the topbar's standalone Feedback button
     // (mobile) — both carry [data-dash-feedback-open] and open this same
@@ -727,6 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackOverlay = document.querySelector('[data-dash-feedback-overlay]');
     const feedbackDialog = document.querySelector('[data-dash-feedback-dialog]');
     const feedbackMessageEl = document.querySelector('[data-dash-feedback-message]');
+    const feedbackSampleNotice = document.querySelector('[data-dash-feedback-sample]');
     const feedbackSubmitBtn = document.querySelector('[data-dash-feedback-submit]');
     const feedbackRatingError = document.querySelector('[data-dash-feedback-rating-error]');
     const feedbackStars = Array.from(document.querySelectorAll('[data-dash-feedback-star]'));
@@ -787,29 +788,30 @@ document.addEventListener('DOMContentLoaded', () => {
         feedbackSubmitBtn && (feedbackSubmitBtn.disabled = true);
         if (feedbackSubmitBtn) feedbackSubmitBtn.textContent = 'Loading…';
         try {
-            const { data, error } = await window.sb.from('feedback')
-                .select('id, rating, message')
-                .eq('profile_id', window.inigosyncProfile.id)
+            const { data, error } = await window.sb.from('customer_review')
+                .select('id, rating, comment, is_sample')
+                .eq('customer_id', window.inigosyncProfile.id)
                 .maybeSingle();
             if (error) throw error;
             const row = data || null;
             existingFeedbackId = row?.id || null;
+            if (feedbackSampleNotice) feedbackSampleNotice.hidden = !row?.is_sample;
             feedbackRating = row?.rating == null ? null : Number(row.rating);
-            if (feedbackMessageEl) feedbackMessageEl.value = row?.message || '';
+            if (feedbackMessageEl) feedbackMessageEl.value = row?.comment || '';
             initialFeedbackSnapshot = {
                 rating: feedbackRating,
                 message: (feedbackMessageEl?.value || '').trim(),
             };
             paintFeedbackStars(feedbackRating);
             if (feedbackRatingError) feedbackRatingError.hidden = true;
-            if (feedbackSubmitBtn) feedbackSubmitBtn.textContent = row ? 'Save Feedback' : 'Submit Feedback';
+            if (feedbackSubmitBtn) feedbackSubmitBtn.textContent = row ? 'Save Review' : 'Publish Review';
             feedbackLoadFailed = false;
         } catch (error) {
             feedbackLoadFailed = true;
-            console.error('[dashboard] feedback load failed', error);
+            console.error('[dashboard] review load failed', error);
             window.InigoToast?.show(isDashboardSchemaMismatch(error)
-                ? "Feedback isn't set up yet — this needs a database update. Please try again later."
-                : 'Could not load your feedback. Please try again.', true);
+                ? "Customer reviews aren't set up yet — this needs a database update. Please try again later."
+                : 'Could not load your review. Please try again.', true);
         } finally {
             feedbackLoadPending = false;
             if (feedbackSubmitBtn) {
@@ -841,6 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
         feedbackIsOpen = true;
         feedbackDialog.focus();
         if (feedbackMessageEl) feedbackMessageEl.value = '';
+        if (feedbackSampleNotice) feedbackSampleNotice.hidden = true;
         feedbackRating = null;
         existingFeedbackId = null;
         initialFeedbackSnapshot = null;
@@ -862,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!force && feedbackHasChanges()) {
             if (feedbackClosePending) return;
             feedbackClosePending = true;
-            const accepted = await confirmSettingsChange('Discard your feedback draft?');
+            const accepted = await confirmSettingsChange('Discard your review draft?');
             feedbackClosePending = false;
             if (!accepted) return;
         }
@@ -880,6 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         feedbackLastFocused = null;
         if (feedbackMessageEl) feedbackMessageEl.value = '';
+        if (feedbackSampleNotice) feedbackSampleNotice.hidden = true;
         feedbackRating = null;
         paintFeedbackStars(null);
     }
@@ -927,27 +931,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const originalLabel = feedbackSubmitBtn.textContent;
             feedbackSubmitPending = true;
-            if (!await confirmSettingsChange(existingFeedbackId ? 'Save changes to your feedback?' : 'Submit this feedback?')) { feedbackSubmitPending = false; return; }
+            if (!await confirmSettingsChange(existingFeedbackId ? 'Save changes to your public review?' : 'Publish this public review?')) { feedbackSubmitPending = false; return; }
             feedbackSubmitBtn.disabled = true;
-            feedbackSubmitBtn.textContent = existingFeedbackId ? 'Saving…' : 'Submitting…';
+            feedbackSubmitBtn.textContent = existingFeedbackId ? 'Saving…' : 'Publishing…';
 
             let error = null;
             try {
-                const payload = { profile_id: window.inigosyncProfile.id, rating: feedbackRating, message: message || null };
-                if (existingFeedbackId) {
-                    ({ error } = await window.sb.from('feedback').update(payload).eq('id', existingFeedbackId).eq('profile_id', window.inigosyncProfile.id));
-                } else {
-                    ({ error } = await window.sb.from('feedback').insert(payload));
-                    // A second tab can submit between the initial read and
-                    // insert. The unique constraint arbitrates; recover by
-                    // updating that account's row instead of creating a duplicate.
-                    if (error?.code === '23505') {
-                        const { data, error: lookupError } = await window.sb.from('feedback').select('id').eq('profile_id', window.inigosyncProfile.id).maybeSingle();
-                        if (lookupError || !data?.id) throw lookupError || error;
-                        existingFeedbackId = data.id;
-                        ({ error } = await window.sb.from('feedback').update(payload).eq('id', data.id).eq('profile_id', window.inigosyncProfile.id));
-                    }
-                }
+                const payload = { customer_id: window.inigosyncProfile.id, rating: feedbackRating, comment: message || null };
+                ({ error } = await window.sb.from('customer_review').upsert(payload, { onConflict: 'customer_id' }));
             } catch (requestError) {
                 error = requestError;
             } finally {
@@ -957,18 +948,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (error) {
-                console.error('[dashboard] feedback save failed', error);
+                console.error('[dashboard] review save failed', error);
                 // isDashboardSchemaMismatch() (defined further below) turns
                 // a missing table/column into a clear setup message rather
                 // than a raw database error or a fake success toast.
                 const friendlyMessage = isDashboardSchemaMismatch(error)
-                    ? "Feedback isn't set up yet — this needs a database update. Please try again later."
-                    : (error?.message || 'Could not submit your feedback. Please try again.');
+                    ? "Customer reviews aren't set up yet — this needs a database update. Please try again later."
+                    : (error?.message || 'Could not publish your review. Please try again.');
                 window.InigoToast?.show(friendlyMessage, true);
                 return;
             }
 
-            window.InigoToast?.show(existingFeedbackId ? 'Your feedback was updated.' : 'Thanks for your feedback!');
+            window.InigoToast?.show(existingFeedbackId ? 'Your review was updated.' : 'Your review is published. Thank you!');
             if (feedbackMessageEl) feedbackMessageEl.value = '';
             feedbackRating = null;
             paintFeedbackStars(null);
@@ -3876,8 +3867,6 @@ document.addEventListener('DOMContentLoaded', () => {
         control?.addEventListener('change', applyMyBookingsFilters);
     });
 
-    let activeReviewBookingId = null;
-    const bookingReviewModal = document.querySelector('[data-booking-review-modal]');
     let bookingFetchGeneration = 0;
     async function refreshMyBookings({ forceCurrentRule = false } = {}) {
         if (!bookingsTableBody || !window.sb || !window.inigosyncProfile) return;
@@ -3951,11 +3940,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // The safe per-customer view reveals only reviewed booking IDs.
-        // Fail closed if it is unavailable: don't invite duplicate submits.
-        const reviewResult = await window.sb.from('my_booking_reviews').select('booking_id');
-        const reviewedBookings = new Set((reviewResult.error ? [] : reviewResult.data || []).map((review) => String(review.booking_id)));
-
         (data || []).forEach((booking) => {
             const savedTotal = booking.amount_total === null || booking.amount_total === undefined ? null : Number(booking.amount_total);
             const bookingPricing = getBookingUnitPricing(booking);
@@ -3985,9 +3969,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const retryPaymentButton = canRetryOnline
                 ? `<button type="button" class="dash-mini-btn" data-dash-retry-checkout="${window.escapeHtml(String(booking.booking_id))}">Pay online</button>`
                 : '';
-            const fullyPaid = Number(booking.amount_total) > 0 && Number(booking.amount_paid || 0) >= Number(booking.amount_total);
-            const canReview = booking.status === 'completed' && fullyPaid && !reviewResult.error && !reviewedBookings.has(String(booking.booking_id));
-            const reviewButton = canReview ? `<button type="button" class="dash-mini-btn" data-dash-review-booking="${window.escapeHtml(String(booking.booking_id))}">Write a review</button>` : '';
             // R3/Revision 2 — no Cancel control anywhere (see the policy
             // notice in Pages/user_dashboard.html): the real rule is no
             // cancellation and no refunds/cashback. An overdue booking shows
@@ -4002,7 +3983,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>
                     <div class="dash-table-actions">
                         ${retryPaymentButton}
-                        ${reviewButton}
                     </div>
                 </td>
             `;
@@ -4071,59 +4051,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
         });
-        bookingsTableBody.querySelectorAll('[data-dash-review-booking]').forEach((btn) => btn.addEventListener('click', () => {
-            activeReviewBookingId = btn.dataset.dashReviewBooking;
-            if (!bookingReviewModal) return;
-            bookingReviewModal.hidden = false;
-            bookingReviewModal.querySelector('[data-booking-review-comment]').value = '';
-            bookingReviewModal.querySelector('[data-booking-review-rating]').value = '5';
-        }));
     }
-
-    let bookingReviewClosePending = false;
-    let bookingReviewSubmitPending = false;
-    function bookingReviewHasChanges() {
-        return Boolean(document.querySelector('[data-booking-review-comment]')?.value.trim())
-            || (document.querySelector('[data-booking-review-rating]')?.value || '5') !== '5';
-    }
-    async function closeBookingReviewModal(force = false) {
-        if (!bookingReviewModal || bookingReviewModal.hidden) return;
-        if (!force && bookingReviewHasChanges()) {
-            if (bookingReviewClosePending) return;
-            bookingReviewClosePending = true;
-            const accepted = await confirmSettingsChange('Discard your review draft?');
-            bookingReviewClosePending = false;
-            if (!accepted) return;
-        }
-        bookingReviewModal.hidden = true;
-        activeReviewBookingId = null;
-    }
-    document.querySelectorAll('[data-booking-review-close]').forEach((button) => button.addEventListener('click', () => closeBookingReviewModal()));
-    bookingReviewModal?.addEventListener('click', event => { if (event.target === bookingReviewModal) closeBookingReviewModal(); });
-    document.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && bookingReviewModal && !bookingReviewModal.hidden && !event.defaultPrevented) { event.preventDefault(); closeBookingReviewModal(); }
-    });
-    document.querySelector('[data-booking-review-submit]')?.addEventListener('click', async (event) => {
-        const button = event.currentTarget;
-        if (!activeReviewBookingId || !window.sb || bookingReviewSubmitPending) return;
-        const rating = Number(document.querySelector('[data-booking-review-rating]')?.value);
-        const comment = document.querySelector('[data-booking-review-comment]')?.value?.trim() || null;
-        if (!Number.isInteger(rating) || rating < 1 || rating > 5 || (comment && comment.length > 2000)) return;
-        bookingReviewSubmitPending = true;
-        if (!await confirmSettingsChange('Publish this booking review?')) { bookingReviewSubmitPending = false; return; }
-        button.disabled = true;
-        const { error } = await window.sb.from('booking_review').insert({ booking_id: Number(activeReviewBookingId), rating, comment });
-        button.disabled = false;
-        bookingReviewSubmitPending = false;
-        if (error) {
-            console.error('[dashboard] review submit failed', error);
-            window.InigoToast?.show(error.code === '23505' ? 'A review has already been submitted for this booking.' : (error.message || 'Could not publish your review.'), true);
-            return;
-        }
-        await closeBookingReviewModal(true);
-        window.InigoToast?.show('Your review is published. Thank you!');
-        refreshMyBookings();
-    });
 
     // ------------------------------------------------------------------
     // Receipts list only saved payment acknowledgments. A booking summary

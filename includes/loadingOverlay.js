@@ -6,6 +6,7 @@
 // result if that takes longer, it just won't hide sooner than the floor.
 (function () {
     const MIN_VISIBLE_MS = 400;
+    const logoUrl = new URL('../assets/Logo/InigoSync-Emblem.png', document.currentScript?.src || document.baseURI).href;
 
     let overlayEl = null;
     let textEl = null;
@@ -24,7 +25,7 @@
         overlayEl.innerHTML = `
             <div class="inigo-loading-card">
                 <div class="inigo-loading-ring" aria-hidden="true">
-                    <img src="../assets/Logo/InigoSync-Emblem.png" alt="" class="inigo-loading-logo">
+                    <img src="${logoUrl}" alt="" class="inigo-loading-logo">
                 </div>
                 <p class="inigo-loading-text" data-inigo-loading-text></p>
             </div>

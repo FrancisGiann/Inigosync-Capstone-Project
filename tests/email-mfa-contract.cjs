@@ -152,6 +152,16 @@ vm.runInNewContext(fs.readFileSync('includes/emailMfa.js', 'utf8'), { window, lo
     assert.match(readonlyHookMigration, /alter role authenticator set pgrst\.db_pre_request/i,
         'the updated hook remains installed for PostgREST');
 
+    const accountReviewMigration = fs.readFileSync('supabase/migrations/20261102120000_account_customer_reviews.sql', 'utf8');
+    const accountReviewMfaHook = accountReviewMigration.match(/create or replace function internal\.enforce_email_mfa_pre_request\(\)[\s\S]*?\$\$;/i)?.[0];
+    assert(accountReviewMfaHook, 'the account-review migration replaces the active pre-request hook');
+    assert.match(accountReviewMfaHook, /'public_customer_reviews', 'public_featured_customer_reviews'/i,
+        'email-unverified sessions retain access only to the replacement public review reads');
+    assert.doesNotMatch(accountReviewMfaHook, /public_booking_reviews/i,
+        'the active bootstrap allowlist no longer refers to the dropped booking review table');
+    assert.match(accountReviewMigration, /create policy email_mfa_required on public\.customer_review as restrictive/i,
+        'the new private review table has the restrictive verified-email session gate');
+
     const sessionTouchRpc = migration.match(/create or replace function public\.email_mfa_touch_session\([\s\S]*?\$\$;/i)?.[0];
     assert(sessionTouchRpc, 'the explicit verified-session inactivity touch RPC remains defined');
     assert.match(sessionTouchRpc, /update internal\.email_mfa_verified_sessions[\s\S]*last_activity_at = now\(\)/i);

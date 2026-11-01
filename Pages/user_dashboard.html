@@ -98,7 +98,7 @@
                 <div class="dash-nav-divider"></div>
                 <div class="dash-feedback-card" data-dash-feedback-card>
                     <p>How are we doing?<br>Let us know!</p>
-                    <button type="button" class="dash-feedback-btn" data-dash-feedback-open>Give Feedback</button>
+                    <button type="button" class="dash-feedback-btn" data-dash-feedback-open>Write a Review</button>
                 </div>
             </div>
         </aside>
@@ -913,9 +913,9 @@
                     </div>
                 </section>
 
-                <!-- Shared across dashboard panels, including feedback and
-                     booking reviews. Keeping it outside each .dash-panel
-                     ensures it remains visible when another panel is active. -->
+                <!-- Shared across dashboard panels, including customer
+                     reviews. Keeping it outside each .dash-panel ensures it
+                     remains visible when another panel is active. -->
                 <div class="dash-settings-modal" data-dash-confirm-modal hidden>
                     <div class="dash-settings-modal-backdrop"></div>
                     <section class="dash-settings-dialog dash-settings-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dashSettingsConfirmTitle" aria-describedby="dashSettingsConfirmText" tabindex="-1" data-dash-confirm-dialog>
@@ -1000,13 +1000,14 @@
     <!-- Shared crop editor and image helpers; customer profile photos use
          openCropEditor before saving. Must load before Dashboard.js. -->
     <script src="../includes/imageTools.js"></script>
-    <!-- Customer feedback is private to the IñigoSync team; booking reviews
-         remain available only for completed, fully paid bookings below. -->
+    <!-- Every customer account can maintain one editable public review, whether
+         or not the account has a booking. -->
     <div class="dash-modal-overlay" data-dash-feedback-overlay hidden>
         <div class="dash-modal" role="dialog" aria-modal="true" aria-labelledby="dashFeedbackTitle" tabindex="-1" data-dash-feedback-dialog>
             <button type="button" class="dash-modal-close" data-dash-feedback-close aria-label="Close">×</button>
-            <h3 id="dashFeedbackTitle">Give Feedback</h3>
-            <p class="dash-modal-sub">Tell us how your experience with IñigoSync has been.</p>
+            <h3 id="dashFeedbackTitle">Your Customer Review</h3>
+            <p class="dash-modal-sub">Share or update your review. Your account details and contact information are never shown publicly.</p>
+            <p class="dash-form-hint" data-dash-feedback-sample hidden>This is sample content. Edit and publish it to replace the sample with your review.</p>
             <div class="dash-form-group">
                 <span class="dash-form-label" id="dashFeedbackRatingLabel">Rating <span aria-hidden="true">(required)</span></span>
                 <div class="dash-feedback-rating" data-dash-feedback-rating role="radiogroup" aria-labelledby="dashFeedbackRatingLabel" aria-required="true" aria-describedby="dashFeedbackRatingError">
@@ -1019,25 +1020,13 @@
                 <p id="dashFeedbackRatingError" class="dash-form-error" data-dash-feedback-rating-error role="alert" hidden>Please choose a rating from 1 to 5 stars.</p>
             </div>
             <div class="dash-form-group">
-                <label class="dash-form-label" for="dashFeedbackMessage">Your message</label>
+                <label class="dash-form-label" for="dashFeedbackMessage">Public review (optional)</label>
                 <textarea id="dashFeedbackMessage" class="dash-input dash-textarea" rows="4" maxlength="2000" placeholder="What is working well? What could be better?" data-dash-feedback-message></textarea>
             </div>
             <div class="dash-form-actions">
                 <button type="button" class="dash-btn-ghost" data-dash-feedback-close>Cancel</button>
-                <button type="button" class="dash-btn-save" data-dash-feedback-submit>Submit Feedback</button>
+                <button type="button" class="dash-btn-save" data-dash-feedback-submit>Publish Review</button>
             </div>
-        </div>
-    </div>
-    <div class="dash-modal-overlay" data-booking-review-modal hidden>
-        <div class="dash-modal" role="dialog" aria-modal="true" aria-labelledby="bookingReviewTitle" tabindex="-1">
-            <button type="button" class="dash-modal-close" data-booking-review-close aria-label="Close">×</button>
-            <h2 id="bookingReviewTitle">Review your visit</h2>
-            <p>Your review is published for other customers. Your email and contact details are never shown.</p>
-            <label class="dash-form-label" for="bookingReviewRating">Rating</label>
-            <select id="bookingReviewRating" class="dash-input" data-booking-review-rating><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option></select>
-            <label class="dash-form-label" for="bookingReviewComment">Comment (optional)</label>
-            <textarea id="bookingReviewComment" class="dash-input" maxlength="2000" rows="5" data-booking-review-comment></textarea>
-            <div class="dash-form-actions"><button type="button" class="dash-btn-ghost" data-booking-review-close>Cancel</button><button type="button" class="dash-btn-primary" data-booking-review-submit>Publish review</button></div>
         </div>
     </div>
     <script src="../includes/dashboardUpcoming.js"></script>

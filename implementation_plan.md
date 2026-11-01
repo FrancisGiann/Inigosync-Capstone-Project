@@ -1234,3 +1234,19 @@ produce the expected Supabase advisor warning for intentional authenticated
 - This migration was not executed against a database in this workspace; its SQL still needs local Supabase migration validation before deployment.
 - A disposable/local database integration test remains necessary for the slot exclusion race, paid-review hold release, duplicate webhook settlement, and the dynamic PayMongo function rewrite. The current Node tests exercise source contracts and UI cash arithmetic only.
 - A read-only check against the connected development database confirmed that the existing PayMongo settlement function has exactly one intended top-level insertion marker and the expected row/variable declarations. This checks integration shape only; it does not validate the new SQL at runtime.
+
+# Account Customer Reviews — 2026-11-02
+
+## Implementation and data conversion
+
+- Customer accounts receive one editable review independent of booking history. New authenticated saves are scoped by `customer_id = auth.uid()` and customer-account status; the public projection excludes account, booking, display-name, and contact identifiers. Synthetic rows have an explicit `is_sample` marker that customer, owner, and landing UI must display.
+- The migration preserves the newest booking review for each customer (stable ID and timestamp) and removes older per-booking duplicates when replacing the obsolete booking-review tables. It retains the existing three-review selection only when all selected IDs still resolve to distinct-account written reviews; otherwise it clears the selection rather than displaying stale picks.
+- Existing private `feedback` rows are not converted to public reviews because the old form was private and its authors did not consent to publication. The old feedback table and its records remain outside the new public review flow for separate owner review/cleanup; do not delete them as part of review deployment.
+- The connected development read-only snapshot provided for this task had 28 active customer profiles and zero booking-review/public-projection rows or featured selection. No live writes or live conversion were run by implementation. Root owns migration deployment and any subsequent labeled sample seeding.
+- The public projection now cascades on source-review deletion. A source update that clears a selected comment, and deletion of a selected account review, clear the featured selection transactionally so the homepage cannot retain a partial set of stale picks. The new private table also has the restrictive email-MFA policy; the active MFA bootstrap hook and owner summary RPC are replaced to reference the new public-safe review objects.
+
+## Verification gaps
+
+- Apply the new migration in a disposable/local Supabase database before deployment and confirm table grants, RLS, triggers, and owner selection behavior. This checkout has no local `psql`/Supabase database.
+- Run the post-migration read-only checks and five role/trigger behavior cases in `docs/account-customer-reviews-verification.sql`; static Node assertions alone cannot validate Supabase RLS, FK cascade, or trigger behavior.
+- After migration, confirm `customer_review` and `public_customer_reviews` counts match the pre-migration `booking_review` distinct-customer count (zero in the supplied live snapshot), and confirm the public table exposes only safe columns. Root should seed only accounts without genuine reviews, mark all synthetic rows `is_sample = true`, and verify counts before and after.

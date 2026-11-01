@@ -9,8 +9,7 @@ const css = await readFile(new URL('../Style/Dashboard.css', import.meta.url), '
 const dashboard = (await readFile(new URL('../includes/Dashboard.js', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const ownerDashboard = await readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8');
 const upcomingSource = await readFile(new URL('../includes/dashboardUpcoming.js', import.meta.url), 'utf8');
-const migration = await readFile(new URL('../supabase/migrations/20261004085347_customer_feedback.sql', import.meta.url), 'utf8');
-const feedbackUpdateMigration = await readFile(new URL('../supabase/migrations/20261028084241_customer_feedback_one_per_customer.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../supabase/migrations/20261102120000_account_customer_reviews.sql', import.meta.url), 'utf8');
 
 const helperContext = { window: {} };
 runInNewContext(upcomingSource, helperContext);
@@ -43,28 +42,24 @@ test('customer bookings are loaded through an account-scoped query and retryable
     assert.match(html, /data-dash-upcoming-more[^>]*>Show more<\/button>/);
 });
 
-test('feedback schema remains private while owner reviews use the public booking-review projection', () => {
-    assert.match(migration, /alter table public\.feedback enable row level security/i);
-    assert.match(migration, /profile_id\s*=\s*\(select auth\.uid\(\)\)[\s\S]*?internal\.is_active_customer\(\(select auth\.uid\(\)\)\)/i);
-    assert.match(migration, /feedback_customer_select_own[\s\S]*?using\s*\(profile_id\s*=\s*\(select auth\.uid\(\)\)\)/i);
-    assert.match(migration, /feedback_staff_select_all[\s\S]*?public\.inigosync_is_staff_or_admin\(\)/i);
-    assert.match(migration, /revoke all on public\.feedback from public, anon/i);
-    assert.match(feedbackUpdateMigration, /create unique index[\s\S]*?on public\.feedback\s*\(profile_id\)/i);
-    assert.match(feedbackUpdateMigration, /rating is not null and rating between 1 and 5\) not valid/i);
-    assert.match(feedbackUpdateMigration, /alter column message drop not null/i);
-    assert.match(feedbackUpdateMigration, /message is null or length\(trim\(message\)\) > 0/i);
-    assert.match(feedbackUpdateMigration, /for update[\s\S]*?using\s*\([\s\S]*?profile_id = \(select auth\.uid\(\)\)[\s\S]*?with check\s*\([\s\S]*?profile_id = \(select auth\.uid\(\)\)/i);
+test('customer review schema permits one editable review per account without requiring a booking', () => {
+    assert.match(migration, /customer_id uuid not null unique references auth\.users\(id\)/i);
+    assert.match(migration, /rating smallint not null check \(rating between 1 and 5\)/i);
+    assert.match(migration, /create policy customer_review_customer_update[\s\S]*for update to authenticated[\s\S]*using \(customer_id = \(select auth\.uid\(\)\)/i);
+    assert.match(migration, /create table if not exists public\.public_customer_reviews[\s\S]*is_sample boolean/i);
+    assert.match(migration, /drop table if exists public\.booking_review/i);
     assert.doesNotMatch(ownerDashboard, /\.from\('feedback'\)/);
-    assert.match(dashboard, /\.from\('feedback'\)[\s\S]*?\.insert\(payload\)/);
-    assert.match(dashboard, /\.from\('feedback'\)[\s\S]*?\.update\(payload\)[\s\S]*?\.eq\('id',\s*existingFeedbackId\)/);
-    assert.match(dashboard, /\.select\('id, rating, message'\)[\s\S]*?\.eq\('profile_id',\s*window\.inigosyncProfile\.id\)[\s\S]*?\.maybeSingle\(\)/);
-    assert.match(dashboard, /error\?\.code === '23505'/);
+    assert.match(dashboard, /\.from\('customer_review'\)\.upsert\(payload, \{ onConflict: 'customer_id' \}\)/);
+    assert.match(dashboard, /\.select\('id, rating, comment, is_sample'\)[\s\S]*?\.eq\('customer_id',\s*window\.inigosyncProfile\.id\)[\s\S]*?\.maybeSingle\(\)/);
+    assert.doesNotMatch(dashboard, /\.from\('booking_review'\)|my_booking_reviews|data-dash-review-booking/);
     assert.match(dashboard, /loadCustomerFeedback\(\)/);
     assert.match(html, /role="radiogroup" aria-labelledby="dashFeedbackRatingLabel" aria-required="true"/);
     assert.match(html, /data-dash-feedback-rating-error[^>]*role="alert"/);
     assert.match(html, /maxlength="2000"[^>]*data-dash-feedback-message/);
+    assert.match(html, /data-dash-feedback-sample hidden/);
+    assert.match(dashboard, /feedbackSampleNotice\.hidden = !row\?\.is_sample/);
     assert.match(dashboard, /feedbackRating === null \|\| !Number\.isInteger\(feedbackRating\)/);
-    assert.match(dashboard, /message: message \|\| null/);
+    assert.match(dashboard, /comment: message \|\| null/);
     assert.match(dashboard, /finally\s*\{\s*feedbackSubmitBtn\.disabled = false/);
 });
 
@@ -132,11 +127,6 @@ const feedbackLoadFunction = extractBetween(
     '    async function loadCustomerFeedback() {',
     '\n    function openFeedbackModal'
 );
-const bookingReviewHandlers = extractBetween(
-    dashboard,
-    '    let bookingReviewClosePending = false;',
-    '    // Receipts list only saved payment acknowledgments.'
-);
 const settingsConfirmationHandlers = extractBetween(
     dashboard,
     '    function closeSettingsConfirm(accepted) {',
@@ -159,18 +149,10 @@ function makeConfirmationEscapeHarness(flow) {
     const feedbackMessageEl = new InteractionElement('My feedback draft');
     const feedbackOverlay = new InteractionElement();
     feedbackOverlay.hidden = false;
-    const bookingReviewModal = new InteractionElement();
-    bookingReviewModal.hidden = false;
-    const reviewSubmitBtn = new InteractionElement();
-    const reviewComment = new InteractionElement('My review draft');
-    const reviewRating = new InteractionElement('5');
     const documentKeydownHandlers = [];
     const elements = new Map([
         ['[data-dash-confirm-modal]', confirmModal],
         ['#dashSettingsConfirmText', confirmText],
-        ['[data-booking-review-submit]', reviewSubmitBtn],
-        ['[data-booking-review-comment]', reviewComment],
-        ['[data-booking-review-rating]', reviewRating],
     ]);
     const writes = [];
     const document = {
@@ -182,7 +164,7 @@ function makeConfirmationEscapeHarness(flow) {
     const context = {
         document,
         window: {
-            sb: { from(table) { return { insert: async payload => { writes.push({ table, payload }); return { error: null }; } }; } },
+            sb: { from(table) { return { upsert: async payload => { writes.push({ table, payload }); return { error: null }; } }; } },
             inigosyncProfile: { id: 'customer-1' },
             InigoToast: { show() {} },
             clearTimeout() {},
@@ -201,6 +183,7 @@ function makeConfirmationEscapeHarness(flow) {
         },
         feedbackSubmitBtn,
         feedbackMessageEl,
+        feedbackSampleNotice: new InteractionElement(),
         feedbackRatingError: new InteractionElement(),
         feedbackStars: [new InteractionElement()],
         feedbackOverlay,
@@ -216,12 +199,8 @@ function makeConfirmationEscapeHarness(flow) {
         feedbackLoadFailed: false,
         FEEDBACK_CLOSE_DELAY_MS: 0,
         paintFeedbackStars() {},
-        bookingReviewModal,
-        bookingReviewSubmitPending: false,
-        bookingReviewClosePending: false,
-        activeReviewBookingId: 77,
     };
-    runInNewContext(`${flow === 'feedback' ? feedbackEscapeHandler + feedbackSubmitHandler : bookingReviewHandlers}\n${settingsConfirmationHandlers}`, context);
+    runInNewContext(`${feedbackEscapeHandler}${feedbackSubmitHandler}\n${settingsConfirmationHandlers}`, context);
 
     async function pressEscapeOnConfirmation() {
         const event = {
@@ -238,7 +217,7 @@ function makeConfirmationEscapeHarness(flow) {
         return event;
     }
 
-    return { confirmModal, confirmText, feedbackSubmitBtn, feedbackMessageEl, bookingReviewModal, reviewSubmitBtn, reviewComment, writes, pressEscapeOnConfirmation };
+    return { confirmModal, confirmText, feedbackSubmitBtn, feedbackMessageEl, writes, pressEscapeOnConfirmation };
 }
 
 function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, insertError = null, conflictRow = null } = {}) {
@@ -256,26 +235,21 @@ function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, ins
     const messages = [];
     const writes = [];
     const confirmations = [];
-    let feedbackReads = 0;
+    let reviewReads = 0;
     const supabase = {
         from(table) {
-            assert.equal(table, 'feedback');
+            assert.equal(table, 'customer_review');
             const query = {
                 mode: null,
                 select(columns) { this.mode = 'select'; this.columns = columns; return this; },
                 eq(column, value) { this.filters ||= {}; this.filters[column] = value; return this; },
                 maybeSingle() {
-                    assert.equal(this.filters.profile_id, 'customer-1');
-                    feedbackReads += 1;
-                    if (loadError && feedbackReads === 1) return Promise.resolve({ data: null, error: loadError });
-                    return Promise.resolve({ data: feedbackReads === 1 ? existingRow : conflictRow, error: null });
+                    assert.equal(this.filters.customer_id, 'customer-1');
+                    reviewReads += 1;
+                    if (loadError && reviewReads === 1) return Promise.resolve({ data: null, error: loadError });
+                    return Promise.resolve({ data: existingRow, error: null });
                 },
-                insert(payload) { writes.push({ action: 'insert', payload }); return Promise.resolve({ error: insertError }); },
-                update(payload) {
-                    writes.push({ action: 'update', payload });
-                    this.mode = 'update';
-                    return this;
-                },
+                upsert(payload, options) { writes.push({ action: 'upsert', payload, options }); return Promise.resolve({ error: insertError }); },
                 then(resolve, reject) { return Promise.resolve({ error: null }).then(resolve, reject); },
             };
             return query;
@@ -292,6 +266,7 @@ function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, ins
         console: { error() {} },
         feedbackSubmitBtn: submit,
         feedbackMessageEl: message,
+        feedbackSampleNotice: new InteractionElement(),
         feedbackRatingError: ratingError,
         feedbackStars: stars,
         feedbackOverlay: overlay,
@@ -325,51 +300,39 @@ function vmRead(context) {
     };
 }
 
-test('feedback loads the account row and saves edits to that row', async () => {
-    const harness = makeFeedbackBehaviorHarness({ existingRow: { id: 'feedback-9', rating: 3, message: '  Helpful  ' } });
+test('review form loads the account row and saves edits to that row', async () => {
+    const harness = makeFeedbackBehaviorHarness({ existingRow: { id: 'review-9', rating: 3, comment: '  Helpful  ' } });
     const state = harness.read();
     await state.load();
     assert.equal(harness.message.value, '  Helpful  ');
     assert.equal(state.getRating(), 3);
-    assert.equal(state.getExistingId(), 'feedback-9');
-    assert.equal(harness.submit.textContent, 'Save Feedback');
+    assert.equal(state.getExistingId(), 'review-9');
+    assert.equal(harness.submit.textContent, 'Save Review');
     harness.message.value = 'Updated';
     await harness.submit.dispatch('click');
-    assert.deepEqual(harness.writes.map(write => write.action), ['update']);
-    assert.equal(harness.writes[0].payload.message, 'Updated');
+    assert.deepEqual(harness.writes.map(write => write.action), ['upsert']);
+    assert.equal(harness.writes[0].payload.comment, 'Updated');
     assert.equal(harness.writes[0].payload.rating, 3);
 });
 
-test('first feedback submission requires a rating but allows an empty message', async () => {
+test('first review submission requires a rating but allows an empty comment', async () => {
     const harness = makeFeedbackBehaviorHarness();
     const state = harness.read();
     await state.load();
-    assert.equal(harness.submit.textContent, 'Submit Feedback');
+    assert.equal(harness.submit.textContent, 'Publish Review');
     await harness.submit.dispatch('click');
     assert.equal(harness.writes.length, 0, 'a missing rating prevents persistence');
     assert.equal(harness.ratingError.hidden, false);
     harness.context.feedbackRating = 5;
     await harness.submit.dispatch('click');
     assert.equal(harness.writes.length, 1);
-    assert.equal(harness.writes[0].action, 'insert');
-    assert.equal(harness.writes[0].payload.message, null);
+    assert.equal(harness.writes[0].action, 'upsert');
+    assert.equal(harness.writes[0].payload.comment, null);
     assert.equal(harness.writes[0].payload.rating, 5);
-    assert.deepEqual(harness.confirmations, ['Submit this feedback?']);
+    assert.deepEqual(harness.confirmations, ['Publish this public review?']);
 });
 
-test('a unique-conflict on first insert reloads and updates the concurrent row', async () => {
-    const harness = makeFeedbackBehaviorHarness({ insertError: { code: '23505' }, conflictRow: { id: 'raced-row' } });
-    const state = harness.read();
-    await state.load();
-    harness.context.feedbackRating = 4;
-    harness.message.value = 'Concurrent-safe';
-    await harness.submit.dispatch('click');
-    assert.deepEqual(harness.writes.map(write => write.action), ['insert', 'update']);
-    assert.equal(harness.writes[1].payload.message, 'Concurrent-safe');
-    assert.equal(harness.context.existingFeedbackId, 'raced-row');
-});
-
-test('a failed feedback load turns submit into a safe retry without writing', async () => {
+test('a failed review load turns submit into a safe retry without writing', async () => {
     const harness = makeFeedbackBehaviorHarness({ loadError: { message: 'network unavailable' } });
     const state = harness.read();
     await state.load();
@@ -378,7 +341,7 @@ test('a failed feedback load turns submit into a safe retry without writing', as
     assert.equal(harness.submit.textContent, 'Retry Load');
     await harness.submit.dispatch('click');
     assert.equal(state.getLoadFailed(), false);
-    assert.equal(harness.submit.textContent, 'Submit Feedback');
+    assert.equal(harness.submit.textContent, 'Publish Review');
     assert.equal(harness.writes.length, 0);
 });
 
@@ -386,29 +349,14 @@ test('Escape declining feedback Save does not open a discard prompt or close the
     const harness = makeConfirmationEscapeHarness('feedback');
     const submit = harness.feedbackSubmitBtn.dispatch('click');
     await Promise.resolve();
-    assert.equal(harness.confirmText.textContent, 'Submit this feedback?');
+    assert.equal(harness.confirmText.textContent, 'Publish this public review?');
     const escapeEvent = await harness.pressEscapeOnConfirmation();
     assert.equal(escapeEvent.propagationStopped, true, 'the active confirmation consumes Escape before it can reach editor handlers');
     await submit;
     assert.equal(harness.confirmModal.hidden, true, 'Escape dismisses the Save confirmation');
-    assert.equal(harness.confirmText.textContent, 'Submit this feedback?', 'Escape does not replace it with a discard prompt');
+    assert.equal(harness.confirmText.textContent, 'Publish this public review?', 'Escape does not replace it with a discard prompt');
     assert.equal(harness.feedbackMessageEl.value, 'My feedback draft', 'declining Save retains the draft');
     assert.equal(harness.writes.length, 0, 'declining Save does not persist feedback');
-});
-
-test('Escape declining booking-review Save does not open a discard prompt or close the draft', async () => {
-    const harness = makeConfirmationEscapeHarness('booking-review');
-    const submit = harness.reviewSubmitBtn.dispatch('click');
-    await Promise.resolve();
-    assert.equal(harness.confirmText.textContent, 'Publish this booking review?');
-    const escapeEvent = await harness.pressEscapeOnConfirmation();
-    assert.equal(escapeEvent.propagationStopped, true, 'the active confirmation consumes Escape before it can reach editor handlers');
-    await submit;
-    assert.equal(harness.confirmModal.hidden, true, 'Escape dismisses the Save confirmation');
-    assert.equal(harness.confirmText.textContent, 'Publish this booking review?', 'Escape does not replace it with a discard prompt');
-    assert.equal(harness.bookingReviewModal.hidden, false, 'declining Save keeps the editor open');
-    assert.equal(harness.reviewComment.value, 'My review draft', 'declining Save retains the draft');
-    assert.equal(harness.writes.length, 0, 'declining Save does not persist the review');
 });
 
 test('dashboard presentation controls remain scoped and remove obsolete overview/search actions', () => {
