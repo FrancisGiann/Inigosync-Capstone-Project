@@ -26,6 +26,8 @@
     const DEFAULT_SETTINGS = Object.freeze({
         cardEnabled: true,
         gcashEnabled: true,
+        mayaEnabled: true,
+        grabPayEnabled: true,
         qrphEnabled: false,
         cashEnabled: true,
         downpaymentPct: 50,
@@ -50,6 +52,8 @@
         return {
             cardEnabled: row.card_enabled !== false,
             gcashEnabled: row.gcash_enabled !== false,
+            mayaEnabled: row.maya_enabled !== false,
+            grabPayEnabled: row.grab_pay_enabled !== false,
             qrphEnabled: row.qrph_enabled === true,
             cashEnabled: row.cash_enabled !== false,
             downpaymentPct: Number.isFinite(pct) ? pct : DEFAULT_SETTINGS.downpaymentPct,

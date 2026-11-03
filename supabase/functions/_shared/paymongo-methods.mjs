@@ -5,11 +5,9 @@ export function enabledPaymongoMethods(settings, { testMode = false } = {}) {
   const methods = [];
   if (settings.card_enabled === true) methods.push("card");
   if (settings.gcash_enabled === true) methods.push("gcash");
-  if (settings.qrph_enabled === true) methods.push("qrph");
-  // Test-mode customer checkout adds QR Ph only when owner-enabled in the
-  // checkout handler; other test methods retain their sandbox method list.
-  // Keep QR Ph out of the general test method list; other flows are unchanged.
-  if (testMode) return ["card", "gcash", "paymaya", "grab_pay"];
+  if (testMode && settings.maya_enabled === true) methods.push("paymaya");
+  if (testMode && settings.grab_pay_enabled === true) methods.push("grab_pay");
+  if (!testMode && settings.qrph_enabled === true) methods.push("qrph");
   return methods;
 }
 

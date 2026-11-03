@@ -1323,7 +1323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const memberSince = profile.created_at
             ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
             : '—';
-        const statusLabels = { active: 'Active', disabled: 'Deactivated', pending: 'Pending · email verification and setup required' };
+        const statusLabels = { active: 'Active', disabled: 'Deactivated', pending: 'Setup pending' };
         const statusLabel = statusLabels[profile.status] || 'Active';
         const parts = [];
         if (age !== null) parts.push(`${age} yrs old`);
@@ -1338,7 +1338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const map = {
             active: ['active', 'Active'],
             disabled: ['inactive', 'Deactivated'],
-            pending: ['pending', 'Pending verification'],
+            pending: ['pending', 'Setup pending'],
         };
         const [cls, label] = map[status] || ['active', 'Active'];
         return `<span class="admin-status ${cls}">${label}</span>`;
@@ -1756,11 +1756,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const ownerPaymentMessage = document.querySelector('[data-owner-payment-message]');
     const ownerPaymentEditorMessage = document.querySelector('[data-owner-payment-editor-message]');
     const ownerPaymentCancel = document.querySelector('[data-owner-payment-cancel]');
-    const ownerPaymentInputs = Object.fromEntries(['cash', 'card', 'gcash', 'qrph'].map(method => [method,
+    const ownerPaymentInputs = Object.fromEntries(['cash', 'card', 'ewallets', 'qrph'].map(method => [method,
         document.querySelector(`[data-owner-payment-method="${method}"]`)]));
-    const ownerPaymentDefaults = { downpaymentPct: 50, cashEnabled: true, cardEnabled: false, gcashEnabled: true, qrphEnabled: false };
+    const ownerPaymentDefaults = { downpaymentPct: 50, cashEnabled: true, cardEnabled: true, gcashEnabled: true,
+        mayaEnabled: true, grabPayEnabled: true, qrphEnabled: false };
     let ownerPaymentLoadGeneration = 0;
     let ownerPaymentBaseline = null;
+    let ownerPaymentWalletSettingsAvailable = true;
+    let ownerPaymentWalletFlags = { gcashEnabled: true, mayaEnabled: true, grabPayEnabled: true };
     let ownerPaymentBackdropStart = false;
 
     function setOwnerPaymentMessage(message, isError = false, target = ownerPaymentMessage) {
@@ -1776,6 +1779,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cashEnabled: settings.cashEnabled !== false,
             cardEnabled: settings.cardEnabled === true,
             gcashEnabled: settings.gcashEnabled !== false,
+            mayaEnabled: settings.mayaEnabled !== false,
+            grabPayEnabled: settings.grabPayEnabled !== false,
             qrphEnabled: settings.qrphEnabled === true,
         };
     }
@@ -1785,13 +1790,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ownerPaymentPercent) ownerPaymentPercent.value = String(normalized.downpaymentPct);
         if (ownerPaymentInputs.cash) ownerPaymentInputs.cash.checked = normalized.cashEnabled;
         if (ownerPaymentInputs.card) ownerPaymentInputs.card.checked = normalized.cardEnabled;
-        if (ownerPaymentInputs.gcash) ownerPaymentInputs.gcash.checked = normalized.gcashEnabled;
+        ownerPaymentWalletFlags = {
+            gcashEnabled: normalized.gcashEnabled,
+            mayaEnabled: normalized.mayaEnabled,
+            grabPayEnabled: normalized.grabPayEnabled,
+        };
+        if (ownerPaymentInputs.ewallets) {
+            const enabledCount = Object.values(ownerPaymentWalletFlags).filter(Boolean).length;
+            ownerPaymentInputs.ewallets.checked = enabledCount === 3;
+            ownerPaymentInputs.ewallets.indeterminate = enabledCount > 0 && enabledCount < 3;
+        }
         if (ownerPaymentInputs.qrph) ownerPaymentInputs.qrph.checked = normalized.qrphEnabled;
         if (ownerPaymentSavedPercent) ownerPaymentSavedPercent.textContent = `${normalized.downpaymentPct}%`;
         if (ownerPaymentSavedMethods) {
             const methods = [
                 ['Cash', normalized.cashEnabled], ['Card', normalized.cardEnabled],
-                ['GCash', normalized.gcashEnabled], ['QR Ph', normalized.qrphEnabled],
+                ['E Wallets', normalized.gcashEnabled || normalized.mayaEnabled || normalized.grabPayEnabled],
+                ['QR Ph', normalized.qrphEnabled],
             ].filter(([, enabled]) => enabled).map(([name]) => name);
             ownerPaymentSavedMethods.textContent = methods.join(', ') || 'None enabled';
         }
@@ -1803,7 +1818,7 @@ document.addEventListener('DOMContentLoaded', () => {
             downpaymentPct: ownerPaymentPercent?.value,
             cashEnabled: ownerPaymentInputs.cash?.checked,
             cardEnabled: ownerPaymentInputs.card?.checked,
-            gcashEnabled: ownerPaymentInputs.gcash?.checked,
+            ...ownerPaymentWalletFlags,
             qrphEnabled: ownerPaymentInputs.qrph?.checked,
         });
     }
@@ -1850,23 +1865,40 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            const { data, error } = await window.sb.from('app_settings')
-                .select('downpayment_pct,cash_enabled,card_enabled,gcash_enabled,qrph_enabled')
+            let { data, error } = await window.sb.from('app_settings')
+                .select('downpayment_pct,cash_enabled,card_enabled,gcash_enabled,maya_enabled,grab_pay_enabled,qrph_enabled')
                 .eq('id', true).maybeSingle();
+            ownerPaymentWalletSettingsAvailable = !error;
+            if (error) {
+                // A site may be updated before its additive wallet-settings migration.
+                // Keep the existing payment editor usable against the old schema.
+                const legacyResult = await window.sb.from('app_settings')
+                    .select('downpayment_pct,cash_enabled,card_enabled,gcash_enabled,qrph_enabled')
+                    .eq('id', true).maybeSingle();
+                if (legacyResult.error) throw error;
+                data = legacyResult.data;
+                error = null;
+            }
             if (generation !== ownerPaymentLoadGeneration) return;
-            if (error) throw error;
+            if (ownerPaymentInputs.ewallets) ownerPaymentInputs.ewallets.disabled = !ownerPaymentWalletSettingsAvailable;
             if (data) {
                 ownerPaymentBaseline = paintOwnerPaymentSettings({
                     downpaymentPct: Number(data.downpayment_pct),
                     cashEnabled: data.cash_enabled,
                     cardEnabled: data.card_enabled,
                     gcashEnabled: data.gcash_enabled,
+                    mayaEnabled: data.maya_enabled,
+                    grabPayEnabled: data.grab_pay_enabled,
                     qrphEnabled: data.qrph_enabled,
                 });
-                setOwnerPaymentMessage('Settings loaded. Changes apply to new checkouts.');
+                setOwnerPaymentMessage(ownerPaymentWalletSettingsAvailable
+                    ? 'Settings loaded. Changes apply to new checkouts.'
+                    : 'Existing payment settings loaded. Apply the Maya and GrabPay migration to configure those methods.');
             } else {
                 ownerPaymentBaseline = paintOwnerPaymentSettings(ownerPaymentDefaults);
-                setOwnerPaymentMessage('Using the default 50% deposit and enabled GCash and cash options.');
+                setOwnerPaymentMessage(ownerPaymentWalletSettingsAvailable
+                    ? 'Using the default 50% deposit and enabled GCash and cash options.'
+                    : 'Using defaults. Apply the Maya and GrabPay migration to configure those methods.');
             }
             ownerPaymentEdit.disabled = false;
         } catch (error) {
@@ -1890,11 +1922,15 @@ document.addEventListener('DOMContentLoaded', () => {
             downpayment_pct: percent,
             cash_enabled: Boolean(ownerPaymentInputs.cash?.checked),
             card_enabled: Boolean(ownerPaymentInputs.card?.checked),
-            gcash_enabled: Boolean(ownerPaymentInputs.gcash?.checked),
+            gcash_enabled: Boolean(ownerPaymentWalletFlags.gcashEnabled),
             qrph_enabled: Boolean(ownerPaymentInputs.qrph?.checked),
+            ...(ownerPaymentWalletSettingsAvailable ? {
+                maya_enabled: Boolean(ownerPaymentWalletFlags.mayaEnabled),
+                grab_pay_enabled: Boolean(ownerPaymentWalletFlags.grabPayEnabled),
+            } : {}),
         };
         if (!settings.card_enabled && !settings.gcash_enabled && !settings.qrph_enabled) {
-            setOwnerPaymentMessage('Enable at least one online payment method (Card, GCash, or QR Ph) for customer bookings.', true, ownerPaymentEditorMessage);
+            setOwnerPaymentMessage('Enable at least one live online payment method (Card, GCash, or QR Ph) for customer bookings.', true, ownerPaymentEditorMessage);
             ownerPaymentInputs.card?.focus();
             return;
         }
@@ -1923,6 +1959,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 cashEnabled: settings.cash_enabled,
                 cardEnabled: settings.card_enabled,
                 gcashEnabled: settings.gcash_enabled,
+                mayaEnabled: settings.maya_enabled,
+                grabPayEnabled: settings.grab_pay_enabled,
                 qrphEnabled: settings.qrph_enabled,
             });
             setOwnerPaymentMessage('Payment settings saved. They apply to new checkouts; existing bookings keep their agreed amount.');
@@ -1939,6 +1977,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     ownerPaymentEdit?.addEventListener('click', openOwnerPaymentModal);
+    ownerPaymentInputs.ewallets?.addEventListener('change', () => {
+        const enabled = ownerPaymentInputs.ewallets.checked;
+        ownerPaymentWalletFlags = { gcashEnabled: enabled, mayaEnabled: enabled, grabPayEnabled: enabled };
+        ownerPaymentInputs.ewallets.indeterminate = false;
+    });
     ownerPaymentSave?.addEventListener('click', saveOwnerPaymentSettings);
     ownerPaymentCancel?.addEventListener('click', cancelOwnerPaymentEdit);
     ownerPaymentModal?.querySelector('[data-owner-payment-close]')?.addEventListener('click', cancelOwnerPaymentEdit);

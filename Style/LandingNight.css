@@ -1089,6 +1089,8 @@ body.landing-night::before {
 .landing-night .about-copy .body-text { color: #d0d0d0; }
 :root[data-theme="light"] .landing-night .about-reviews { background: #fff; }
 :root[data-theme="dark"] .landing-night .about-reviews { background: #090909; }
+:root[data-theme="light"] .landing-night .about-reviews .section-title { color: #29231e; }
+:root[data-theme="light"] .landing-night .about-reviews .onsite-reviews-intro { color: #5d554e; }
 .landing-night .testimonial-card { background: #fff; }
 :root[data-theme="dark"] .landing-night .testimonial-card { background: #191919; }
 
@@ -1315,7 +1317,7 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
     .landing-night .featured-arrows .hero-arrow { width: 42px; height: 42px; }
     .landing-night .featured-arrows .hero-arrow-prev { left: 10px; }
     .landing-night .featured-arrows .hero-arrow-next { right: 10px; }
-    .landing-night .featured-caption-wrap { width: 100%; position: relative; inset: auto; margin-top: 0; padding: 20px; }
+    .landing-night .featured-caption-wrap { width: 100%; position: relative; inset: auto; margin-top: 0; padding: 16px; }
     .landing-night .featured-progress { min-height: 92px; }
 }
 /* The closing visit action sits on the existing page surface. */
@@ -1477,11 +1479,11 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
     .landing-night .testimonial-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 }
 @media (max-width: 700px) {
-    .landing-night .onsite-review-carousel { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .landing-night .onsite-review-carousel { position: relative; grid-template-columns: minmax(0, 1fr); gap: 14px; }
     .landing-night .testimonial-grid { grid-template-columns: 1fr; }
     .landing-night .onsite-review-arrow { position: absolute; z-index: 2; top: 50%; transform: translateY(-50%); }
-    .landing-night .onsite-review-arrow:first-child { left: -8px; }
-    .landing-night .onsite-review-arrow:last-child { right: -8px; }
+    .landing-night .onsite-review-arrow:first-child { left: -18px; }
+    .landing-night .onsite-review-arrow:last-child { right: -18px; }
     .landing-night .testimonial-card { padding: 22px 24px 18px; }
 }
 @media (max-width: 600px) {
@@ -1658,9 +1660,9 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
         grid-template-columns: minmax(0, 1fr);
     }
     .landing-night .landing-facts .hero-stats > div {
-        grid-template-columns: 30px 68px minmax(0, 1fr);
+        grid-template-columns: 30px max-content minmax(0, 1fr);
         justify-content: start;
-        column-gap: 10px;
+        column-gap: 12px;
         padding: 9px 0;
     }
     .landing-night .landing-facts .hero-stats > div + div {
@@ -1701,8 +1703,10 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
     border-radius: 50%;
     color: #ff7900;
     background: transparent;
-    box-shadow: none;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .7));
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .42);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
 :root[data-theme] .landing-night .featured-arrows .hero-arrow[hidden] { display: none; }
 :root[data-theme] .landing-night .featured-arrows .hero-arrow > span[aria-hidden] {
@@ -1724,53 +1728,60 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
 :root[data-theme] .landing-night .featured-arrows .hero-arrow-prev > span[aria-hidden]::before { transform: rotate(-135deg); }
 :root[data-theme] .landing-night .featured-arrows .hero-arrow-next > span[aria-hidden]::before { transform: rotate(45deg); }
 :root[data-theme="light"] .landing-night .featured-arrows .hero-arrow {
-    color: #d9670a;
-    border-color: #e87516;
-    background: transparent;
+    color: #a63809;
+    border-color: #ff7900;
+    background: rgba(255, 253, 249, .96);
+    box-shadow: 0 2px 10px rgba(30, 24, 16, .32);
+}
+:root[data-theme="dark"] .landing-night .featured-arrows .hero-arrow {
+    color: #fff;
+    border-color: #ff7900;
+    background: rgba(9, 9, 9, .88);
 }
 :root[data-theme] .landing-night .featured-arrows .hero-arrow:hover {
     color: #17110b;
     border-color: #ff8a00;
     background: #ff8a00;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .48);
 }
 @media (max-width: 768px) {
     :root[data-theme] .landing-night .featured-arrows .hero-arrow { width: 44px; height: 44px; }
 }
 
 /* Review controls match the compact orange filter pills and carousel chevrons. */
-:root[data-theme] .landing-night .onsite-review-rating-strip { gap: 18px; }
-:root[data-theme] .landing-night .onsite-review-rating-buttons { gap: 12px; }
+:root[data-theme] .landing-night .onsite-review-rating-strip { gap: 16px; }
+:root[data-theme] .landing-night .onsite-review-rating-buttons { gap: 8px; }
 :root[data-theme] .landing-night .onsite-review-all-button,
 :root[data-theme] .landing-night .onsite-review-rating-button {
     display: inline-flex;
-    flex: 0 0 66px;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    width: 66px;
-    min-width: 66px;
-    height: 46px;
-    min-height: 46px;
-    padding: 0;
+    width: auto;
+    min-width: 0;
+    height: 42px;
+    min-height: 42px;
+    padding: 0 12px;
     border: 1px solid #f47b20;
     border-radius: 999px;
     color: #ff8700;
     background: #090909;
     box-shadow: none;
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1;
     transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
-:root[data-theme] .landing-night .onsite-review-all-button { flex-basis: 74px; width: 74px; min-width: 74px; }
+:root[data-theme] .landing-night .onsite-review-all-button { min-width: 64px; font-weight: 700; }
 :root[data-theme] .landing-night .onsite-review-rating-button {
     display: inline-grid;
-    grid-template-columns: repeat(3, 14px);
-    grid-auto-rows: 14px;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-auto-columns: 11px;
+    grid-auto-rows: 11px;
     place-content: center;
     gap: 0 1px;
 }
-:root[data-theme] .landing-night .onsite-review-rating-button[data-review-rating="2"] { grid-template-columns: repeat(2, 14px); }
-:root[data-theme] .landing-night .onsite-review-rating-button[data-review-rating="1"] { grid-template-columns: 14px; }
-:root[data-theme] .landing-night .onsite-review-rating-button svg { display: block; width: 14px; height: 14px; }
+:root[data-theme] .landing-night .onsite-review-rating-button svg { display: block; width: 11px; height: 11px; }
 :root[data-theme] .landing-night .onsite-review-rating-button svg.is-empty { display: none; }
 :root[data-theme] .landing-night .onsite-review-all-button:hover,
 :root[data-theme] .landing-night .onsite-review-rating-button:hover {
@@ -1842,20 +1853,34 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
 :root[data-theme="dark"] .landing-night :is(.onsite-review-all-button, .onsite-review-rating-button, .onsite-review-arrow):focus-visible {
     outline-color: #ffd2ad;
 }
-:root[data-theme="light"] .landing-night .onsite-review-rating-label { color: #fff8f0; }
-:root[data-theme="light"] .landing-night .onsite-review-all-button,
-:root[data-theme="light"] .landing-night .onsite-review-rating-button,
-:root[data-theme="light"] .landing-night .onsite-review-arrow {
-    border-color: #ec7414;
+:root[data-theme="dark"] .landing-night .onsite-review-rating-label { color: #f5f3ee; }
+:root[data-theme="dark"] .landing-night .onsite-review-all-button,
+:root[data-theme="dark"] .landing-night .onsite-review-rating-button {
+    border-color: #f47b20;
     color: #ff983a;
-    background-color: #111;
+    background-color: #090909;
+}
+:root[data-theme="light"] .landing-night .onsite-review-rating-label { color: #29251f; }
+:root[data-theme="light"] .landing-night .onsite-review-all-button,
+:root[data-theme="light"] .landing-night .onsite-review-rating-button {
+    border-color: #a94400;
+    color: #a94400;
+    background-color: #fff;
 }
 :root[data-theme="light"] .landing-night .onsite-review-all-button.is-active,
 :root[data-theme="light"] .landing-night .onsite-review-rating-button.is-active {
-    border-color: #ff983a;
+    border-color: #d95f00;
     color: #201307;
     background-color: #ff983a;
 }
+:root[data-theme="light"] .landing-night .onsite-review-all-button:hover:not(.is-active),
+:root[data-theme="light"] .landing-night .onsite-review-rating-button:hover:not(.is-active) {
+    border-color: #a94400;
+    color: #823500;
+    background-color: #fff4e8;
+}
+:root[data-theme="dark"] .landing-night .onsite-review-all-button.is-active,
+:root[data-theme="dark"] .landing-night .onsite-review-rating-button.is-active { border-color: #ff8700; color: #17120e; background-color: #ff8700; }
 :root[data-theme="light"] .landing-night .onsite-review-arrow:hover:not(:disabled) {
     border-color: #ff983a;
     color: #201307;
@@ -1867,17 +1892,33 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
     background: #111;
 }
 :root[data-theme="light"] .landing-night .onsite-review-all-button:disabled,
-:root[data-theme="light"] .landing-night .onsite-review-rating-button:disabled {
-    border-color: #995318;
-    color: #bd6a27;
-    background: #111;
-}
+:root[data-theme="light"] .landing-night .onsite-review-rating-button:disabled { border-color: #9a5428; color: #8b4a22; background: #fff; }
 :root[data-theme="light"] .landing-night :is(.onsite-review-all-button, .onsite-review-rating-button, .onsite-review-arrow):focus-visible {
     outline-color: #fff;
 }
+:root[data-theme="light"] .landing-night .onsite-review-arrow {
+    border-color: #a94400;
+    color: #a94400;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(41, 35, 30, .16);
+}
+:root[data-theme="light"] .landing-night .onsite-review-arrow:disabled {
+    border-color: #b8a99c;
+    color: #78695e;
+    background: #f5f1ed;
+    opacity: 1;
+}
+:root[data-theme="light"] .landing-night .onsite-review-arrow:focus-visible { outline-color: #a94400; }
 @media (max-width: 600px) {
-    :root[data-theme] .landing-night .onsite-review-rating-buttons { gap: 8px; }
-    :root[data-theme] .landing-night .onsite-review-rating-strip { gap: 10px; }
+    :root[data-theme] .landing-night .onsite-reviews-controls { margin-bottom: 24px; }
+    :root[data-theme] .landing-night .onsite-review-rating-strip { width: 100%; flex-direction: column; align-items: stretch; gap: 8px; }
+    :root[data-theme] .landing-night .onsite-review-rating-label { align-self: flex-start; text-align: left; }
+    :root[data-theme] .landing-night .onsite-review-rating-buttons { display: grid; width: 100%; max-width: 100%; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+    :root[data-theme] .landing-night .onsite-review-all-button,
+    :root[data-theme] .landing-night .onsite-review-rating-button { box-sizing: border-box; width: 100%; min-width: 0; height: 44px; min-height: 44px; padding: 0; }
+    :root[data-theme] .landing-night .onsite-review-all-button { font-size: 14px; }
+    :root[data-theme] .landing-night .onsite-review-rating-button { grid-auto-columns: clamp(6px, 2.4vw, 11px); grid-auto-rows: clamp(6px, 2.4vw, 11px); gap: 0 .5px; }
+    :root[data-theme] .landing-night .onsite-review-rating-button svg { width: clamp(6px, 2.4vw, 11px); height: clamp(6px, 2.4vw, 11px); }
 }
 @media (max-width: 700px) {
     :root[data-theme] .landing-night .onsite-review-arrow:active:not(:disabled) { transform: translateY(-50%) scale(.94); }
@@ -1981,4 +2022,83 @@ html:root[data-theme] .landing-night .footer-brand-main .system-logo-mark img {
 @media (max-width: 700px) {
     .landing-night .testimonial-card:not(.onsite-review-placeholder) { height: 274px; }
     .landing-night .testimonial-card:not(.onsite-review-placeholder) .testimonial-quote { font-size: 17px; line-height: 1.55; }
+}
+
+/* On phones, keep the event card a stable size and reserve its upper-right
+   corner for compact slideshow controls. */
+@media (max-width: 768px) {
+    .landing-night .featured-caption-wrap {
+        box-sizing: border-box;
+        height: 224px;
+        min-height: 224px;
+        grid-template-columns: minmax(0, 1fr) 96px;
+        grid-template-rows: minmax(0, 1fr);
+        align-items: start;
+        gap: 12px;
+        overflow: hidden;
+    }
+    .landing-night .featured-copy-stack {
+        grid-column: 1;
+        grid-row: 1;
+        min-height: 0;
+        max-height: 100%;
+        overflow: hidden;
+    }
+    .landing-night .featured-copy-stack .hero-copy { max-width: 100%; }
+    .landing-night .featured-copy-stack .hero-tag {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .landing-night .featured-copy-stack .hero-title {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow-wrap: anywhere;
+    }
+    .landing-night .featured-copy-stack .hero-meta {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+        overflow-wrap: anywhere;
+    }
+    .landing-night .featured-progress {
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: end;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 2px;
+        width: 96px;
+        min-height: 0;
+    }
+    .landing-night .featured-progress .hero-pause {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        min-height: 36px;
+    }
+    .landing-night .featured-progress .hero-pause svg { width: 18px; height: 18px; }
+    .landing-night .featured-progress .hero-pause .play-icon { width: 16px; height: 16px; }
+    .landing-night .featured-progress .hero-dots {
+        box-sizing: border-box;
+        width: 96px;
+        max-width: 96px;
+        justify-content: flex-start;
+        gap: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    .landing-night .featured-progress .hero-dots::-webkit-scrollbar { display: none; }
+    .landing-night .featured-progress .hero-dot {
+        flex: 0 0 24px;
+        width: 24px;
+        height: 32px;
+    }
 }

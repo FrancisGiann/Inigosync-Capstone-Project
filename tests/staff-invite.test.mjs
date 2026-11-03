@@ -156,7 +156,7 @@ test('owner form collects only the email and position and never receives the pas
   assert.doesNotMatch(recoveryHandler, /console\.(?:log|error)\([^\n]*temporaryPassword/);
   assert.match(inviteHandler, /return json\(\{ success: true, email: details\.email \}\)/);
   assert.doesNotMatch(ownerMarkup, /value="pending">Invited/);
-  assert.match(ownerScript, /Pending verification/);
+  assert.match(ownerScript, /pending: \['pending', 'Setup pending'\]/);
   assert.match(ownerScript, /Correct email and resend setup/i);
   assert.match(ownerScript, /recover-pending-staff/);
   assert.match(recoveryHandler, /profile\.status !== 'pending'/);

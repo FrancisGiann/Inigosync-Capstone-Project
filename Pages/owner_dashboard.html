@@ -500,7 +500,7 @@
             <section class="admin-panel" data-admin-panel="payments">
                 <div class="admin-card">
                     <div class="admin-card-head">
-                        <div><h3>Booking payment options</h3><p class="admin-card-sub">Set the deposit for online bookings and the payment methods available to customers and staff.</p></div>
+                        <div><h3>Booking payment options</h3><p class="admin-card-sub">Set the deposit and the payment methods available for new customer checkouts.</p></div>
                     </div>
                     <dl class="owner-payment-summary" aria-live="polite">
                         <div><dt>Down payment</dt><dd><span data-owner-payment-saved-percent>Loading…</span></dd></div>
@@ -520,9 +520,9 @@
                                 <legend>Available payment methods</legend>
                                 <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="cash"><span><strong>Cash</strong><small>Staff counter and check-in payments</small></span></label>
                                 <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="card"><span><strong>Card</strong><small>Pay online with a card</small></span></label>
-                                <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="gcash"><span><strong>GCash</strong><small>Pay online with GCash</small></span></label>
+                                <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="ewallets"><span><strong>E Wallets</strong><small>Pay online with GCash, Maya, or GrabPay</small></span></label>
                                 <label class="owner-payment-method"><input type="checkbox" data-owner-payment-method="qrph"><span><strong>QR Ph</strong><small>Customer scans a dynamic QR Ph code</small></span></label>
-                                <p class="admin-form-hint owner-payment-method-hint">Keep at least one online method enabled so customers can confirm bookings.</p>
+                                <p class="admin-form-hint owner-payment-method-hint">Maya and GrabPay are offered by PayMongo in test mode. Live checkout availability depends on the enabled production methods.</p>
                             </fieldset>
                         </div>
                         </div>

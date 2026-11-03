@@ -99,10 +99,11 @@ Deno.serve(async (req: Request) => {
       webhookSecret: Deno.env.get("PAYMONGO_WEBHOOK_SECRET"), supabaseUrl: url }))
     return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,maya_enabled,grab_pay_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const testMode = secretKey.startsWith("sk_test_");
   const methods = settingsError ? [] : enabledPaymongoMethods(settings, { testMode });
-  if (!methods.length) return json({ message: "Online payment settings are unavailable." }, 503, origin);
+  const testQrphEnabled = testMode && settings?.qrph_enabled === true;
+  if (!methods.length && !testQrphEnabled) return json({ message: "Online payment settings are unavailable." }, 503, origin);
 
   let prepared: any;
   let label = "court reservation";
@@ -145,7 +146,6 @@ Deno.serve(async (req: Request) => {
   const reference = id.replaceAll("-", "");
   // Test-mode QR Ph can accept real funds. Offer it on customer carts only
   // when the owner enabled it; PayMongo applies its normal amount constraints.
-  const testQrphEnabled = testMode && settings?.qrph_enabled === true;
   const checkoutAttributes = {
     line_items: [{ name: label, amount: Number(attempt.amount_minor), currency: "PHP", quantity: 1 }],
     payment_method_types: testQrphEnabled ? [...methods, "qrph"] : methods,
