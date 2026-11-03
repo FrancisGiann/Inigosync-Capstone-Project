@@ -623,12 +623,15 @@
                      BOOKING SUMMARY PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="receipts">
-                    <div class="dash-panel-head"><h2>Receipts</h2><p>Payment records and downloadable acknowledgments.</p></div>
                     <div class="dash-receipts-group">
-                        <div class="dash-receipt-filters">
+                        <div class="dash-receipt-filter-actions">
                             <label class="dash-receipt-filter" for="customerReceiptSearch">Search receipt number<input id="customerReceiptSearch" type="search" data-dash-receipt-search placeholder="Enter a receipt number" autocomplete="off"></label>
+                            <button type="button" class="dash-receipt-clear" data-dash-receipt-clear hidden>Clear filters</button>
+                        </div>
+                        <div class="dash-receipt-filters">
                             <label class="dash-receipt-filter" for="customerReceiptDate">Payment date<input id="customerReceiptDate" type="date" data-dash-receipt-date></label>
                             <label class="dash-receipt-filter" for="customerReceiptSource">Payment source<select id="customerReceiptSource" data-dash-receipt-source><option value="all">All payments</option><option value="booking">Online bookings</option><option value="walkin">Walk-ins</option></select></label>
+                            <label class="dash-receipt-filter" for="customerReceiptSort">Sort receipts<select id="customerReceiptSort" data-dash-receipt-sort><option value="newest" selected>Payment date: newest first</option><option value="oldest">Payment date: oldest first</option><option value="receipt-asc">Receipt number: A–Z</option><option value="receipt-desc">Receipt number: Z–A</option><option value="amount-asc">Amount: low to high</option><option value="amount-desc">Amount: high to low</option></select></label>
                         </div>
                         <div class="dash-receipt-grid" data-dash-receipts aria-live="polite"><p class="dash-notif-empty">Loading payment acknowledgments…</p></div>
                     </div>
@@ -740,7 +743,6 @@
                         <section class="dash-account-personal" aria-label="Personal information">
                             <div class="dash-card-head">
                                 <h3>Personal Information</h3>
-                                <button type="button" class="dash-btn-ghost" data-dash-personal-edit aria-haspopup="dialog" aria-controls="dashPersonalEditDialog">Edit</button>
                             </div>
                             <div class="dash-profile-meta dash-settings-summary">
                                 <div class="dash-profile-meta-item"><span>Name</span><span data-dash-settings-display-name>—</span></div>
@@ -751,6 +753,7 @@
                                 <div class="dash-profile-meta-item"><span>Civil status</span><span data-dash-settings-display-civil-status>—</span></div>
                                 <div class="dash-profile-meta-item"><span>Emergency contact</span><span data-dash-settings-display-emergency>—</span></div>
                             </div>
+                            <button type="button" class="dash-btn-save dash-personal-edit" data-dash-personal-edit aria-haspopup="dialog" aria-controls="dashPersonalEditDialog">Edit</button>
                         </section>
                     </div>
 

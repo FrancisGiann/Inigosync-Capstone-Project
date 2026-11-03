@@ -14,11 +14,16 @@ const receiptFilterSource = await readFile(new URL('../includes/customerReceipts
 const receiptFilterContext = { window: {} };
 runInNewContext(receiptFilterSource, receiptFilterContext);
 const filterAcknowledgments = receiptFilterContext.window.InigoCustomerReceipts.filterAcknowledgments;
+const sortAcknowledgments = receiptFilterContext.window.InigoCustomerReceipts.sortAcknowledgments;
 
 test('receipts panel keeps payment sources behind receipt-number and payment-date filters', () => {
     assert.match(html, /Search receipt number[\s\S]*?data-dash-receipt-search/);
     assert.match(html, /Payment date[\s\S]*?data-dash-receipt-date/);
     assert.match(html, /Payment source[\s\S]*?All payments[\s\S]*?Online bookings[\s\S]*?Walk-ins/);
+    assert.match(html, /Sort receipts[\s\S]*?Payment date: newest first[\s\S]*?Payment date: oldest first[\s\S]*?Receipt number: A–Z[\s\S]*?Receipt number: Z–A[\s\S]*?Amount: low to high[\s\S]*?Amount: high to low/);
+    assert.match(html, /data-dash-panel="receipts">\s*<div class="dash-receipts-group">/);
+    assert.match(html, /<div class="dash-receipt-filter-actions">\s*<label[^>]*>Search receipt number<input[^>]*data-dash-receipt-search[^>]*><\/label>\s*<button type="button" class="dash-receipt-clear" data-dash-receipt-clear hidden>Clear filters<\/button>\s*<\/div>\s*<div class="dash-receipt-filters">/);
+    assert.doesNotMatch(html.match(/<section class="dash-panel" data-dash-panel="receipts">[\s\S]*?<\/section>/)?.[0] || '', /<h[1-6][^>]*>Receipts<\/h[1-6]>/);
     assert.match(html, /customerReceipts\.js[\s\S]*?Dashboard\.js/);
     assert.match(html, /paymentAcknowledgment\.js[\s\S]*?Dashboard\.js/);
     assert.match(html, /data-dash-receipts/);
@@ -26,7 +31,12 @@ test('receipts panel keeps payment sources behind receipt-number and payment-dat
     assert.match(html, /<dialog[^>]*data-dash-receipt-dialog[^>]*aria-labelledby/);
     assert.match(html, /<button[^>]*data-dash-receipt-close[^>]*aria-label="Close payment acknowledgment"[^>]*>\s*<span aria-hidden="true">×<\/span>/);
     assert.match(html, /data-dash-receipt-dialog-content[^>]*><\/div>\s*<footer class="dash-receipt-dialog-footer">[\s\S]*?data-dash-receipt-download[\s\S]*?data-dash-receipt-print/);
-    assert.match(dashboard, /Payment date<\/th>[\s\S]*?Receipt number<\/th>[\s\S]*?Amount paid<\/th>[\s\S]*?Action<\/th>/);
+    assert.match(dashboard, /Payment date<\/th>[\s\S]*?Payment source<\/th>[\s\S]*?Receipt number<\/th>[\s\S]*?Amount paid<\/th>[\s\S]*?Action<\/th>/);
+    assert.match(dashboard, /const paymentSource = entry\.source === 'walkin' \? 'Walk-in' : 'Online';[\s\S]*?data-label="Payment source">\$\{paymentSource\}/);
+    assert.match(dashboard, /sortAcknowledgments\(filtered, sortOrder\)/);
+    assert.match(dashboard, /receiptSortInput\?\.addEventListener\('change', renderFilteredAcknowledgments\)/);
+    assert.match(dashboard, /receiptClearButton\.hidden = !\(query \|\| paymentDate \|\| source !== 'all' \|\| sortOrder !== 'newest'\)/);
+    assert.match(dashboard, /receiptClearButton\?\.addEventListener\('click', \(\) => \{[\s\S]*?receiptSearchInput\.value = '';[\s\S]*?receiptDateInput\.value = '';[\s\S]*?receiptSourceInput\.value = 'all';[\s\S]*?receiptSortInput\.value = 'newest';[\s\S]*?renderFilteredAcknowledgments\(\);/);
     assert.doesNotMatch(dashboard.match(/function renderReceiptTable\(entries\) \{[\s\S]*?\n    \}/)?.[0] || '', /Booking source|Payment for \/ reference|sport|court/i);
     assert.match(dashboard, /data-dash-receipt-view/);
     assert.match(dashboard, /renderPaymentAcknowledgment\(entry\)[\s\S]*?receiptDialog\.showModal\(\)/);
@@ -41,6 +51,15 @@ test('receipts panel keeps payment sources behind receipt-number and payment-dat
     assert.doesNotMatch(receiptWiring, /btn\.closest\('\.payment-ack-layout'\)/,
         'footer actions must not search for a layout ancestor they are outside of');
     assert.match(css, /\.dash-receipt-table\s*\{/);
+    assert.match(css, /\.dash-receipt-table td \{ padding: 16px 16px;/);
+    assert.match(css, /\.dash-receipt-filters\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/s);
+    assert.match(css, /\.dash-receipt-filter-actions\s*\{[^}]*justify-content:\s*space-between/s);
+    assert.match(css, /\.dash-receipt-clear\s*\{[^}]*background:\s*var\(--color-primary\)/s);
+    assert.match(css, /\.dash-receipt-clear\[hidden\]\s*\{\s*visibility:\s*hidden/);
+    assert.match(css, /\.dash-receipt-table th:last-child\s*\{\s*text-align:\s*left/);
+    assert.match(css, /\.dash-receipt-table td:last-child\s*\{\s*text-align:\s*left/);
+    assert.match(css, /\.dash-receipt-table\s*\{[^}]*table-layout:\s*fixed/s);
+    assert.match(css, /@media \(max-width:\s*900px\)[\s\S]*?\.dash-receipt-filters \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
     assert.match(css, /\.dash-receipt-dialog-shell\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto/s);
     assert.match(css, /\.dash-receipt-dialog-content\s*\{[^}]*overflow-y:\s*auto/s);
     assert.match(css, /\.dash-receipt-dialog-footer\s*\{/);
@@ -117,6 +136,43 @@ test('source, receipt number, and payment date filters combine across booking an
     assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'booking', idQuery: 'PA-5502', paymentDate: '2026-10-05' }, dateKey)), []);
     assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'all', idQuery: 'missing', paymentDate: '2026-10-04' }, dateKey)), []);
     assert.deepEqual(Array.from(filterAcknowledgments(entries, { source: 'all', paymentDate: '2026-10-06' }, dateKey)), []);
+});
+
+test('receipt sorting supports both date directions, puts undated records last, and breaks ties by reference', () => {
+    const entries = [
+        { cardKey: 'booking-2-PA-2', acknowledgment: { receipt_number: 'PA-2', issued_at: '2026-10-04T16:00:00Z' } },
+        { cardKey: 'walkin-3-PA-3', acknowledgment: { receipt_number: 'PA-3', issued_at: '2026-10-03T16:00:00Z' } },
+        { cardKey: 'booking-1-PA-1', acknowledgment: { receipt_number: 'PA-1', issued_at: '2026-10-04T16:00:00Z' } },
+        { cardKey: 'walkin-4-PA-4', acknowledgment: { receipt_number: 'PA-4', issued_at: 'invalid' } },
+    ];
+    assert.deepEqual(Array.from(sortAcknowledgments(entries, 'newest'), entry => entry.cardKey), [
+        'booking-1-PA-1', 'booking-2-PA-2', 'walkin-3-PA-3', 'walkin-4-PA-4',
+    ]);
+    assert.deepEqual(Array.from(sortAcknowledgments(entries, 'oldest'), entry => entry.cardKey), [
+        'walkin-3-PA-3', 'booking-1-PA-1', 'booking-2-PA-2', 'walkin-4-PA-4',
+    ]);
+});
+
+test('receipt sorting supports natural receipt numbers and numeric amounts in both directions', () => {
+    const entries = [
+        { cardKey: 'booking-10', acknowledgment: { receipt_number: 'PA-10', total: '500.00' } },
+        { cardKey: 'booking-2', acknowledgment: { receipt_number: 'PA-2', total: '120.00' } },
+        { cardKey: 'walkin-3', acknowledgment: { receipt_number: 'PA-3', gross_minor: 18000 } },
+        { cardKey: 'walkin-4', acknowledgment: { receipt_id: 'PA-4', total: 250 } },
+        { cardKey: 'walkin-5', acknowledgment: { receipt_number: 'PA-5' } },
+    ];
+    assert.deepEqual(Array.from(sortAcknowledgments(entries, 'receipt-asc'), entry => entry.cardKey), [
+        'booking-2', 'walkin-3', 'walkin-4', 'walkin-5', 'booking-10',
+    ]);
+    assert.deepEqual(Array.from(sortAcknowledgments(entries, 'receipt-desc'), entry => entry.cardKey), [
+        'booking-10', 'walkin-5', 'walkin-4', 'walkin-3', 'booking-2',
+    ]);
+    assert.deepEqual(Array.from(sortAcknowledgments(entries, 'amount-asc'), entry => entry.cardKey), [
+        'booking-2', 'walkin-3', 'walkin-4', 'booking-10', 'walkin-5',
+    ]);
+    assert.deepEqual(Array.from(sortAcknowledgments(entries, 'amount-desc'), entry => entry.cardKey), [
+        'booking-10', 'walkin-4', 'walkin-3', 'booking-2', 'walkin-5',
+    ]);
 });
 
 test('panel parser keeps Receipts, Profile, and Settings as siblings under main', () => {

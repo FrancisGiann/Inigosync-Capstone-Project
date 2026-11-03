@@ -4061,6 +4061,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const receiptSearchInput = document.querySelector('[data-dash-receipt-search]');
     const receiptDateInput = document.querySelector('[data-dash-receipt-date]');
     const receiptSourceInput = document.querySelector('[data-dash-receipt-source]');
+    const receiptSortInput = document.querySelector('[data-dash-receipt-sort]');
+    const receiptClearButton = document.querySelector('[data-dash-receipt-clear]');
     const receiptDialog = document.querySelector('[data-dash-receipt-dialog]');
     const receiptDialogContent = document.querySelector('[data-dash-receipt-dialog-content]');
     const receiptDialogClose = document.querySelector('[data-dash-receipt-close]');
@@ -4097,15 +4099,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const key = window.escapeHtml(String(entry.cardKey || ''));
             const amount = window.InigoPaymentAcknowledgment.money(acknowledgment.total, acknowledgment.gross_minor);
             const receiptNumber = acknowledgment.receipt_number || acknowledgment.receipt_id || '—';
+            const paymentSource = entry.source === 'walkin' ? 'Walk-in' : 'Online';
             return `<tr>
                 <td data-label="Payment date">${window.escapeHtml(receiptDateLabel(acknowledgment.issued_at))}</td>
+                <td data-label="Payment source">${paymentSource}</td>
                 <td data-label="Receipt number" class="dash-receipt-reference">${window.escapeHtml(String(receiptNumber))}</td>
                 <td data-label="Amount paid" class="dash-receipt-amount">${window.escapeHtml(amount)}</td>
                 <td data-label="Action"><button type="button" class="dash-btn-ghost" data-dash-receipt-view="${key}">View receipt</button></td>
             </tr>`;
         }).join('');
         return `<div class="dash-receipt-table-wrap"><table class="dash-receipt-table">
-            <thead><tr><th scope="col">Payment date</th><th scope="col">Receipt number</th><th scope="col">Amount paid</th><th scope="col">Action</th></tr></thead>
+            <thead><tr><th scope="col">Payment date</th><th scope="col">Payment source</th><th scope="col">Receipt number</th><th scope="col">Amount paid</th><th scope="col">Action</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>`;
     }
@@ -4278,11 +4282,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const query = String(receiptSearchInput?.value || '').trim().toLowerCase();
         const paymentDate = String(receiptDateInput?.value || '');
         const source = String(receiptSourceInput?.value || 'all');
+        const sortOrder = String(receiptSortInput?.value || 'newest');
+        if (receiptClearButton) receiptClearButton.hidden = !(query || paymentDate || source !== 'all' || sortOrder !== 'newest');
         const filtered = window.InigoCustomerReceipts.filterAcknowledgments(receiptAcknowledgments, {
             source, idQuery: query, paymentDate,
         }, paymentDateKey);
-        const hasEntries = filtered.length > 0;
-        const table = hasEntries ? renderReceiptTable(filtered) : '';
+        const sorted = window.InigoCustomerReceipts.sortAcknowledgments(filtered, sortOrder);
+        const hasEntries = sorted.length > 0;
+        const table = hasEntries ? renderReceiptTable(sorted) : '';
         const message = hasEntries
             ? ''
             : query || paymentDate || source !== 'all'
@@ -4345,6 +4352,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (receiptSearchInput) receiptSearchInput.disabled = true;
         if (receiptDateInput) receiptDateInput.disabled = true;
         if (receiptSourceInput) receiptSourceInput.disabled = true;
+        if (receiptSortInput) receiptSortInput.disabled = true;
+        if (receiptClearButton) receiptClearButton.disabled = true;
 
         const paidBookings = (bookings || []).filter(booking => Number(booking.amount_paid || 0) > 0
             || booking.payment_id || booking.balance_payment_id);
@@ -4402,16 +4411,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (generation !== receiptRenderGeneration) return;
         receiptAcknowledgments = loadedAcknowledgments;
         receiptLoadErrors = loadErrors;
-        receiptAcknowledgments.sort((left, right) => new Date(right.acknowledgment.issued_at || 0) - new Date(left.acknowledgment.issued_at || 0));
         if (receiptSearchInput) receiptSearchInput.disabled = false;
         if (receiptDateInput) receiptDateInput.disabled = false;
         if (receiptSourceInput) receiptSourceInput.disabled = false;
+        if (receiptSortInput) receiptSortInput.disabled = false;
+        if (receiptClearButton) receiptClearButton.disabled = false;
         renderFilteredAcknowledgments();
     }
 
     receiptSearchInput?.addEventListener('input', renderFilteredAcknowledgments);
     receiptDateInput?.addEventListener('change', renderFilteredAcknowledgments);
     receiptSourceInput?.addEventListener('change', renderFilteredAcknowledgments);
+    receiptSortInput?.addEventListener('change', renderFilteredAcknowledgments);
+    receiptClearButton?.addEventListener('click', () => {
+        if (receiptSearchInput) receiptSearchInput.value = '';
+        if (receiptDateInput) receiptDateInput.value = '';
+        if (receiptSourceInput) receiptSourceInput.value = 'all';
+        if (receiptSortInput) receiptSortInput.value = 'newest';
+        renderFilteredAcknowledgments();
+    });
 
     // ------------------------------------------------------------------
     // Profile + Settings — prefill the signed-in profile and wire the

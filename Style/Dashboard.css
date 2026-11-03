@@ -2555,10 +2555,28 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-payment-ack-card .dash-receipt-actions button { width: 100%; }
 .dash-receipt-filters {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) minmax(180px, 220px);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
     margin-bottom: 18px;
 }
+.dash-receipt-filter-actions {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.dash-receipt-filter-actions .dash-receipt-filter { flex: 0 1 calc((100% - 28px) / 3); }
+.dash-receipt-clear {
+    min-height: 44px; padding: 10px 14px; border: 1px solid var(--color-primary);
+    border-radius: 10px; background: var(--color-primary); color: #14110d;
+    font: 600 var(--fs-sm) var(--font-body); cursor: pointer;
+}
+.dash-receipt-clear:hover, .dash-receipt-clear:focus-visible {
+    border-color: var(--color-primary-dim); background: var(--color-primary-dim); color: #14110d;
+}
+.dash-receipt-clear:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.dash-receipt-clear[hidden] { visibility: hidden; pointer-events: none; }
 
 .dash-receipt-filter {
     display: grid;
@@ -2595,15 +2613,24 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 /* Customer Receipts transaction list and saved acknowledgment dialog. */
 .dash-receipt-grid { display: block; min-width: 0; }
 .dash-receipt-table-wrap { width: 100%; overflow-x: auto; }
-.dash-receipt-table { width: 100%; border-collapse: collapse; text-align: left; }
+.dash-receipt-table { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; }
 .dash-receipt-table th,
-.dash-receipt-table td { padding: 13px 12px; border-bottom: 1px solid var(--color-line); vertical-align: middle; }
+.dash-receipt-table td { padding: 16px 16px; border-bottom: 1px solid var(--color-line); vertical-align: middle; }
+.dash-receipt-table th { padding: 12px 16px 14px; border-bottom: 1px solid var(--color-line); vertical-align: middle; }
+.dash-receipt-table th, .dash-receipt-table td { box-sizing: border-box; }
 .dash-receipt-table th { color: var(--color-ink-dim); font-size: var(--fs-xs); font-weight: 700; white-space: nowrap; }
 .dash-receipt-table td { color: var(--color-ink); font-size: var(--fs-sm); }
+.dash-receipt-table th:nth-child(1), .dash-receipt-table td:nth-child(1) { width: 19%; }
+.dash-receipt-table th:nth-child(2), .dash-receipt-table td:nth-child(2) { width: 16%; }
+.dash-receipt-table th:nth-child(3), .dash-receipt-table td:nth-child(3) { width: 23%; }
+.dash-receipt-table th:nth-child(4), .dash-receipt-table td:nth-child(4) { width: 18%; }
+.dash-receipt-table th:nth-child(5), .dash-receipt-table td:nth-child(5) { width: 24%; }
 .dash-receipt-table tbody tr:last-child td { border-bottom: 0; }
-.dash-receipt-table .dash-receipt-reference { min-width: 190px; overflow-wrap: anywhere; }
+.dash-receipt-table .dash-receipt-reference { overflow-wrap: anywhere; }
 .dash-receipt-table .dash-receipt-amount { font-family: var(--font-numeric); font-weight: 700; white-space: nowrap; }
 .dash-receipt-table td:last-child { white-space: nowrap; }
+.dash-receipt-table th:last-child { text-align: left; }
+.dash-receipt-table td:last-child { text-align: left; }
 .dash-receipt-status { display: inline-flex; padding: 4px 9px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-bg); font-size: var(--fs-xs); font-weight: 650; }
 .dash-receipt-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box; width: min(410px, calc(100vw - 24px)); max-width: none; height: min(88dvh, 820px); max-height: min(88dvh, 820px); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 16px; color: var(--color-ink); background: var(--color-bg-elevated); }
 .dash-receipt-dialog::backdrop { background: rgb(12 18 28 / 62%); }
@@ -2619,8 +2646,15 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-receipt-dialog-close span { font-size: 26px; line-height: 1; }
 .dash-receipt-dialog :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 
+@media (max-width: 900px) {
+    .dash-receipt-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dash-receipt-filter-actions .dash-receipt-filter { flex: 1 1 auto; }
+}
+
 @media (max-width: 640px) {
     .dash-receipts-group { padding: 16px; }
+    .dash-receipt-filter-actions { flex-direction: column; align-items: stretch; }
+    .dash-receipt-clear { align-self: flex-end; }
     .dash-receipt-filters { grid-template-columns: minmax(0, 1fr); gap: 10px; }
     .dash-receipt-table-wrap { overflow: visible; }
     .dash-receipt-table,
@@ -2934,7 +2968,18 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     padding-right: 14px;
 }
 
-.dash-account-personal { min-width: 0; }
+.dash-account-personal {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.dash-personal-edit {
+    align-self: flex-end;
+    margin-top: auto;
+}
+
+.dash-account-personal .dash-settings-summary { margin-bottom: 24px; }
 
 .dash-avatar-upload-row {
     display: flex;
