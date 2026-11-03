@@ -299,6 +299,27 @@ html:root[data-theme] body:is(.dash-body, .staff-body, .admin-body) :is(.dash-mo
     backdrop-filter: blur(4px);
 }
 
+/* Keep the owner email OTP popup on the login/signup verification card
+   surface in both themes. This page-scoped exception outranks the shared
+   admin-modal theme treatment above without changing other admin dialogs. */
+html:root[data-theme] body.admin-body .admin-modal.owner-email-code-dialog {
+    border: 1px solid var(--color-line);
+    border-radius: 20px;
+    background: var(--color-bg-elevated);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+}
+
+html:root[data-theme] body.admin-body .admin-modal-overlay.owner-email-code-overlay {
+    background: rgba(10, 8, 6, .72);
+    backdrop-filter: blur(6px);
+}
+
+@media (max-width: 480px) {
+    html:root[data-theme] body.admin-body .admin-modal.owner-email-code-dialog {
+        border-radius: 16px;
+    }
+}
+
 html[data-theme="light"] :is(.hero-scrim) {
     /* Keep the photographic hero legible in both modes. */
     opacity: 1;

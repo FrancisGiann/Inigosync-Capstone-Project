@@ -959,7 +959,7 @@
             <form class="auth-form" data-auth-panel="forgot" novalidate>
                 <h2 class="auth-heading">Reset your password</h2>
                 <p class="auth-tagline" style="margin-bottom: 18px;">
-                    Enter your account email and we'll send you a 6-digit code to reset your password.
+                    For a linked email alias password, sign in with your main owner email or Google and change it in Owner Account Settings. For other accounts, a reset code may arrive if the email is registered.
                 </p>
 
                 <label class="auth-field">
@@ -967,7 +967,7 @@
                     <input type="email" name="email" placeholder="you@email.com" autocomplete="email" required>
                 </label>
 
-                <button type="submit" class="auth-submit">Send Reset Code</button>
+                <button type="submit" class="auth-submit">Request Reset Code</button>
 
                 <p class="auth-switch"><button type="button" class="auth-link" data-auth-tab="login" data-recovery-back>← Back to log in</button></p>
             </form>
@@ -1078,6 +1078,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script src="./Config/supabaseClient.js"></script>
     <script src="./includes/emailMfa.js"></script>
+    <script src="./includes/ownerLinkedAuth.js"></script>
     <script src="./includes/courts-data.js"></script>
     <script src="./includes/courtsData.js"></script>
     <script src="./includes/businessHours.js"></script>

@@ -131,7 +131,7 @@
             <li>
                 <button type="button" class="admin-nav-link" data-admin-nav="audit">
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4.5h12a2 2 0 0 1 2 2v13H4v-13a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7"/><path d="M8 9h8M8 12.5h8M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-                    Audit Trail
+                    Activity Logs
                 </button>
             </li>
             <li>
@@ -346,6 +346,7 @@
                                     <option value="active">Active</option>
                                     <option value="pending">Setup pending</option>
                                     <option value="disabled">Deactivated</option>
+                                    <option value="archived">Archived</option>
                                 </select>
                             </label>
                             <label class="admin-staff-filter">
@@ -647,15 +648,20 @@
             </div>
             <section class="admin-panel" data-admin-panel="audit">
                 <div class="admin-card owner-audit-card">
-                    <div class="owner-audit-filters" aria-label="Audit trail filters">
-                        <label class="admin-form-group"><span class="admin-form-label">Search Event ID or Actor name</span><input type="search" class="admin-input" maxlength="120" placeholder="Search event ID or actor name" data-owner-audit-search></label>
+                    <div class="owner-audit-toolbar">
+                        <label class="owner-audit-search"><span class="owner-audit-visually-hidden">Search Event ID or Actor name</span><input type="search" class="admin-input" maxlength="120" placeholder="Search event ID or actor name" aria-label="Search Event ID or Actor name" data-owner-audit-search></label>
+                        <button type="button" class="owner-audit-clear" data-owner-audit-clear hidden>Clear filters</button>
+                    </div>
+                    <div class="owner-audit-filters" aria-label="Activity log filters">
                         <label class="admin-form-group"><span class="admin-form-label">Date</span><input type="date" class="admin-input" data-owner-audit-date></label>
                         <label class="admin-form-group"><span class="admin-form-label">From · Manila time</span><span class="owner-audit-time-picker" data-owner-audit-time-picker="from"><input type="hidden" data-owner-audit-from disabled><button type="button" class="admin-input owner-audit-time-trigger" data-owner-audit-time-trigger="from" aria-label="From time, Manila time" aria-haspopup="dialog" aria-expanded="false" disabled>Select time</button><span class="owner-audit-time-popover" data-owner-audit-time-popover="from" role="dialog" aria-label="Choose From time" hidden></span></span></label>
                         <label class="admin-form-group"><span class="admin-form-label">To · Manila time</span><span class="owner-audit-time-picker" data-owner-audit-time-picker="to"><input type="hidden" data-owner-audit-to disabled><button type="button" class="admin-input owner-audit-time-trigger" data-owner-audit-time-trigger="to" aria-label="To time, Manila time" aria-haspopup="dialog" aria-expanded="false" disabled>End of day</button><span class="owner-audit-time-popover" data-owner-audit-time-popover="to" role="dialog" aria-label="Choose To time" hidden></span></span></label>
                         <label class="admin-form-group"><span class="admin-form-label">Role</span><select class="admin-select" data-owner-audit-role><option value="all">All roles</option><option value="admin">Owner</option><option value="staff">Staff</option><option value="customer">Customer</option><option value="system">System</option></select></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Event category</span><select class="admin-select" data-owner-audit-category><option value="all">All categories</option><option value="access">Access</option><option value="bookings">Bookings</option><option value="walkins">Walk-ins</option><option value="payments">Payments</option><option value="account">Account activity</option></select></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Sort</span><select class="admin-select" data-owner-audit-sort><option value="newest">Newest to oldest</option><option value="oldest">Oldest to newest</option><option value="event_az">Event A–Z</option><option value="event_za">Event Z–A</option></select></label>
                     </div>
-                    <p class="owner-audit-status" data-owner-audit-status role="status" aria-live="polite">Open Audit Trail to load events.</p>
-                    <div class="owner-audit-table-wrap" role="region" aria-label="Audit trail events" tabindex="0">
+                    <p class="owner-audit-status" data-owner-audit-status role="status" aria-live="polite">Open Activity Logs to load events.</p>
+                    <div class="owner-audit-table-wrap" role="region" aria-label="Activity log events" tabindex="0">
                     <table class="admin-table owner-audit-table">
                             <caption class="owner-audit-caption">Recorded system events and transactions</caption>
                             <colgroup><col class="owner-audit-col-id"><col class="owner-audit-col-date"><col class="owner-audit-col-event"><col class="owner-audit-col-role"><col class="owner-audit-col-actor"><col class="owner-audit-col-amount"><col class="owner-audit-col-summary"></colgroup>
@@ -1082,12 +1088,12 @@
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
             <label class="admin-form-group"><span class="admin-form-label">Civil status</span><select class="admin-input" data-admin-settings-civil-status><option value="" selected disabled hidden>Select civil status</option><option value="Single">Single</option><option value="Married">Married</option><option value="Separated">Separated</option><option value="Widowed">Widowed</option><option value="Prefer not to say">Prefer not to say</option></select></label>
         </div>
-        <section class="admin-modal-google-accounts" aria-labelledby="adminGoogleAccountsTitle">
+        <section class="admin-modal-google-accounts" aria-labelledby="adminEmailAliasesTitle">
             <div class="admin-google-accounts-head">
-                <div><h4 id="adminGoogleAccountsTitle">Linked Google accounts</h4><p>Use these accounts to sign in.</p></div>
-                <button type="button" class="admin-google-link-btn" data-admin-link-google><span aria-hidden="true">+</span> Add Gmail account</button>
+                <div><h4 id="adminEmailAliasesTitle">Linked email accounts</h4><p>Use a separate email and password to sign in to this owner account.</p></div>
+                <button type="button" class="admin-google-link-btn" data-admin-add-email><span aria-hidden="true">+</span> Add email account</button>
             </div>
-            <div class="admin-google-accounts-list" data-admin-linked-google-emails aria-live="polite"><p class="admin-form-hint">Loading linked accounts…</p></div>
+            <div class="admin-google-accounts-list" data-admin-linked-email-aliases aria-live="polite"><p class="admin-form-hint">Loading linked emails…</p></div>
         </section>
         </div>
         <footer class="admin-form-actions admin-modal-footer">
@@ -1097,8 +1103,85 @@
     </div>
 </div>
 
+<div class="admin-modal-overlay" data-admin-email-alias-modal hidden>
+    <div class="admin-modal admin-edit-modal admin-account-modal owner-email-alias-dialog" role="dialog" aria-modal="true" aria-labelledby="adminEmailAliasTitle" tabindex="-1">
+        <button type="button" class="admin-modal-close" data-admin-email-alias-close aria-label="Close linked email settings">×</button>
+        <header class="admin-modal-header">
+            <h3 id="adminEmailAliasTitle">Add email account</h3>
+            <p class="admin-card-sub" data-admin-alias-header-copy>Add another sign-in email to this owner account. You’ll verify the new email address before setting its password.</p>
+        </header>
+        <div class="owner-email-alias-progress" data-admin-alias-progress aria-live="polite">
+            <span data-admin-alias-step-label>Step 1 of 2</span>
+            <span class="owner-email-alias-progress-track"><span data-admin-alias-progress-bar></span></span>
+            <strong data-admin-alias-step-title>Enter email</strong>
+        </div>
+        <div class="admin-modal-body">
+            <section class="owner-email-alias-step" data-admin-alias-stage="1">
+                <label class="admin-form-group" data-admin-email-entry><span class="owner-email-entry-label"><span class="admin-form-label">Email address to add</span><span class="owner-email-entry-status" data-admin-email-availability role="status" aria-live="polite"></span></span><input type="email" class="admin-input" autocomplete="email" maxlength="254" data-admin-email-entry-input></label>
+                <button type="button" class="admin-btn-ghost" data-admin-alias-resume hidden>Enter verification code</button>
+            </section>
+            <section class="owner-email-alias-step" data-admin-alias-stage="verify-current" hidden>
+                <p class="admin-form-hint">Verify the current password for <strong data-admin-alias-email>this email</strong> before choosing a new one.</p>
+                <label class="admin-form-group"><span class="admin-form-label">Current password</span><input type="password" class="admin-input" autocomplete="current-password" maxlength="128" data-admin-email-current-password></label>
+            </section>
+            <section class="owner-email-alias-step" data-admin-alias-stage="2" hidden>
+                <p class="admin-form-hint">Choose a separate password for signing in with <strong data-admin-alias-email>this email</strong>.</p>
+                <label class="admin-form-group"><span class="admin-form-label">New password</span><input type="password" class="admin-input" autocomplete="new-password" minlength="8" maxlength="15" data-admin-email-password aria-describedby="adminLinkedEmailPwRules" disabled>
+                    <ul class="admin-pw-rules owner-email-pw-rules" id="adminLinkedEmailPwRules" data-admin-email-pw-rules aria-label="Password requirements">
+                        <li data-email-pw-rule="length">8–15 characters</li>
+                        <li data-email-pw-rule="upper">1 uppercase letter</li>
+                        <li data-email-pw-rule="lower">1 lowercase letter</li>
+                        <li data-email-pw-rule="number">1 number</li>
+                        <li data-email-pw-rule="special">1 special character (! ? @ # …)</li>
+                    </ul>
+                </label>
+                <label class="admin-form-group"><span class="admin-form-label">Confirm password</span><input type="password" class="admin-input" autocomplete="new-password" minlength="8" maxlength="15" data-admin-email-password-confirm disabled></label>
+            </section>
+            <p class="admin-form-hint owner-email-alias-status" role="status" aria-live="polite" data-admin-email-alias-status></p>
+        </div>
+        <footer class="admin-form-actions admin-modal-footer">
+            <button type="button" class="admin-btn-ghost" data-admin-alias-back hidden>Back</button>
+            <button type="button" class="admin-btn-ghost" data-admin-email-alias-close>Close</button>
+            <button type="button" class="admin-btn-save" data-admin-email-current-password-verify hidden>Verify current password</button>
+            <button type="button" class="admin-btn-save" data-admin-email-send-code>Send verification code</button>
+            <button type="button" class="admin-btn-save" data-admin-email-password-save disabled>Save password</button>
+        </footer>
+    </div>
+</div>
+
+<div class="admin-modal-overlay owner-email-code-overlay" data-admin-alias-code-modal hidden>
+    <div class="admin-modal owner-email-code-dialog" role="dialog" aria-modal="true" aria-labelledby="adminEmailCodeTitle" aria-describedby="adminEmailCodeDescription" tabindex="-1">
+        <button type="button" class="admin-modal-close" data-admin-alias-code-close aria-label="Close verification code">×</button>
+        <div class="owner-email-code-brand" aria-label="IñigoSync">
+            <div class="owner-email-code-brand-lockup">
+                <span class="owner-email-code-brand-mark"><img src="../assets/Logo/InigoSync-Emblem.png" alt="" width="64" height="64"></span>
+                <span class="owner-email-code-brand-text">
+                    <img src="../assets/Logo/InigoSync-Wordmark.png" alt="IñigoSync" class="owner-email-code-wordmark" width="1931" height="814">
+                    <span>Book your court in a few taps.</span>
+                </span>
+            </div>
+        </div>
+        <h2 class="owner-email-code-heading" id="adminEmailCodeTitle">Verify your email</h2>
+        <p class="owner-email-code-description" id="adminEmailCodeDescription">Enter the 6-digit code we sent to <strong data-admin-alias-email>this email</strong>.</p>
+        <div class="auth-otp-row owner-email-code-row" data-admin-alias-otp-row aria-label="6-digit verification code">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" class="auth-otp-box" data-admin-alias-otp-box aria-label="Digit 1">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="auth-otp-box" data-admin-alias-otp-box aria-label="Digit 2">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="auth-otp-box" data-admin-alias-otp-box aria-label="Digit 3">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="auth-otp-box" data-admin-alias-otp-box aria-label="Digit 4">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="auth-otp-box" data-admin-alias-otp-box aria-label="Digit 5">
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="auth-otp-box" data-admin-alias-otp-box aria-label="Digit 6">
+        </div>
+        <p class="owner-email-code-resend">Didn't get a code? Check Spam or Junk, then <button type="button" class="owner-email-code-link" data-admin-alias-resend>resend code</button><span data-admin-alias-resend-timer></span></p>
+        <footer class="owner-email-code-footer">
+            <button type="button" class="owner-email-code-link owner-email-code-back" data-admin-alias-code-close>Close</button>
+            <button type="button" class="owner-email-code-submit" data-admin-alias-verify>Verify email</button>
+        </footer>
+    </div>
+</div>
+
 <!-- Script for owner dashboard functionality -->
 <script src="../includes/owner-ui.js"></script>
+<script src="../includes/ownerLinkedAuth.js"></script>
 <script src="../includes/owner_dashboard.js"></script>
 <script src="../includes/owner-courts.js"></script>
 <script src="../includes/owner-media.js"></script>

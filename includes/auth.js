@@ -2071,12 +2071,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         if (window.InigoLoading) window.InigoLoading.show('Verifying…');
                         const pending = pendingLoginOtp;
-                        const verified = await window.InigoEmailMfa.verify({
-                            challengeId: pending.challengeId,
-                            code,
-                            userId: pending.userId,
-                            remember: pending.rememberDevice,
-                        });
+                        const verified = pending.linkedEmailBroker
+                            ? await window.InigoOwnerLinkedAuth.verifyLoginCode(pending.challengeId, code)
+                            : await window.InigoEmailMfa.verify({
+                                challengeId: pending.challengeId,
+                                code,
+                                userId: pending.userId,
+                                remember: pending.rememberDevice,
+                            });
                         if (verified.verified !== true) throw new Error('Email verification could not be completed. Please try again.');
 
                         const allowedRoles = pending.allowedRoles;
@@ -2171,6 +2173,50 @@ document.addEventListener('DOMContentLoaded', () => {
                         email: data['admin-email'],
                         password: data['admin-password']
                     });
+                    if (error && error.code === 'invalid_credentials' && window.InigoOwnerLinkedAuth) {
+                        // A secondary email alias has no separate Supabase Auth
+                        // user. The server verifies its separate password and
+                        // returns a one-use token for the canonical owner user.
+                        // Access stays blocked until an OTP sent to the alias
+                        // is verified against that exact Auth session.
+                        const broker = await window.InigoOwnerLinkedAuth.login(data['admin-email'], data['admin-password']);
+                        const { data: brokerSession, error: brokerError } = await window.sb.auth.verifyOtp({
+                            token_hash: broker.token_hash,
+                            type: 'magiclink',
+                        });
+                        if (brokerError || brokerSession?.user?.id !== broker.owner_id) {
+                            await window.sb.auth.signOut({ scope: 'local' });
+                            throw brokerError || new Error('Linked account sign-in was not accepted.');
+                        }
+                        let challenge;
+                        try {
+                            challenge = await window.InigoOwnerLinkedAuth.beginLoginCode(broker.broker_ticket);
+                        } catch (brokerChallengeError) {
+                            await window.sb.auth.signOut({ scope: 'local' });
+                            throw brokerChallengeError;
+                        }
+                        window.InigoAuthStorage.setRememberSession(rememberDevice);
+                        clearLoginAttempts(loginEmail);
+                        pendingLoginOtp = {
+                            userId: brokerSession.user.id,
+                            email: challenge.email || broker.linked_email,
+                            allowedRoles: ['staff', 'admin'],
+                            rememberDevice,
+                            challengeId: challenge.challenge_id,
+                            linkedEmailBroker: true,
+                            codeSent: challenge.sent === true,
+                        };
+                        setOtpPurpose('login');
+                        if (window.InigoLoading) window.InigoLoading.hide();
+                        const emailLabel = overlay.querySelector('[data-verify-email]');
+                        if (emailLabel) emailLabel.textContent = pendingLoginOtp.email;
+                        setActivePanel('verify');
+                        startOtpFlow();
+                        setAuthNotice(challenge.sent === true
+                            ? `Enter the 6-digit sign-in code we sent to ${pendingLoginOtp.email}.`
+                            : `A code was sent recently or delivery could not be confirmed. Check ${pendingLoginOtp.email} before requesting another.`, false);
+                        return;
+                    }
                     if (error) throw error;
                     window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);
@@ -2211,7 +2257,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (emailLabel) emailLabel.textContent = data.email || 'your email';
                     setActivePanel('verify');
                     startOtpFlow();
-                    setAuthNotice("If that email is registered, we've sent a 6-digit reset code. Check your inbox.", false);
+                    setAuthNotice(
+                        'If this is a linked email alias with its own owner sign-in password, reset it by signing in with your main owner email or Google, then choose Set/Change password in Owner Account Settings. Otherwise, if this address is registered, a reset code may arrive; check your inbox.',
+                        false
+                    );
                     form.reset();
                     return;
                 }
@@ -2382,18 +2431,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!pendingLoginOtp) return;
                 resendCode = async () => {
                     const pending = pendingLoginOtp;
-                    const result = await window.InigoEmailMfa.begin({
-                        userId: pending.userId,
-                        remember: pending.rememberDevice,
-                    });
+                    const result = pending.linkedEmailBroker
+                        ? await window.InigoOwnerLinkedAuth.resendLoginCode()
+                        : await window.InigoEmailMfa.begin({
+                            userId: pending.userId,
+                            remember: pending.rememberDevice,
+                        });
                     if (result.verified === true) {
                         pendingLoginOtp = null;
                         await completeLogin(pending.allowedRoles, pending.verifySignupPhone === true, pending.rememberDevice, true);
                     } else {
                         pendingLoginOtp.challengeId = result.challenge_id;
-                        pendingLoginOtp.codeSent = result.resent === true;
+                        pendingLoginOtp.codeSent = result.resent === true || result.sent === true;
+                        if (result.email) {
+                            pendingLoginOtp.email = result.email;
+                            const emailLabel = overlay.querySelector('[data-verify-email]');
+                            if (emailLabel) emailLabel.textContent = result.email;
+                        }
                     }
-                    return { error: null, resent: result.resent };
+                    return { error: null, resent: result.resent === true || result.sent === true };
                 };
             } else if (otpPurpose === 'recovery') {
                 if (!pendingRecoveryEmail) return;

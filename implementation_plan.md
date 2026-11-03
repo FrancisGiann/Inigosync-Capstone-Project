@@ -1491,3 +1491,146 @@ EXECUTE remained disabled. Counts after migration stayed at four completed
 staff, one private-detail row, and two staff profiles without a mobile number.
 There is no pending staff account now, so the new four-step flow still needs
 a live run with a newly invited staff member for full end-to-end verification.
+
+---
+
+# Owner secondary-email aliases (2026-11-03)
+
+## Feature contract
+
+- An owner can add a verified secondary email address and set a distinct password for it, while still signing in to the same canonical Supabase Auth user/profile UUID. The alias is stored in a private alias registry; it does not create or depend on a Google Auth identity or another `auth.users` row. The existing canonical `kikooborza@gmail.com` email and Google OAuth sign-in remain available.
+- Adding an alias requires an active owner and the exact current verified owner session. One short-lived code sent to the new email proves mailbox control. The alias is saved after that code is verified, and a separate branded link notice is sent to it without any password. If first-time password setup continues, the same successful enrollment proof authorizes it. Password setup can be postponed; later Set actions require the still-active, exact owner session and its existing email-MFA proof. Change actions also require the current linked-email password before a challenge can be created. No additional code is sent to either mailbox.
+- Login verifies the alias password server-side, creates a one-use magiclink session for the canonical owner, then sends a separate one-time login code to the alias. The session is admitted only after that exact alias code is verified and while the alias, credential version, active owner, and Auth session remain live. Removing an alias deletes its credential and revokes dependent broker sessions/tickets.
+- Owner Account Settings offers Add email account as a two-stage wizard: enter the secondary email, verify its one-time code in a login-style six-digit popup, then set the separate password using that same proof. Per-alias Set/Change password creates a short-lived server challenge from the active owner session and existing email-MFA proof, without another email or SMS code. Change-password challenges also bind to the credential version checked after current-password verification; begin and save serialize per alias, save requires that version to remain current, and a successful save invalidates every challenge for the alias. Only the active wizard stage is visible; resend is available only before initial alias verification. Closing after secondary-email verification but before password setup leaves a linked alias without a password until setup is resumed. Retry notice and Remove remain available. Passwords and OTPs never enter browser storage, email notices, or logs. Rate-limit keys and code values are HMAC-hashed server-side.
+
+## Data impact and deferred cleanup
+
+The migration `20261103140000_owner_linked_email_password_auth.sql` creates private service-role-only alias, credential, challenge, ticket, broker-session, rate-limit, and notice state. Alias rows cascade from canonical Auth users; tickets, sessions, login challenges, and notices cascade from alias deletion. It does not alter Google or email identity records. The project manager separately removed three non-primary Google identity rows from live owner UUID `746ab269-f714-4424-a657-3eaf53ac3c0c`; readback had only the primary `kikooborza@gmail.com` Google identity, one canonical email identity, active admin profile, and zero sessions. Do not recreate those links or change existing primary identities. No other identity cleanup is part of this feature. Any unrelated cleanup stays deferred until references and affected views are understood.
+
+The forward migration `20261103150000_owner_linked_email_single_otp.sql` changes password setup/rotation to consume the original verified linked-email enrollment proof, or a short-lived active-session challenge for an already-verified alias, and retires the former canonical-owner OTP verifier. It does not rewrite aliases, credentials, identities, or current-format records. Existing enrollment challenges remain stored and can complete while their proof is fresh; pending challenges created by the former owner-OTP flow cannot authorize password saves and become eligible for cleanup at `expires_at`.
+
+The forward migration `20261103174850_owner_linked_email_password_challenge_version.sql` adds a nullable credential version and setup/change marker to enrollment challenges, plus a service-role-only alias credential lookup. It binds valid passwordless first-time setup challenges to the current version, preserves original email-verification challenges (their version remains null), and deletes only still-live password-setup/change challenges for aliases that already have a password because those rows predate version binding. It does not modify alias credentials or identity records. The replacement begin/save RPCs take one alias-scoped advisory lock, compare the expected version and password-exists state before challenge creation, require that stored state to still match at save, increment the version with a predicate, and delete all challenges for that alias after a successful save. Read-only pre/post migration snapshots found zero rows in each bind, cleanup, and unverified email-code challenge category; no challenge rows were changed. Expired rows remain subject to the existing expiry cleanup job.
+
+## Deployment order and rollback
+
+1. Configure the existing Supabase `SUPABASE_SERVICE_ROLE_KEY` and SMTP username, app password, and sender secrets. The Edge Function derives its private 256-bit HMAC key from the service-role key with HKDF-SHA-256, a fixed InigoSync-specific salt, and the domain label `owner-email-alias-auth/hmac-pepper/v1`; no additional secret or paid resource is required.
+2. For the already staged feature, deploy the updated `owner-linked-auth` with gateway JWT verification disabled (the function validates bearer sessions itself) so the old canonical-owner OTP action is no longer reachable. Until the forward migration is applied, password setup fails closed because its RPC is unavailable. Then apply `20261103150000_owner_linked_email_single_otp.sql`; old canonical-owner proof rows cannot authorize password saves and naturally expire.
+3. Deploy the owner/auth frontend assets. Keep the origin allowlist and SMTP setup aligned with the site.
+4. The project manager chose the existing main project and will perform integration checks personally. Keep the live frontend unchanged until those checks pass. Do not modify the production owner's primary email/Google identity for these checks.
+
+Backend staging on the existing main project completed on 2026-11-03: Supabase accepted `owner_linked_email_password_auth` as remote migration version `20261103142749`, `owner_linked_email_single_otp` as `20261103152927`, `owner_linked_email_availability` as `20261103155318`, and `owner_linked_email_challenge_expiry_cleanup` as `20261103155326`. `owner-linked-auth` is deployed as version 4 with `verify_jwt=false`; the local preview origin `http://127.0.0.1:4178` is allowed for project-owner testing. A read-only status check confirmed the five-minute challenge cleanup cron job is active. The current frontend remains local and has not been published. Codex did not enroll an alias, request a code, or send an email. The user tried the earlier flow; Gmail accepted three messages but placed them in Spam, and the linked address used was a plus-address routed to the primary inbox. Existing owner and staff UI paths still use their prior deployed frontend. The migration replaces the shared MFA proof functions with additive alias-proof branches; monitor ordinary sign-in during the project manager's checks.
+
+For rollback, remove the alias UI/client calls first, deploy an Edge version that refuses alias actions, and use a forward migration to disable alias broker-session admission. Retain alias/password rows until rollback behavior is confirmed; delete only after reviewing exact rows/sessions. Rotating the service-role key changes the derived HMAC key: pending OTP challenges become unverifiable and keyed rate-limit buckets reset, while PBKDF2 alias password hashes and already verified broker-session rows remain valid under their existing Auth-session, alias-version, active-owner, and seven-day proof checks. For suspected service-role-key compromise, also revoke alias broker sessions/tickets/challenges and force affected alias passwords to be reset as incident response. Never recreate or restore the three removed Google identity links as part of rollback.
+
+## Integration cases for the project owner on the existing main project
+
+- Confirm migration SQL compiles and anon/authenticated cannot read or execute alias credential operations; service-role calls have only intended access.
+- Use an owner account and secondary mailbox under the project owner's control. Reject aliases equal to any canonical Auth email or already claimed alias. Verify a new address only after the code sent to that address; wrong, expired, replayed, cross-session, cross-owner, and over-attempt codes fail. The alias stays the same owner UUID and can exist without a password while notice delivery remains independently retryable.
+- Require one new-email code for initial alias enrollment only; the same proof can authorize immediate first-time password setup. Later Set actions use the exact active owner session, owner status, and email-MFA gate. Change actions additionally require the current linked-email password before challenge creation. Verify stale credential versions reject both challenge creation and save across concurrent sessions, and a successful save invalidates every outstanding challenge for that alias. Reject expired, wrong-session, wrong-alias, wrong-owner, and over-attempt initial proofs. Confirm rotations invalidate prior broker tickets/sessions and removal immediately revokes alias login. Verify that password setup sends no code to either mailbox; owner sign-in MFA and alias-login OTP remain enabled.
+- Sign in using alias/password, verify the returned owner UUID is unchanged, and ensure protected access stays blocked until a login code delivered to that alias is verified. Reject stale/revoked sessions, inactive owners, changed credential versions, and unlinked aliases.
+- Confirm login/IP/code limits, private hashed storage, and that no password appears in SMTP messages or logs. Confirm notice first-send eligibility, retry throttling, failure and uncertain-delivery handling.
+
+Static contract tests are maintained in `tests/owner-linked-auth-contract.test.mjs`. The project owner requested that Codex not run tests and chose the existing main project over a separate free project. Codex has not run tests, test queries, browser checks, or sent real emails. Backend staging was deployed to main as recorded above; the integration cases remain for the project owner before publishing the frontend feature.
+
+## Owner linked-email availability and verification presentation (2026-11-03)
+
+The Add email dialog now checks a syntactically valid address after a short debounce and shows a concise available/unavailable state beside its label. The new authenticated `check-email-availability` Edge action calls a service-role-only SQL function that requires an active admin profile, the exact live Auth session, and its existing email-MFA proof before comparing normalized addresses in `auth.users` and the private alias registry. The status is advisory; `begin-add-email` retains its serialized database uniqueness check as the authoritative gate against concurrent changes. The check endpoint is only accessible through the authenticated Edge Function, and stale frontend responses are ignored.
+
+The new forward migration `20261103160000_owner_linked_email_availability.sql` adds only the service-role function; it changes no stored rows or data meaning, so no data conversion or cleanup is needed. The linked-email password step now shows the same live five-part requirement checklist as sign-up. Send-code and OTP verification controls sit in their respective modal footers while all six OTP inputs remain in the popup body. The Edge Function's verification and login-code emails use the signup template's table-based brand/header, card, code panel, typography, and colors, with a single selectable code text node and five-minute expiry. Enrollment notices continue to contain no password.
+
+Requested verification was limited to syntax and diff checks. No tests, browser/runtime checks, database queries, deployments, or emails were run/sent. The availability migration and UI still require project-owner integration verification on the existing main project before frontend publication.
+
+## Linked-email login response and challenge retention hardening (2026-11-03)
+
+The `verify-login-code` Edge action now returns `{ verified: true }`, matching the existing login consumer's response contract. Password-save and other actions retain their existing `success` response fields.
+
+The new forward migration `20261103170000_owner_linked_email_challenge_expiry_cleanup.sql` adds an internal security-definer cleanup function with execute revoked from public, anon, and authenticated and granted to `service_role`. A pg_cron job runs it every five minutes and deletes only enrollment-challenge rows where `expires_at <= now()`. Fresh and reusable proofs remain intact until expiry. With a healthy scheduler, expired challenge rows (including stored address and proof material) are targeted for deletion within five minutes after their expiry; a disabled or delayed scheduler can extend that retention. The existing `expires_at` index supports the cleanup. No schema/data conversion is required; this cleanup affects only expired rows. No database query was run, so existing expired-row counts and the deployed cron job state remain for project-owner verification.
+
+The static contract now asserts the Edge/login response match and restricted scheduled cleanup. Per instruction, those tests were not run; no database, browser, email, or deployment actions were performed.
+
+## Cancel pending staff accounts (2026-11-04)
+
+Staff Management now offers **Cancel account** for a row whose status is
+`pending` and `onboarding_complete` is false. The action asks for confirmation,
+then calls the new `cancel-pending-staff` Edge Function. That function follows
+the existing active-owner, bearer-session, and verified-email-session checks,
+and rejects any target that is not a still-pending, incomplete staff account.
+Successful cancellation deletes the Auth user; `profiles` and
+`staff_onboarding_credentials` cascade from Auth. The existing auth session,
+phone-validation, private onboarding-detail, and other Auth-owned records also
+follow their declared Auth-user cascades; profile-owned account-session event
+rows also cascade with the profile. Active/deactivated account actions are
+unchanged, and no `cancelled` status is stored.
+
+The forward migration `20261104100000_cancel_pending_staff.sql` adds a
+service-role-only claim function. It locks and rechecks the profile, then
+claims the same ten-minute lease used by pending-staff recovery. This prevents
+recovery and cancellation from claiming the same account and makes the
+existing activation trigger reject onboarding completion during cancellation.
+Auth deletion failure releases the claim best-effort; an interrupted request
+leaves a lease that expires within ten minutes. `walk_in_booking.staff_id`
+uses `ON DELETE SET NULL`, so the claim function and immediate pre-delete
+server check reject cancellation if any walk-in row references the staff
+profile, returning a clear owner-facing error. A scoped `BEFORE DELETE ON
+public.profiles` trigger independently enforces the same attribution guard if
+a walk-in is linked after preflight. It applies only to pending, incomplete
+staff profiles with walk-in references; unrelated profile deletes and the
+invite-staff compensation path remain allowed when there is no such reference.
+This preserves attribution even on completed or cancelled walk-ins.
+`internal.staff_walkin_orders.staff_id` and
+`internal.staff_booking_extension_checkouts.staff_id` use `ON DELETE
+RESTRICT`; `internal.paymongo_checkout_attempts.staff_id` and
+`internal.app_announcements.created_by` have non-cascading profile references
+(default `NO ACTION`). Those dependencies also make Auth deletion fail safely
+if present; none are rewritten or removed by this feature.
+
+The latest recorded development verification in this plan (2026-11-02)
+reported zero pending staff and zero onboarding credentials after the sole
+pending account completed setup. No live database was queried for this change,
+and no live records were deleted. No conversion or cleanup is needed for the
+recorded current development state. Before deploying, verify the current
+pending account and dependency counts in the target database; if restrictive
+staff activity exists, review its provenance rather than removing it to force
+cancellation. The Supabase CLI is unavailable in this environment, so the
+forward migration was written locally and not applied. No tests, browser
+checks, database queries, deployments, or emails were performed for this
+change per project instruction.
+
+## Staff archive visibility (2026-11-04)
+
+Disabled staff can be archived from Staff Management. Archive retains the
+Auth user, profile UUID, status, and all transaction and audit links; it only
+sets `profiles.archived_at`. Archived rows are excluded from All, Active,
+Setup pending, and Deactivated filters, and are listed by the Archived filter.
+Restoring visibility clears only `archived_at`, leaving the account disabled;
+activation remains a separate owner action. Setup-pending Cancel keeps its
+existing deletion semantics and separate `cancel-pending-staff` endpoint.
+
+The `delete-disabled-staff` Edge Function has been repurposed to archive or
+restore. It retains the established bearer-session, verified-email, and active
+owner checks, rejects self-targeting and any non-disabled/non-staff target,
+and performs conditional service-role updates. It no longer calls the Auth
+delete API. The new forward migration
+`20261104110000_archive_disabled_staff.sql` adds a nullable marker (existing
+rows default to unarchived), a check constraint requiring archived staff to
+remain disabled, and a trigger that restricts marker changes to service-role
+requests. `database/schema/020_staff_archive.sql` is aligned with that schema.
+The existing hard-delete guards in `20261104100000_cancel_pending_staff.sql`
+remain unchanged; the pending cancellation endpoint and its guarded delete
+flow are untouched. No transaction, review, audit, or Auth records are
+rewritten or deleted by archive/restore.
+
+Compatibility review covered the tracked development seed and recorded
+development notes. The seed has one demo staff profile and no linked business
+history; the latest recorded development snapshot (2026-11-02) reported four
+completed staff and no pending accounts. The new column is nullable and no
+existing records are converted, so these current-format rows remain visible
+unless explicitly archived. No live database was queried, so current target
+counts and any existing archive marker state cannot be independently
+confirmed; no conversion or cleanup is indicated by the available records.
+
+Static syntax and diff checks are the requested verification scope. No tests,
+browser/runtime checks, database queries, migrations, deployments, emails, or
+account mutations were performed. The migration must be applied before the
+updated Edge Function and UI are deployed; production behavior and session
+denial remain for project-owner verification.

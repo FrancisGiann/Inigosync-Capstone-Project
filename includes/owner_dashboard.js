@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Media Manager in the sidebar.
         feedback: { title: 'Feedbacks & Reviews', subtitle: 'Read customer ratings and reviews.' },
         announcement: { title: 'Announcement', subtitle: 'Publish updates for customers and staff.' },
-        audit: { title: 'Audit Trail', subtitle: 'Review owner and staff activity.' },
+        audit: { title: 'Activity Logs', subtitle: 'Review owner and staff activity.' },
         settings: { title: 'Account Settings', subtitle: 'Manage your account details and password.' },
         // Revision A2, decision B2 — not in .admin-nav, only reachable from
         // the profile dropdown's "View Profile"; setActivePanel() below
@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             subtitleEl.hidden = !meta.subtitle;
         }
 
-        // Feedbacks & Reviews and Audit Trail load when their panels open.
+        // Feedbacks & Reviews and Activity Logs load when their panels open.
 
         closeMobileSidebar();
         closeProfileMenu();
@@ -480,20 +480,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 // .eq('role', 'staff') below — same table, same filter,
                 // same reasoning.
                 //
-                // "Not disabled" — NOT .eq('status', 'active'). staffStatusBadge()
-                // below and the Deactivate button both treat "anything but
-                // disabled" (including a NULL status, which no frontend code
-                // here ever sets, and profiles' real column constraints are
-                // unknown — see database/seed/001_seed_users.sql's "KNOWN
-                // LIMITATION" note) as active/shown; .eq('status', 'active')
-                // would only match seeded demo rows and disagree with the
-                // staff table on the same screen. Plain .neq('status',
-                // 'disabled') isn't enough on its own either: SQL's `<>`
-                // never matches a NULL column (three-valued logic), so a
-                // NULL-status row would still be silently dropped — the
-                // .or() below adds it back explicitly.
+                // The stat is specifically active accounts: pending setup and
+                // disabled accounts remain visible in the staff directory but
+                // do not count as active. Exact equality also excludes NULL or
+                // unknown status values.
                 window.sb.from('profiles').select('*', { count: 'exact', head: true })
-                    .eq('role', 'staff').or('status.neq.disabled,status.is.null'),
+                    .eq('role', 'staff').eq('status', 'active'),
                 window.InigoCourtsData ? window.InigoCourtsData.getSports() : Promise.resolve([]),
             ]);
         } catch (err) {
@@ -1365,8 +1357,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // so it's safe as-is.
         //
         // Revision A1, decision A4 — a disabled account additionally gets
-        // an Activate button (mirrors the court cards' Activate/Deactivate
-        // pair); an active/setup-pending account keeps just Deactivate.
+        // an Activate button; a setup-pending incomplete account gets Cancel
+        // account; active and other pending rows keep Deactivate.
         //
         // Revision S3 — data-admin-staff-name-cell moved onto an inner
         // <span> (was the whole <td>) so a second <span class="admin-staff-meta">
@@ -1387,11 +1379,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="admin-table-actions admin-staff-action-wrap">
                     <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="adminStaffActionCard" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
                     <button type="button" hidden data-admin-view-staff>View</button>
-                    <button type="button" hidden data-admin-edit-staff>Change position</button>
+                    ${profile.status === 'pending' || profile.status === 'disabled' ? '' : '<button type="button" hidden data-admin-edit-staff>Change position</button>'}
                     ${profile.status === 'pending' ? '<button type="button" hidden data-admin-recover-staff>Correct / resend</button>' : ''}
-                    ${profile.status === 'disabled'
-                        ? '<button type="button" hidden data-admin-activate-staff>Activate</button>'
-                        : '<button type="button" hidden data-admin-delete-staff>Deactivate</button>'}
+                    ${profile.archived_at
+                        ? '<button type="button" hidden data-admin-restore-staff>Restore visibility</button>'
+                        : profile.status === 'disabled'
+                        ? '<button type="button" hidden data-admin-activate-staff>Activate</button><button type="button" hidden data-admin-archive-staff>Archive account</button>'
+                        : profile.status === 'pending' && profile.onboarding_complete === false
+                            ? '<button type="button" hidden data-admin-cancel-staff>Cancel account</button>'
+                            : '<button type="button" hidden data-admin-delete-staff>Deactivate</button>'}
                 </div>
             </td>
         `;
@@ -1438,8 +1434,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalizedStatus = ['active', 'pending', 'disabled'].includes(profile.status)
                 ? profile.status
                 : 'active';
+            const isArchived = Boolean(profile.archived_at);
+            const matchesStatus = selectedStatus === 'archived'
+                ? isArchived
+                : !isArchived && (selectedStatus === 'all' || normalizedStatus === selectedStatus);
             return (!query || searchable.includes(query))
-                && (selectedStatus === 'all' || normalizedStatus === selectedStatus)
+                && matchesStatus
                 && (selectedPosition === 'all' || (profile.position || '') === selectedPosition);
         });
         const pageCount = Math.max(1, Math.ceil(filtered.length / STAFF_PAGE_SIZE));
@@ -1456,7 +1456,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!staffProfiles.length) {
             tbody.innerHTML = '<tr><td colspan="5">No staff accounts yet.</td></tr>';
         } else if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="5">No staff accounts match these filters.</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5">${selectedStatus === 'archived' ? 'No archived staff accounts.' : 'No staff accounts match these filters.'}</td></tr>`;
         }
 
         if (staffPagination) {
@@ -1540,6 +1540,119 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        scope.querySelectorAll('[data-admin-cancel-staff]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const row = btn.closest('tr');
+                if (!row) return;
+                const name = row.querySelector('[data-admin-staff-name-cell]')?.textContent || 'this account';
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Cancel pending staff account?',
+                    message: `Permanently delete ${name}'s pending sign-in and setup data? They will no longer be able to continue onboarding or sign in.`,
+                    confirmLabel: 'Cancel account',
+                    danger: true,
+                });
+                if (!accepted) return;
+
+                btn.disabled = true;
+                try {
+                    const { data: { session }, error: sessionError } = await window.sb.auth.getSession();
+                    if (sessionError || !session?.access_token) throw new Error('Your owner session expired. Sign in again and retry.');
+                    const response = await fetch(`${window.SUPABASE_URL}/functions/v1/cancel-pending-staff`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                        },
+                        body: JSON.stringify({ user_id: row.dataset.id }),
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(result.error || 'Could not cancel this pending account.');
+                    await Promise.all([refreshStaffList(), refreshOverviewStats()]);
+                    window.InigoToast?.show(`${name}'s pending account was deleted.`);
+                    recordOwnerActivity(`Pending staff account cancelled: ${name}`, 'staff');
+                } catch (error) {
+                    btn.disabled = false;
+                    await refreshStaffList();
+                    window.InigoToast?.show(error.message || 'Could not cancel this pending account.', true);
+                }
+            });
+        });
+
+        scope.querySelectorAll('[data-admin-archive-staff]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const row = btn.closest('tr');
+                if (!row) return;
+                const name = row.querySelector('[data-admin-staff-name-cell]')?.textContent || 'this staff account';
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Archive staff account?',
+                    message: `Archive ${name}'s disabled account? The account will remain disabled and hidden from the normal staff list. Its sign-in profile and transaction history will be retained.`,
+                    confirmLabel: 'Archive account',
+                    danger: true,
+                });
+                if (!accepted) return;
+
+                btn.disabled = true;
+                try {
+                    const { data: { session }, error: sessionError } = await window.sb.auth.getSession();
+                    if (sessionError || !session?.access_token) throw new Error('Your owner session expired. Sign in again and retry.');
+                    const response = await fetch(`${window.SUPABASE_URL}/functions/v1/delete-disabled-staff`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                        },
+                        body: JSON.stringify({ user_id: row.dataset.id, action: 'archive' }),
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(result.error || 'Could not archive this staff account.');
+                    await Promise.all([refreshStaffList(), refreshOverviewStats()]);
+                    window.InigoToast?.show(`${name}'s account was archived.`);
+                    recordOwnerActivity(`Disabled staff account archived: ${name}`, 'staff');
+                } catch (error) {
+                    btn.disabled = false;
+                    await refreshStaffList();
+                    window.InigoToast?.show(error.message || 'Could not archive this staff account.', true);
+                }
+            });
+        });
+
+        scope.querySelectorAll('[data-admin-restore-staff]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const row = btn.closest('tr');
+                if (!row) return;
+                const name = row.querySelector('[data-admin-staff-name-cell]')?.textContent || 'this staff account';
+                const accepted = await window.InigoOwnerUI?.confirm({
+                    title: 'Restore staff account visibility?',
+                    message: `Show ${name} in the normal staff list again? The account will remain deactivated; an owner must activate it separately.`,
+                    confirmLabel: 'Restore visibility',
+                });
+                if (!accepted) return;
+
+                btn.disabled = true;
+                try {
+                    const { data: { session }, error: sessionError } = await window.sb.auth.getSession();
+                    if (sessionError || !session?.access_token) throw new Error('Your owner session expired. Sign in again and retry.');
+                    const response = await fetch(`${window.SUPABASE_URL}/functions/v1/delete-disabled-staff`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                        },
+                        body: JSON.stringify({ user_id: row.dataset.id, action: 'restore' }),
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(result.error || 'Could not restore this staff account.');
+                    await refreshStaffList();
+                    window.InigoToast?.show(`${name} is visible in the staff list and remains deactivated.`);
+                    recordOwnerActivity(`Archived staff account restored to list: ${name}`, 'staff');
+                } catch (error) {
+                    btn.disabled = false;
+                    await refreshStaffList();
+                    window.InigoToast?.show(error.message || 'Could not restore this staff account.', true);
+                }
+            });
+        });
+
         // Soft-delete: a real auth.users delete needs service-role/an edge
         // function, unavailable client-side, so this deactivates the profile
         // instead (authGuard.js already refuses disabled accounts at login).
@@ -1564,7 +1677,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.InigoToast?.show(error.message || 'Could not deactivate this account.', true);
                     return;
                 }
-                refreshStaffList();
+                await Promise.all([refreshStaffList(), refreshOverviewStats()]);
                 recordOwnerActivity(`Staff account deactivated: ${name}`, 'staff');
             });
         });
@@ -1592,7 +1705,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 window.InigoToast?.show(`${name} reactivated.`);
-                refreshStaffList();
+                await Promise.all([refreshStaffList(), refreshOverviewStats()]);
                 recordOwnerActivity(`Staff account activated: ${name}`, 'staff');
             });
         });
@@ -1610,6 +1723,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <button type="button" data-admin-staff-command="edit">Change position</button>
         <button type="button" data-admin-staff-command="recover" hidden>Correct / resend</button>
         <button type="button" data-admin-staff-command="toggle">Deactivate account</button>
+        <button type="button" data-admin-staff-command="archive" hidden>Archive account</button>
+        <button type="button" data-admin-staff-command="restore" hidden>Restore visibility</button>
     `;
     document.body.appendChild(staffActionCard);
 
@@ -1646,11 +1761,23 @@ document.addEventListener('DOMContentLoaded', () => {
         closeStaffActionCard();
         staffActionCardTrigger = trigger;
         const toggle = staffActionCard.querySelector('[data-admin-staff-command="toggle"]');
+        const edit = staffActionCard.querySelector('[data-admin-staff-command="edit"]');
         const recover = staffActionCard.querySelector('[data-admin-staff-command="recover"]');
         if (recover) recover.hidden = row.querySelector('[data-admin-recover-staff]') === null;
+        const isArchived = row.querySelector('[data-admin-restore-staff]') !== null;
         const isDisabled = row.querySelector('[data-admin-activate-staff]') !== null;
+        const isPendingSetup = row.querySelector('[data-admin-cancel-staff]') !== null;
+        if (edit) edit.hidden = isDisabled || isArchived || row.querySelector('[data-admin-recover-staff]') !== null;
+        const archive = staffActionCard.querySelector('[data-admin-staff-command="archive"]');
+        const restore = staffActionCard.querySelector('[data-admin-staff-command="restore"]');
+        if (archive) {
+            archive.hidden = row.querySelector('[data-admin-archive-staff]') === null;
+            archive.dataset.danger = 'true';
+        }
+        if (restore) restore.hidden = row.querySelector('[data-admin-restore-staff]') === null;
         if (toggle) {
-            toggle.textContent = isDisabled ? 'Activate account' : 'Deactivate account';
+            toggle.textContent = isPendingSetup ? 'Cancel account' : isDisabled && !isArchived ? 'Activate account' : 'Deactivate account';
+            toggle.hidden = isArchived;
             toggle.dataset.danger = isDisabled ? 'false' : 'true';
         }
         staffActionCard.hidden = false;
@@ -1671,7 +1798,11 @@ document.addEventListener('DOMContentLoaded', () => {
             view: '[data-admin-view-staff]',
             edit: '[data-admin-edit-staff]',
             recover: '[data-admin-recover-staff]',
-            toggle: row.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
+            archive: '[data-admin-archive-staff]',
+            restore: '[data-admin-restore-staff]',
+            toggle: row.querySelector('[data-admin-cancel-staff]')
+                ? '[data-admin-cancel-staff]'
+                : row.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
         }[command];
         if (target) row.querySelector(target)?.click();
     });
@@ -2708,6 +2839,9 @@ document.addEventListener('DOMContentLoaded', () => {
         popover: document.querySelector(`[data-owner-audit-time-popover="${kind}"]`),
     }));
     const auditRole = document.querySelector('[data-owner-audit-role]');
+    const auditCategory = document.querySelector('[data-owner-audit-category]');
+    const auditSort = document.querySelector('[data-owner-audit-sort]');
+    const auditClear = document.querySelector('[data-owner-audit-clear]');
     const auditPagination = document.querySelector('[data-owner-audit-pagination]');
     const auditPrev = document.querySelector('[data-owner-audit-prev]');
     const auditNext = document.querySelector('[data-owner-audit-next]');
@@ -2896,6 +3030,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return ({ admin: 'Owner', staff: 'Staff', customer: 'Customer', system: 'System' })[value] || 'System';
     }
 
+    function updateAuditClearButton() {
+        if (!auditClear) return;
+        auditClear.hidden = !(auditSearch?.value.trim()
+            || auditDate?.value
+            || auditFrom?.value
+            || auditTo?.value
+            || (auditRole?.value || 'all') !== 'all'
+            || (auditCategory?.value || 'all') !== 'all'
+            || (auditSort?.value || 'newest') !== 'newest');
+    }
+
     function auditSummary(item) {
         const action = String(item.action || '').toLowerCase();
         const details = item.details && typeof item.details === 'object' && !Array.isArray(item.details) ? item.details : {};
@@ -2970,7 +3115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         auditRequestsInFlight += 1;
         if (!silent) {
             auditRows.setAttribute('aria-busy', 'true');
-            if (auditStatus) auditStatus.textContent = 'Loading audit trail…';
+            if (auditStatus) auditStatus.textContent = 'Loading activity logs…';
             auditPagination?.setAttribute('aria-busy', 'true');
         }
         try {
@@ -2978,7 +3123,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 p_search: auditSearch?.value.trim() || '',
                 p_from: dateBounds.from,
                 p_to: dateBounds.to,
+                p_category: auditCategory?.value || 'all',
                 p_actor_role: auditRole?.value || 'all',
+                p_sort: auditSort?.value || 'newest',
                 p_offset: auditPage * AUDIT_PAGE_SIZE,
                 p_limit: AUDIT_PAGE_SIZE,
             });
@@ -2995,10 +3142,10 @@ document.addEventListener('DOMContentLoaded', () => {
             renderOwnerPageNumbers(auditPageNumbers, auditPage + 1, pageCount, page => { auditPage = page - 1; loadAuditTrail(); });
         } catch (error) {
             if (generation !== auditGeneration) return;
-            console.error('[admin] audit trail could not be loaded', error);
+            console.error('[admin] activity logs could not be loaded', error);
             if (!silent) {
-                if (auditStatus) auditStatus.textContent = 'Audit trail could not be loaded. Please try again later.';
-                if (auditRows) auditRows.innerHTML = '<tr><td colspan="7">Audit trail could not be loaded.</td></tr>';
+                if (auditStatus) auditStatus.textContent = 'Activity logs could not be loaded. Please try again later.';
+                if (auditRows) auditRows.innerHTML = '<tr><td colspan="7">Activity logs could not be loaded.</td></tr>';
             }
         } finally {
             auditRequestsInFlight = Math.max(0, auditRequestsInFlight - 1);
@@ -3045,6 +3192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetAuditPage = () => { auditPage = 0; loadAuditTrail(); };
     auditSearch?.addEventListener('input', () => {
         auditPage = 0;
+        updateAuditClearButton();
         window.clearTimeout(auditSearchTimer);
         auditSearchTimer = window.setTimeout(loadAuditTrail, 250);
     });
@@ -3054,15 +3202,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (auditFrom) auditFrom.value = '';
         if (auditTo) auditTo.value = '';
         updateAuditToConstraints();
+        updateAuditClearButton();
         resetAuditPage();
     });
     auditFrom?.addEventListener('input', () => {
         if (auditTo) auditTo.value = '';
         updateAuditToConstraints();
+        updateAuditClearButton();
     });
-    auditFrom?.addEventListener('change', () => { updateAuditToConstraints(); resetAuditPage(); });
-    auditTo?.addEventListener('change', resetAuditPage);
-    auditRole?.addEventListener('change', resetAuditPage);
+    auditFrom?.addEventListener('change', () => { updateAuditToConstraints(); updateAuditClearButton(); resetAuditPage(); });
+    auditTo?.addEventListener('change', () => { updateAuditClearButton(); resetAuditPage(); });
+    auditRole?.addEventListener('change', () => { updateAuditClearButton(); resetAuditPage(); });
+    auditCategory?.addEventListener('change', () => { updateAuditClearButton(); resetAuditPage(); });
+    auditSort?.addEventListener('change', () => { updateAuditClearButton(); resetAuditPage(); });
+    auditClear?.addEventListener('click', () => {
+        window.clearTimeout(auditSearchTimer);
+        if (auditSearch) auditSearch.value = '';
+        if (auditDate) auditDate.value = '';
+        if (auditFrom) auditFrom.value = '';
+        if (auditTo) auditTo.value = '';
+        if (auditRole) auditRole.value = 'all';
+        if (auditCategory) auditCategory.value = 'all';
+        if (auditSort) auditSort.value = 'newest';
+        closeAuditTimePickers();
+        updateAuditToConstraints();
+        updateAuditClearButton();
+        resetAuditPage();
+    });
+    updateAuditClearButton();
     auditPrev?.addEventListener('click', () => { if (auditPage > 0) { auditPage -= 1; loadAuditTrail(); } });
     auditNext?.addEventListener('click', () => { auditPage += 1; loadAuditTrail(); });
     async function recordOwnerActivity(title, targetSection, detail = '') {
@@ -3103,7 +3270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         paintOwnerDetails(window.inigosyncProfile || {});
         const modal = document.querySelector('[data-admin-settings-profile-modal]');
         window.InigoOwnerUI.open(modal);
-        refreshLinkedGoogleEmails();
+        refreshEmailAliases();
     });
     let ownerProfileClosePending = false;
     let ownerProfileEditBaseline = null;
@@ -3688,40 +3855,414 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ------------------------------------------------------------------
-    async function refreshLinkedGoogleEmails() {
-        const root = document.querySelector('[data-admin-linked-google-emails]');
-        if (!root || !window.sb || !window.inigosyncProfile) return;
-        const { data, error } = await window.sb.auth.getUser();
-        if (error || !data?.user) {
-            root.textContent = 'Could not load linked Google accounts.';
-            return;
-        }
-        const emails = (data.user.identities || [])
-            .filter((identity) => identity.provider === 'google')
-            .map((identity) => identity.identity_data?.email)
-            .filter(Boolean);
-        root.innerHTML = emails.length
-            ? emails.map((email) => `<div class="admin-google-account"><span class="admin-google-account-check" aria-hidden="true">✓</span><span class="admin-google-account-email">${window.escapeHtml(email)}</span><span class="admin-google-account-badge">Linked</span></div>`).join('')
-            : '<p class="admin-google-accounts-empty">No Google account linked yet.</p>';
+    // Secondary email aliases use the same canonical owner account.
+    const aliasModal = document.querySelector('[data-admin-email-alias-modal]');
+    const aliasCodeModal = document.querySelector('[data-admin-alias-code-modal]');
+    const emailInput = aliasModal?.querySelector('[data-admin-email-entry-input]');
+    const aliasOtpBoxes = [...(aliasCodeModal?.querySelectorAll('[data-admin-alias-otp-box]') || [])];
+    const aliasEmailLabel = aliasCodeModal?.querySelector('[data-admin-alias-email]');
+    const aliasEmailLabels = [...document.querySelectorAll('[data-admin-alias-email]')];
+    const aliasResumeButton = aliasModal?.querySelector('[data-admin-alias-resume]');
+    const aliasResendTimer = aliasCodeModal?.querySelector('[data-admin-alias-resend-timer]');
+    const aliasCodeCloseButtons = aliasCodeModal?.querySelectorAll('[data-admin-alias-code-close]');
+    const newPassword = aliasModal?.querySelector('[data-admin-email-password]');
+    const confirmPassword = aliasModal?.querySelector('[data-admin-email-password-confirm]');
+    const currentPasswordInput = aliasModal?.querySelector('[data-admin-email-current-password]');
+    const verifyCurrentPasswordButton = aliasModal?.querySelector('[data-admin-email-current-password-verify]');
+    const aliasHeaderCopy = aliasModal?.querySelector('[data-admin-alias-header-copy]');
+    const defaultAliasHeaderCopy = aliasHeaderCopy?.textContent || '';
+    const aliasStatus = aliasModal?.querySelector('[data-admin-email-alias-status]');
+    const addEmailButton = aliasModal?.querySelector('[data-admin-email-send-code]');
+    const verifyAliasButton = aliasCodeModal?.querySelector('[data-admin-alias-verify]');
+    const verifyAliasButtonLabel = verifyAliasButton?.textContent.trim() || 'Verify email';
+    const saveAliasPasswordButton = aliasModal?.querySelector('[data-admin-email-password-save]');
+    const aliasResendButton = aliasCodeModal?.querySelector('[data-admin-alias-resend]');
+    const aliasBackButton = aliasModal?.querySelector('[data-admin-alias-back]');
+    const aliasStageLabel = aliasModal?.querySelector('[data-admin-alias-step-label]');
+    const aliasStageTitle = aliasModal?.querySelector('[data-admin-alias-step-title]');
+    const aliasProgressBar = aliasModal?.querySelector('[data-admin-alias-progress-bar]');
+    const aliasStages = [...(aliasModal?.querySelectorAll('[data-admin-alias-stage]') || [])];
+    const emailEntry = aliasModal?.querySelector('[data-admin-email-entry]');
+    const emailAvailability = aliasModal?.querySelector('[data-admin-email-availability]');
+    const emailPasswordRules = aliasModal?.querySelector('[data-admin-email-pw-rules]');
+    let currentAliasId = '', aliasChallenge = '', aliasVerified = false, passwordProof = false, currentAliasHasPassword = false, aliasFlow = 'add', aliasStage = 1;
+    let aliasDialogGeneration = 0, aliasPasswordRequestSequence = 0, activeAliasPasswordRequest = 0;
+    let aliasTimer = null, emailAvailabilityTimer = null, emailAvailabilityGeneration = 0, checkedAliasEmail = '';
+    const LINKED_EMAIL_DOMAIN_SUGGESTIONS = { 'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com', 'gmai.com': 'gmail.com', 'gmial.com': 'gmail.com', 'gmil.com': 'gmail.com' };
+    function linkedEmailFormatMessage(email) {
+        if (!email || email.length > 254) return 'Invalid format';
+        const at = email.lastIndexOf('@');
+        if (at < 1 || at !== email.indexOf('@')) return 'Invalid format';
+        const local = email.slice(0, at), domain = email.slice(at + 1);
+        if (local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')
+            || !/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local)) return 'Invalid format';
+        if (LINKED_EMAIL_DOMAIN_SUGGESTIONS[domain.toLowerCase()]) return `Use ${LINKED_EMAIL_DOMAIN_SUGGESTIONS[domain.toLowerCase()]}`;
+        const labels = domain.split('.');
+        const validLabel = label => label.length <= 63 && /^[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?$/i.test(label);
+        const finalLabel = labels.at(-1) || '';
+        const validTopLevelLabel = /^[A-Z]{2,63}$/i.test(finalLabel)
+            || /^xn--[A-Z0-9](?:[A-Z0-9-]{0,57}[A-Z0-9])?$/i.test(finalLabel);
+        const validDomain = domain.length <= 253 && labels.length >= 2 && labels.every(validLabel) && validTopLevelLabel;
+        return validDomain ? '' : 'Invalid format';
     }
-
-    document.querySelector('[data-admin-link-google]')?.addEventListener('click', async (event) => {
-        if (!window.sb || !window.inigosyncProfile) return;
-        const button = event.currentTarget;
-        button.disabled = true;
-        const { error } = await window.sb.auth.linkIdentity({
-            provider: 'google',
-            options: { redirectTo: new URL('owner_dashboard.html', window.location.href).href },
+    function aliasMessage(message, isError = false) {
+        if (aliasStatus) { aliasStatus.textContent = message; aliasStatus.dataset.error = String(isError); }
+        if (isError && aliasCodeModal && !aliasCodeModal.hidden) window.InigoToast?.show(message, true);
+    }
+    function focusAliasStage(stage) {
+        const focusTargets = {
+            1: currentAliasId && !aliasVerified ? '[data-admin-alias-resume]' : '[data-admin-email-entry-input]',
+            'verify-current': '[data-admin-email-current-password]',
+            2: '[data-admin-email-password]'
+        };
+        aliasModal?.querySelector(focusTargets[stage])?.focus();
+    }
+    function showAliasStage(stage) {
+        aliasStage = stage;
+        aliasStages.forEach(section => { section.hidden = section.dataset.adminAliasStage !== String(stage); });
+        const changeStep = aliasFlow === 'change' && stage === 'verify-current';
+        const progressStep = changeStep ? 1 : Number(stage);
+        const title = changeStep ? 'Verify current password' : aliasFlow === 'change' ? 'Set new password' : Number(stage) === 1 ? 'Enter email' : 'Set password';
+        if (aliasStageLabel) aliasStageLabel.textContent = `Step ${progressStep} of 2`;
+        if (aliasStageTitle) aliasStageTitle.textContent = title;
+        if (aliasProgressBar) aliasProgressBar.style.width = `${progressStep * 100 / 2}%`;
+        if (aliasBackButton) aliasBackButton.hidden = true;
+        if (saveAliasPasswordButton) saveAliasPasswordButton.hidden = Number(stage) !== 2;
+        if (addEmailButton) addEmailButton.hidden = Number(stage) !== 1 || aliasFlow !== 'add' || Boolean(currentAliasId && !aliasVerified);
+        if (aliasResumeButton) aliasResumeButton.hidden = Number(stage) !== 1 || aliasFlow !== 'add' || !currentAliasId || aliasVerified;
+        if (emailInput) emailInput.disabled = Boolean(currentAliasId && !aliasVerified);
+        if (currentPasswordInput) currentPasswordInput.disabled = !changeStep;
+        if (verifyCurrentPasswordButton) {
+            verifyCurrentPasswordButton.hidden = !changeStep;
+            if (changeStep) verifyCurrentPasswordButton.disabled = false;
+        }
+        if (Number(stage) === 1 && addEmailButton && !currentAliasId) { addEmailButton.textContent = 'Send verification code'; updateEmailSendButton(); }
+        if (Number(stage) === 2) {
+            if (newPassword) newPassword.disabled = !passwordProof;
+            if (confirmPassword) confirmPassword.disabled = !passwordProof;
+            updateLinkedPasswordSaveButton();
+        }
+        focusAliasStage(stage);
+    }
+    function invalidateAliasDialogRequests() {
+        aliasDialogGeneration++;
+        const wasVerifyingPassword = activeAliasPasswordRequest !== 0;
+        activeAliasPasswordRequest = 0;
+        if (wasVerifyingPassword) window.InigoLoading?.hide();
+    }
+    function captureAliasDialogContext() {
+        return { aliasId: currentAliasId, generation: aliasDialogGeneration };
+    }
+    function isCurrentAliasDialog(context) {
+        return Boolean(context && context.aliasId && currentAliasId === context.aliasId
+            && aliasDialogGeneration === context.generation);
+    }
+    function startCodeCooldown(button, kind) {
+        const old = aliasTimer; if (old) clearInterval(old);
+        let remaining = 60; button.disabled = true;
+        const tick = () => { if (kind === 'alias' && aliasResendTimer) aliasResendTimer.textContent = remaining ? `Resend available in ${remaining}s` : '';
+            if (!remaining) { clearInterval(aliasTimer); aliasTimer = null; button.disabled = false; return; } remaining--; };
+        tick(); aliasTimer = setInterval(tick, 1000);
+    }
+    function resetAliasDialog() {
+        invalidateAliasDialogRequests();
+        if (aliasTimer) clearInterval(aliasTimer); aliasTimer = null;
+        if (emailAvailabilityTimer) clearTimeout(emailAvailabilityTimer); emailAvailabilityTimer = null;
+        emailAvailabilityGeneration++; checkedAliasEmail = '';
+        currentAliasId = aliasChallenge = ''; aliasVerified = passwordProof = false;
+        currentAliasHasPassword = false; aliasFlow = 'add';
+        if (aliasHeaderCopy) aliasHeaderCopy.textContent = defaultAliasHeaderCopy;
+        if (currentPasswordInput) { currentPasswordInput.value = ''; currentPasswordInput.disabled = false; }
+        if (verifyCurrentPasswordButton) { verifyCurrentPasswordButton.hidden = true; verifyCurrentPasswordButton.disabled = false; verifyCurrentPasswordButton.textContent = 'Verify current password'; }
+        if (emailInput) { emailInput.value = ''; emailInput.disabled = false; } setEmailAvailability('', ''); clearAliasOtp();
+        if (newPassword) { newPassword.value = ''; newPassword.disabled = true; }
+        if (confirmPassword) { confirmPassword.value = ''; confirmPassword.disabled = true; }
+        renderLinkedEmailPasswordRules();
+        if (saveAliasPasswordButton) { saveAliasPasswordButton.disabled = true; saveAliasPasswordButton.hidden = false; }
+        emailEntry.hidden = false; addEmailButton.hidden = false; addEmailButton.disabled = true; addEmailButton.textContent = 'Send verification code';
+        if (aliasResumeButton) aliasResumeButton.hidden = true;
+        if (aliasResendButton) aliasResendButton.disabled = false;
+        if (aliasResendTimer) aliasResendTimer.textContent = '';
+        closeAliasCodeModal(); showAliasStage(1);
+    }
+    function setEmailAvailability(state, message) {
+        if (!emailAvailability) return;
+        emailAvailability.dataset.state = state;
+        emailAvailability.textContent = message;
+        emailAvailability.setAttribute('aria-label', message || '');
+    }
+    function updateEmailSendButton() {
+        if (!addEmailButton || !emailInput || addEmailButton.hidden) return;
+        const email = emailInput.value.trim().toLowerCase();
+        addEmailButton.disabled = !email || email !== checkedAliasEmail || emailAvailability?.dataset.state !== 'available';
+    }
+    function queueEmailAvailabilityCheck() {
+        if (!emailInput || emailInput.disabled) return;
+        const email = emailInput.value.trim().toLowerCase();
+        const generation = ++emailAvailabilityGeneration;
+        checkedAliasEmail = '';
+        if (emailAvailabilityTimer) clearTimeout(emailAvailabilityTimer);
+        if (!email) { setEmailAvailability('', ''); updateEmailSendButton(); return; }
+        const formatMessage = linkedEmailFormatMessage(email);
+        if (formatMessage) {
+            setEmailAvailability('unavailable', formatMessage); updateEmailSendButton(); return;
+        }
+        setEmailAvailability('checking', 'Checking…'); updateEmailSendButton();
+        emailAvailabilityTimer = setTimeout(async () => {
+            try {
+                const result = await window.InigoOwnerLinkedAuth.invoke('check-email-availability', { email });
+                if (generation !== emailAvailabilityGeneration || emailInput.value.trim().toLowerCase() !== email) return;
+                const available = result.available === true;
+                checkedAliasEmail = available ? email : '';
+                setEmailAvailability(available ? 'available' : 'unavailable', available ? 'Available' : 'Unavailable');
+            } catch (_) {
+                if (generation !== emailAvailabilityGeneration || emailInput.value.trim().toLowerCase() !== email) return;
+                checkedAliasEmail = '';
+                setEmailAvailability('unavailable', 'Unavailable');
+            }
+            updateEmailSendButton();
+        }, 350);
+    }
+    function checkLinkedEmailPassword(value) {
+        const password = typeof value === 'string' ? value : '';
+        return {
+            length: password.length >= 8 && password.length <= 15,
+            upper: /[A-Z]/.test(password),
+            lower: /[a-z]/.test(password),
+            number: /[0-9]/.test(password),
+            special: /[ !"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(password),
+        };
+    }
+    function renderLinkedEmailPasswordRules() {
+        const checks = checkLinkedEmailPassword(newPassword?.value);
+        emailPasswordRules?.querySelectorAll('[data-email-pw-rule]').forEach(item => {
+            const met = Boolean(checks[item.dataset.emailPwRule]);
+            item.classList.toggle('is-met', met);
+            item.setAttribute('aria-label', `${item.textContent.trim()}: ${met ? 'met' : 'not met'}`);
         });
-        if (error) {
-            button.disabled = false;
-            window.InigoToast?.show(error.message || 'Could not start Google account verification.', true);
+        return Object.values(checks).every(Boolean);
+    }
+    function updateLinkedPasswordSaveButton() {
+        if (!saveAliasPasswordButton) return;
+        saveAliasPasswordButton.disabled = !passwordProof || !renderLinkedEmailPasswordRules()
+            || !newPassword?.value || newPassword.value !== confirmPassword?.value;
+    }
+    function aliasCodeValue() { return aliasOtpBoxes.map(box => box.value).join(''); }
+    function clearAliasOtp() { aliasOtpBoxes.forEach(box => { box.value = ''; box.classList.remove('is-filled'); }); }
+    function openAliasCodeModal(notice = '') { clearAliasOtp(); window.InigoOwnerUI.open(aliasCodeModal); aliasOtpBoxes[0]?.focus(); if (notice) window.InigoToast?.show(notice, true); }
+    function closeAliasCodeModal() { if (aliasCodeModal && !aliasCodeModal.hidden) window.InigoOwnerUI.close(aliasCodeModal); }
+    function openAddAliasDialog() {
+        invalidateAliasDialogRequests();
+        if (!currentAliasId || aliasVerified || emailEntry.hidden) resetAliasDialog();
+        aliasFlow = 'add';
+        if (aliasHeaderCopy) aliasHeaderCopy.textContent = defaultAliasHeaderCopy;
+        const title = aliasModal.querySelector('#adminEmailAliasTitle'); if (title) title.textContent = 'Add email account';
+        aliasMessage(currentAliasId && !aliasVerified ? `A verification code is pending for ${aliasEmailLabel?.textContent || 'this email'}. Continue when ready.` : 'Enter the email address you want to add.');
+        window.InigoOwnerUI.open(aliasModal);
+        queueEmailAvailabilityCheck();
+        if (currentAliasId && !aliasVerified) showAliasStage(1); else if (currentAliasId && aliasVerified) showAliasStage(aliasStage); else focusAliasStage(1);
+    }
+    emailInput?.addEventListener('input', queueEmailAvailabilityCheck);
+    newPassword?.addEventListener('input', updateLinkedPasswordSaveButton);
+    confirmPassword?.addEventListener('input', updateLinkedPasswordSaveButton);
+    async function beginPasswordSetup(currentPassword = '', context = captureAliasDialogContext()) {
+        if (!isCurrentAliasDialog(context)) return false;
+        passwordProof = false; aliasChallenge = '';
+        newPassword.disabled = confirmPassword.disabled = saveAliasPasswordButton.disabled = true;
+        try {
+            const payload = { alias_id: context.aliasId };
+            if (currentAliasHasPassword) payload.current_password = currentPassword;
+            const r = await window.InigoOwnerLinkedAuth.invoke('begin-password-setup', payload);
+            if (!isCurrentAliasDialog(context)) return false;
+            aliasChallenge = r.challenge_id || ''; if (!aliasChallenge) throw new Error('Could not start password setup. Try again.');
+            passwordProof = r.ready === true;
+            if (!passwordProof) throw new Error('Could not verify the active owner session. Try again.');
+            if (currentPasswordInput) { currentPasswordInput.value = ''; currentPasswordInput.disabled = true; }
+            if (verifyCurrentPasswordButton) verifyCurrentPasswordButton.hidden = true;
+            newPassword.disabled = confirmPassword.disabled = saveAliasPasswordButton.disabled = false;
+            aliasMessage('');
+            return true;
+        } catch (e) {
+            if (!isCurrentAliasDialog(context)) return false;
+            if (currentPasswordInput) { currentPasswordInput.value = ''; currentPasswordInput.disabled = false; }
+            if (verifyCurrentPasswordButton) { verifyCurrentPasswordButton.disabled = false; }
+            aliasMessage(e.message || 'Could not start password setup.', true);
+            return false;
+        }
+    }
+    verifyCurrentPasswordButton?.addEventListener('click', async () => {
+        if (!currentAliasHasPassword) return;
+        const currentPassword = currentPasswordInput?.value || '';
+        if (!currentPassword) { aliasMessage('Enter your current password.', true); return; }
+        const context = captureAliasDialogContext();
+        const requestToken = ++aliasPasswordRequestSequence;
+        activeAliasPasswordRequest = requestToken;
+        verifyCurrentPasswordButton.disabled = true;
+        verifyCurrentPasswordButton.textContent = 'Verifying…';
+        window.InigoLoading?.show('Verifying current password…');
+        try {
+            const verified = await beginPasswordSetup(currentPassword, context);
+            if (!isCurrentAliasDialog(context) || activeAliasPasswordRequest !== requestToken) return;
+            if (verified && passwordProof) showAliasStage(2);
+            else {
+                verifyCurrentPasswordButton.textContent = 'Verify current password';
+                currentPasswordInput?.focus();
+            }
+        } finally {
+            if (isCurrentAliasDialog(context) && activeAliasPasswordRequest === requestToken) {
+                activeAliasPasswordRequest = 0;
+                window.InigoLoading?.hide();
+            }
         }
     });
-    document.addEventListener('inigosync:profile-ready', refreshLinkedGoogleEmails);
-    if (window.inigosyncProfile) refreshLinkedGoogleEmails();
-
+    addEmailButton?.addEventListener('click', async () => {
+        const email = emailInput?.value.trim().toLowerCase() || '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) { aliasMessage('Enter a valid email address.', true); return; }
+        if (emailAvailability?.dataset.state !== 'available' || checkedAliasEmail !== email) { aliasMessage('Confirm that this address is available before continuing.', true); return; }
+        addEmailButton.disabled = true;
+        try {
+            const r = await window.InigoOwnerLinkedAuth.invoke('begin-add-email', { email });
+            currentAliasId = r.alias_id || ''; aliasChallenge = r.challenge_id || '';
+            if (!currentAliasId || !aliasChallenge) { currentAliasId = aliasChallenge = ''; throw new Error('Could not start email verification. Try again.'); }
+            aliasEmailLabels.forEach(label => { label.textContent = email; }); aliasVerified = false; emailInput.value = email;
+            checkedAliasEmail = ''; setEmailAvailability('', '');
+            aliasMessage(r.sent ? `Enter the code sent to ${email}. It expires in 5 minutes.` : 'Delivery is not confirmed. Check the inbox or resend the code.', !r.sent);
+            if (aliasResumeButton) aliasResumeButton.hidden = false;
+            startCodeCooldown(aliasResendButton, 'alias'); showAliasStage(1); openAliasCodeModal(r.sent ? '' : 'Delivery is not confirmed. Check the inbox or resend the code.');
+        } catch (e) { addEmailButton.disabled = false; queueEmailAvailabilityCheck(); aliasMessage(e.message || 'Could not send the email verification code.', true); }
+    });
+    aliasResumeButton?.addEventListener('click', () => {
+        if (!currentAliasId || !aliasChallenge || aliasVerified) { aliasMessage('Send a verification code to continue.', true); return; }
+        openAliasCodeModal();
+    });
+    aliasOtpBoxes.forEach((box, index) => {
+        box.addEventListener('input', () => {
+            const digit = box.value.replace(/\D/g, '').slice(-1);
+            box.value = digit; box.classList.toggle('is-filled', Boolean(digit));
+            if (digit && aliasOtpBoxes[index + 1]) aliasOtpBoxes[index + 1].focus();
+        });
+        box.addEventListener('keydown', event => {
+            if (event.key === 'Backspace' && !box.value && aliasOtpBoxes[index - 1]) aliasOtpBoxes[index - 1].focus();
+            if (event.key === 'ArrowLeft' && aliasOtpBoxes[index - 1]) { event.preventDefault(); aliasOtpBoxes[index - 1].focus(); }
+            if (event.key === 'ArrowRight' && aliasOtpBoxes[index + 1]) { event.preventDefault(); aliasOtpBoxes[index + 1].focus(); }
+            if (event.key === 'Enter') { event.preventDefault(); verifyAliasButton?.click(); }
+        });
+        box.addEventListener('paste', event => {
+            const pasted = event.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, 6) || '';
+            if (!pasted) return;
+            event.preventDefault();
+            pasted.split('').forEach((digit, digitIndex) => { if (aliasOtpBoxes[digitIndex]) { aliasOtpBoxes[digitIndex].value = digit; aliasOtpBoxes[digitIndex].classList.add('is-filled'); } });
+            aliasOtpBoxes[Math.min(pasted.length, aliasOtpBoxes.length) - 1]?.focus();
+        });
+    });
+    verifyAliasButton?.addEventListener('click', async () => {
+        const code = aliasCodeValue();
+        if (!currentAliasId || !aliasChallenge || !/^\d{6}$/.test(code)) { window.InigoToast?.show('Enter the 6-digit code sent to the new email.', true); return; }
+        verifyAliasButton.disabled = true;
+        verifyAliasButton.textContent = 'Verifying…';
+        try {
+            window.InigoLoading?.show('Verifying…');
+            const r = await window.InigoOwnerLinkedAuth.invoke('verify-alias-code', { alias_id: currentAliasId, challenge_id: aliasChallenge, code });
+            if (!r.linked) throw new Error('That code did not match or has expired.');
+            window.InigoLoading?.hide();
+            aliasVerified = true; passwordProof = true;
+            if (aliasTimer) clearInterval(aliasTimer); aliasTimer = null;
+            closeAliasCodeModal(); aliasMessage('');
+            window.InigoToast?.show(r.delivery_status === 'sent'
+                ? `Email linked and confirmation sent to ${aliasEmailLabel.textContent}.`
+                : 'Email linked, but confirmation delivery was not confirmed. Retry from settings if needed.', r.delivery_status !== 'sent');
+            if (aliasResumeButton) aliasResumeButton.hidden = true;
+            showAliasStage(2); await refreshEmailAliases();
+        } catch (e) { window.InigoLoading?.hide(); window.InigoToast?.show(e.message || 'That code could not be verified.', true); }
+        finally {
+            window.InigoLoading?.hide();
+            verifyAliasButton.disabled = false;
+            verifyAliasButton.textContent = verifyAliasButtonLabel;
+        }
+    });
+    aliasResendButton?.addEventListener('click', async () => {
+        if (!currentAliasId) return;
+        aliasResendButton.disabled = true;
+        try {
+            const r = await window.InigoOwnerLinkedAuth.invoke('begin-add-email', { email: emailInput.value.trim().toLowerCase() });
+            currentAliasId = r.alias_id || currentAliasId; aliasChallenge = r.challenge_id || '';
+            if (!aliasChallenge) throw new Error('Could not start email verification. Try again.');
+            clearAliasOtp();
+            if (aliasCodeModal && !aliasCodeModal.hidden) aliasOtpBoxes[0]?.focus();
+            aliasMessage(r.sent ? `A new code was sent to ${r.email || aliasEmailLabel.textContent}. It expires in 5 minutes.` : 'The code could not be sent. Retry after the countdown.', !r.sent);
+            startCodeCooldown(aliasResendButton, 'alias');
+        } catch (e) { aliasResendButton.disabled = false; aliasMessage(e.message || 'Could not send a new verification code.', true); }
+    });
+    saveAliasPasswordButton?.addEventListener('click', async () => {
+        const pw = newPassword?.value || '', confirm = confirmPassword?.value || '';
+        const policy = renderLinkedEmailPasswordRules();
+        if (!passwordProof || !aliasChallenge) { aliasMessage('Complete the linked-email or active owner verification first.', true); return; }
+        if (!policy || pw !== confirm) { aliasMessage(pw !== confirm ? 'The passwords do not match.' : 'Use 8–15 characters with uppercase, lowercase, a number, and a symbol.', true); return; }
+        saveAliasPasswordButton.disabled = true;
+        try {
+            const r = await window.InigoOwnerLinkedAuth.invoke('save-password', { alias_id: currentAliasId, challenge_id: aliasChallenge, password: pw });
+            if (!r.success) throw new Error('The password could not be saved. Reopen Set password and try again.');
+            resetAliasDialog(); window.InigoOwnerUI.close(aliasModal); window.InigoToast?.show('The linked email password is ready.'); await refreshEmailAliases();
+        } catch (e) { aliasMessage(e.message || 'The password could not be saved.', true); }
+        finally { updateLinkedPasswordSaveButton(); }
+    });
+    aliasModal?.querySelectorAll('[data-admin-email-alias-close]').forEach(b => b.addEventListener('click', () => {
+        invalidateAliasDialogRequests();
+        if (currentPasswordInput) currentPasswordInput.value = '';
+        closeAliasCodeModal(); window.InigoOwnerUI.close(aliasModal);
+    }));
+    aliasModal?.addEventListener('click', e => { if (e.target === aliasModal) aliasModal.querySelector('[data-admin-email-alias-close]')?.click(); });
+    aliasCodeCloseButtons?.forEach(button => button.addEventListener('click', () => { clearAliasOtp(); closeAliasCodeModal(); aliasResumeButton?.focus(); }));
+    aliasCodeModal?.addEventListener('click', e => { if (e.target === aliasCodeModal) { clearAliasOtp(); closeAliasCodeModal(); aliasResumeButton?.focus(); } });
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        if (aliasCodeModal && !aliasCodeModal.hidden) { e.preventDefault(); e.stopImmediatePropagation(); clearAliasOtp(); closeAliasCodeModal(); aliasResumeButton?.focus(); return; }
+        if (aliasModal && !aliasModal.hidden) { e.preventDefault(); e.stopImmediatePropagation(); aliasModal.querySelector('[data-admin-email-alias-close]')?.click(); }
+    }, true);
+    async function openExistingAliasPassword(id, email, hasPassword) {
+        resetAliasDialog(); invalidateAliasDialogRequests(); currentAliasId = id; emailEntry.hidden = addEmailButton.hidden = true;
+        currentAliasHasPassword = hasPassword === true;
+        aliasFlow = currentAliasHasPassword ? 'change' : 'set';
+        aliasEmailLabels.forEach(label => { label.textContent = email; });
+        const title = aliasModal.querySelector('#adminEmailAliasTitle'); if (title) title.textContent = currentAliasHasPassword ? 'Change linked email password' : 'Set linked email password';
+        if (aliasHeaderCopy) aliasHeaderCopy.textContent = currentAliasHasPassword
+            ? 'Verify the current password for this linked email, then choose a new one.'
+            : 'Set a separate sign-in password for this linked email.';
+        if (verifyCurrentPasswordButton) verifyCurrentPasswordButton.hidden = !currentAliasHasPassword;
+        aliasMessage(currentAliasHasPassword ? 'Enter the current password to continue.' : 'Set a password for this linked email.');
+        window.InigoOwnerUI.open(aliasModal);
+        showAliasStage(currentAliasHasPassword ? 'verify-current' : 2);
+        if (!currentAliasHasPassword) await beginPasswordSetup();
+    }
+    async function refreshEmailAliases() {
+        const root = document.querySelector('[data-admin-linked-email-aliases]'); if (!root || !window.sb || !window.inigosyncProfile) return;
+        let aliases = [];
+        try { const r = await window.InigoOwnerLinkedAuth.invoke('list-aliases'); aliases = Array.isArray(r.aliases) ? r.aliases : []; }
+        catch (_) { root.textContent = 'Could not load linked email accounts. Verify your owner session and retry.'; return; }
+        root.innerHTML = aliases.length ? aliases.map(a => {
+            const id = window.escapeHtml(a.alias_id), email = window.escapeHtml(a.email);
+            const retry = a.delivery_status && a.delivery_status !== 'sent' ? `<button type="button" class="admin-btn-ghost admin-google-account-action" data-email-notice-retry="${id}">Retry linked notice</button>` : '';
+            return `<div class="admin-google-account"><span class="admin-google-account-check" aria-hidden="true">✓</span><span class="admin-google-account-email">${email}</span><span class="admin-google-account-badge">Linked</span><button type="button" class="admin-btn-ghost admin-google-account-action" data-email-alias-password="${id}" data-email-alias-address="${email}" data-email-alias-has-password="${a.has_password === true}">${a.has_password ? 'Change password' : 'Set password'}</button>${retry}<button type="button" class="admin-btn-chip-danger" data-email-alias-remove="${id}" data-email-alias-address="${email}">Remove</button></div>`;
+        }).join('') : '<p class="admin-google-accounts-empty">No linked email accounts yet.</p>';
+        root.onclick = async e => {
+            const pw = e.target.closest('[data-email-alias-password]'); if (pw) { await openExistingAliasPassword(pw.dataset.emailAliasPassword, pw.dataset.emailAliasAddress, pw.dataset.emailAliasHasPassword === 'true'); return; }
+            const retry = e.target.closest('[data-email-notice-retry]');
+            if (retry) { retry.disabled = true; try { const r = await window.InigoOwnerLinkedAuth.invoke('send-link-notice', { alias_id: retry.dataset.emailNoticeRetry }); window.InigoToast?.show(r.success ? 'The linked email notice was sent.' : r.message || 'Delivery is not confirmed.', !r.success); await refreshEmailAliases(); } catch (x) { retry.disabled = false; window.InigoToast?.show(x.message || 'Could not retry the notice.', true); } return; }
+            const remove = e.target.closest('[data-email-alias-remove]'); if (!remove) return;
+            const accepted = await window.InigoOwnerUI?.confirm({
+                title: 'Remove linked email?',
+                message: `Remove ${remove.dataset.emailAliasAddress} from this owner account? Its separate password will stop working immediately.`,
+                confirmLabel: 'Remove email',
+                danger: true,
+            });
+            if (!accepted) return;
+            remove.disabled = true; try { await window.InigoOwnerLinkedAuth.invoke('remove-alias', { alias_id: remove.dataset.emailAliasRemove }); window.InigoToast?.show('The linked email was removed.'); await refreshEmailAliases(); }
+            catch (x) { remove.disabled = false; window.InigoToast?.show(x.message || 'Could not remove the linked email.', true); }
+        };
+    }
+    document.querySelector('[data-admin-add-email]')?.addEventListener('click', openAddAliasDialog);
+    document.addEventListener('inigosync:profile-ready', refreshEmailAliases);
+    if (window.inigosyncProfile) refreshEmailAliases();
     // Email confirmation → profiles.email sync (Revision A1, decision A9).
     // profiles.email only ever follows the AUTH session's confirmed email,
     // never the other way around. Checked two ways so this is correct
