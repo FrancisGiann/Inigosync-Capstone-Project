@@ -1135,7 +1135,9 @@ The owner Business Hours editor now saves a separate 0–59 minute slot cutoff (
 
 Blank cutoff input is explicitly rejected before numeric conversion. The legacy three-argument owner save RPC remains callable for older clients: new dates inherit the cutoff effective on that date, while same-date updates preserve their existing cutoff. The four-argument owner RPC is the path for intentionally changing the value.
 
-A read-only development-data review found 7 existing `booking_rule_sets` rows: 1 legacy row at 30 minutes of no-show grace, 2 rows at 35, and 4 rows at 30. No slot-cutoff values exist before the migration. Expected after migration: 7 rows, all carrying `slot_cutoff_minutes=10`, with the existing grace values unchanged. The migration was not applied to the connected database; its actual post-migration count remains pending deployment and verification.
+A prior documented read-only development-data review found 7 `booking_rule_sets` rows: 1 legacy row at 30 minutes of no-show grace, 2 rows at 35, and 4 rows at 30. A fresh read-only check through connected Supabase on November 2, 2026 confirmed 7 rows, zero grace values outside 0–59 (minimum 30, maximum 35), and zero cutoff values outside 0–59. No slot-cutoff values existed before the earlier cutoff migration. The range migration was applied to the connected database on November 2, 2026. A post-migration check confirmed the same 7 rows and values, both 0–59 table constraints, and the 0–59 check in both owner-save RPC overloads. The migration service recorded remote version `20261102023543`, which differs from the local filename timestamp and must be reconciled before CLI migration-history operations.
+
+The Business Hours editor now accepts only ASCII digits for both minute fields and saves only whole values from 0 to 59. Invalid characters and malformed pastes are rejected, with an input-event fallback that restores the last accepted text without converting malformed input into a number; values above 59 show an inline error. Migration `20261102150000_booking_rule_minutes_range.sql` narrows the grace column constraint and both the current and legacy owner-save RPC validations to 0–59. The latest read-only data check confirmed all seven live rows already satisfy the new range, so no cleanup or conversion is needed.
 
 ### Superseded same-day early Time-In proposal (November 1, 2026)
 
@@ -1250,3 +1252,242 @@ produce the expected Supabase advisor warning for intentional authenticated
 - Apply the new migration in a disposable/local Supabase database before deployment and confirm table grants, RLS, triggers, and owner selection behavior. This checkout has no local `psql`/Supabase database.
 - Run the post-migration read-only checks and role/trigger behavior cases in `docs/account-customer-reviews-verification.sql`; static Node assertions alone cannot validate Supabase RLS, FK cascade, or trigger behavior. For `20261102140000_optional_featured_customer_reviews.sql`, preserve the existing ordered selection and verify saving zero to three picks plus single-item invalidation.
 - After migration, confirm `customer_review` and `public_customer_reviews` counts match the pre-migration `booking_review` distinct-customer count (zero in the supplied live snapshot), and confirm the public table exposes only safe columns. Root should seed only accounts without genuine reviews, mark all synthetic rows `is_sample = true`, and verify counts before and after.
+# Pending staff email resend guard repair (2026-11-02)
+
+Live recovery requests reached `recover-pending-staff` but returned 502 because
+GoTrue's admin email update returned 500. Auth logs showed the profile identity
+guard rejecting the `auth.users` email-sync trigger. The forward migration
+`20261102160000_allow_auth_email_sync_profile_guard.sql` permits that nested
+sync only when the profile email equals the same user's canonical Auth email;
+direct profile email changes remain blocked. The owner dialog now displays
+backend errors and keeps a newly saved address retryable if SMTP delivery fails
+after the Auth update. Deployment requires applying this migration and updating
+the recovery Edge Function. The guard repair does not alter existing records or
+their meaning, so no record conversion or cleanup is needed. Verify the live
+Auth/profile sync and a direct profile-update rejection after deployment.
+The connected development project now has the guard migration recorded as
+remote version `20261102115515` (the local filename uses `20261102160000`),
+and `recover-pending-staff` is deployed as version 3. A rollback-only probe
+against one existing pending staff record passed: an Auth email update synced
+the profile, a direct profile email edit raised SQLSTATE 42501, and the record
+returned to its original matching emails with pending status and incomplete
+onboarding. No probe email persisted. The owner browser recovery test passed
+for an SMTP failure after the email was saved followed by a retry.
+
+## Sent email shown as a fetch failure (2026-11-02 follow-up)
+
+The live recovery request at 12:18 UTC completed SMTP submission but the Edge
+runtime logged `respondWith` receiving no Response. The handler had fallen
+through after SMTP and lock cleanup. The recipient's single staff profile is
+still pending, its Auth and profile emails match, and its onboarding credential
+row exists; no record conversion or cleanup is needed. The function now returns
+success after accepted delivery, and a lock-release warning when applicable.
+The owner UI shows an understandable red top notice for actual failures and
+an unconfirmed-delivery message for network interruptions, prompting an inbox
+check before another send. The shared setup email uses the site's orange and
+neutral brand styling. The connected project runs `recover-pending-staff` v4
+and `invite-staff` v22 with the updated template. Focused browser recovery
+checks and all six staff invite tests passed; the wordmark asset returned
+HTTP 200. No new database migration or persisted-data change was required.
+
+## Staff resend accepted by SMTP but missing from inbox (2026-11-02)
+
+Recovery POSTs at 13:00 and 13:01 UTC returned 200 after Gmail SMTP accepted
+the messages. Auth/profile email matches the current `+staff1` address, the
+account remains pending, and the recovery lock is clear. The recipient's Gmail
+search across all folders showed only the earlier 20:18 message, while the
+sender's Sent folder showed a later branded setup message. Inbox delivery or
+a later bounce had not been established at that point; SMTP acceptance alone
+does not establish inbox delivery. The success notice is now concise and says the email was
+submitted, while setup stays pending. Recovery v5 returns the MIME Message-ID
+for tracing, and resend subjects carry a readable Manila timestamp to make
+new messages easier to identify. These changes do not mutate existing records
+or change their meaning. A later controlled resend and recipient-mailbox
+inspection are recorded below; do not repeatedly resend
+without checking the sender and recipient mailboxes because each attempt
+replaces the temporary password.
+
+## Short pending-staff setup credential and delivery check (2026-11-02)
+
+The owner clarified that a resend should save the corrected address, generate
+a new temporary password, and email that address and password so the pending
+staff member can sign in and choose a different password. The 43-character
+temporary value was replaced with a 16-character, unambiguous value sampled
+from Web Crypto; uppercase, lowercase, a digit, and a hyphen are guaranteed
+and their positions are shuffled. The invite and recovery functions both use
+the same generator. The setup email keeps the address, password, sign-in link,
+and orange branding in a compact layout. No existing records or stored
+credentials were converted; a future authorized resend replaces only that
+pending account's current Auth password and stored hash. The connected project
+now runs `recover-pending-staff` v6 and `invite-staff` v23. Focused Node tests
+passed and an independent auth/security review found no blocker. Inbox
+placement was checked with one controlled resend to the current address at
+21:29. Gmail SMTP returned final acceptance and the function returned 200.
+Read-only inspection of the recipient's Gmail subsequently found that exact
+timestamped message in Spam, addressed to `christianoborza+staff1@gmail.com`.
+Gmail's notice said it resembled messages previously identified as spam. The
+message was marked "Not spam"; Gmail confirmed that it moved to Inbox and
+stated future messages from the sender will go to Inbox. Earlier 21:00-21:02
+resends were also found in Spam. The sender's Sent list did not show the 21:29
+message, but recipient-side receipt confirms delivery; the missing Sent row
+does not establish a send failure. An unrelated 15:13 bounce to a different
+address does not explain this case. Readback showed exactly one pending
+profile, matching Auth/profile emails, one credential record, and no active
+recovery lock. No extra test resend was made. Each resend rotates the temporary
+password, so only the latest message should be used for staff setup.
+
+## Pending staff onboarding session gate and required details (2026-11-02)
+
+Live logs around the pending account's sign-in show the email-MFA session check
+sometimes taking about 10 seconds and once returning a 503 after roughly 40
+seconds; successful profile bootstrap reads returned 200. `authGuard.js` awaited
+session proof and profile checks without a timeout, so `staff_onboarding.html`
+could remain on its secure-session loading text while those requests stalled.
+The onboarding page now gives those checks 15 seconds, then fails closed with
+a visible reload/retry action. Email proof remains required before the own-row
+profile read and onboarding form become available.
+
+The password step asks only for a new password and confirmation. Login and
+email MFA already established the session; Auth updates the password on that
+session without a second current-password field. If a refresh interrupts
+after the change, the same password in both fields resumes details completion
+after an isolated, non-persistent Auth check confirms Auth reports it as
+already current. A bounded save/check returns a visible error instead of an
+indefinite spinner. The details footer becomes a dashboard
+button only after the server reports successful activation. Civil status is
+database `NOT NULL`, and the service-only activation RPC explicitly consumes
+the optional emergency-phone proof because its privileged profile update does
+not run the authenticated-user proof trigger. The CDN UMD script now precedes
+the shared Supabase client configuration.
+
+The onboarding form now asks for current, new, and confirmed passwords, then
+first/middle/last name, a validated mobile number, birthdate, civil status,
+address, gender, and emergency contact details. Position and account status are
+displayed read-only; account activation remains a server operation. Civil
+status is stored separately in `staff_private_details`. A service-only,
+transactional RPC validates the pending-to-active transition and stores the
+private field atomically. Pending staff are allowed through existing phone
+availability/proof RPCs only for their own onboarding validation.
+
+The connected development database was read before changes: 4 staff profiles,
+1 pending/incomplete profile, and 1 onboarding credential row. Its `profiles`
+table has name parts, mobile, address, birthdate, gender, and emergency-contact
+fields, but no staff civil-status field/table. No records were written or
+converted. The new private table started empty when schema was applied; the
+existing pending record remains valid in its current format. There is no old
+record cleanup to run. A second pre-deployment read-only check after local implementation
+returned the same counts (4 staff, 1 pending/incomplete, 1 credential, 0 active
+recovery locks); the private-details table was still absent at that time.
+
+Schema source is in `database/schema/019_staff_private_onboarding.sql`. The
+portable Supabase CLI v2.122.0 generated
+`supabase/migrations/20261102145436_staff_private_onboarding.sql`. The
+connected development project applied it as remote version `20261102145919`.
+Its default table grants left authenticated users with write privileges, so
+the follow-up `20261102150153_staff_private_details_grants.sql` removed those
+grants and restored SELECT only; the connected project recorded it as version
+`20261102150213`. The schema source describes the final grant state, so it
+intentionally differs from the first migration and is equivalent to both
+migrations applied in order. The updated `validate-contact-phone` and
+`complete-staff-onboarding` functions were deployed as versions 15 and 3.
+Post-apply counts remain 4 staff profiles, 1 pending/incomplete profile,
+1 onboarding credential, and 0 private-detail rows. RLS is enabled, client
+roles cannot execute the completion RPC, and authenticated users have SELECT
+but no INSERT, UPDATE, or DELETE grant on the private table. Both Edge
+Functions reject unauthenticated POSTs with HTTP 401, and the deployed source
+matches the local entrypoints. A harmless RPC call for a nonexistent profile
+returned false. A real pending-account login, password change, and complete
+profile write still require interactive verification with that account's
+credentials. The focused Node static tests (7/7),
+onboarding Playwright browser fixture, `node --check`, and `git diff --check`
+passed. The browser fixture mocks Auth and the Edge Functions, so it does not
+verify the live SQL transaction or Auth password update behavior.
+
+The user initially reported reaching the dashboard after deployment, but a
+subsequent read-only check still found one pending/incomplete staff profile,
+one onboarding credential, and zero private-detail rows. The function logs
+showed no successful completion request in that interval. An independent
+post-deployment security review confirmed the remote grants, RLS, and RPC
+guards, but could not establish end-to-end completion. Confirm that the newly
+created staff account (rather than an already active account) completes the
+two setup steps, then recheck the pending/credential/private-detail counts.
+
+The project manager then removed the need to re-enter the current password
+during onboarding and requested the landing-page visual style. Step 1 now asks
+only for a new password and confirmation. The screenshot of a stuck save was
+consistent with a client-side wait: Auth logs showed the password update PUT
+returned HTTP 200, while the onboarding account remained pending. The client
+now bounds the Auth save, reports a retryable error, and can resume an
+already-current new password after a refresh. The card uses the shared
+Sora/Inter typography, semantic theme tokens, and landing-page icon toggle.
+Browser fixture coverage includes dark/light display, a stalled Auth request,
+same-password-only retry after a delayed update, resume, and mobile layout.
+The client also persists a user-scoped timestamp (never the password) for ten
+minutes so a refresh after a timed-out Auth update cannot start a competing
+password change. Browser coverage includes this refresh case.
+
+A real details submission at 2026-11-02 19:08 UTC reached the completion Edge
+Function but returned HTTP 500: the profile update evaluated the contact-number
+unique index as `service_role`, which lacked EXECUTE on
+`internal.ph_mobile_to_e164(text)`. The narrow forward migration
+`20261102191200_staff_onboarding_phone_helper_execute.sql` grants this helper
+to `service_role` only. It is applied in the connected project. A role-scoped
+SQL call verified that normalization now succeeds, and the grant check verified
+`authenticated` still lacks EXECUTE. The migration changes permissions only;
+no persisted record conversion is needed. The pending account remains pending
+until the staff member retries the details submission; verify account status and
+private-detail count after that real retry. The staff member completed the
+two-step form in the open browser and landed on `staff_dashboard.html`. The
+connected project then showed zero pending staff, four active completed staff,
+one staff-private-detail row, and zero onboarding credentials. These before/
+after counts confirm the pending profile was activated and its temporary
+credential record was consumed without altering the other staff records.
+
+## Progressive staff onboarding and optional mobile (2026-11-03)
+
+The setup page now separates password, name, required personal details, and
+optional contacts/privacy into four steps. Password policy checks update live;
+the password stays in page memory and Auth is updated only after required
+fields are complete, an optional mobile has passed availability validation if
+provided, and the staff member agrees to the Privacy Policy. The pending-save
+timestamp contains no password and retains the same-password-only recovery
+behavior if the final request is interrupted. The existing Auth session, email
+MFA proof, temporary-password digest check, and pending-account activation
+gate remain in use.
+
+First and last name, birthdate showing age 18 or older, gender, civil status,
+and address are required. Middle name, mobile, and emergency contact details
+are optional. The privacy modal
+uses the existing `Pages/privacy.html`; Agree checks the box, while Disagree or
+close leaves it unchecked. The completion Edge Function rejects requests
+without the explicit agreement flag. The agreement is checked for the
+completion request but no separate consent record is written.
+
+The existing `complete_staff_onboarding_profile` RPC required a contact phone,
+so `20261103003957_optional_staff_onboarding_mobile.sql` updates its validation
+to accept NULL while retaining required-profile checks and the existing
+emergency-proof transaction. `database/schema/019_staff_private_onboarding.sql`
+is kept aligned with the forward migration. The project manager's read-only
+development-record check found 4 completed staff, no pending staff, one
+staff-private-detail row, and two current staff profiles with no mobile number.
+Those rows are valid under the new optional-phone behavior; the migration does
+not rewrite or delete profile/private-detail/credential records, so no data
+conversion or cleanup is needed.
+
+Verification run locally: `node --check includes/staff_onboarding.js`,
+`node --test tests/staff-onboarding-ui.test.mjs`,
+`node --test tests/staff-onboarding-access-gate.test.mjs tests/phone-format-validation.test.mjs`,
+the focused Playwright `tests/staff-onboarding-ui.cjs` flow, and
+`git diff --check` for the onboarding files. Static and browser tests passed.
+The browser fixture covers deferred Auth update, required-field gating,
+optional mobile and emergency-number live checks, privacy Agree/Disagree/close
+behavior, and retry after a failed completion request. Deno, Supabase CLI,
+and psql were not available for local Edge Function or SQL execution. The
+connected project received the optional-mobile migration and
+`complete-staff-onboarding` Edge Function v4. A role-scoped SQL call accepted
+a NULL mobile number for a nonmatching test UUID and returned false without
+changing records. Service-role EXECUTE remained enabled while authenticated
+EXECUTE remained disabled. Counts after migration stayed at four completed
+staff, one private-detail row, and two staff profiles without a mobile number.
+There is no pending staff account now, so the new four-step flow still needs
+a live run with a newly invited staff member for full end-to-end verification.

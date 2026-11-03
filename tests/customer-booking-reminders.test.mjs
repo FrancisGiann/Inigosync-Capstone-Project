@@ -134,7 +134,7 @@ test('SMTP delivery uses authenticated implicit TLS and keeps the authorized rem
   assert.doesNotMatch(worker, /console\.(?:log|error)\([^\n]*(?:smtpAppPassword|smtpUsername|current\.email)/i);
 });
 
-test('SMTP client checks server responses, sends MIME data, and keeps failures generic', async () => {
+test('SMTP client preserves Gmail plus recipients in MIME and the SMTP envelope', async () => {
   const transcript = [
     '220 smtp ready\r\n',
     '250-smtp hello\r\n250 AUTH PLAIN\r\n',
@@ -161,20 +161,23 @@ test('SMTP client checks server responses, sends MIME data, and keeps failures g
     },
     close() { closed = true; },
   };
-  await deliverCustomerBookingReminder({
+  const deliveryReceipt = await deliverCustomerBookingReminder({
     connectTls: async () => connection,
     smtpUsername: 'bookings@example.test', smtpAppPassword: 'test-app-password',
     from: 'InigoSync <bookings@example.test>', email: {
-      to: ['customer@example.test'], subject: 'Booking reminder', text: 'Line one\n.Line two', html: '<p>Reminder</p>',
+      to: ['customer+staff1@gmail.com'], subject: 'Booking reminder', text: 'Line one\n.Line two', html: '<p>Reminder</p>',
     },
   });
   assert.equal(closed, true);
   assert.equal(writes[0], 'EHLO inigosportcenter.com\r\n');
   assert.match(writes[1], /^AUTH PLAIN /);
   assert.match(writes[2], /^MAIL FROM:<bookings@example\.test>/);
-  assert.match(writes[3], /^RCPT TO:<customer@example\.test>/);
+  assert.match(writes[3], /^RCPT TO:<customer\+staff1@gmail\.com>/);
   assert.equal(writes[4], 'DATA\r\n');
   assert.match(writes[5], /multipart\/alternative/);
+  assert.match(writes[5], /\r\nTo: customer\+staff1@gmail\.com\r\n/);
+  assert.match(deliveryReceipt.messageId, /^<[^>]+@inigossportcenter\.com>$/);
+  assert.ok(writes[5].includes(`Message-ID: ${deliveryReceipt.messageId}`));
   assert.doesNotMatch(writes[5], /\r\n\.Line two/);
   assert.match(writes[5], /\r\n\.\r\n$/);
   assert.equal(writes.some((write) => write.includes('test-app-password')), false);
@@ -206,6 +209,131 @@ test('SMTP protocol timeout closes the connection and returns a stable category'
     from: 'bookings@example.test', email: { to: ['customer@example.test'], subject: 'x', text: 'x', html: '<p>x</p>' },
   }), (error) => error instanceof SmtpDeliveryError && error.reason === 'timeout');
   assert.equal(closed, true);
+});
+
+test('SMTP timeout after DATA terminator reports an ambiguous delivery outcome', async () => {
+  const writes = [];
+  const transcript = new TextEncoder().encode([
+    '220 ready\r\n', '250 hello\r\n', '235 authenticated\r\n',
+    '250 sender ok\r\n', '251 recipient ok\r\n', '354 send data\r\n',
+  ].join(''));
+  let transcriptOffset = 0;
+  let closed = false;
+  const connection = {
+    async read(buffer) {
+      if (transcriptOffset < transcript.length) {
+        const size = Math.min(buffer.length, transcript.length - transcriptOffset);
+        buffer.set(transcript.subarray(transcriptOffset, transcriptOffset + size));
+        transcriptOffset += size;
+        return size;
+      }
+      return await new Promise(() => {});
+    },
+    async write(bytes) { writes.push(new TextDecoder().decode(bytes)); return bytes.length; },
+    close() { closed = true; },
+  };
+  await assert.rejects(deliverCustomerBookingReminder({
+    connectTls: async () => connection, timeoutMs: 10,
+    smtpUsername: 'bookings@example.test', smtpAppPassword: 'fake-secret',
+    from: 'bookings@example.test', email: { to: ['customer@example.test'], subject: 'x', text: 'x', html: '<p>x</p>' },
+  }), (error) => error instanceof SmtpDeliveryError && error.reason === 'delivery_outcome_unknown');
+  assert.equal(writes.some((write) => write.endsWith('.\r\n')), true);
+  assert.equal(closed, true);
+});
+
+test('SMTP final rejection after DATA is definitive and remains eligible for cleanup', async () => {
+  const transcript = new TextEncoder().encode([
+    '220 ready\r\n', '250 hello\r\n', '235 authenticated\r\n',
+    '250 sender ok\r\n', '251 recipient ok\r\n', '354 send data\r\n',
+    '550 message rejected\r\n',
+  ].join(''));
+  let transcriptOffset = 0;
+  const connection = {
+    async read(buffer) {
+      const size = Math.min(buffer.length, transcript.length - transcriptOffset);
+      if (!size) return null;
+      buffer.set(transcript.subarray(transcriptOffset, transcriptOffset + size));
+      transcriptOffset += size;
+      return size;
+    },
+    async write(bytes) { return bytes.length; },
+    close() {},
+  };
+  await assert.rejects(deliverCustomerBookingReminder({
+    connectTls: async () => connection,
+    smtpUsername: 'bookings@example.test', smtpAppPassword: 'fake-secret',
+    from: 'bookings@example.test', email: { to: ['customer@example.test'], subject: 'x', text: 'x', html: '<p>x</p>' },
+  }), (error) => error instanceof SmtpDeliveryError && error.reason === 'message_rejected');
+});
+
+test('SMTP partial message write followed by a write error is an ambiguous outcome', async () => {
+  const transcript = new TextEncoder().encode([
+    '220 ready\r\n', '250 hello\r\n', '235 authenticated\r\n',
+    '250 sender ok\r\n', '251 recipient ok\r\n', '354 send data\r\n',
+  ].join(''));
+  let transcriptOffset = 0;
+  let messageWriteCount = 0;
+  let messageWriteStarted = false;
+  const connection = {
+    async read(buffer) {
+      const size = Math.min(buffer.length, transcript.length - transcriptOffset);
+      if (!size) return null;
+      buffer.set(transcript.subarray(transcriptOffset, transcriptOffset + size));
+      transcriptOffset += size;
+      return size;
+    },
+    async write(bytes) {
+      const value = new TextDecoder().decode(bytes);
+      if (value.includes('multipart/alternative')) messageWriteStarted = true;
+      if (messageWriteStarted) {
+        messageWriteCount += 1;
+        if (messageWriteCount === 1) return Math.max(1, Math.floor(bytes.length / 2));
+        throw new Error('simulated socket failure after partial write');
+      }
+      return bytes.length;
+    },
+    close() {},
+  };
+  await assert.rejects(deliverCustomerBookingReminder({
+    connectTls: async () => connection,
+    smtpUsername: 'bookings@example.test', smtpAppPassword: 'fake-secret',
+    from: 'bookings@example.test', email: { to: ['customer@example.test'], subject: 'x', text: 'x', html: '<p>x</p>' },
+  }), (error) => error instanceof SmtpDeliveryError && error.reason === 'delivery_outcome_unknown');
+  assert.equal(messageWriteCount, 2);
+});
+
+test('SMTP timeout racing a completed message write remains ambiguous', async () => {
+  const transcript = new TextEncoder().encode([
+    '220 ready\r\n', '250 hello\r\n', '235 authenticated\r\n',
+    '250 sender ok\r\n', '251 recipient ok\r\n', '354 send data\r\n',
+  ].join(''));
+  let transcriptOffset = 0;
+  let messageWriteCompleted = false;
+  const connection = {
+    async read(buffer) {
+      const size = Math.min(buffer.length, transcript.length - transcriptOffset);
+      if (!size) return await new Promise(() => {});
+      buffer.set(transcript.subarray(transcriptOffset, transcriptOffset + size));
+      transcriptOffset += size;
+      return size;
+    },
+    async write(bytes) {
+      const value = new TextDecoder().decode(bytes);
+      if (value.includes('multipart/alternative')) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        messageWriteCompleted = true;
+      }
+      return bytes.length;
+    },
+    close() {},
+  };
+  await assert.rejects(deliverCustomerBookingReminder({
+    connectTls: async () => connection, timeoutMs: 10,
+    smtpUsername: 'bookings@example.test', smtpAppPassword: 'fake-secret',
+    from: 'bookings@example.test', email: { to: ['customer@example.test'], subject: 'x', text: 'x', html: '<p>x</p>' },
+  }), (error) => error instanceof SmtpDeliveryError && error.reason === 'delivery_outcome_unknown');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(messageWriteCompleted, true);
 });
 
 test('empty cron runs stay successful while reporting missing setting names only', () => {

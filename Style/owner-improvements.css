@@ -81,7 +81,6 @@
 .owner-review-browser-list { max-height: min(62vh, 680px); overflow: auto; }
 .owner-review-browser-item { display: grid; gap: 8px; }
 .owner-review-browser-item .admin-review-item-head { display: flex; }
-.owner-review-sample-badge { display: inline-block; padding: 3px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .03em; line-height: 1.2; }
 .owner-review-browser-item p { margin: 0; color: var(--color-ink); line-height: 1.5; }
 .owner-review-browser-item .owner-review-no-comment { color: var(--color-ink-muted); font-style: italic; }
 .owner-review-browser-item time { color: var(--color-ink-muted); font-size: var(--fs-xs); }
@@ -164,6 +163,7 @@
     color: var(--color-ink); text-align: left; font: inherit; cursor: pointer;
     transition: background .16s ease, border-color .16s ease, color .16s ease;
 }
+.admin-staff-action-card button[hidden] { display: none !important; }
 .admin-staff-action-card button:hover,
 .admin-staff-action-card button:focus-visible {
     background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));

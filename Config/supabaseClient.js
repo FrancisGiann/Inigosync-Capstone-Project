@@ -55,4 +55,19 @@
         auth: { storageKey, storage }
     });
     window.SUPABASE_URL = SUPABASE_URL;
+    // Verify a password without replacing the MFA-verified application session.
+    // This isolated client never persists or refreshes its short-lived session.
+    window.InigoPasswordVerifier = {
+        async verifyCurrentPassword({ email, password, userId }) {
+            const verifier = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+                auth: {
+                    persistSession: false,
+                    autoRefreshToken: false,
+                    detectSessionInUrl: false,
+                }
+            });
+            const { data, error } = await verifier.auth.signInWithPassword({ email, password });
+            return !error && data?.user?.id === userId;
+        }
+    };
 })();

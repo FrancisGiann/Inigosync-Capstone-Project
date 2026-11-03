@@ -55,8 +55,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.InigoLoading) window.InigoLoading.show('Loading your dashboard…');
 
+    const isStaffOnboardingPage = document.body.hasAttribute('data-staff-onboarding-page');
+    const showStaffSessionError = message => {
+        if (!isStaffOnboardingPage) return false;
+        const loading = document.querySelector('[data-staff-onboarding-loading]');
+        const retry = document.querySelector('[data-staff-onboarding-retry]');
+        if (window.InigoLoading) window.InigoLoading.hide();
+        if (loading) {
+            loading.textContent = message;
+            loading.setAttribute('role', 'alert');
+        }
+        if (retry) retry.hidden = false;
+        return true;
+    };
+    const withTimeout = (promise, message) => new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => reject(new Error(message)), 15000);
+        Promise.resolve(promise).then(value => {
+            window.clearTimeout(timeoutId);
+            resolve(value);
+        }, error => {
+            window.clearTimeout(timeoutId);
+            reject(error);
+        });
+    });
+
     if (!window.sb) {
         console.error('[authGuard] Supabase client (window.sb) is not available.');
+        showStaffSessionError('Your secure staff session could not be checked. Reload this page to try again.');
         return;
     }
 
@@ -77,7 +102,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.location.assign(new URL('../index.html', window.location.href).toString());
     }
 
-    const { data: { session } } = await window.sb.auth.getSession();
+    let session;
+    try {
+        const sessionResult = await withTimeout(window.sb.auth.getSession(), 'Session check timed out.');
+        session = sessionResult?.data?.session;
+    } catch (error) {
+        console.error('[authGuard] secure session could not be loaded', error);
+        if (!showStaffSessionError('Your secure staff session could not be checked. Reload this page to try again.')) goToLogin('session_check_unavailable');
+        return;
+    }
     if (!session) {
         goToLogin();
         return;
@@ -87,13 +120,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // password/OAuth token without its email proof can read only the narrow
     // AAL1 bootstrap paths configured in the database pre-request guard.
     try {
-        const mfa = await window.InigoEmailMfa?.check?.({ activity: true });
+        const mfa = await withTimeout(window.InigoEmailMfa?.check?.({ activity: true }), 'Email verification timed out.');
         if (mfa?.verified !== true) {
             goToLogin('email_verification_required');
             return;
         }
     } catch (error) {
         console.error('[authGuard] email session proof could not be checked', error);
+        if (showStaffSessionError('Email verification is taking too long to respond. Your setup is still protected. Reload to retry the secure session check.')) return;
         goToLogin('email_verification_unavailable');
         return;
     }
@@ -106,22 +140,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             && message.includes(onboardingColumn)
             && /(column|schema cache|could not find)/.test(message);
     };
-    let { data: profile, error } = await window.sb
-        .from('profiles')
-        .select(`${profileColumns}, ${onboardingColumn}`)
-        .eq('id', session.user.id)
-        .single();
+    let profileResult;
+    try {
+        profileResult = await withTimeout(window.sb
+            .from('profiles')
+            .select(`${profileColumns}, ${onboardingColumn}`)
+            .eq('id', session.user.id)
+            .single(), 'Profile check timed out.');
+    } catch (profileCheckError) {
+        console.error('[authGuard] profile check could not be completed', profileCheckError);
+        if (!showStaffSessionError('Your staff profile could not be checked. Reload this page to try again.')) goToLogin('profile_check_unavailable');
+        return;
+    }
+    let { data: profile, error } = profileResult;
 
     // Keep existing customer/admin accounts usable during staggered deploys:
     // this newer onboarding column may not exist in the live schema yet.
     // Only legacy active staff retain the access they had before this
     // migration; pending staff remain behind the onboarding gate below.
     if (error && isMissingOnboardingColumn(error)) {
-        ({ data: profile, error } = await window.sb
-            .from('profiles')
-            .select(profileColumns)
-            .eq('id', session.user.id)
-            .single());
+        try {
+            ({ data: profile, error } = await withTimeout(window.sb
+                .from('profiles')
+                .select(profileColumns)
+                .eq('id', session.user.id)
+                .single(), 'Profile check timed out.'));
+        } catch (profileCheckError) {
+            console.error('[authGuard] legacy profile check could not be completed', profileCheckError);
+            if (!showStaffSessionError('Your staff profile could not be checked. Reload this page to try again.')) goToLogin('profile_check_unavailable');
+            return;
+        }
     }
 
     if (error || !profile || profile.status === 'disabled') {
@@ -142,7 +190,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { sessionStorage.removeItem('inigosync:landing-booking-draft:v1'); } catch (_) { /* storage may be disabled */ }
     }
 
-    const isStaffOnboardingPage = document.body.hasAttribute('data-staff-onboarding-page');
     if (profile.role === 'staff' && profile.onboarding_complete !== true && !legacyActiveStaff && !isStaffOnboardingPage) {
         window.location.replace(new URL(onboardingPath, window.location.href).toString());
         return;

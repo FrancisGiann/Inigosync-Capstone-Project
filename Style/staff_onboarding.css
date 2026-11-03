@@ -1,0 +1,245 @@
+/* Staff setup uses the same Sora/Inter typography, orange accent, and theme
+   toggle language as the landing page. Keep the footer outside the scroll area. */
+html:root[data-theme] body.staff-onboarding {
+    background:
+        radial-gradient(ellipse 720px 420px at 50% -140px, rgba(255, 121, 0, .15), transparent 72%),
+        var(--surface-page);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+}
+
+html:root[data-theme="light"] body.staff-onboarding {
+    background:
+        radial-gradient(ellipse 720px 420px at 50% -140px, rgba(255, 121, 0, .1), transparent 72%),
+        #f7f7f5;
+}
+
+html:root[data-theme] .staff-onboarding-card {
+    width: min(100%, 740px);
+    min-height: min(690px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 48px);
+    padding: 0;
+    border: 1px solid var(--border-card);
+    border-radius: 20px;
+    background: var(--surface-card);
+    box-shadow: 0 26px 70px rgba(0, 0, 0, .3), 0 1px 0 rgba(255, 255, 255, .05) inset;
+}
+
+html:root[data-theme="light"] .staff-onboarding-card {
+    box-shadow: 0 24px 70px rgba(27, 34, 30, .12);
+}
+
+.staff-onboarding-header {
+    flex: 0 0 auto;
+    min-height: 96px;
+    padding: 22px 34px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.staff-onboarding-brand { gap: 12px; }
+.staff-onboarding-brand .system-logo-mark,
+.staff-onboarding-brand .system-logo-mark img {
+    width: 56px !important;
+    height: 56px !important;
+    flex-basis: 56px;
+}
+.staff-onboarding-wordmark { height: 60px; max-width: 205px; }
+
+html:root[data-theme] .staff-onboarding-card .staff-onboarding-theme {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    display: grid;
+    place-items: center;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: transparent;
+    color: var(--color-ink);
+    box-shadow: none;
+}
+.staff-onboarding-theme:hover {
+    border-color: var(--color-primary);
+    background: rgba(255, 121, 0, .1);
+}
+.staff-onboarding-theme svg { width: 20px; height: 20px; }
+
+.staff-onboarding-content { min-height: 0; }
+.staff-onboarding-main {
+    padding: 27px 34px 24px;
+    scrollbar-color: var(--border-card) transparent;
+    scrollbar-width: thin;
+}
+.staff-onboarding-step-meta {
+    margin-bottom: 12px;
+    color: var(--color-ink-dim);
+    font-family: var(--font-body);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+.staff-onboarding-step-meta span:first-child { color: var(--color-accent-text); }
+.staff-onboarding-progress { height: 4px; background: var(--border-soft); }
+.staff-onboarding-progress span { background: var(--color-primary); }
+
+.staff-onboarding-card h1 {
+    margin: 27px 0 9px;
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 3.5vw, 1.9rem);
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-tight);
+    letter-spacing: -.035em;
+}
+.staff-onboarding-card p { font-family: var(--font-body); }
+.staff-onboarding-intro {
+    max-width: 61ch;
+    margin-bottom: 26px;
+    color: var(--color-ink-dim);
+    font-size: .94rem;
+    line-height: 1.6;
+}
+.staff-onboarding-grid { column-gap: 18px; }
+.staff-onboarding-field { gap: 8px; margin: 0 0 18px; align-content: start; }
+.staff-onboarding-field label {
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: .82rem;
+    font-weight: var(--fw-semibold);
+}
+.staff-onboarding-field label span { color: var(--color-ink-dim); font-weight: var(--fw-regular); }
+.staff-onboarding-field input,
+.staff-onboarding-field select,
+.staff-onboarding-field textarea {
+    min-height: 48px;
+    border: 1px solid var(--border-card);
+    border-radius: 9px;
+    padding: 11px 13px;
+    background: var(--surface-page);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: .94rem;
+    line-height: 1.4;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.staff-onboarding-field input:hover,
+.staff-onboarding-field select:hover,
+.staff-onboarding-field textarea:hover { border-color: var(--color-ink-faint); }
+.staff-onboarding-field input:focus,
+.staff-onboarding-field select:focus,
+.staff-onboarding-field textarea:focus {
+    border-color: var(--color-primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 121, 0, .18);
+}
+html:root[data-theme] .staff-onboarding-field input:focus-visible,
+html:root[data-theme] .staff-onboarding-field select:focus-visible,
+html:root[data-theme] .staff-onboarding-field textarea:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 121, 0, .18);
+}
+.staff-onboarding-field input[readonly] {
+    background: var(--surface-band);
+    color: var(--color-ink-dim);
+    cursor: default;
+}
+.staff-onboarding-field input::placeholder,
+.staff-onboarding-field textarea::placeholder { color: var(--color-ink-faint); opacity: 1; }
+.staff-onboarding-field textarea { min-height: 80px; }
+.staff-onboarding-rules {
+    display: grid;
+    gap: 6px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--color-ink-dim);
+    font-size: .78rem;
+    line-height: 1.5;
+}
+.staff-onboarding-rules li { display: flex; align-items: center; gap: 8px; }
+.staff-onboarding-rules li::before { content: '○'; width: 1.2em; color: var(--color-ink-dim); font-weight: 700; }
+.staff-onboarding-rules li[data-valid="true"] { color: var(--color-success, #36a269); }
+.staff-onboarding-rules li[data-valid="true"]::before { content: '✓'; color: var(--color-success, #36a269); }
+.staff-onboarding-section-title { margin: 22px 0 18px; font-size: 1.08rem; }
+.staff-onboarding-section-copy { margin: 0 0 10px; font-size: .88rem; }
+.staff-onboarding-phone-status { min-height: 1.1em; margin: 0; color: var(--color-ink-dim); font-size: .82rem; }
+.staff-onboarding-phone-status:empty { display: none; }
+.staff-onboarding-phone-status[data-state="available"] { color: var(--color-success, #36a269); }
+.staff-onboarding-phone-status[data-state="in_use"],
+.staff-onboarding-phone-status[data-state="invalid"],
+.staff-onboarding-phone-status[data-state="error"] { color: var(--color-alert-text); }
+.staff-onboarding-phone-status[data-staff-onboarding-emergency-status][data-state="in_use"] { color: var(--color-primary); }
+.staff-onboarding-privacy-row { display: flex; align-items: flex-start; gap: 10px; margin: 22px 0 6px; font-size: .9rem; line-height: 1.5; }
+.staff-onboarding-privacy-row input { width: 19px; height: 19px; margin: 1px 0 0; accent-color: var(--color-primary); flex: 0 0 auto; }
+.staff-onboarding-privacy-link { border: 0; padding: 0; background: none; color: var(--color-primary); font: inherit; text-decoration: underline; cursor: pointer; }
+.staff-onboarding-privacy-modal[hidden] { display: none; }
+.staff-onboarding-privacy-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: rgba(0, 0, 0, .7); }
+.staff-onboarding-privacy-card { display: flex; flex-direction: column; width: min(100%, 640px); max-height: min(80vh, 720px); overflow: hidden; border: 1px solid var(--border-card); border-radius: 16px; background: var(--surface-card); color: var(--color-ink); box-shadow: 0 24px 70px rgba(0, 0, 0, .4); }
+.staff-onboarding-privacy-head,
+.staff-onboarding-privacy-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-soft); }
+.staff-onboarding-privacy-head h2 { margin: 0; font-size: 1.15rem; }
+.staff-onboarding-privacy-close { width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 1.5rem; cursor: pointer; }
+.staff-onboarding-privacy-copy { overflow: auto; min-height: 360px; padding: 8px 20px; line-height: 1.55; }
+.staff-onboarding-privacy-staff-note { margin: 8px 0 12px; padding: 12px 14px; border-left: 3px solid var(--color-primary); border-radius: 6px; background: rgba(255, 130, 0, .08); font-size: .88rem; }
+.staff-onboarding-privacy-copy iframe { display: block; width: 100%; height: 50vh; min-height: 340px; max-height: 560px; border: 0; background: var(--surface-page); }
+.staff-onboarding-privacy-foot { justify-content: flex-end; border-top: 1px solid var(--border-soft); border-bottom: 0; }
+.staff-onboarding-privacy-foot button { min-height: 42px; border: 1px solid var(--border-card); border-radius: 9px; padding: 0 16px; background: transparent; color: inherit; font: inherit; font-weight: 650; cursor: pointer; }
+.staff-onboarding-privacy-foot [data-privacy-agree] { border-color: transparent; background: var(--color-primary); color: #17120e; }
+.staff-onboarding-loading .inigo-loading-ring { margin: 0 auto 16px; }
+.staff-onboarding-loading .inigo-loading-text { margin: 0; }
+
+.staff-onboarding-card p.staff-onboarding-error {
+    margin: 4px 0 0;
+    color: var(--color-alert-text);
+    font-size: .84rem;
+}
+.staff-onboarding-footer {
+    min-height: 82px;
+    padding: 16px 34px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--surface-card);
+}
+.staff-onboarding-submit,
+.staff-onboarding-back,
+.staff-onboarding-retry {
+    min-height: 46px;
+    border-radius: 9px;
+    padding: 0 20px;
+    font-family: var(--font-body);
+    font-size: .9rem;
+    font-weight: var(--fw-semibold);
+}
+.staff-onboarding-submit {
+    background: var(--color-primary);
+    color: #1b1009;
+    box-shadow: 0 5px 15px rgba(255, 121, 0, .15);
+}
+.staff-onboarding-submit:hover:not(:disabled) { background: #ff9358; }
+.staff-onboarding-back:hover:not(:disabled),
+.staff-onboarding-retry:hover { border-color: var(--color-primary); background: rgba(255, 121, 0, .08); }
+.staff-onboarding-loading { font-family: var(--font-body); }
+
+@media (max-width: 560px) {
+    html:root[data-theme] body.staff-onboarding { padding: 12px; }
+    html:root[data-theme] .staff-onboarding-card {
+        min-height: calc(100dvh - 24px);
+        max-height: calc(100dvh - 24px);
+        border-radius: 15px;
+    }
+    .staff-onboarding-header { min-height: 78px; padding: 16px 20px; }
+    .staff-onboarding-main { padding: 20px 20px 12px; }
+    .staff-onboarding-footer { min-height: 74px; padding: 13px 20px; }
+    .staff-onboarding-brand .system-logo-mark,
+    .staff-onboarding-brand .system-logo-mark img {
+        width: 48px !important;
+        height: 48px !important;
+        flex-basis: 48px;
+    }
+    .staff-onboarding-wordmark { height: 50px; max-width: 168px; }
+    .staff-onboarding-intro { margin-bottom: 20px; }
+}

@@ -215,6 +215,58 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Match the customer and staff portals: reveal the sticky owner header
+    // after an upward scroll, and hide it after a sustained downward scroll.
+    // Header controls and the mobile drawer remain usable while focused/open.
+    const ownerTopbar = document.querySelector('.admin-topbar');
+    if (ownerTopbar) {
+        let previousY = Math.max(0, window.scrollY);
+        let directionAnchor = previousY;
+        let previousDirection = 0;
+        let syncPending = false;
+
+        const setOwnerTopbarHidden = (hidden) => {
+            if (hidden) {
+                closeProfileMenu();
+                const activeElement = document.activeElement;
+                if (ownerTopbar.contains(activeElement)) activeElement.blur?.();
+                ownerTopbar.classList.add('is-hidden');
+                ownerTopbar.setAttribute('aria-hidden', 'true');
+                ownerTopbar.setAttribute('inert', '');
+                return;
+            }
+
+            ownerTopbar.classList.remove('is-hidden');
+            ownerTopbar.removeAttribute('aria-hidden');
+            ownerTopbar.removeAttribute('inert');
+        };
+
+        const syncOwnerTopbar = () => {
+            syncPending = false;
+            const y = Math.max(0, window.scrollY);
+            const direction = Math.sign(y - previousY);
+            if (direction && direction !== previousDirection) {
+                directionAnchor = previousY;
+                previousDirection = direction;
+            }
+
+            const keepVisible = y < 96 || document.body.classList.contains('admin-sidebar-open');
+            if (keepVisible || (direction < 0 && directionAnchor - y >= 12)) setOwnerTopbarHidden(false);
+            else if (direction > 0 && y - directionAnchor >= 12) setOwnerTopbarHidden(true);
+            previousY = y;
+        };
+
+        window.addEventListener('scroll', () => {
+            if (!syncPending) {
+                syncPending = true;
+                window.requestAnimationFrame(syncOwnerTopbar);
+            }
+        }, { passive: true });
+        ownerTopbar.addEventListener('focusin', () => setOwnerTopbarHidden(false));
+        ownerTopbar.addEventListener('focusout', () => window.requestAnimationFrame(syncOwnerTopbar));
+        new MutationObserver(syncOwnerTopbar).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
+
     // Logout is wired in includes/authGuard.js (real Supabase sign-out).
 
     // ------------------------------------------------------------------
@@ -574,8 +626,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetStaffForm() {
         if (!staffForm) return;
+        staffEmailCheckRevision += 1;
+        window.clearTimeout(staffEmailCheckTimer);
         const emailInput = staffForm.querySelector('[data-admin-staff-email]');
-        if (emailInput) emailInput.value = '';
+        if (emailInput) { emailInput.value = ''; emailInput.removeAttribute('aria-invalid'); delete emailInput.dataset.emailState; }
+        const emailStatus = staffForm.querySelector('[data-admin-staff-email-status]');
+        if (emailStatus) { emailStatus.textContent = ''; delete emailStatus.dataset.state; }
+        const emailRetry = staffForm.querySelector('[data-admin-staff-email-retry]');
+        if (emailRetry) emailRetry.hidden = true;
+        if (staffSubmitBtn) staffSubmitBtn.disabled = true;
         const roleSelect = staffForm.querySelector('[data-admin-staff-role]');
         if (roleSelect) roleSelect.selectedIndex = 0;
     }
@@ -674,6 +733,84 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const staffTable = document.querySelector('[data-admin-staff-table]');
     const staffSubmitBtn = document.querySelector('[data-admin-staff-submit]');
+    const staffEmailInput = staffForm?.querySelector('[data-admin-staff-email]');
+    const staffEmailStatus = staffForm?.querySelector('[data-admin-staff-email-status]');
+    const staffEmailRetryBtn = staffForm?.querySelector('[data-admin-staff-email-retry]');
+    const STAFF_EMAIL_PATTERN = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+    let staffEmailCheckTimer = null;
+    let staffEmailCheckRevision = 0;
+    function setStaffEmailStatus(state, message) {
+        if (!staffEmailStatus) return;
+        if (state) staffEmailStatus.dataset.state = state;
+        else delete staffEmailStatus.dataset.state;
+        staffEmailStatus.textContent = message;
+        if (staffEmailRetryBtn) staffEmailRetryBtn.hidden = state !== 'error';
+        if (staffEmailInput) {
+            if (state) staffEmailInput.dataset.emailState = state;
+            else delete staffEmailInput.dataset.emailState;
+        }
+        staffEmailInput?.setAttribute('aria-invalid', String(['invalid', 'duplicate', 'error'].includes(state)));
+    }
+    function staffEmailIsValid(value) {
+        return value.length <= 254 && STAFF_EMAIL_PATTERN.test(value);
+    }
+    async function checkStaffEmailAvailability(email, revision) {
+        try {
+            const { data: { session } } = await window.sb.auth.getSession();
+            if (!session) throw new Error('Your session expired. Please log in again.');
+            const response = await fetch(`${window.SUPABASE_URL}/functions/v1/invite-staff`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                body: JSON.stringify({ email, position: staffForm.querySelector('[data-admin-staff-role]')?.value || '', check_email: true }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (response.status === 400 && revision === staffEmailCheckRevision) {
+                setStaffEmailStatus('invalid', result.error || 'Check the email address and its mail domain.');
+                return;
+            }
+            if (!response.ok) throw new Error(result.error || 'Could not check email availability.');
+            if (revision !== staffEmailCheckRevision || staffEmailInput.value.trim().toLowerCase() !== email) return;
+            if (result.exists) {
+                setStaffEmailStatus('duplicate', 'An account already uses this email.');
+                return;
+            }
+            setStaffEmailStatus('available', 'Format and mail domain look valid; no account uses this address. The mailbox is verified at first sign-in.');
+            staffSubmitBtn.disabled = false;
+        } catch (_) {
+            if (revision === staffEmailCheckRevision && staffEmailInput.value.trim().toLowerCase() === email) {
+                setStaffEmailStatus('error', 'Could not check email availability. Try again.');
+            }
+        }
+    }
+    function beginStaffEmailAvailabilityCheck(email, revision, delay = 350) {
+        setStaffEmailStatus('checking', 'Checking email availability…');
+        staffEmailCheckTimer = window.setTimeout(() => checkStaffEmailAvailability(email, revision), delay);
+    }
+    if (staffEmailInput && staffSubmitBtn) {
+        staffEmailInput.addEventListener('input', () => {
+            const revision = ++staffEmailCheckRevision;
+            window.clearTimeout(staffEmailCheckTimer);
+            const email = staffEmailInput.value.trim().toLowerCase();
+            staffSubmitBtn.disabled = true;
+            if (!email) { setStaffEmailStatus('', ''); return; }
+            if (!staffEmailIsValid(email) || !staffEmailInput.checkValidity()) {
+                setStaffEmailStatus('invalid', 'Enter a valid email address with a domain, such as name@example.com.');
+                return;
+            }
+            beginStaffEmailAvailabilityCheck(email, revision);
+        });
+    }
+    staffEmailRetryBtn?.addEventListener('click', () => {
+        const email = staffEmailInput?.value.trim().toLowerCase() || '';
+        if (!staffEmailInput || !staffEmailIsValid(email) || !staffEmailInput.checkValidity()) {
+            staffEmailInput?.dispatchEvent(new Event('input', { bubbles: true }));
+            return;
+        }
+        const revision = ++staffEmailCheckRevision;
+        window.clearTimeout(staffEmailCheckTimer);
+        staffSubmitBtn.disabled = true;
+        beginStaffEmailAvailabilityCheck(email, revision, 0);
+    });
     const staffSearch = document.querySelector('[data-admin-staff-search]');
     const staffStatusFilter = document.querySelector('[data-admin-staff-status-filter]');
     const staffPositionFilter = document.querySelector('[data-admin-staff-position-filter]');
@@ -699,7 +836,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (staffSubmitBtn) {
         staffSubmitBtn.addEventListener('click', async () => {
-            const emailInput = document.querySelector('[data-admin-staff-email]');
+            const emailInput = staffEmailInput;
             const roleSelect = document.querySelector('[data-admin-staff-role]');
             const email = emailInput ? emailInput.value.trim() : '';
             const position = roleSelect ? roleSelect.value : '';
@@ -709,7 +846,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.InigoToast?.show('Choose a valid staff position.', true);
                 roleSelect?.focus(); return;
             }
-            if (!emailInput.checkValidity()) { emailInput.reportValidity(); return; }
+            if (!emailInput.checkValidity() || !staffEmailIsValid(email.toLowerCase())) {
+                setStaffEmailStatus('invalid', 'Enter a valid email address with a domain, such as name@example.com.');
+                emailInput.reportValidity(); return;
+            }
+            if (staffEmailStatus?.dataset.state !== 'available' || staffSubmitBtn.disabled) {
+                emailInput.focus();
+                if (!['duplicate', 'error'].includes(staffEmailStatus?.dataset.state || '')) setStaffEmailStatus('checking', 'Check email availability before creating the account.');
+                return;
+            }
 
             if (!window.sb || !window.SUPABASE_URL) {
                 window.InigoToast?.show('Unable to reach the server right now. Please try again shortly.', true);
@@ -741,6 +886,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const result = await res.json().catch(() => ({}));
                 if (!res.ok) {
+                    if (res.status === 409) {
+                        setStaffEmailStatus('duplicate', 'An account already uses this email.');
+                        return;
+                    }
                     throw new Error(result.error || 'Could not create the staff account.');
                 }
 
@@ -748,10 +897,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetStaffForm();
                 closeStaffModal(true);
                 recordOwnerActivity(`Staff account created for ${email}`, 'staff');
+                if (result.delivery_uncertain) {
+                    window.InigoToast?.show(result.message || 'The account remains pending, but email delivery was not confirmed. Ask the staff member to check their inbox or use Forgot password? to reset access. Do not create another account.', true);
+                } else {
+                    window.InigoToast?.show(`Staff account created for ${email}. It remains pending until the recipient verifies the mailbox and completes setup.`);
+                }
             } catch (err) {
                 window.InigoToast?.show(err.message || 'Could not create the staff account. Please try again.', true);
             } finally {
-                staffSubmitBtn.disabled = false;
+                staffSubmitBtn.disabled = staffEmailStatus?.dataset.state !== 'available';
                 staffSubmitBtn.textContent = 'Create Staff Account';
             }
         });
@@ -773,18 +927,99 @@ document.addEventListener('DOMContentLoaded', () => {
     let staffEditModalLastFocused = null;
     let staffEditModalProfileId = null;
     let staffEditModalProfileName = '';
+    let staffEditModalMode = 'view';
     let staffEditPositionBaseline = '';
+    let staffEditEmailBaseline = '';
     let staffEditClosePending = false;
+    let recoveryEmailCheckTimer = null;
+    let recoveryEmailCheckRevision = 0;
+    let recoveryRetryBlocked = false;
+
+    function setRecoveryEmailStatus(state, message) {
+        const input = staffEditDialog?.querySelector('[data-admin-staff-recovery-email]');
+        const status = staffEditDialog?.querySelector('[data-admin-staff-recovery-email-status]');
+        const retry = staffEditDialog?.querySelector('[data-admin-staff-recovery-email-retry]');
+        if (status) {
+            if (state) status.dataset.state = state;
+            else delete status.dataset.state;
+            status.textContent = message;
+        }
+        if (retry) retry.hidden = state !== 'error';
+        if (input) {
+            if (state) input.dataset.emailState = state;
+            else delete input.dataset.emailState;
+            input.setAttribute('aria-invalid', String(['invalid', 'duplicate', 'error'].includes(state)));
+        }
+    }
+
+    function setRecoveryResult(message, isError = false) {
+        const result = staffEditDialog?.querySelector('[data-admin-staff-recovery-result]');
+        if (!result) return;
+        result.textContent = message;
+        result.classList.toggle('is-error', isError);
+    }
+
+    async function checkRecoveryEmailAvailability(email, revision, targetId) {
+        const input = staffEditDialog?.querySelector('[data-admin-staff-recovery-email]');
+        try {
+            const { data: { session } } = await window.sb.auth.getSession();
+            if (!session) throw new Error('Your session expired. Please log in again.');
+            const response = await fetch(`${window.SUPABASE_URL}/functions/v1/invite-staff`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                body: JSON.stringify({
+                    email,
+                    position: staffEditPositionBaseline || 'Secretary',
+                    check_email: true,
+                }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (revision !== recoveryEmailCheckRevision || staffEditModalProfileId !== targetId
+                || staffEditModalMode !== 'recover' || input?.value.trim().toLowerCase() !== email) return;
+            if (response.status === 400) {
+                setRecoveryEmailStatus('invalid', result.error || 'Check the email address and its mail domain.');
+                return;
+            }
+            if (!response.ok) throw new Error(result.error || 'Could not check email availability.');
+            if (typeof result.exists !== 'boolean') throw new Error('Could not check email availability.');
+
+            const isCurrentAddress = email === staffEditEmailBaseline.trim().toLowerCase();
+            if (result.exists && !isCurrentAddress) {
+                setRecoveryEmailStatus('duplicate', 'An account already uses this email.');
+                return;
+            }
+            setRecoveryEmailStatus('available', isCurrentAddress
+                ? 'Current account email. The mailbox is verified during setup.'
+                : 'Email is available. The mailbox is verified during setup.');
+            const saveBtn = staffEditDialog?.querySelector('[data-admin-staff-edit-submit]');
+            if (saveBtn) saveBtn.disabled = false;
+        } catch (error) {
+            if (revision !== recoveryEmailCheckRevision || staffEditModalProfileId !== targetId
+                || staffEditModalMode !== 'recover' || input?.value.trim().toLowerCase() !== email) return;
+            setRecoveryEmailStatus('error', error instanceof Error ? error.message : 'Could not check email availability. Try again.');
+            const saveBtn = staffEditDialog?.querySelector('[data-admin-staff-edit-submit]');
+            if (saveBtn) saveBtn.disabled = true;
+        }
+    }
+
+    function beginRecoveryEmailAvailabilityCheck(email, revision, delay = 350) {
+        setRecoveryEmailStatus('checking', 'Checking email availability…');
+        recoveryEmailCheckTimer = window.setTimeout(() => {
+            checkRecoveryEmailAvailability(email, revision, staffEditModalProfileId);
+        }, delay);
+    }
 
     function fillStaffEditForm(profile) {
         if (!staffEditDialog) return;
         const positionInput = staffEditDialog.querySelector('[data-admin-staff-edit-position]');
         if (positionInput) positionInput.value = profile.position || '';
         staffEditPositionBaseline = profile.position || '';
+        staffEditEmailBaseline = profile.email || '';
 
         const age = computeAdminStaffAge(profile.birthdate);
         const details = [
             ['name', profile.full_name],
+            ['email', profile.email],
             ['position', profile.position],
             ['mobile', profile.contact_num],
             ['address', profile.address],
@@ -805,9 +1040,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openStaffEditModal(profile, mode) {
         if (!staffEditModal || !staffEditDialog) return;
+        recoveryRetryBlocked = false;
         staffEditModalLastFocused = document.activeElement;
         staffEditModalProfileId = profile.id;
         staffEditModalProfileName = profile.full_name || 'Staff member';
+        staffEditModalMode = mode;
         fillStaffEditForm(profile);
 
         const viewingDetails = mode === 'view';
@@ -815,11 +1052,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const detailsEdit = staffEditDialog.querySelector('[data-admin-staff-details-edit]');
         if (detailsView) detailsView.hidden = false;
         if (detailsEdit) detailsEdit.hidden = viewingDetails;
+        const recoveryEmail = staffEditDialog.querySelector('[data-admin-staff-recovery-email]');
+        const recoveryGroup = staffEditDialog.querySelector('[data-admin-staff-recovery-email-group]');
+        const positionGroup = staffEditDialog.querySelector('[data-admin-staff-edit-position]')?.closest('.admin-form-group');
+        recoveryEmailCheckRevision += 1;
+        window.clearTimeout(recoveryEmailCheckTimer);
+        if (recoveryEmail) {
+            recoveryEmail.value = profile.email || '';
+            setRecoveryEmailStatus('', '');
+            setRecoveryResult('');
+        }
+        if (recoveryGroup) recoveryGroup.hidden = mode !== 'recover';
+        if (positionGroup) positionGroup.hidden = mode === 'recover';
 
         const titleEl = staffEditDialog.querySelector('[data-admin-staff-edit-modal-title]');
-        if (titleEl) titleEl.textContent = mode === 'view' ? 'Staff Details' : 'Change Staff Position';
+        if (titleEl) titleEl.textContent = mode === 'view' ? 'Staff Details' : mode === 'recover' ? 'Correct Pending Staff Email' : 'Change Staff Position';
         const saveBtn = staffEditDialog.querySelector('[data-admin-staff-edit-submit]');
         if (saveBtn) saveBtn.hidden = mode === 'view';
+        if (saveBtn) saveBtn.textContent = mode === 'recover' ? 'Save email and resend' : 'Save Position';
+        if (saveBtn) saveBtn.disabled = mode === 'recover';
         const cancelBtn = staffEditDialog.querySelector('.admin-btn-ghost[data-admin-staff-edit-modal-close]');
         if (cancelBtn) cancelBtn.textContent = 'Close';
 
@@ -835,20 +1086,24 @@ document.addEventListener('DOMContentLoaded', () => {
         staffEditModal.setAttribute('data-open', '');
         staffEditModalIsOpen = true;
 
-        const firstField = mode === 'view' ? cancelBtn : staffEditDialog.querySelector('[data-admin-staff-edit-position]');
+        const firstField = mode === 'view' ? cancelBtn : mode === 'recover' ? recoveryEmail : staffEditDialog.querySelector('[data-admin-staff-edit-position]');
         if (firstField) firstField.focus();
+        if (mode === 'recover' && recoveryEmail) recoveryEmail.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     async function closeStaffEditModal(force = false) {
         if (!staffEditModalIsOpen || !staffEditModal) return;
         const position = staffEditDialog?.querySelector('[data-admin-staff-edit-position]')?.value || '';
-        if (!force && staffEditModal.querySelector('[data-admin-staff-details-edit]:not([hidden])') && position !== staffEditPositionBaseline) {
+        const email = staffEditDialog?.querySelector('[data-admin-staff-recovery-email]')?.value.trim().toLowerCase() || '';
+        if (!force && staffEditModal.querySelector('[data-admin-staff-details-edit]:not([hidden])') && (position !== staffEditPositionBaseline || email !== staffEditEmailBaseline.toLowerCase())) {
             if (staffEditClosePending) return;
             staffEditClosePending = true;
-            const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard position change?', message: 'The unsaved staff position change will be lost.', confirmLabel: 'Discard changes', danger: true });
+            const accepted = await window.InigoOwnerUI?.confirm({ title: 'Discard staff changes?', message: 'Your unsaved staff account changes will be lost.', confirmLabel: 'Discard changes', danger: true });
             staffEditClosePending = false;
             if (!accepted) return;
         }
+        recoveryEmailCheckRevision += 1;
+        window.clearTimeout(recoveryEmailCheckTimer);
         staffEditModalIsOpen = false;
 
         staffEditModal.removeAttribute('data-open');
@@ -864,6 +1119,8 @@ document.addEventListener('DOMContentLoaded', () => {
         staffEditModalLastFocused = null;
         staffEditModalProfileId = null;
         staffEditModalProfileName = '';
+        staffEditModalMode = 'view';
+        staffEditEmailBaseline = '';
     }
 
     document.querySelectorAll('[data-admin-staff-edit-modal-close]').forEach((btn) => {
@@ -889,9 +1146,118 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const staffEditSubmitBtn = document.querySelector('[data-admin-staff-edit-submit]');
+    const staffRecoveryEmailInput = staffEditDialog?.querySelector('[data-admin-staff-recovery-email]');
+    const staffRecoveryEmailStatus = staffEditDialog?.querySelector('[data-admin-staff-recovery-email-status]');
+    const staffRecoveryEmailRetryBtn = staffEditDialog?.querySelector('[data-admin-staff-recovery-email-retry]');
+    if (staffRecoveryEmailInput && staffEditSubmitBtn) {
+        staffRecoveryEmailInput.addEventListener('input', () => {
+            const revision = ++recoveryEmailCheckRevision;
+            window.clearTimeout(recoveryEmailCheckTimer);
+            const email = staffRecoveryEmailInput.value.trim().toLowerCase();
+            staffEditSubmitBtn.disabled = true;
+            setRecoveryResult('');
+            if (!email) {
+                setRecoveryEmailStatus('', '');
+                return;
+            }
+            if (!staffEmailIsValid(email) || !staffRecoveryEmailInput.checkValidity()) {
+                setRecoveryEmailStatus('invalid', 'Enter a valid email address with a working mail domain.');
+                return;
+            }
+            beginRecoveryEmailAvailabilityCheck(email, revision);
+        });
+    }
+    staffRecoveryEmailRetryBtn?.addEventListener('click', () => {
+        const email = staffRecoveryEmailInput?.value.trim().toLowerCase() || '';
+        if (!staffRecoveryEmailInput || !staffEmailIsValid(email) || !staffRecoveryEmailInput.checkValidity()) {
+            staffRecoveryEmailInput?.dispatchEvent(new Event('input', { bubbles: true }));
+            return;
+        }
+        const revision = ++recoveryEmailCheckRevision;
+        window.clearTimeout(recoveryEmailCheckTimer);
+        if (staffEditSubmitBtn) staffEditSubmitBtn.disabled = true;
+        beginRecoveryEmailAvailabilityCheck(email, revision, 0);
+    });
     if (staffEditSubmitBtn) {
         staffEditSubmitBtn.addEventListener('click', async () => {
             if (!window.sb || !staffEditModalProfileId || !staffEditDialog) return;
+            if (staffEditModalMode === 'recover') {
+                const emailInput = staffEditDialog.querySelector('[data-admin-staff-recovery-email]');
+                const email = emailInput?.value.trim().toLowerCase() || '';
+                if (!emailInput?.checkValidity() || !staffEmailIsValid(email)) {
+                    window.InigoToast?.show('Enter a valid email address with a working mail domain.', true);
+                    emailInput?.reportValidity();
+                    return;
+                }
+                if (staffRecoveryEmailStatus?.dataset.state !== 'available') {
+                    emailInput?.focus();
+                    if (!['invalid', 'duplicate', 'error'].includes(staffRecoveryEmailStatus?.dataset.state || '')) {
+                        setRecoveryEmailStatus('checking', 'Check email availability before saving.');
+                    }
+                    return;
+                }
+                if (typeof window.InigoOwnerUI?.confirm !== 'function') {
+                    setRecoveryResult('The confirmation dialog is unavailable. Refresh the page and try again.', true);
+                    return;
+                }
+                const accepted = await window.InigoOwnerUI.confirm({
+                    title: 'Correct email and resend setup?',
+                    message: `A new temporary password will be sent to ${email}. The staff member must verify that mailbox and finish setup before the account becomes active.`,
+                    confirmLabel: 'Save and send',
+                });
+                if (!accepted) return;
+                if (staffEditModalMode !== 'recover'
+                    || emailInput?.value.trim().toLowerCase() !== email
+                    || staffRecoveryEmailStatus?.dataset.state !== 'available') return;
+                staffEditSubmitBtn.disabled = true;
+                staffEditSubmitBtn.textContent = 'Sending…';
+                setRecoveryResult('Saving the corrected email and sending the setup message…');
+                let recoveryRequestAwaitingResponse = false;
+                try {
+                    const { data: { session } } = await window.sb.auth.getSession();
+                    if (!session) throw new Error('Your session expired. Please log in again.');
+                    recoveryRequestAwaitingResponse = true;
+                    const response = await fetch(`${window.SUPABASE_URL}/functions/v1/recover-pending-staff`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                        body: JSON.stringify({ user_id: staffEditModalProfileId, email }),
+                    });
+                    recoveryRequestAwaitingResponse = false;
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        // Auth may have saved the new address before SMTP failed. Keep
+                        // this address retryable even if the staff list has not refreshed.
+                        if (result.email_saved === true) {
+                            staffEditEmailBaseline = email;
+                            refreshStaffList();
+                        }
+                        throw new Error(result.error || 'Could not send the staff setup email. The account remains pending.');
+                    }
+                    closeStaffEditModal(true);
+                    refreshStaffList();
+                    recordOwnerActivity(`Staff setup email accepted by mail server for ${email}`, 'staff');
+                    window.InigoToast?.show(result.delivery_uncertain || result.recovery_lock_release_pending
+                        ? result.message || `Delivery to ${email} is uncertain. Check that inbox before retrying; retrying replaces the temporary password.`
+                        : `Setup email submitted to ${email}. Staff setup is pending.`,
+                    Boolean(result.delivery_uncertain || result.recovery_lock_release_pending));
+                } catch (error) {
+                    const deliveryOutcomeUnknown = recoveryRequestAwaitingResponse;
+                    const message = deliveryOutcomeUnknown
+                        ? `We couldn't confirm whether the setup email was sent to ${email}. Check that inbox before trying again; a retry replaces the temporary password, so only the newest message will work.`
+                        : error.message || 'Could not send the staff setup email. The account remains pending.';
+                    if (deliveryOutcomeUnknown) {
+                        recoveryRetryBlocked = true;
+                        staffEditEmailBaseline = email;
+                        refreshStaffList();
+                    }
+                    setRecoveryResult(message, true);
+                    window.InigoToast?.show(message, true);
+                } finally {
+                    staffEditSubmitBtn.disabled = recoveryRetryBlocked || staffRecoveryEmailStatus?.dataset.state !== 'available';
+                    staffEditSubmitBtn.textContent = 'Save email and resend';
+                }
+                return;
+            }
             const position = staffEditDialog.querySelector('[data-admin-staff-edit-position]')?.value || '';
             if (!['Secretary', 'Court Attendant'].includes(position)) {
                 window.InigoToast?.show('Choose a valid staff position.', true);
@@ -957,7 +1323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const memberSince = profile.created_at
             ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
             : '—';
-        const statusLabels = { active: 'Active', disabled: 'Deactivated', pending: 'Setup pending' };
+        const statusLabels = { active: 'Active', disabled: 'Deactivated', pending: 'Pending · email verification and setup required' };
         const statusLabel = statusLabels[profile.status] || 'Active';
         const parts = [];
         if (age !== null) parts.push(`${age} yrs old`);
@@ -972,7 +1338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const map = {
             active: ['active', 'Active'],
             disabled: ['inactive', 'Deactivated'],
-            pending: ['pending', 'Setup pending'],
+            pending: ['pending', 'Pending verification'],
         };
         const [cls, label] = map[status] || ['active', 'Active'];
         return `<span class="admin-status ${cls}">${label}</span>`;
@@ -1022,6 +1388,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" class="admin-btn-secondary admin-staff-actions-trigger" data-admin-staff-actions-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="adminStaffActionCard" aria-label="Actions for ${window.escapeHtml(profile.full_name || 'staff member')}">Actions <span aria-hidden="true">▾</span></button>
                     <button type="button" hidden data-admin-view-staff>View</button>
                     <button type="button" hidden data-admin-edit-staff>Change position</button>
+                    ${profile.status === 'pending' ? '<button type="button" hidden data-admin-recover-staff>Correct / resend</button>' : ''}
                     ${profile.status === 'disabled'
                         ? '<button type="button" hidden data-admin-activate-staff>Activate</button>'
                         : '<button type="button" hidden data-admin-delete-staff>Deactivate</button>'}
@@ -1165,6 +1532,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        scope.querySelectorAll('[data-admin-recover-staff]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const row = btn.closest('tr');
+                if (!row) return;
+                openStaffEditModal(row.__staffProfile || fallbackProfileFromRow(row), 'recover');
+            });
+        });
+
         // Soft-delete: a real auth.users delete needs service-role/an edge
         // function, unavailable client-side, so this deactivates the profile
         // instead (authGuard.js already refuses disabled accounts at login).
@@ -1233,6 +1608,7 @@ document.addEventListener('DOMContentLoaded', () => {
     staffActionCard.innerHTML = `
         <button type="button" data-admin-staff-command="view">View staff details</button>
         <button type="button" data-admin-staff-command="edit">Change position</button>
+        <button type="button" data-admin-staff-command="recover" hidden>Correct / resend</button>
         <button type="button" data-admin-staff-command="toggle">Deactivate account</button>
     `;
     document.body.appendChild(staffActionCard);
@@ -1270,6 +1646,8 @@ document.addEventListener('DOMContentLoaded', () => {
         closeStaffActionCard();
         staffActionCardTrigger = trigger;
         const toggle = staffActionCard.querySelector('[data-admin-staff-command="toggle"]');
+        const recover = staffActionCard.querySelector('[data-admin-staff-command="recover"]');
+        if (recover) recover.hidden = row.querySelector('[data-admin-recover-staff]') === null;
         const isDisabled = row.querySelector('[data-admin-activate-staff]') !== null;
         if (toggle) {
             toggle.textContent = isDisabled ? 'Activate account' : 'Deactivate account';
@@ -1292,6 +1670,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = {
             view: '[data-admin-view-staff]',
             edit: '[data-admin-edit-staff]',
+            recover: '[data-admin-recover-staff]',
             toggle: row.querySelector('[data-admin-activate-staff]') ? '[data-admin-activate-staff]' : '[data-admin-delete-staff]',
         }[command];
         if (target) row.querySelector(target)?.click();
@@ -1585,6 +1964,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const bookingRulesEffective = document.querySelector('[data-owner-rules-effective]');
     const bookingRulesGrace = document.querySelector('[data-owner-rules-grace]');
     const bookingRulesCutoff = document.querySelector('[data-owner-rules-cutoff]');
+    const bookingRulesGraceError = document.querySelector('[data-owner-rules-grace-error]');
+    const bookingRulesCutoffError = document.querySelector('[data-owner-rules-cutoff-error]');
     const bookingRulesTimezone = document.querySelector('[data-owner-rules-timezone]');
     const bookingRulesMessage = document.querySelector('[data-owner-rules-message]');
     const bookingRulesSave = document.querySelector('[data-owner-rules-save]');
@@ -1651,6 +2032,62 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingRulesMessage.textContent = message;
         bookingRulesMessage.classList.toggle('is-error', isError);
     }
+
+    function parseBookingRuleMinutes(input, errorElement) {
+        const raw = String(input?.value ?? '');
+        const validDigits = /^[0-9]+$/.test(raw);
+        const minutes = validDigits ? Number(raw) : NaN;
+        const valid = Number.isSafeInteger(minutes) && minutes >= 0 && minutes <= 59;
+        if (input) input.setAttribute('aria-invalid', valid ? 'false' : 'true');
+        if (errorElement) errorElement.hidden = valid;
+        return valid ? minutes : null;
+    }
+
+    function guardBookingRuleMinuteInsertion(event, input, errorElement) {
+        const inserted = event.data ?? event.dataTransfer?.getData('text/plain');
+        if (typeof inserted !== 'string' || /^[0-9]*$/.test(inserted)) return;
+        event.preventDefault();
+        input?.setAttribute('aria-invalid', 'true');
+        if (errorElement) errorElement.hidden = false;
+    }
+
+    function guardBookingRuleMinutePaste(event, input, errorElement) {
+        const pasted = event.clipboardData?.getData('text/plain');
+        if (typeof pasted !== 'string' || /^[0-9]*$/.test(pasted)) return;
+        event.preventDefault();
+        input?.setAttribute('aria-invalid', 'true');
+        if (errorElement) errorElement.hidden = false;
+    }
+
+    function handleBookingRuleMinuteInput(input, errorElement) {
+        const raw = String(input?.value ?? '');
+        if (!/^[0-9]*$/.test(raw)) {
+            if (input) input.value = input.dataset.lastValid ?? '';
+            input?.setAttribute('aria-invalid', 'true');
+            if (errorElement) errorElement.hidden = false;
+            return;
+        }
+        if (input?.dataset) input.dataset.lastValid = raw;
+        parseBookingRuleMinutes(input, errorElement);
+    }
+
+    function setBookingRuleMinuteValue(input, value) {
+        if (!input) return;
+        input.value = String(value ?? '');
+        if (input.dataset) input.dataset.lastValid = input.value;
+    }
+
+    function installBookingRuleMinuteInput(input, errorElement) {
+        if (!input) return;
+        if (input.dataset) input.dataset.lastValid = input.value;
+        input.addEventListener('beforeinput', event => guardBookingRuleMinuteInsertion(event, input, errorElement));
+        input.addEventListener('paste', event => guardBookingRuleMinutePaste(event, input, errorElement));
+        input.addEventListener('input', () => handleBookingRuleMinuteInput(input, errorElement));
+        input.addEventListener('blur', () => parseBookingRuleMinutes(input, errorElement));
+    }
+
+    installBookingRuleMinuteInput(bookingRulesGrace, bookingRulesGraceError);
+    installBookingRuleMinuteInput(bookingRulesCutoff, bookingRulesCutoffError);
 
     function getBookingRulesDraft() {
         return JSON.stringify({
@@ -1756,8 +2193,8 @@ document.addEventListener('DOMContentLoaded', () => {
             bookingRulesEffective.min = todayManila;
             const loadedEffectiveDate = String(rules.effective_from || '').slice(0, 10);
             bookingRulesEffective.value = loadedEffectiveDate >= todayManila ? loadedEffectiveDate : todayManila;
-            bookingRulesGrace.value = String(Number.isFinite(Number(rules.grace_minutes)) ? rules.grace_minutes : 30);
-            bookingRulesCutoff.value = String(Number.isInteger(Number(rules.slot_cutoff_minutes)) ? rules.slot_cutoff_minutes : 10);
+            setBookingRuleMinuteValue(bookingRulesGrace, Number.isFinite(Number(rules.grace_minutes)) ? rules.grace_minutes : 30);
+            setBookingRuleMinuteValue(bookingRulesCutoff, Number.isInteger(Number(rules.slot_cutoff_minutes)) ? rules.slot_cutoff_minutes : 10);
             if (bookingRulesTimezone) bookingRulesTimezone.textContent = `Times are shown in ${response.timezone || 'Asia/Manila'}.`;
             const byDay = new Map(rules.weekly_hours.map(item => [Number(item.weekday), item]));
             bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]').forEach(row => {
@@ -1858,15 +2295,13 @@ document.addEventListener('DOMContentLoaded', () => {
     bookingRulesSave?.addEventListener('click', async () => {
         if (!window.sb || bookingRulesLoading) return;
         const effectiveFrom = bookingRulesEffective?.value || '';
-        const graceMinutes = Number(bookingRulesGrace?.value);
-        const slotCutoffRaw = String(bookingRulesCutoff?.value ?? '').trim();
-        if (!slotCutoffRaw) { setBookingRulesMessage('Enter an unbooked slot cutoff from 0 to 59 minutes.', true); bookingRulesCutoff?.focus(); return; }
-        const slotCutoffMinutes = Number(slotCutoffRaw);
+        const graceMinutes = parseBookingRuleMinutes(bookingRulesGrace, bookingRulesGraceError);
+        if (graceMinutes === null) { setBookingRulesMessage('Enter a whole number from 0 to 59 minutes using digits only for the no-show grace period.', true); bookingRulesGrace?.focus(); return; }
+        const slotCutoffMinutes = parseBookingRuleMinutes(bookingRulesCutoff, bookingRulesCutoffError);
+        if (slotCutoffMinutes === null) { setBookingRulesMessage('Enter a whole number from 0 to 59 minutes using digits only for the unbooked slot cutoff.', true); bookingRulesCutoff?.focus(); return; }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) { setBookingRulesMessage('Choose the date these rules should take effect.', true); bookingRulesEffective?.focus(); return; }
         const todayManila = todayBookingRulesDate();
         if (effectiveFrom < todayManila) { setBookingRulesMessage('Choose today or a future effective date.', true); bookingRulesEffective?.focus(); return; }
-        if (!Number.isInteger(graceMinutes) || graceMinutes < 0 || graceMinutes > 240) { setBookingRulesMessage('Enter a grace period from 0 to 240 minutes.', true); bookingRulesGrace?.focus(); return; }
-        if (!Number.isInteger(slotCutoffMinutes) || slotCutoffMinutes < 0 || slotCutoffMinutes > 59) { setBookingRulesMessage('Enter an unbooked slot cutoff from 0 to 59 minutes.', true); bookingRulesCutoff?.focus(); return; }
 
         const weeklyHours = [];
         for (const row of bookingRulesWeekdays?.querySelectorAll('[data-owner-rules-day]') || []) {
@@ -2834,15 +3269,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fullNameEl) fullNameEl.textContent = profile.full_name || '—';
         const detailNameEl = document.querySelector('[data-admin-profile-detail-name]');
         if (detailNameEl) detailNameEl.textContent = profile.full_name || '—';
-        const statusEl = document.querySelector('[data-admin-profile-status]');
-        if (statusEl) {
-            const statusLabels = { active: 'Active', pending: 'Setup pending', disabled: 'Deactivated' };
-            const statusClasses = { active: 'active', pending: 'pending', disabled: 'inactive' };
-            statusEl.textContent = statusLabels[profile.status] || '—';
-            statusEl.classList.remove('active', 'pending', 'inactive');
-            if (statusClasses[profile.status]) statusEl.classList.add(statusClasses[profile.status]);
-        }
-
         // Revision A2, decision B2 — the Profile panel's Email/Mobile
         // definition-list rows. authGuard.js's own profiles select already
         // includes contact_num (unlike created_at — see
@@ -3606,8 +4032,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const date = review.created_at ? new Date(review.created_at) : null;
                 const dateText = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : 'Date unavailable';
                 const datetime = review.created_at ? ` datetime="${window.escapeHtml(review.created_at)}"` : '';
-                const sampleBadge = review.is_sample ? '<span class="owner-review-sample-badge">Sample review</span>' : '';
-                return `<article class="admin-review-item owner-review-browser-item"><div class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span></div>${comment}<time${datetime}>${window.escapeHtml(dateText)}</time></article>`;
+                return `<article class="admin-review-item owner-review-browser-item"><div class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong><span aria-label="${rating} out of 5 stars">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span></div>${comment}<time${datetime}>${window.escapeHtml(dateText)}</time></article>`;
             }).join('') : '<p class="admin-form-hint">No customer reviews match this filter yet.</p>';
             const pages = Math.max(1, Math.ceil((count || 0) / REVIEW_PAGE_SIZE));
             if (ownerReviewBrowserPager) ownerReviewBrowserPager.hidden = (count || 0) <= REVIEW_PAGE_SIZE;
@@ -3633,8 +4058,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reviewSlots.innerHTML = Array.from({ length: 3 }, (_, index) => {
             const id = savedFeaturedReviewIds[index];
             const review = id ? featuredReviewDetails.get(id) : null;
-            const sampleBadge = review?.is_sample ? '<span class="owner-review-sample-badge">Sample review</span>' : '';
-            return `<article class="owner-featured-review-slot${id ? ' is-filled' : ''}"><span class="owner-featured-review-slot-number">${index + 1}</span>${review ? `<div><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<div class="owner-featured-review-slot-rating" aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</div><p>“${window.escapeHtml(review.comment)}”</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></div>` : `<p>${id ? 'Loading saved review…' : 'Your next featured story goes here'}</p>`}</article>`;
+            return `<article class="owner-featured-review-slot${id ? ' is-filled' : ''}"><span class="owner-featured-review-slot-number">${index + 1}</span>${review ? `<div><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong><div class="owner-featured-review-slot-rating" aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</div><p>“${window.escapeHtml(review.comment)}”</p><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></div>` : `<p>${id ? 'Loading saved review…' : 'Your next featured story goes here'}</p>`}</article>`;
         }).join('');
     }
     function renderFeaturedReviewChips() {
@@ -3677,8 +4101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const checked = selectedIndex >= 0;
             const selectionOrder = checked ? `<span class="owner-featured-review-order" aria-label="Featured review ${selectedIndex + 1}">${selectedIndex + 1}</span>` : '';
             const disabled = (!checked && featuredReviewIds.length >= 3) || savingFeaturedReviews || !featuredSelectionLoaded;
-            const sampleBadge = review.is_sample ? '<span class="owner-review-sample-badge">Sample review</span>' : '';
-            return `<label class="admin-review-item owner-featured-review-item${checked ? ' is-selected' : ''}"><input type="checkbox" data-featured-review-id="${window.escapeHtml(review.id)}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''} aria-label="${checked ? 'Remove' : 'Add'} this ${Number(review.rating)} star review${selectionOrder ? `; selected ${selectedIndex + 1} of 3` : ''}"><span class="owner-featured-review-content"><span class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong>${sampleBadge}<span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></span><span class="owner-featured-review-comment">${window.escapeHtml(review.comment)}</span><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></span>${selectionOrder}</label>`;
+            return `<label class="admin-review-item owner-featured-review-item${checked ? ' is-selected' : ''}"><input type="checkbox" data-featured-review-id="${window.escapeHtml(review.id)}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''} aria-label="${checked ? 'Remove' : 'Add'} this ${Number(review.rating)} star review${selectionOrder ? `; selected ${selectedIndex + 1} of 3` : ''}"><span class="owner-featured-review-content"><span class="admin-review-item-head"><strong>${window.escapeHtml(review.display_name || 'Customer')}</strong><span aria-label="${Number(review.rating)} out of 5 stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></span><span class="owner-featured-review-comment">${window.escapeHtml(review.comment)}</span><time datetime="${window.escapeHtml(review.created_at)}">${window.escapeHtml(new Date(review.created_at).toLocaleDateString())}</time></span>${selectionOrder}</label>`;
         }).join('') : '<p class="admin-form-hint">No eligible reviews with written comments are available yet.</p>';
         reviewList.querySelectorAll('[data-featured-review-id]').forEach((checkbox) => checkbox.addEventListener('change', () => {
             const id = checkbox.dataset.featuredReviewId;

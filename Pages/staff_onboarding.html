@@ -3,84 +3,183 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#102a24">
+    <meta name="theme-color" content="#090909">
     <title>Finish Staff Setup | InigoSync</title>
     <link rel="icon" type="image/png" href="../assets/Logo/InigoSync-Emblem.png">
     <link rel="apple-touch-icon" href="../assets/Logo/InigoSync-Emblem.png">
-    <script>(function(){const saved=localStorage.getItem('inigosync-theme');document.documentElement.dataset.theme=(saved==='light'||saved==='dark')?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');})();</script>
+    <script>(function(){try{const saved=localStorage.getItem('inigosync-theme');document.documentElement.dataset.theme=(saved==='light'||saved==='dark')?saved:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');}catch(_){document.documentElement.dataset.theme='dark';}})();</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../Style/typography.css">
     <link rel="stylesheet" href="../Style/Auth.css">
     <link rel="stylesheet" href="../Style/ThemeTokens.css">
+    <link rel="stylesheet" href="../Style/Loading.css">
     <style>
-        body.staff-onboarding { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:var(--surface-page); color:var(--color-ink); font-family:Inter,system-ui,sans-serif; }
-        .staff-onboarding-card { width:min(100%,560px); max-height:calc(100vh - 48px); overflow:auto; padding:30px; border:1px solid var(--border-card); border-radius:16px; background:var(--surface-card); color:var(--color-ink); box-shadow:var(--shadow-card); }
-        .staff-onboarding-brand { display:flex; align-items:center; gap:10px; margin-bottom:22px; }
-        .staff-onboarding-brand .system-logo-mark { width:44px; height:44px; flex:0 0 44px; }
-        .staff-onboarding-brand .system-logo-mark img { width:44px!important; height:44px!important; }
-        .staff-onboarding-wordmark { display:block; width:auto; height:64px; max-width:min(165px,42vw); object-fit:contain; }
-        .staff-onboarding-card h1 { margin:0 0 8px; font-size:1.55rem; }
+        body.staff-onboarding { box-sizing:border-box; min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:#090909; color:#fff; font-family:Inter,system-ui,sans-serif; }
+        .staff-onboarding-card { box-sizing:border-box; width:min(100%,560px); min-height:min(650px,calc(100vh - 48px)); max-height:calc(100vh - 48px); display:flex; flex-direction:column; overflow:hidden; padding:30px; border:1px solid var(--border-card,#333); border-radius:18px; background:var(--surface-card,#191919); color:var(--color-ink,#fff); box-shadow:var(--shadow-card); }
+        .staff-onboarding-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-bottom:22px; border-bottom:1px solid var(--border-soft); }
+        .staff-onboarding-brand { display:flex; align-items:center; gap:10px; min-width:0; }
+        .staff-onboarding-brand .system-logo-mark,.staff-onboarding-brand .system-logo-mark img { width:52px!important; height:52px!important; flex:0 0 52px; }
+        .staff-onboarding-wordmark { display:block; width:auto; height:58px; max-width:min(190px,42vw); object-fit:contain; }
+        html:root[data-theme] .staff-onboarding-card .staff-onboarding-theme { position:static; inset:auto; z-index:auto; }
+        .staff-onboarding-theme { flex:0 0 auto; min-height:42px; padding:0 13px; border:1px solid var(--border-card); border-radius:999px; background:transparent; color:inherit; font:600 .84rem Inter,system-ui,sans-serif; cursor:pointer; }
+        .staff-onboarding-theme:hover { background:var(--surface-card-hover); }
+        .staff-onboarding-loading { margin:auto 0; color:var(--color-ink-dim); text-align:center; }
+        .staff-onboarding-retry { min-height:44px; margin:16px auto 0; border:1px solid var(--border-card); border-radius:10px; padding:0 16px; background:transparent; color:inherit; font:inherit; font-weight:650; cursor:pointer; }
+        .staff-onboarding-content { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; }
+        [data-staff-onboarding-content]:not([hidden]) { display:flex; }
+        [data-staff-onboarding-content][hidden] { display:none; }
+        .staff-onboarding-main { flex:1 1 auto; overflow:auto; padding:24px 2px 8px; }
+        .staff-onboarding-step-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; color:var(--color-ink-dim); font-size:.86rem; }
+        .staff-onboarding-progress { height:5px; overflow:hidden; border-radius:999px; background:var(--border-soft); }
+        .staff-onboarding-progress span { display:block; width:33.333%; height:100%; border-radius:inherit; background:var(--color-primary); transition:width .2s ease; }
+        .staff-onboarding-card h1 { margin:20px 0 8px; font-size:1.55rem; line-height:1.2; }
         .staff-onboarding-card p { color:var(--color-ink-dim); line-height:1.5; }
-        .staff-onboarding-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-        .staff-onboarding-field { display:grid; gap:6px; margin:12px 0; }
+        .staff-onboarding-intro { margin:0 0 20px; }
+        .staff-onboarding-field { display:grid; gap:6px; margin:14px 0; align-content:start; }
+        .staff-onboarding-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
         .staff-onboarding-field.full { grid-column:1/-1; }
         .staff-onboarding-field label { font-size:.9rem; font-weight:650; }
-        .staff-onboarding-field input,.staff-onboarding-field select,.staff-onboarding-field textarea { width:100%; box-sizing:border-box; border:1px solid var(--border-card); border-radius:10px; padding:11px 12px; font:inherit; color:var(--color-ink); background:var(--surface-card); }
-        .staff-onboarding-rules { margin:4px 0; padding-left:20px; color:var(--color-ink-dim); font-size:.82rem; }
-        .staff-onboarding-card p.staff-onboarding-error { min-height:1.4em; color:var(--color-alert-text); font-size:.9rem; }
-        .staff-onboarding-submit { width:100%; min-height:44px; border:0; border-radius:10px; padding:13px; background:var(--color-primary); color:#182a35; font:inherit; font-weight:700; cursor:pointer; }
-        .staff-onboarding-submit:disabled { opacity:.65; cursor:wait; }
-        [data-staff-onboarding-content] { display:none; }
-        @media(max-width:560px) { .staff-onboarding-card { padding:22px; } .staff-onboarding-grid { grid-template-columns:1fr; } .staff-onboarding-field.full { grid-column:auto; } }
+        .staff-onboarding-field input,.staff-onboarding-field select,.staff-onboarding-field textarea { box-sizing:border-box; width:100%; min-height:44px; border:1px solid var(--border-card); border-radius:10px; padding:10px 12px; font:inherit; color:var(--color-ink); background:var(--surface-page); }
+        .staff-onboarding-field textarea { min-height:72px; resize:vertical; }
+        .staff-onboarding-rules { display:grid; gap:6px; margin:4px 0 0; padding:0; list-style:none; color:var(--color-ink-dim); font-size:.82rem; line-height:1.5; }
+        .staff-onboarding-rules li { display:flex; align-items:center; gap:8px; }
+        .staff-onboarding-rules li::before { content:'○'; width:1.2em; color:var(--color-ink-dim); font-weight:700; }
+        .staff-onboarding-rules li[data-valid="true"] { color:var(--color-success,#36a269); }
+        .staff-onboarding-rules li[data-valid="true"]::before { content:'✓'; color:var(--color-success,#36a269); }
+        .staff-onboarding-section-title { margin:22px 0 18px; font-size:1.08rem; }
+        .staff-onboarding-section-copy { margin:0 0 10px; font-size:.88rem; }
+        .staff-onboarding-phone-status { min-height:1.1em; margin:0; color:var(--color-ink-dim); font-size:.82rem; }
+        .staff-onboarding-phone-status:empty { display:none; }
+        .staff-onboarding-phone-status[data-state="available"] { color:var(--color-success,#36a269); }
+        .staff-onboarding-phone-status[data-state="in_use"],.staff-onboarding-phone-status[data-state="invalid"],.staff-onboarding-phone-status[data-state="error"] { color:var(--color-alert-text); }
+        .staff-onboarding-privacy-row { display:flex; align-items:flex-start; gap:10px; margin:22px 0 6px; font-size:.9rem; line-height:1.5; }
+        .staff-onboarding-privacy-row input { width:19px; height:19px; margin:1px 0 0; accent-color:var(--color-primary); flex:0 0 auto; }
+        .staff-onboarding-privacy-link { border:0; padding:0; background:none; color:var(--color-primary); font:inherit; text-decoration:underline; cursor:pointer; }
+        .staff-onboarding-privacy-modal[hidden] { display:none; }
+        .staff-onboarding-privacy-modal { position:fixed; inset:0; z-index:1000; display:grid; place-items:center; padding:18px; background:rgba(0,0,0,.7); }
+        .staff-onboarding-privacy-card { display:flex; flex-direction:column; width:min(100%,640px); max-height:min(80vh,720px); overflow:hidden; border:1px solid var(--border-card); border-radius:16px; background:var(--surface-card); color:var(--color-ink); box-shadow:0 24px 70px rgba(0,0,0,.4); }
+        .staff-onboarding-privacy-head,.staff-onboarding-privacy-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; border-bottom:1px solid var(--border-soft); }
+        .staff-onboarding-privacy-head h2 { margin:0; font-size:1.15rem; }
+        .staff-onboarding-privacy-close { width:40px; height:40px; border:0; border-radius:50%; background:transparent; color:inherit; font-size:1.5rem; cursor:pointer; }
+        .staff-onboarding-privacy-copy { overflow:auto; min-height:360px; padding:8px 20px; line-height:1.55; }
+        .staff-onboarding-privacy-copy iframe { display:block; width:100%; height:50vh; min-height:340px; max-height:560px; border:0; background:var(--surface-page); }
+        .staff-onboarding-privacy-copy h3 { margin:18px 0 4px; font-size:1rem; }
+        .staff-onboarding-privacy-foot { justify-content:flex-end; border-top:1px solid var(--border-soft); border-bottom:0; }
+        .staff-onboarding-privacy-foot button { min-height:42px; border:1px solid var(--border-card); border-radius:9px; padding:0 16px; background:transparent; color:inherit; font:inherit; font-weight:650; cursor:pointer; }
+        .staff-onboarding-privacy-foot [data-privacy-agree] { border-color:transparent; background:var(--color-primary); color:#17120e; }
+        .staff-onboarding-loading .inigo-loading-ring { margin:0 auto 16px; }
+        .staff-onboarding-loading .inigo-loading-text { margin:0; }
+        .staff-onboarding-card p.staff-onboarding-error { min-height:1.4em; margin:8px 0 0; color:var(--color-alert-text); font-size:.9rem; }
+        .staff-onboarding-footer { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:12px; padding-top:18px; border-top:1px solid var(--border-soft); }
+        .staff-onboarding-footer[hidden] { display:none; }
+        .staff-onboarding-submit,.staff-onboarding-back { min-height:46px; border-radius:10px; padding:0 18px; font:inherit; font-weight:700; cursor:pointer; }
+        .staff-onboarding-submit { margin-left:auto; border:0; background:var(--color-primary); color:#17120e; }
+        .staff-onboarding-back { border:1px solid var(--border-card); background:transparent; color:inherit; }
+        .staff-onboarding-submit:disabled,.staff-onboarding-back:disabled { opacity:.65; cursor:wait; }
+        .staff-onboarding-saving { display:flex; align-items:center; justify-content:center; gap:10px; min-height:50px; margin:16px 0 0; color:var(--color-ink-dim); }
+        .staff-onboarding-saving[hidden] { display:none; }
+        .staff-onboarding-spinner { width:18px; height:18px; border:2px solid var(--border-card); border-top-color:var(--color-primary); border-radius:50%; animation:staff-spin .75s linear infinite; }
+        @keyframes staff-spin { to { transform:rotate(360deg); } }
+        @media(max-width:560px) { body.staff-onboarding { padding:12px; } .staff-onboarding-card { min-height:calc(100vh - 24px); max-height:calc(100vh - 24px); padding:20px; } .staff-onboarding-grid { grid-template-columns:1fr; } .staff-onboarding-field.full { grid-column:auto; } .staff-onboarding-wordmark { height:46px; } .staff-onboarding-brand .system-logo-mark,.staff-onboarding-brand .system-logo-mark img { width:46px!important; height:46px!important; flex-basis:46px; } }
+        @media(prefers-reduced-motion:reduce) { .staff-onboarding-progress span,.staff-onboarding-spinner { animation:none; transition:none; } }
     </style>
+    <link rel="stylesheet" href="../Style/staff_onboarding.css">
 </head>
 <body class="staff-onboarding" data-required-role="staff" data-staff-onboarding-page>
-    <button type="button" class="staff-onboarding-theme" onclick="ThemeController.toggle()" aria-label="Toggle theme">Toggle theme</button>
     <main class="staff-onboarding-card" aria-labelledby="staffSetupTitle">
-        <a class="staff-onboarding-brand" href="../index.html" aria-label="IñigoSync home"><span class="system-logo-mark" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt=""></span><img class="staff-onboarding-wordmark" src="../assets/Logo/InigoSync-Wordmark.png" alt="" width="1931" height="814"></a>
-        <div data-staff-onboarding-loading role="status">Checking your secure staff session…</div>
-        <div data-staff-onboarding-content>
-            <h1 id="staffSetupTitle">Finish setting up your account</h1>
-            <p>Choose a new password and add your personal information. You’ll need to finish this step before staff tools become available. You can leave and sign in again later to continue.</p>
-            <form data-staff-onboarding-form novalidate>
-                <div class="staff-onboarding-grid">
-                    <div class="staff-onboarding-field full">
-                        <label for="staffSetupName">Full name</label>
-                        <input id="staffSetupName" name="full_name" autocomplete="name" maxlength="120" required>
-                    </div>
+        <header class="staff-onboarding-header">
+            <a class="staff-onboarding-brand" href="../index.html" aria-label="IñigoSync home"><span class="system-logo-mark" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt=""></span><img class="staff-onboarding-wordmark" src="../assets/Logo/InigoSync-Wordmark.png" alt="" width="1931" height="814"></a>
+            <button type="button" class="theme-toggle staff-onboarding-theme" data-staff-onboarding-theme aria-label="Switch to light theme" aria-pressed="false" title="Switch to light theme">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5" class="sun-circle"/>
+                    <line x1="12" y1="1" x2="12" y2="3" class="sun-line"/>
+                    <line x1="12" y1="21" x2="12" y2="23" class="sun-line"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" class="sun-line"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" class="sun-line"/>
+                    <line x1="1" y1="12" x2="3" y2="12" class="sun-line"/>
+                    <line x1="21" y1="12" x2="23" y2="12" class="sun-line"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" class="sun-line"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" class="sun-line"/>
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" class="moon-path" style="display:none;"/>
+                </svg>
+            </button>
+        </header>
+        <div class="staff-onboarding-loading" data-staff-onboarding-loading role="status" aria-live="polite"><div class="inigo-loading-ring" aria-hidden="true"><img src="../assets/Logo/InigoSync-Emblem.png" alt="" class="inigo-loading-logo"></div><p class="inigo-loading-text">Checking your secure staff session…</p></div>
+        <button class="staff-onboarding-retry" type="button" data-staff-onboarding-retry hidden>Retry session check</button>
+        <form class="staff-onboarding-content" data-staff-onboarding-content novalidate hidden>
+            <div class="staff-onboarding-main">
+                <div class="staff-onboarding-step-meta" data-staff-onboarding-step-meta><span data-staff-onboarding-step-label>Step 1 of 4</span><span>Account setup</span></div>
+                <div class="staff-onboarding-progress" role="progressbar" aria-label="Onboarding progress" aria-valuemin="1" aria-valuemax="4" aria-valuenow="1" data-staff-onboarding-progress><span></span></div>
+                <section data-staff-onboarding-step="password" aria-labelledby="staffSetupTitle">
+                    <h1 id="staffSetupTitle">Create your password</h1>
+                    <p class="staff-onboarding-intro">Choose a personal password to secure your staff account. It will be saved when you submit the completed setup.</p>
                     <div class="staff-onboarding-field">
-                        <label for="staffSetupBirthdate">Birthdate</label>
-                        <input id="staffSetupBirthdate" name="birthdate" type="date" min="1900-01-01" required>
-                    </div>
-                    <div class="staff-onboarding-field full">
-                        <label for="staffSetupAddress">Address</label>
-                        <textarea id="staffSetupAddress" name="address" rows="2" maxlength="250" autocomplete="street-address"></textarea>
-                    </div>
-                    <div class="staff-onboarding-field">
-                        <label for="staffSetupGender">Gender</label>
-                        <select id="staffSetupGender" name="gender">
-                            <option value="">Select…</option><option>Male</option><option>Female</option><option>Prefer not to say</option>
-                        </select>
-                    </div>
-                    <div class="staff-onboarding-field">
-                        <label for="staffSetupEmergencyName">Emergency contact name</label>
-                        <input id="staffSetupEmergencyName" name="emergency_contact_name" maxlength="120">
-                    </div>
-                    <div class="staff-onboarding-field full">
                         <label for="staffSetupPassword">New password</label>
                         <input id="staffSetupPassword" name="password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
-                        <ul class="staff-onboarding-rules"><li>8–15 characters</li><li>Uppercase and lowercase letters</li><li>At least one number and one special character</li></ul>
+                        <ul class="staff-onboarding-rules" aria-live="polite"><li data-password-rule="length">8–15 characters</li><li data-password-rule="case">Uppercase and lowercase letters</li><li data-password-rule="number">At least one number</li><li data-password-rule="special">At least one special character</li></ul>
                     </div>
-                    <div class="staff-onboarding-field full">
+                    <div class="staff-onboarding-field">
                         <label for="staffSetupConfirm">Confirm new password</label>
                         <input id="staffSetupConfirm" name="confirm_password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
                     </div>
-                </div>
+                </section>
+                <section data-staff-onboarding-step="name" aria-labelledby="staffNameTitle" hidden>
+                    <h1 id="staffNameTitle">Your name</h1>
+                    <p class="staff-onboarding-intro">Enter your first and last name as they should appear on your staff profile. Middle name is optional.</p>
+                    <div class="staff-onboarding-grid">
+                        <div class="staff-onboarding-field"><label for="staffSetupFirstName">First name</label><input id="staffSetupFirstName" name="first_name" autocomplete="given-name" maxlength="80" required></div>
+                        <div class="staff-onboarding-field"><label for="staffSetupMiddleName">Middle name <span>(optional)</span></label><input id="staffSetupMiddleName" name="middle_name" autocomplete="additional-name" maxlength="80"></div>
+                        <div class="staff-onboarding-field"><label for="staffSetupLastName">Last name</label><input id="staffSetupLastName" name="last_name" autocomplete="family-name" maxlength="80" required></div>
+                    </div>
+                </section>
+                <section data-staff-onboarding-step="personal" aria-labelledby="staffDetailsTitle" hidden>
+                    <h1 id="staffDetailsTitle">Personal details</h1>
+                    <p class="staff-onboarding-intro">These details are required to finish your staff profile.</p>
+                    <div class="staff-onboarding-grid">
+                        <div class="staff-onboarding-field"><label for="staffSetupBirthdate">Birthdate</label><input id="staffSetupBirthdate" name="birthdate" type="date" min="1900-01-01" required></div>
+                        <div class="staff-onboarding-field"><label for="staffSetupGender">Gender</label><select id="staffSetupGender" name="gender" required><option value="" selected disabled hidden>Select…</option><option>Male</option><option>Female</option><option>Prefer not to say</option></select></div>
+                        <div class="staff-onboarding-field"><label for="staffSetupCivilStatus">Civil status</label><select id="staffSetupCivilStatus" name="civil_status" required><option value="" selected disabled hidden>Select…</option><option>Single</option><option>Married</option><option>Separated</option><option>Widowed</option><option>Prefer not to say</option></select></div>
+                        <div class="staff-onboarding-field full"><label for="staffSetupAddress">Address</label><textarea id="staffSetupAddress" name="address" rows="2" maxlength="250" autocomplete="street-address" required></textarea></div>
+                    </div>
+                </section>
+                <section data-staff-onboarding-step="contact" aria-labelledby="staffContactTitle" hidden>
+                    <h1 id="staffContactTitle">Contact and privacy</h1>
+                    <p class="staff-onboarding-intro">These contact details are optional. Review and agree to the privacy policy to finish setup.</p>
+                    <h2 class="staff-onboarding-section-title">Contact details</h2>
+                    <div class="staff-onboarding-grid">
+                        <div class="staff-onboarding-field full"><label for="staffSetupMobile">Mobile number <span>(optional)</span></label><input id="staffSetupMobile" name="contact_num" type="tel" inputmode="tel" autocomplete="tel" placeholder="09171234567" maxlength="18" aria-describedby="staffSetupMobileStatus"><p class="staff-onboarding-phone-status" id="staffSetupMobileStatus" data-staff-onboarding-phone-status aria-live="polite"></p></div>
+                        <div class="staff-onboarding-field"><label for="staffSetupEmergencyName">Emergency contact name <span>(optional)</span></label><input id="staffSetupEmergencyName" name="emergency_contact_name" maxlength="120"></div>
+                        <div class="staff-onboarding-field"><label for="staffSetupEmergencyNumber">Emergency contact mobile <span>(optional)</span></label><input id="staffSetupEmergencyNumber" name="emergency_contact_number" type="tel" inputmode="tel" placeholder="09171234567" maxlength="18" aria-describedby="staffSetupEmergencyStatus"><p class="staff-onboarding-phone-status" id="staffSetupEmergencyStatus" data-staff-onboarding-emergency-status aria-live="polite"></p></div>
+                    </div>
+                    <label class="staff-onboarding-privacy-row"><input type="checkbox" name="privacy_policy_accepted" value="yes" required data-staff-onboarding-privacy-checkbox><span>I have read and agree to the <button type="button" class="staff-onboarding-privacy-link" data-staff-onboarding-open-privacy>Privacy Policy</button>.</span></label>
+                </section>
+                <section data-staff-onboarding-success hidden aria-live="polite">
+                    <h1>Setup complete</h1>
+                    <p>Your staff profile is ready. Continue to your dashboard.</p>
+                </section>
                 <p class="staff-onboarding-error" data-staff-onboarding-error role="alert" aria-live="polite"></p>
-                <button class="staff-onboarding-submit" type="submit" data-staff-onboarding-submit>Save and continue</button>
-            </form>
-        </div>
+                <p class="staff-onboarding-saving" data-staff-onboarding-saving role="status" aria-live="polite" hidden><span class="staff-onboarding-spinner" aria-hidden="true"></span><span data-staff-onboarding-saving-text>Saving securely…</span></p>
+            </div>
+            <footer class="staff-onboarding-footer" data-staff-onboarding-footer>
+                <button class="staff-onboarding-back" type="button" data-staff-onboarding-back hidden>Back</button>
+                <button class="staff-onboarding-submit" type="submit" data-staff-onboarding-submit>Continue</button>
+            </footer>
+        </form>
     </main>
+    <div class="staff-onboarding-privacy-modal" data-staff-onboarding-privacy-modal role="dialog" aria-modal="true" aria-labelledby="staffPrivacyTitle" hidden>
+        <section class="staff-onboarding-privacy-card">
+            <header class="staff-onboarding-privacy-head"><h2 id="staffPrivacyTitle">Privacy Policy</h2><button type="button" class="staff-onboarding-privacy-close" data-privacy-disagree aria-label="Close privacy policy">×</button></header>
+            <div class="staff-onboarding-privacy-copy"><p class="staff-onboarding-privacy-staff-note">As staff, use customer and booking details only for your assigned work. Keep your password and verification codes private. Review the full policy below.</p><iframe src="privacy.html?embed=1" title="IñigoSync Privacy Policy"></iframe></div>
+            <footer class="staff-onboarding-privacy-foot"><button type="button" data-privacy-disagree>Disagree</button><button type="button" data-privacy-agree>Agree</button></footer>
+        </section>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script src="../Config/supabaseClient.js"></script>
     <script src="../includes/emailMfa.js"></script>
+    <script src="../includes/phoneValidation.js"></script>
+    <script src="../includes/loadingOverlay.js"></script>
     <script src="../includes/authGuard.js"></script>
     <script src="../includes/staff_onboarding.js"></script>
     <script src="../includes/theme.js"></script>

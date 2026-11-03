@@ -431,23 +431,27 @@ provider notes do not represent current validation behavior.
 ## E6. Configure staff account email delivery
 
 Staff account creation sends a generated temporary password to the staff
-member's personal email through Resend. Supabase Auth continues to deliver
-the separate email MFA codes. The owner form accepts only the personal email
-address and position; the staff member supplies their details on first
-sign-in.
+member's personal email through the Gmail SMTP credentials already used by
+customer booking reminders. Supabase Auth continues to deliver the separate
+email MFA codes. The owner form accepts only the personal email address and
+position; the staff member supplies their details on first sign-in.
 
-Before testing Add New Staff, verify a sending domain in Resend, create an
-API key, and configure `RESEND_API_KEY`, `STAFF_ONBOARDING_FROM_EMAIL`, and
-`STAFF_ONBOARDING_LOGIN_URL` as Supabase Edge Function secrets. The sender
-address must belong to the verified domain. The login URL must be the site's
-public HTTPS `index.html` URL. Follow the full rollout and test checklist in
+Before testing Add New Staff, confirm `CUSTOMER_BOOKING_SMTP_USERNAME` and
+`CUSTOMER_BOOKING_SMTP_APP_PASSWORD` are configured as Supabase Edge Function
+secrets. The optional sender is `CUSTOMER_BOOKING_REMINDER_FROM_EMAIL`; it
+defaults to the SMTP username. `STAFF_ONBOARDING_LOGIN_URL` can override the
+canonical site login URL. Follow the full rollout and test checklist in
 [staff-onboarding.md](staff-onboarding.md).
 
-The owner dashboard fails closed when delivery configuration is missing. A
-provider failure removes the newly created account when possible, and the
-temporary password is never returned to the owner view. The retired
-`docs/email_templates/invite_staff.html` is not used; do not paste it into
-the Supabase Auth Invite user template.
+The owner dashboard fails closed when delivery configuration is missing.
+Definitive SMTP rejections remove the new Auth account. If the connection drops
+after the message was submitted and delivery cannot be confirmed, the account
+stays pending and the owner sees a recovery message. Ask the staff member to
+check their inbox; if no email arrived, they should use **Forgot password?** at
+login, reset from their personal mailbox, then sign in and finish onboarding.
+Do not create a second account. The temporary password is never returned to
+the owner view. Staff email uses the configured SMTP transport directly, so no
+Supabase Auth Invite user template is needed.
 
 ---
 
@@ -488,12 +492,12 @@ Get the real answers and I'll drop them in, or edit the file directly.
 | **B** (`pg_cron` check) | Lets me *design* auto-cancellation + reminders correctly |
 | **C** (PayMongo) | Payment Automation objective, receipts, payment loading phase |
 | **D** (Resend) | Gmail booking reminders |
-| **E** (redirect URLs) | Needed for E6's invite link to land correctly; otherwise only the old link-style reset emails still in flight — reset itself no longer needs it |
+| **E** (redirect URLs) | Needed only for older link-style reset emails still in flight; the current code-based reset flow does not need it |
 | **E2** (Magic Link template) | **Required** — first-login OTP is unusable without it, for all three roles |
 | **E3** (Reset Password template) | **Required** — "Forgot password?" cannot be completed without the code |
 | **E4** (Confirm signup template) | **Required** — new sign-ups cannot get past the verify screen without it |
 | **E5** (database-only phone checks) | Deployed 2026-10-17; no external phone-validation API key is required |
-| **E6** (Invite user template) | Recommended, not required — branded staff-invite email instead of Supabase's generic default, and makes explicit that the invite (and every future notice) goes to the account's own **personal** email |
+| **E6** (staff email delivery) | Already uses configured Gmail SMTP credentials; no Supabase Auth Invite template or Resend setup is needed |
 | **F** (court rates) | Replaces every "Rate TBA" with real pricing |
 | **G** (T&C values) | Completes the Terms & Conditions page |
 
@@ -504,8 +508,6 @@ including log-in, sign-up and password reset, all three of which are *currently
 broken* on a default Supabase project because none of the default templates
 contain `{{ .Token }}`. **E5** is already deployed and checks format plus
 database availability without an external phone provider.
-If you're about to onboard real staff, add **E6** as well — not required
-(Supabase's default Invite user template already has a working link), but it's
-another five minutes, and — because it's the one auth email in this project
-that still carries a real link — it is also the one that needs item **E**
-(redirect URLs) actually done, not just left as a nice-to-have.
+For real staff onboarding, confirm the SMTP credentials listed in **E6** are
+available as Supabase Edge Function secrets. No Invite user template or
+redirect allowlist change is part of this flow.

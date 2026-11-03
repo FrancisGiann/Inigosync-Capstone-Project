@@ -344,7 +344,7 @@
                                 <select class="admin-select" data-admin-staff-status-filter aria-label="Filter staff by status">
                                     <option value="all">All statuses</option>
                                     <option value="active">Active</option>
-                                    <option value="pending">Invited</option>
+                                    <option value="pending">Setup pending</option>
                                     <option value="disabled">Deactivated</option>
                                 </select>
                             </label>
@@ -469,9 +469,9 @@
                         <header class="admin-modal-header"><h3 id="ownerRulesModalTitle">Edit Business Hours</h3><p class="admin-card-sub">Changes apply to shared availability from the effective date.</p></header>
                         <div class="admin-modal-body">
                     <div class="owner-booking-rules-meta">
-                        <label class="admin-form-group"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
-                        <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="240" step="5" inputmode="numeric" data-owner-rules-grace required disabled><span>minutes</span></span><span class="admin-form-hint">After this period, an unattended reservation may be released.</span></label>
-                        <label class="admin-form-group"><span class="admin-form-label">Unbooked slot cutoff</span><span class="owner-rules-grace-input"><input type="number" class="admin-input" min="0" max="59" step="1" inputmode="numeric" data-owner-rules-cutoff required disabled><span>minutes</span></span><span class="admin-form-hint">A slot closes this many minutes after it starts if it is still unbooked (0–59 minutes).</span></label>
+                        <label class="admin-form-group owner-rules-effective-field"><span class="admin-form-label">Effective from</span><input type="date" class="admin-input" data-owner-rules-effective required disabled></label>
+                        <label class="admin-form-group"><span class="admin-form-label">No-show grace period</span><span class="owner-rules-grace-input"><input type="text" class="admin-input" pattern="[0-9]*" inputmode="numeric" data-owner-rules-grace aria-describedby="ownerRulesGraceError" required disabled><span>minutes</span></span><span class="owner-rules-minute-error-slot"><span class="owner-rules-minute-error" id="ownerRulesGraceError" data-owner-rules-grace-error role="alert" hidden>Use 0–59 whole minutes.</span></span></label>
+                        <label class="admin-form-group"><span class="admin-form-label">Unbooked slot cutoff</span><span class="owner-rules-grace-input"><input type="text" class="admin-input" pattern="[0-9]*" inputmode="numeric" data-owner-rules-cutoff aria-describedby="ownerRulesCutoffError" required disabled><span>minutes</span></span><span class="owner-rules-minute-error-slot"><span class="owner-rules-minute-error" id="ownerRulesCutoffError" data-owner-rules-cutoff-error role="alert" hidden>Use 0–59 whole minutes.</span></span></label>
                         <p class="admin-form-hint owner-rules-timezone" data-owner-rules-timezone>Times are shown in Asia/Manila.</p>
                     </div>
                     <div class="owner-rules-table-wrap">
@@ -538,14 +538,14 @@
                 <div class="admin-card admin-booking-reviews-card">
                     <div class="owner-featured-review-stage">
                         <svg class="owner-featured-review-art" viewBox="0 0 180 150" aria-hidden="true" focusable="false"><path d="M90 10 108 61l54 2-42 34 15 51-45-30-45 30 15-51L18 63l54-2z" fill="currentColor" opacity=".13"/><path d="m90 27 13 37 39 1-31 24 11 37-32-22-32 22 11-37-31-24 39-1z" fill="currentColor"/><circle cx="145" cy="30" r="9" fill="currentColor" opacity=".45"/><circle cx="36" cy="111" r="6" fill="currentColor" opacity=".45"/></svg>
-                        <div class="owner-featured-review-stage-copy"><p class="owner-featured-review-kicker">Homepage spotlight</p><p class="owner-featured-review-stage-title">Customer reviews</p><p class="owner-featured-review-stage-note">Choose up to three reviews for the landing page. Sample entries are labeled.</p></div>
+                        <div class="owner-featured-review-stage-copy"><p class="owner-featured-review-kicker">Homepage spotlight</p><p class="owner-featured-review-stage-title">Customer reviews</p><p class="owner-featured-review-stage-note">Choose up to three reviews for the landing page.</p></div>
                         <div class="owner-featured-review-count" data-featured-review-count aria-live="polite">Loading featured review selection…</div>
                     </div>
                     <div class="owner-featured-review-slots" data-featured-review-slots aria-live="polite" aria-busy="true"></div>
                     <p class="owner-featured-review-message" data-featured-review-message role="status" aria-live="polite"></p>
                     <div class="owner-featured-review-actions"><button type="button" class="admin-btn-save" data-featured-review-open disabled>Choose reviews</button></div>
                     <section class="owner-review-browser" aria-labelledby="ownerReviewBrowserTitle">
-                        <div class="owner-review-browser-head"><div><h4 id="ownerReviewBrowserTitle">All customer reviews</h4><p class="admin-card-sub">Browse account reviews, including ratings without a written comment. Sample entries are labeled.</p></div></div>
+                        <div class="owner-review-browser-head"><div><h4 id="ownerReviewBrowserTitle">All customer reviews</h4><p class="admin-card-sub">Browse account reviews, including ratings without a written comment.</p></div></div>
                         <div class="admin-review-filter owner-review-browser-filter" role="group" aria-label="Filter customer reviews by star rating">
                             <button type="button" class="admin-chip is-active" data-owner-review-rating="all" aria-pressed="true">All ratings</button>
                             <button type="button" class="admin-chip" data-owner-review-rating="5" aria-pressed="false">5 stars</button>
@@ -565,7 +565,7 @@
                 <div class="admin-modal-overlay owner-featured-review-overlay" data-featured-review-modal hidden>
                     <div class="admin-modal admin-edit-modal owner-featured-review-modal" role="dialog" aria-modal="true" aria-labelledby="featuredReviewModalTitle" tabindex="-1" data-featured-review-dialog>
                         <button type="button" class="admin-modal-close" data-featured-review-close aria-label="Close review chooser">×</button>
-                        <header class="admin-modal-header"><h3 id="featuredReviewModalTitle">Choose homepage reviews</h3><p class="admin-card-sub">Select up to three written reviews. Remove a selected review here or unselect all. Sample entries are labeled; numbers show landing page order.</p></header>
+                        <header class="admin-modal-header"><h3 id="featuredReviewModalTitle">Choose homepage reviews</h3><p class="admin-card-sub">Select up to three written reviews. Remove a selected review here or unselect all. Numbers show landing page order.</p></header>
                         <div class="admin-modal-body">
                         <p class="owner-featured-review-count owner-featured-review-modal-count" data-featured-review-modal-count aria-live="polite">0 of 3 selected</p>
                         <section class="owner-featured-review-selected" aria-label="Selected homepage reviews">
@@ -835,10 +835,6 @@
                             <dd data-admin-profile-detail-civil-status>—</dd>
                         </div>
                         <div class="admin-profile-dl-row">
-                            <dt>Status</dt>
-                            <dd><span class="admin-status" data-admin-profile-status>—</span></dd>
-                        </div>
-                        <div class="admin-profile-dl-row">
                             <dt>Member since</dt>
                             <dd data-admin-profile-member-since>—</dd>
                         </div>
@@ -880,11 +876,17 @@
         <header class="admin-modal-header"><h3 id="adminStaffModalTitle">New Staff Account</h3><p class="admin-form-hint">Enter the staff member’s personal email and position. We’ll send their login email and a temporary password to that address. They’ll set a new password and enter their personal information when they first sign in.</p></header>
         <div class="admin-modal-body">
 
-        <div class="admin-form-group">
-            <span class="admin-form-label">Personal email address</span>
-            <input type="email" class="admin-input" placeholder="staff@example.com" autocomplete="email" required data-admin-staff-email>
+        <div class="admin-form-group owner-staff-email-group">
+            <div class="owner-staff-email-heading">
+                <label class="admin-form-label" for="adminStaffEmail">Email address</label>
+                <span class="admin-form-hint owner-staff-email-purpose" id="adminStaffEmailPurpose">This address is their login, email verification, and password recovery address.</span>
+            </div>
+            <input type="email" class="admin-input" id="adminStaffEmail" placeholder="staff@example.com" autocomplete="email" maxlength="254" required aria-describedby="adminStaffEmailPurpose adminStaffEmailStatus" data-admin-staff-email>
+            <div class="owner-staff-email-feedback">
+                <span class="admin-form-hint owner-staff-email-status" id="adminStaffEmailStatus" data-admin-staff-email-status role="status" aria-live="polite"></span>
+                <button type="button" class="owner-staff-email-retry" data-admin-staff-email-retry hidden>Retry check</button>
+            </div>
         </div>
-        <p class="admin-form-hint">This address is their login, email verification, and password recovery address.</p>
         <div class="admin-form-group">
             <span class="admin-form-label">Position</span>
             <select class="admin-select" data-admin-staff-role>
@@ -928,6 +930,7 @@
         <div class="admin-modal-body">
         <dl class="admin-profile-dl owner-staff-details-view" data-admin-staff-details-view hidden>
             <div class="admin-profile-dl-row"><dt>Full name</dt><dd data-admin-staff-detail-name>—</dd></div>
+            <div class="admin-profile-dl-row"><dt>Email address</dt><dd data-admin-staff-detail-email>—</dd></div>
             <div class="admin-profile-dl-row"><dt>Position</dt><dd data-admin-staff-detail-position>—</dd></div>
             <div class="admin-profile-dl-row"><dt>Mobile number · staff verified</dt><dd data-admin-staff-detail-mobile>—</dd></div>
             <div class="admin-profile-dl-row"><dt>Address</dt><dd data-admin-staff-detail-address>—</dd></div>
@@ -939,6 +942,18 @@
         </dl>
 
         <div class="owner-staff-details-edit" data-admin-staff-details-edit hidden>
+            <div class="admin-form-group owner-staff-recovery-email-group" data-admin-staff-recovery-email-group hidden>
+                <div class="owner-staff-recovery-email-heading">
+                    <label class="admin-form-label" for="adminStaffRecoveryEmail">Correct sign-in email</label>
+                    <div class="owner-staff-recovery-email-feedback">
+                        <span class="admin-form-hint owner-staff-email-status" id="adminStaffRecoveryEmailStatus" data-admin-staff-recovery-email-status role="status" aria-live="polite"></span>
+                        <button type="button" class="owner-staff-email-retry" data-admin-staff-recovery-email-retry hidden>Retry check</button>
+                    </div>
+                </div>
+                <input id="adminStaffRecoveryEmail" class="admin-input" type="email" maxlength="254" autocomplete="email" required aria-describedby="adminStaffRecoveryEmailStatus adminStaffRecoveryEmailPurpose" data-admin-staff-recovery-email>
+                <span class="admin-form-hint" id="adminStaffRecoveryEmailPurpose">The temporary password will be replaced and sent to this address. The account stays pending until the recipient verifies the mailbox and completes setup.</span>
+                <p class="admin-form-hint" data-admin-staff-recovery-result role="status" aria-live="polite"></p>
+            </div>
             <div class="admin-form-group">
                 <label class="admin-form-label" for="adminStaffPositionSelect">Position</label>
                 <select id="adminStaffPositionSelect" class="admin-select" data-admin-staff-edit-position>
@@ -1065,7 +1080,7 @@
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
-            <label class="admin-form-group"><span class="admin-form-label">Civil status</span><select class="admin-input" data-admin-settings-civil-status><option value="" disabled hidden>Select civil status</option><option value="Single">Single</option><option value="Married">Married</option><option value="Separated">Separated</option><option value="Widowed">Widowed</option><option value="Prefer not to say">Prefer not to say</option></select></label>
+            <label class="admin-form-group"><span class="admin-form-label">Civil status</span><select class="admin-input" data-admin-settings-civil-status><option value="" selected disabled hidden>Select civil status</option><option value="Single">Single</option><option value="Married">Married</option><option value="Separated">Separated</option><option value="Widowed">Widowed</option><option value="Prefer not to say">Prefer not to say</option></select></label>
         </div>
         <section class="admin-modal-google-accounts" aria-labelledby="adminGoogleAccountsTitle">
             <div class="admin-google-accounts-head">

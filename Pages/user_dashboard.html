@@ -132,7 +132,7 @@
                         <div class="dash-notif-menu" data-dash-notif-menu role="region" aria-label="Notifications">
                             <div class="dash-notif-menu-head"><span>Notifications</span><span data-dash-notif-unread aria-live="polite"></span></div>
                             <div class="dash-notif-selection" data-dash-notif-selection>
-                                <label><span>Select notifications</span><select data-dash-notif-select><option value="none">Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
+                                <label><span>Select notifications</span><select data-dash-notif-select><option value="" selected disabled hidden>Select…</option><option value="all">All</option><option value="none">None</option><option value="read">Read</option><option value="unread">Unread</option></select></label>
                                 <div class="dash-notif-selection-actions">
                                     <span data-dash-notif-selected aria-live="polite">0 selected</span>
                                     <button type="button" data-dash-notif-mark-selected disabled>Mark as read</button>
@@ -322,7 +322,7 @@
                                 <p class="dash-form-hint">Choose the court unit you want to book.</p>
                                 <div class="dash-book-court-grid" data-dash-book-courts role="radiogroup" aria-label="Court units"></div>
                                 <select id="dash-book-court" data-dash-book-select hidden disabled aria-label="Selected court"></select>
-                                <select id="dash-book-unit" data-dash-book-unit-select hidden disabled aria-label="Selected court unit"><option value="">Choose a court</option></select>
+                                <select id="dash-book-unit" data-dash-book-unit-select hidden disabled aria-label="Selected court unit"><option value="" selected disabled hidden>Choose a court</option></select>
                             </div>
                             <div class="dash-book-flow-actions">
                                 <button type="button" class="dash-btn-ghost" data-dash-book-back="1">Back</button>
@@ -772,8 +772,8 @@
                                     <div class="dash-personal-section-heading"><h3 id="dashPersonalDetailsHeading">Personal details</h3><p>These optional details help keep your profile up to date. Your age is calculated from your birthdate.</p></div>
                                     <div class="dash-settings-grid">
                                         <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsBirthdate">Birthdate <span class="dash-form-label-hint">(optional)</span></label><input id="dashSettingsBirthdate" type="date" class="dash-input" data-dash-settings-birthdate><span class="dash-mobile-status" role="status" data-dash-birthdate-age>Age will be calculated from your birthdate.</span></div>
-                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsGender">Gender <span class="dash-form-label-hint">(optional)</span></label><select id="dashSettingsGender" class="dash-input" data-dash-settings-gender><option value="">Select if you wish</option><option value="Male">Male</option><option value="Female">Female</option><option value="Prefer not to say">Prefer not to say</option></select></div>
-                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsCivilStatus">Civil status <span class="dash-form-label-hint">(optional)</span></label><select id="dashSettingsCivilStatus" class="dash-input" data-dash-settings-civil-status><option value="">Select if you wish</option><option>Single</option><option>Married</option><option>Separated</option><option>Widowed</option><option>Prefer not to say</option></select></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsGender">Gender <span class="dash-form-label-hint">(optional)</span></label><select id="dashSettingsGender" class="dash-input" data-dash-settings-gender><option value="" selected disabled hidden>Select if you wish</option><option value="Male">Male</option><option value="Female">Female</option><option value="Prefer not to say">Prefer not to say</option></select></div>
+                                        <div class="dash-form-group"><label class="dash-form-label" for="dashSettingsCivilStatus">Civil status <span class="dash-form-label-hint">(optional)</span></label><select id="dashSettingsCivilStatus" class="dash-input" data-dash-settings-civil-status><option value="" selected disabled hidden>Select if you wish</option><option>Single</option><option>Married</option><option>Separated</option><option>Widowed</option><option>Prefer not to say</option></select></div>
                                     </div>
                                 </section>
                                 <section class="dash-personal-section" aria-labelledby="dashPersonalEmergencyHeading">

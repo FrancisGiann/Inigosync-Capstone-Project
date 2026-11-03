@@ -77,6 +77,7 @@ function fixture() {
         app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true, qrph_enabled: true }],
         court: Array.from({ length: 24 }, (_, index) => ({ id: `court-${index + 1}`, sport_id: `sport-${index + 1}`, slug: `sport-${index + 1}`, name: index === 0 ? 'A long court listing title that must wrap without shifting other actions' : `Sport ${index + 1}`, quantity: index + 1, unit: 'courts', description: 'Responsive fixture', image_url: null, is_active: index !== 23, display_order: index + 1, sport: { id: `sport-${index + 1}`, name: `Sport ${index + 1}`, slug: `sport-${index + 1}` } })),
     };
+    if (window.__ownerQaPendingStaffRecovery) data.profiles.push({ id: '00000000-0000-4000-8000-000000000123', role: 'staff', full_name: '', email: 'wrong-address@example.test', position: 'Secretary', status: 'pending', onboarding_complete: false, created_at: '2026-10-01T00:00:00Z' });
     if (window.__qaSavedCover) {
         data.court.push({ id: '00000000-0000-4000-8000-000000000099', sport_id: '00000000-0000-4000-8000-000000000098', slug: 'qa-covered-sport', name: 'QA Covered Sport', quantity: 1, unit: 'courts', description: null, image_url: window.__qaSavedCover, is_active: true, display_order: 99, sport: { id: '00000000-0000-4000-8000-000000000098', name: 'QA Covered Sport', slug: 'qa-covered-sport' } });
         data.court_unit_inventory = [{ id: '00000000-0000-4000-8000-000000000097', court_id: '00000000-0000-4000-8000-000000000099', label: 'Court 1', photo_url: window.__qaSavedUnitPhoto, rate_day: null, rate_night: null, rate_unit: '/hr', is_active: true, inventory_verified: true }];
@@ -398,40 +399,178 @@ async function verifyOwnerPaymentFlow(page) {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     const failures = [];
     try {
-        for (const width of process.env.OWNER_QA_AUDIT_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_REVIEWS_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' || process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
-            for (const theme of process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? ['light'] : ['light', 'dark']) {
+        for (const width of process.env.OWNER_QA_AUDIT_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_STAFF_ONLY === '1' ? [360, 1440] : process.env.OWNER_QA_STAFF_EMAIL_ONLY === '1' || process.env.OWNER_QA_STAFF_RECOVERY_ONLY === '1' ? [360] : process.env.OWNER_QA_REVIEWS_ONLY === '1' ? [360, 768, 1440] : process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' || process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' ? [360] : [360, 390, 768, 1024, 1440]) {
+            for (const theme of process.env.OWNER_QA_QUICK === '1' || process.env.OWNER_QA_PAYMENT_ONLY === '1' || process.env.OWNER_QA_STAFF_EMAIL_ONLY === '1' || process.env.OWNER_QA_STAFF_RECOVERY_ONLY === '1' ? ['light'] : ['light', 'dark']) {
                 const context = await browser.newContext({ viewport: { width, height: 900 }, timezoneId: 'Asia/Manila', reducedMotion: 'reduce' });
                 const page = await context.newPage();
                 page.setDefaultTimeout(5000);
                 page.setDefaultNavigationTimeout(10000);
                 const errors = [];
                 page.on('pageerror', error => errors.push(error.message));
-                await page.addInitScript(({ colorTheme, failFeaturedSelection }) => {
+                await page.addInitScript(({ colorTheme, failFeaturedSelection, pendingStaffRecovery }) => {
                     localStorage.setItem('inigosync-theme', colorTheme);
                     window.__ownerQaFailFeaturedSelection = failFeaturedSelection;
+                    window.__ownerQaPendingStaffRecovery = pendingStaffRecovery;
                     const nativeSetInterval = window.setInterval.bind(window);
                     window.__ownerQaIntervals = [];
                     window.setInterval = (callback, delay, ...args) => {
                         if (delay === 15000) window.__ownerQaIntervals.push(callback);
                         return nativeSetInterval(callback, delay, ...args);
                     };
-                }, { colorTheme: theme, failFeaturedSelection: process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1' });
+                }, { colorTheme: theme, failFeaturedSelection: process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1', pendingStaffRecovery: process.env.OWNER_QA_STAFF_RECOVERY_ONLY === '1' });
                 await page.route(/^https:\/\//, route => route.abort());
                 await page.route('**/chart.umd.min.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.Chart=class{static defaults={font:{},color:''};constructor(_canvas,config){this.data=config.data;this.options=config.options;}update(){}};` }));
                 await page.route('**/Config/supabaseClient.js', route => route.fulfill({ contentType: 'application/javascript', body: `(${fixture})();` }));
                 await page.route('**/functions/v1/invite-staff', async route => {
                     const request = route.request();
-                    await page.evaluate(({ url, body }) => window.__ownerQa.calls.push({ request: 'invite-staff', url, body: JSON.parse(body) }), {
-                        url: request.url(), body: request.postData(),
+                    const body = JSON.parse(request.postData());
+                    await page.evaluate(({ url, body }) => window.__ownerQa.calls.push({ request: 'invite-staff', url, body }), {
+                        url: request.url(), body,
                     });
-                    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+                    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body.check_email ? { exists: body.email.startsWith('taken-') } : { success: true }) });
+                });
+                await page.route('**/functions/v1/recover-pending-staff', async route => {
+                    const request = route.request();
+                    const body = JSON.parse(request.postData());
+                    const attempt = await page.evaluate(({ url, body }) => {
+                        window.__ownerQa.calls.push({ request: 'recover-pending-staff', url, body });
+                        const count = window.__ownerQa.calls.filter(call => call.request === 'recover-pending-staff').length;
+                        if (count === 1) {
+                            window.__ownerQa.tables.profiles.find(profile => profile.id === body.user_id).email = body.email;
+                        }
+                        return count;
+                    }, {
+                        url: request.url(), body,
+                    });
+                    if (attempt === 3) return route.abort();
+                    await route.fulfill({ status: attempt === 1 ? 502 : 200, contentType: 'application/json', body: JSON.stringify(attempt === 1
+                        ? { error: 'Simulated recovery delivery failure. The account remains pending.', email_saved: true }
+                        : { success: true, email: body.email, pending: true }) });
                 });
                 await page.route('**/includes/authGuard.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.inigosyncProfile={id:'qa-owner',role:'admin',status:'active',full_name:'QA Owner',email:'owner@example.test'};document.addEventListener('DOMContentLoaded',()=>{window.InigoLoading?.hide();document.documentElement.classList.remove('inigo-auth-pending');document.dispatchEvent(new CustomEvent('inigosync:profile-ready',{detail:window.inigosyncProfile}));});` }));
-                await page.route('**/includes/loadingOverlay.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoLoading={show(){},hide(){}};window.InigoToast={show(message){window.__ownerQa?.toastMessages.push(message)}};` }));
+                await page.route('**/includes/loadingOverlay.js', route => process.env.OWNER_QA_STAFF_RECOVERY_ONLY === '1'
+                    ? route.continue()
+                    : route.fulfill({ contentType: 'application/javascript', body: `window.InigoLoading={show(){},hide(){}};window.InigoToast={show(message){window.__ownerQa?.toastMessages.push(message)}};` }));
                 await page.route('**/includes/courtsData.js', route => route.fulfill({ contentType: 'application/javascript', body: `window.InigoCourtsData={getCourts:async()=>[],getSports:async()=>[],invalidateCourts(){},monogramFor:()=>'',slugify:s=>s,rateHint:()=>null};` }));
                 await page.route('**/includes/courts-data.js', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
                 await page.goto('http://127.0.0.1:4178/Pages/owner_dashboard.html', { waitUntil: 'domcontentloaded' });
                 try {
+                    if (process.env.OWNER_QA_STAFF_RECOVERY_ONLY === '1') {
+                        const pendingStaffId = '00000000-0000-4000-8000-000000000123';
+                        await page.locator('[data-admin-nav="staff"]').first().evaluate(el => el.click());
+                        const pendingRow = page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'wrong-address@example.test' });
+                        await pendingRow.waitFor();
+                        await pendingRow.locator('[data-admin-staff-actions-trigger]').click();
+                        await page.locator('[data-admin-staff-command="recover"]').click();
+                        const recoveryEmail = page.locator('[data-admin-staff-recovery-email]');
+                        const saveRecovery = page.locator('[data-admin-staff-edit-submit]');
+                        await recoveryEmail.fill('correct-address@example.test');
+                        await page.waitForFunction(() => document.querySelector('[data-admin-staff-recovery-email-status]')?.dataset.state === 'available');
+                        assert.equal(await saveRecovery.isDisabled(), false, 'available recovery email enables the action');
+                        await saveRecovery.click();
+                        await page.locator('.owner-confirm-overlay').waitFor({ state: 'visible' });
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.some(call => call.request === 'recover-pending-staff')), false, 'recovery endpoint waits for explicit confirmation');
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.waitForFunction(() => window.__ownerQa.calls.some(call => call.request === 'recover-pending-staff'));
+                        await page.waitForFunction(() => document.querySelector('[data-admin-staff-recovery-result]')?.textContent.includes('Simulated recovery delivery failure'));
+                        const errorToast = page.locator('.inigo-toast');
+                        await errorToast.waitFor({ state: 'visible' });
+                        assert.equal(await errorToast.evaluate(el => el.classList.contains('is-error')), true, 'a recovery failure appears in the red top toast');
+                        assert.match(await errorToast.innerText(), /Simulated recovery delivery failure/);
+                        const errorToastPlacement = await errorToast.evaluate(el => {
+                            const probe = document.createElement('span');
+                            probe.style.borderTop = '1px solid var(--color-alert)';
+                            document.body.append(probe);
+                            const expectedAlertBorder = getComputedStyle(probe).borderTopColor;
+                            probe.remove();
+                            return { top: el.getBoundingClientRect().top, position: getComputedStyle(el).position, borderColor: getComputedStyle(el).borderTopColor, expectedAlertBorder };
+                        });
+                        assert.equal(errorToastPlacement.position, 'fixed', 'the recovery toast is anchored to the viewport');
+                        assert.equal(errorToastPlacement.borderColor, errorToastPlacement.expectedAlertBorder, 'the top toast uses the theme error border');
+                        assert(errorToastPlacement.top >= 0 && errorToastPlacement.top < 50, `the recovery toast is at the top of the page (${JSON.stringify(errorToastPlacement)})`);
+                        const recoveryRequest = await page.evaluate(() => window.__ownerQa.calls.find(call => call.request === 'recover-pending-staff'));
+                        assert.equal(recoveryRequest.body.user_id, pendingStaffId);
+                        assert.equal(recoveryRequest.body.email, 'correct-address@example.test');
+                        assert.equal(await recoveryEmail.inputValue(), 'correct-address@example.test', 'the corrected address remains visible after a backend failure');
+                        assert.equal(await page.evaluate(id => window.__ownerQa.tables.profiles.find(profile => profile.id === id).email, pendingStaffId), 'correct-address@example.test', 'SMTP failure can follow a saved Auth/profile email');
+                        assert.equal(await saveRecovery.isDisabled(), false, 'the saved address remains retryable after SMTP failure');
+                        await saveRecovery.click();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.waitForFunction(() => window.__ownerQa.calls.filter(call => call.request === 'recover-pending-staff').length === 2);
+                        await page.locator('[data-admin-staff-edit-modal]').waitFor({ state: 'hidden' });
+                        const recoveryRequests = await page.evaluate(() => window.__ownerQa.calls.filter(call => call.request === 'recover-pending-staff'));
+                        assert.equal(recoveryRequests[1].body.email, 'correct-address@example.test', 'retry sends to the saved address');
+                        const successToast = page.locator('.inigo-toast');
+                        await page.waitForFunction(() => document.querySelector('.inigo-toast')?.textContent.includes('Setup email submitted to correct-address@example.test'));
+                        assert.equal(await successToast.evaluate(el => el.classList.contains('is-error')), false, 'a successful response displays success instead of a failure');
+
+                        const correctedPendingRow = page.locator('[data-admin-staff-table] tbody tr').filter({ hasText: 'correct-address@example.test' });
+                        await correctedPendingRow.locator('[data-admin-staff-actions-trigger]').click();
+                        await page.locator('[data-admin-staff-command="recover"]').click();
+                        await page.waitForFunction(() => document.querySelector('[data-admin-staff-recovery-email-status]')?.dataset.state === 'available');
+                        await saveRecovery.click();
+                        await page.locator('.owner-confirm-overlay [data-confirm-yes]').click();
+                        await page.waitForFunction(() => document.querySelector('.inigo-toast')?.textContent.includes('We couldn\'t confirm whether the setup email was sent'));
+                        assert.equal(await successToast.evaluate(el => el.classList.contains('is-error')), true, 'an ambiguous network result is clearly marked as an error/uncertain outcome');
+                        assert.doesNotMatch(await successToast.innerText(), /Failed to fetch/i, 'the browser transport error is replaced with plain language');
+                        assert.match(await successToast.innerText(), /Check that inbox before trying again/);
+                        assert.equal(await saveRecovery.isDisabled(), true, 'an ambiguous result cannot be immediately retried from the same modal');
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.request === 'recover-pending-staff').length), 3, 'the UI does not issue an automatic duplicate resend after a lost response');
+                        assert.deepEqual(errors, [], 'recovery error handling has no uncaught page errors');
+                        console.log(`PASS pending staff email recovery failure ${width}px ${theme}`);
+                        continue;
+                    }
+                    if (process.env.OWNER_QA_STAFF_EMAIL_ONLY === '1') {
+                        await page.locator('[data-admin-nav="staff"]').first().evaluate(el => el.click());
+                        await page.locator('[data-admin-staff-add]').first().click();
+                        const email = page.locator('[data-admin-staff-email]');
+                        const submit = page.locator('[data-admin-staff-submit]');
+                        const status = page.locator('[data-admin-staff-email-status]');
+                        const feedback = page.locator('.owner-staff-email-feedback');
+                        const feedbackHeight = await feedback.evaluate(el => el.getBoundingClientRect().height);
+
+                        await email.fill('unused@example.org');
+                        await page.waitForFunction(() => document.querySelector('[data-admin-staff-email-status]')?.dataset.state === 'available');
+                        await page.waitForFunction(() => {
+                            const input = document.querySelector('[data-admin-staff-email]');
+                            const probe = document.createElement('span'); probe.style.color = 'var(--color-court-green)'; document.body.append(probe);
+                            const expected = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(input).borderColor === expected;
+                        });
+                        assert.equal(await submit.isDisabled(), false, 'an unused valid address becomes submittable');
+                        assert.equal(await email.evaluate(el => el.dataset.emailState), 'available', 'availability is reflected on the input');
+                        const availableBorder = await email.evaluate(el => {
+                            const probe = document.createElement('span'); probe.style.color = 'var(--color-court-green)'; document.body.append(probe);
+                            const expected = getComputedStyle(probe).color; probe.remove();
+                            return { actual: getComputedStyle(el).borderColor, expected };
+                        });
+                        assert.equal(availableBorder.actual, availableBorder.expected, `available address receives the green theme border (${JSON.stringify(availableBorder)})`);
+                        assert.match(await status.innerText(), /No account currently uses this email/);
+
+                        await email.fill('taken-duplicate@example.org');
+                        await page.waitForFunction(() => document.querySelector('[data-admin-staff-email-status]')?.dataset.state === 'duplicate');
+                        await page.waitForFunction(() => {
+                            const input = document.querySelector('[data-admin-staff-email]');
+                            const probe = document.createElement('span'); probe.style.color = 'var(--color-alert)'; document.body.append(probe);
+                            const expected = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(input).borderColor === expected;
+                        });
+                        assert.equal(await submit.isDisabled(), true, 'a duplicate address cannot be submitted');
+                        assert.equal(await email.evaluate(el => el.dataset.emailState), 'duplicate', 'duplicate is reflected on the input');
+                        const duplicateBorder = await email.evaluate(el => {
+                            const probe = document.createElement('span'); probe.style.color = 'var(--color-alert)'; document.body.append(probe);
+                            const expected = getComputedStyle(probe).color; probe.remove(); return { actual: getComputedStyle(el).borderColor, expected };
+                        });
+                        assert.equal(duplicateBorder.actual, duplicateBorder.expected, `duplicate address receives the red theme border (${JSON.stringify(duplicateBorder)})`);
+                        assert.match(await status.innerText(), /An account already uses this email/);
+
+                        await email.fill('');
+                        await page.waitForFunction(() => !document.querySelector('[data-admin-staff-email-status]')?.dataset.state);
+                        assert.equal(await feedback.evaluate(el => el.getBoundingClientRect().height), feedbackHeight, 'clearing status keeps the reserved feedback row at its initial height');
+                        assert.equal(await submit.isDisabled(), true, 'clearing the address disables submission');
+                        assert.equal(await page.evaluate(() => window.__ownerQa.calls.filter(call => call.request === 'invite-staff').length), 2, 'both valid addresses were checked against the mocked endpoint');
+                        assert.deepEqual(errors, [], 'email availability flow has no uncaught page errors');
+                        console.log(`PASS staff email availability ${width}px ${theme}`);
+                        continue;
+                    }
                     if (process.env.OWNER_QA_REVIEW_SELECTION_FAILURE_ONLY === '1') {
                         await page.locator('[data-admin-nav="feedback"]').first().evaluate(el => el.click());
                         await page.locator('[data-owner-review-list] .owner-review-browser-item').first().waitFor();

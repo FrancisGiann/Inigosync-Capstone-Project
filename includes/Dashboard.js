@@ -1294,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bookUnitPreviewMedia) bookUnitPreviewMedia.innerHTML = '<span class="dash-court-monogram" aria-hidden="true">?<small class="dash-court-photo-soon">Choose a court to preview it</small></span>';
             if (bookUnitPreviewCaption) bookUnitPreviewCaption.textContent = 'Choose a court to preview it.';
             if (bookUnitWrap) bookUnitWrap.hidden = true;
-            if (bookUnitSelect) { bookUnitSelect.innerHTML = '<option value="">Choose a court</option>'; bookUnitSelect.disabled = true; }
+            if (bookUnitSelect) { bookUnitSelect.innerHTML = '<option value="" selected disabled hidden>Choose a court</option>'; bookUnitSelect.disabled = true; }
             if (bookUnitPreview) bookUnitPreview.hidden = !bookingState.sportSlug;
             bookingState.unit = null;
             bookingState.unitId = null;
@@ -1370,7 +1370,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (bookUnitLabel) bookUnitLabel.textContent = resolved.pickerLabel || 'Choose a unit';
         if (bookUnitSelect) {
-            bookUnitSelect.innerHTML = '<option value="">Choose a court</option>' + units.map((u, i) => `<option value="${i}"${i === index ? ' selected' : ''}${u.id ? '' : ' disabled'}>${window.escapeHtml(u.label || `${court.name} ${i + 1}`)}${u.id ? '' : ' — unavailable online'}</option>`).join('');
+            bookUnitSelect.innerHTML = '<option value="" disabled hidden>Choose a court</option>' + units.map((u, i) => `<option value="${i}"${i === index ? ' selected' : ''}${u.id ? '' : ' disabled'}>${window.escapeHtml(u.label || `${court.name} ${i + 1}`)}${u.id ? '' : ' — unavailable online'}</option>`).join('');
             bookUnitSelect.disabled = false;
         }
         if (bookUnitWrap) bookUnitWrap.hidden = false;
@@ -1643,7 +1643,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .find((radio) => radio.value === bookingState.sportSlug);
         if (sportRadio) sportRadio.checked = true;
         const courts = bookCourtsCache.filter((candidate) => bookSportChoiceKey(candidate) === bookingState.sportSlug);
-        bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((candidate) => {
+        bookSelect.innerHTML = '<option value="" selected disabled hidden>Choose a court</option>' + courts.map((candidate) => {
             const label = candidate.name;
             return `<option value="${window.escapeHtml(candidate.name)}" data-rate="${candidate.rate !== null ? window.escapeHtml(String(candidate.rate)) : ''}" data-rate-unit="${window.escapeHtml(candidate.rateUnit || '/hr')}" data-sport="${window.escapeHtml(candidate.sportName || candidate.name)}">${window.escapeHtml(label)}</option>`;
         }).join('');
@@ -3075,7 +3075,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .find((radio) => radio.value === bookingState.sportSlug);
         if (sportRadio) sportRadio.checked = true;
         const courts = bookCourtsCache.filter((candidate) => bookSportChoiceKey(candidate) === bookingState.sportSlug);
-        bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((candidate) => {
+        bookSelect.innerHTML = '<option value="" selected disabled hidden>Choose a court</option>' + courts.map((candidate) => {
             const label = candidate.name;
             return `<option value="${window.escapeHtml(candidate.name)}" data-rate="${candidate.rate !== null ? window.escapeHtml(String(candidate.rate)) : ''}" data-rate-unit="${window.escapeHtml(candidate.rateUnit || '/hr')}" data-sport="${window.escapeHtml(candidate.sportName || candidate.name)}">${window.escapeHtml(label)}</option>`;
         }).join('');
@@ -3328,7 +3328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const courts = bookCourtsCache.filter((court) => bookSportChoiceKey(court) === bookingState.sportSlug);
         if (bookSelect) {
-            bookSelect.innerHTML = '<option value="">Choose a court</option>' + courts.map((court) => {
+            bookSelect.innerHTML = '<option value="" selected disabled hidden>Choose a court</option>' + courts.map((court) => {
                 const rateHint = window.InigoCourtsData.rateHint?.(court);
                 const label = rateHint ? `${court.name} — ${rateHint}` : `${court.name} — Rate TBA`;
                 const sportName = isBowlingVariant(court) ? court.name : (court.sportName || court.name);
@@ -3377,7 +3377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // only carry rate/rateUnit/sport, not the full normalized court
         // object (quantity/unit/unitImages) the Step 1 preview needs.
         bookCourtsCache = courts;
-        bookSelect.innerHTML = '<option value="">Choose a sport first</option>';
+        bookSelect.innerHTML = '<option value="" selected disabled hidden>Choose a sport first</option>';
         bookSelect.disabled = true;
         bookingState.court = '';
         bookingState.sport = '';
@@ -3434,7 +3434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 bookingState.sportSlug = bookSportChoiceKey(court);
                 renderSportChoices();
                 const courtsForSport = bookCourtsCache.filter((item) => bookSportChoiceKey(item) === bookingState.sportSlug);
-                bookSelect.innerHTML = '<option value="">Choose a court</option>' + courtsForSport.map((item) => {
+                bookSelect.innerHTML = '<option value="" selected disabled hidden>Choose a court</option>' + courtsForSport.map((item) => {
                     const rateHint = window.InigoCourtsData.rateHint?.(item);
                     const label = rateHint ? `${item.name} — ${rateHint}` : `${item.name} — Rate TBA`;
                     const sportName = isBowlingVariant(item) ? item.name : (item.sportName || item.name);

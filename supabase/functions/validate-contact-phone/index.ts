@@ -45,11 +45,12 @@ Deno.serve(async (req: Request) => {
   if (authError || !authData.user) return json({ message: "Your session expired. Sign in again." }, 401, origin);
   if (!await hasVerifiedEmailSession(admin, token, authData.user.id)) return json({ message: "Verify your email before continuing." }, 403, origin);
   const { data: profile, error: profileError } = await admin.from("profiles")
-    .select("role,status,contact_num,contact_num_validated")
+    .select("role,status,onboarding_complete,contact_num,contact_num_validated")
     .eq("id", authData.user.id).maybeSingle();
-  if (profileError || !profile) return json({ message: "Active account required." }, 403, origin);
-  if (profile.status !== "active" || !["staff", "customer", "admin"].includes(profile.role))
-    return json({ message: "Active account required." }, 403, origin);
+  if (profileError || !profile) return json({ message: "Eligible account required." }, 403, origin);
+  const activeAccount = profile.status === "active" && ["staff", "customer", "admin"].includes(profile.role);
+  const pendingStaffSetup = profile.role === "staff" && profile.status === "pending" && profile.onboarding_complete === false;
+  if (!activeAccount && !pendingStaffSetup) return json({ message: "Eligible account required." }, 403, origin);
   if (purpose === "emergency" && !["staff", "customer"].includes(profile.role))
     return json({ message: "Emergency contact validation is not available for this account." }, 403, origin);
 

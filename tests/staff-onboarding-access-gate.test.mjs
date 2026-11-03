@@ -5,6 +5,7 @@ import test from 'node:test';
 const accessMigration = await readFile(new URL('../supabase/migrations/20261015100000_gate_pending_staff_access.sql', import.meta.url), 'utf8');
 const onboardingMigration = await readFile(new URL('../supabase/migrations/20261015070000_staff_self_service_onboarding.sql', import.meta.url), 'utf8');
 const completionHandler = await readFile(new URL('../supabase/functions/complete-staff-onboarding/index.ts', import.meta.url), 'utf8');
+const onboardingSchema = await readFile(new URL('../database/schema/019_staff_private_onboarding.sql', import.meta.url), 'utf8');
 
 test('legacy profile policies cannot grant pending staff broader access', () => {
   for (const policy of [
@@ -26,7 +27,8 @@ test('profile trigger prevents active staff accounts with incomplete onboarding'
 });
 
 test('completion cannot reactivate an account disabled during onboarding', () => {
-  assert.match(completionHandler, /\.eq\('status', 'pending'\)\.eq\('onboarding_complete', false\)[\s\S]*\.select\('id'\)\.maybeSingle\(\)/);
-  assert.match(completionHandler, /if \(!completedProfile\)[\s\S]*return json\(\{ error: .*\}, 409\)/);
-  assert.ok(completionHandler.indexOf('if (!completedProfile)') < completionHandler.indexOf(".from('staff_onboarding_credentials').delete()"));
+  assert.match(onboardingSchema, /where id = p_user_id and role = 'staff' and status = 'pending' and onboarding_complete is false\s+returning id into v_updated_id/i);
+  assert.match(onboardingSchema, /if v_updated_id is null then return false/i);
+  assert.match(completionHandler, /if \(completed !== true\)[\s\S]*return json\(\{ error: .*\}, 409\)/);
+  assert.ok(completionHandler.indexOf('if (completed !== true)') < completionHandler.indexOf(".from('staff_onboarding_credentials').delete()"));
 });

@@ -111,16 +111,16 @@
 
     function show(message, isError = false, duration = isError ? 5000 : 3500) {
         const el = ensureToast();
-        // Native modal dialogs occupy the browser's top layer, above every
-        // page z-index. Put the toast inside the active dialog when present.
-        placeToastAboveOpenDialog();
         if (dismissTimer) window.clearTimeout(dismissTimer);
         if (hideTimer) window.clearTimeout(hideTimer);
 
         el.hidden = false;
         el.textContent = message;
         el.classList.toggle('is-error', isError);
-        requestAnimationFrame(() => el.classList.add('is-visible'));
+        el.classList.add('is-visible');
+        // Place only after the toast is visible; placement skips hidden toasts.
+        // Native modal dialogs occupy the browser's top layer, above page z-index.
+        placeToastAboveOpenDialog();
 
         dismissTimer = window.setTimeout(() => {
             el.classList.remove('is-visible');

@@ -101,7 +101,8 @@ test('owner picker allows removing selected reviews and confirms any changed sel
     assert.match(ownerScript, /event\.detail === 'feedback'[\s\S]*?loadOwnerReviewBrowser\(true\)/);
     assert.match(ownerScript, /from\('public_customer_reviews'\)\.select\('id,rating,comment,is_sample,created_at,display_name', \{ count: 'exact' \}\)[\s\S]*?ownerReviewBrowserPage \* REVIEW_PAGE_SIZE/);
     assert.match(ownerScript, /window\.escapeHtml\(review\.display_name \|\| 'Customer'\)/);
-    assert.match(ownerScript, /owner-review-sample-badge/);
+    assert.doesNotMatch(ownerScript, /owner-review-sample-badge|Sample review/);
+    assert.doesNotMatch(ownerHtml, /Sample entries are labeled/);
     assert.match(ownerScript, /owner-featured-review-slot[\s\S]*?review\.display_name \|\| 'Customer'/);
     assert.match(ownerScript, /No written comment/);
     assert.match(ownerScript, /data-owner-review-rating/);

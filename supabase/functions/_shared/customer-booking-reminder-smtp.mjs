@@ -74,7 +74,7 @@ export function buildCustomerBookingReminderMimeMessage({ from, to, subject, tex
     "",
   ].join("\r\n");
 
-  return { sender: sender.address, recipient: recipient.address, message };
+  return { sender: sender.address, recipient: recipient.address, messageId: id, message };
 }
 
 export function missingCustomerBookingReminderSettings(input) {
@@ -133,7 +133,7 @@ async function writeSmtp(connection, value) {
   while (offset < bytes.length) offset += await connection.write(bytes.subarray(offset));
 }
 
-export async function deliverCustomerBookingReminder({
+export async function deliverSmtpEmail({
   connectTls, smtpUsername, smtpAppPassword, from, email, timeoutMs = 15000,
 }) {
   const account = parseReminderMailbox(smtpUsername);
@@ -152,6 +152,7 @@ export async function deliverCustomerBookingReminder({
 
   let connection;
   let timedOut = false;
+  let dataSubmissionStarted = false;
   let timeoutId;
   const timeout = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -188,13 +189,23 @@ export async function deliverCustomerBookingReminder({
     await writeSmtp(connection, "DATA\r\n");
     await expect([354], "data_rejected");
     const smtpMessage = mime.message.replace(/\r?\n/g, "\r\n").replace(/\r\n\./g, "\r\n..");
+    // Set this before the write begins: a partial write or timeout can happen
+    // after the terminator reached the server but before writeSmtp resolves.
+    dataSubmissionStarted = true;
     await writeSmtp(connection, `${smtpMessage}.\r\n`);
     await expect([250], "message_rejected");
+    return { messageId: mime.messageId };
   })();
 
+  let deliveryReceipt;
   try {
-    await Promise.race([operation, timeout]);
+    deliveryReceipt = await Promise.race([operation, timeout]);
   } catch (error) {
+    // A final SMTP rejection proves the server did not accept the message.
+    // Once the body write starts, transport failures are ambiguous: a partial
+    // write or timeout can occur after the server has received the terminator.
+    if (error instanceof SmtpDeliveryError && error.reason === "message_rejected") throw error;
+    if (dataSubmissionStarted) throw new SmtpDeliveryError("delivery_outcome_unknown");
     if (timedOut) throw new SmtpDeliveryError("timeout");
     if (error instanceof SmtpDeliveryError) throw error;
     throw new SmtpDeliveryError("smtp_connection_error");
@@ -206,4 +217,9 @@ export async function deliverCustomerBookingReminder({
       // The connection may already have closed.
     }
   }
+  return deliveryReceipt;
 }
+
+// Keep the original name for the booking-reminder worker while allowing other
+// Edge Functions to reuse the same SMTP transport for transactional mail.
+export const deliverCustomerBookingReminder = deliverSmtpEmail;

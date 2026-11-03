@@ -147,6 +147,12 @@ body.admin-body {
     display: none;
 }
 
+/* ThemeTokens.css loads later and gives logo images a more specific display
+   rule. Keep the wordmark hidden so the emblem stands alone when collapsed. */
+html:root[data-theme] .admin-shell.admin-sidebar-collapsed .admin-logo-text {
+    display: none;
+}
+
 .admin-shell.admin-sidebar-collapsed .admin-nav-link {
     justify-content: center;
     padding: 12px 0;
@@ -265,12 +271,14 @@ html:root[data-theme] .admin-sidebar-brand .admin-logo-text {
     justify-content: space-between;
     padding: 20px 36px;
     border-bottom: 1px solid var(--color-line);
-    background: color-mix(in srgb, var(--color-bg) 60%, transparent);
     backdrop-filter: blur(10px);
     position: sticky;
     top: 0;
     z-index: 14;
+    transition: transform 0.25s ease;
 }
+
+.admin-topbar.is-hidden { transform: translateY(-100%); }
 
 /* Revision A2, decision B5-f — min-width: 0 on both this flex item and
    .admin-topbar-title below (a nested flex item of THIS element) lets a
@@ -1225,6 +1233,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-photo-url-fallback .admin-input { margin-top: 10px; }
 
 @media (prefers-reduced-motion: reduce) {
+    .admin-topbar { transition: none; }
     .admin-modal-overlay,
     .admin-modal {
         transition: none;
@@ -1817,11 +1826,14 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 
 .owner-booking-rules-meta {
     display: grid;
-    grid-template-columns: minmax(190px, .7fr) minmax(240px, 1fr);
-    gap: 16px 22px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
     align-items: start;
+    max-width: 520px;
     margin: 4px 0 20px;
 }
+.owner-booking-rules-meta > .admin-form-group { min-width: 0; margin-bottom: 0; }
+.owner-rules-effective-field { grid-column: 1 / -1; width: calc((100% - 16px) / 2); }
 .owner-rules-summary-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
 .owner-rules-saved-meta { display: flex; flex-wrap: wrap; gap: 12px 28px; }
 .owner-rules-saved-meta > div { display: grid; gap: 4px; }
@@ -1846,8 +1858,12 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 }
 .owner-rules-grace-input { display: flex; align-items: center; gap: 10px; }
 .owner-rules-grace-input .admin-input { max-width: 150px; }
+.owner-rules-grace-input .admin-input[aria-invalid="true"] { border-color: var(--color-alert); }
 .owner-rules-grace-input > span { color: var(--color-ink-dim); font-size: var(--fs-sm); }
-.owner-rules-timezone { grid-column: 1 / -1; margin-top: -9px; }
+.owner-rules-minute-error-slot { display: block; min-height: 2.8em; }
+.owner-rules-minute-error { display: block; color: var(--color-alert); font-size: var(--fs-sm); line-height: 1.4; }
+.owner-rules-minute-error[hidden] { display: none; }
+.owner-rules-timezone { grid-column: 1 / -1; }
 .owner-rules-actions { justify-content: flex-end; }
 .owner-rules-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--color-line); border-radius: 12px; }
 .owner-rules-table { width: 100%; min-width: 580px; border-collapse: collapse; }
@@ -1911,9 +1927,43 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 [data-admin-staff-emergency-status][data-state="available"],[data-admin-staff-edit-emergency-status][data-state="available"] { color: var(--color-court-green); }
 [data-admin-staff-emergency-status][data-state="warning"],[data-admin-staff-edit-emergency-status][data-state="warning"] { color: var(--color-warning-text); }
 [data-admin-staff-emergency-status][data-state="invalid"],[data-admin-staff-edit-emergency-status][data-state="invalid"],[data-admin-staff-emergency-status][data-state="error"],[data-admin-staff-edit-emergency-status][data-state="error"] { color: var(--color-alert); }
+.owner-staff-email-status[data-state="invalid"],.owner-staff-email-status[data-state="duplicate"],.owner-staff-email-status[data-state="error"] { color: var(--color-alert); }
+.owner-staff-email-status[data-state="available"] { color: var(--color-court-green); }
+[data-admin-staff-dialog] .admin-modal-body { padding-top: 12px; }
+.owner-staff-email-group { margin-bottom: 4px; }
+.owner-staff-email-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 4px; }
+.owner-staff-email-heading .admin-form-label { flex: 0 0 auto; }
+.owner-staff-recovery-email-group { gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-line); }
+.owner-staff-recovery-email-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.owner-staff-recovery-email-heading .admin-form-label { flex: 0 0 auto; }
+.owner-staff-recovery-email-feedback { display: flex; align-items: baseline; justify-content: flex-end; flex: 1 1 auto; gap: 8px; min-width: 0; min-height: 1.75rem; }
+.owner-staff-recovery-email-feedback .owner-staff-email-status { text-align: right; }
+.owner-staff-email-purpose { text-align: right; font-size: var(--fs-xs); }
+.owner-staff-email-feedback { display: flex; align-items: flex-start; gap: 8px; min-height: 1.75rem; }
+.owner-staff-email-status { flex: 1 1 auto; min-width: 0; margin: 0; display: block; }
+.owner-staff-email-retry { flex: 0 0 auto; border: 0; padding: 4px 0; color: var(--color-primary); background: transparent; font: inherit; font-size: var(--fs-xs); font-weight: 600; text-decoration: underline; cursor: pointer; }
+.owner-staff-email-retry[hidden] { display: none; }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-email][data-email-state="invalid"],
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-email][data-email-state="duplicate"],
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-email][data-email-state="error"] { border-color: var(--color-alert) !important; box-shadow: 0 0 0 1px var(--color-alert) !important; }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-email][data-email-state="available"] { border-color: var(--color-court-green) !important; box-shadow: 0 0 0 1px var(--color-court-green) !important; }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-email]:is([data-email-state="invalid"], [data-email-state="duplicate"], [data-email-state="error"]):focus-visible { outline-color: var(--color-alert); }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-email][data-email-state="available"]:focus-visible { outline-color: var(--color-court-green); }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-email]:is([data-email-state="invalid"], [data-email-state="duplicate"], [data-email-state="error"]) { border-color: var(--color-alert) !important; box-shadow: 0 0 0 1px var(--color-alert) !important; }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-email][data-email-state="available"] { border-color: var(--color-court-green) !important; box-shadow: 0 0 0 1px var(--color-court-green) !important; }
+html:root[data-theme] body.admin-body [data-admin-staff-recovery-result].is-error { color: var(--color-alert); }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-email]:is([data-email-state="invalid"], [data-email-state="duplicate"], [data-email-state="error"]):focus-visible { outline-color: var(--color-alert); }
+html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-email][data-email-state="available"]:focus-visible { outline-color: var(--color-court-green); }
 
 @media (max-width: 640px) {
+    .owner-staff-email-heading { flex-wrap: wrap; }
+    .owner-staff-email-purpose { flex-basis: 100%; }
+    .owner-staff-email-feedback { min-height: 3rem; }
+    .owner-staff-recovery-email-heading { flex-wrap: wrap; }
+    .owner-staff-recovery-email-feedback { flex-basis: 100%; justify-content: flex-start; }
+    .owner-staff-recovery-email-feedback .owner-staff-email-status { text-align: left; }
     .owner-booking-rules-meta,.owner-announcement-options { grid-template-columns: minmax(0,1fr); }
+    .owner-rules-effective-field { width: 100%; }
     .owner-announcement-list-head { align-items: stretch; flex-direction: column; }
     .owner-announcement-filters { grid-template-columns: minmax(0,1fr); }
     .owner-rules-saved-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
