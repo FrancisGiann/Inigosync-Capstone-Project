@@ -814,6 +814,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 
 .staff-table td.staff-cell-main { color: var(--color-ink); font-weight: 600; }
 .staff-tx-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.staff-tx-record-type { display: block; margin-top: 4px; color: var(--color-primary); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .staff-tx-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .staff-tx-visit-times { display: grid; gap: 4px; color: var(--color-ink-faint); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .staff-tx-amount-note { display: block; margin-top: 3px; color: var(--color-ink-faint); font-size: var(--fs-xs); }

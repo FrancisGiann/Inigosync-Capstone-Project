@@ -492,7 +492,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 if (txSourceMenu) {
                     txSourceMenu.dataset.value = 'all';
-                    document.querySelector('#staff-tx-source-current').textContent = 'All sources';
+                    document.querySelector('#staff-tx-source-current').textContent = 'All types';
                 }
                 renderTransactionRows();
                 if (txSearchInput) {
@@ -988,6 +988,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const emptyStateRow = state.rows.find((row) => row.hasAttribute('data-staff-empty-state'));
             const dataRows = state.rows.filter((row) => !row.hasAttribute('data-staff-empty-state'));
             const matchingRows = dataRows.filter((row) => {
+                const matchesTransactionSource = scopeName !== 'transactions' || transactionView === 'unattended'
+                    || state.activeFilter === 'all'
+                    || (state.activeFilter === 'extension'
+                        ? row.dataset.recordType === 'extension'
+                        : row.dataset.recordType !== 'extension' && row.dataset.status === state.activeFilter);
                 const matchesFilter = (scopeName === 'transactions' && transactionView === 'unattended')
                     || state.activeFilter === 'all' || row.dataset.status === state.activeFilter;
                 const matchesVisitStatus = !statusMenu || statusMenu.dataset.value === 'all' || row.dataset.visitStatus === statusMenu.dataset.value;
@@ -998,7 +1003,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? matchesExactId
                     : (!state.query || row.textContent.toLowerCase().includes(state.query)
                         || (scopeName === 'transactions' && row.dataset.visitId === state.query));
-                return matchesFilter && matchesVisitStatus && matchesQuery;
+                return (scopeName === 'transactions' ? matchesTransactionSource : matchesFilter)
+                    && matchesVisitStatus && matchesQuery;
             });
             const page = window.InigoStaffPagination.paginateRows(matchingRows, state.page);
             state.page = page.page;
@@ -5384,7 +5390,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         unattended: 'Unattended',
     };
     function transactionDisplayStatus(row) {
-        if (row.record_type === 'extension') return 'completed';
+        if (row.record_type === 'extension') return row.status;
         if (row.status !== 'in_progress' || !row.checked_in_at || row.checked_out_at) return row.status;
         const start = Date.parse(Array.isArray(row.visits) ? row.visits[0]?.starts_at : '');
         return Number.isFinite(start) && Date.now() < start ? 'arrived' : row.status;
@@ -5459,7 +5465,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const displayStatus = transactionDisplayStatus(row);
             const visitStatus = Object.hasOwn(transactionStatusLabels, displayStatus) ? displayStatus : 'unattended';
             const isExtension = row.record_type === 'extension';
-            const visitStatusText = isExtension ? 'Extended' : transactionStatusLabels[visitStatus];
+            const visitStatusText = transactionStatusLabels[visitStatus];
             const checkedInAt = row.checked_in_at && Number.isFinite(Date.parse(row.checked_in_at)) ? row.checked_in_at : null;
             const checkedOutAt = row.checked_out_at && Number.isFinite(Date.parse(row.checked_out_at)) ? row.checked_out_at : null;
             const minorAmount = row.status === 'unattended' ? 0 : row.amount_minor;
@@ -5467,6 +5473,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? '—' : formatStaffPeso(Number(minorAmount) / 100);
             const tr = document.createElement('tr');
             tr.dataset.status = row.source === 'walkin' ? 'walkin' : 'booking';
+            tr.dataset.recordType = isExtension ? 'extension' : 'visit';
             tr.dataset.visitStatus = visitStatus;
             tr.dataset.visitId = String(row.visit_id ?? '');
             tr.dataset.transactionId = String(row.transaction_id ?? '').toLowerCase();
@@ -5498,11 +5505,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ? `<small class="staff-tx-amount-note">${row.fully_paid === true ? 'Full payment paid' : 'No payment collected at Time-In'}</small>`
                     : '';
                 tr.innerHTML = `
-                    <td data-label="Transaction ID"><span class="staff-tx-truncate" title="${window.escapeHtml(transactionId)}">${window.escapeHtml(transactionId)}</span></td>
+                    <td data-label="Transaction ID"><span class="staff-tx-truncate" title="${window.escapeHtml(transactionId)}">${window.escapeHtml(transactionId)}</span>${isExtension ? '<small class="staff-tx-record-type">Extension</small>' : ''}</td>
                     <td data-label="Customer name" class="staff-cell-main"><span class="staff-tx-truncate" title="${window.escapeHtml(row.customer_name || '—')}">${window.escapeHtml(row.customer_name || '—')}</span></td>
                     ${visitTimeCell}
-                    <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}${isExtension ? ' · Extension' : ''}</span></td>
-                    <td data-label="Visit status"><span class="staff-status ${isExtension ? 'extended' : visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
+                    <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}</span></td>
+                    <td data-label="Visit status"><span class="staff-status ${visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
                     <td data-label="Amount">${window.escapeHtml(amountText)}${amountHint}</td>
                     <td data-label="Receipt"><div class="staff-tx-actions">${receiptControl}</div></td>
                 `;
@@ -5572,7 +5579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     wireTransactionMenu('[data-staff-tx-source]', '[data-staff-tx-source-options]', '[data-staff-tx-source-choice]', '', (choice) => {
         const menu = document.querySelector('[data-staff-tx-source-menu]');
         menu.dataset.value = choice?.dataset.staffTxSourceChoice || 'all';
-        document.querySelector('#staff-tx-source-current').textContent = choice?.textContent || 'All sources';
+        document.querySelector('#staff-tx-source-current').textContent = choice?.textContent || 'All types';
         menu.querySelector('[data-staff-tx-source]')?.dispatchEvent(new Event('staffsourcechange'));
         updateTransactionClearButton();
     });
@@ -5619,7 +5626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (txDateInput) txDateInput.value = '';
         if (txSourceMenu) {
             txSourceMenu.dataset.value = 'all';
-            document.querySelector('#staff-tx-source-current').textContent = 'All sources';
+            document.querySelector('#staff-tx-source-current').textContent = 'All types';
         }
         if (txStatusMenu) {
             txStatusMenu.dataset.value = 'all';

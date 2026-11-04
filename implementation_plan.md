@@ -1736,3 +1736,15 @@ was applied to the connected development database. Active-staff readback
 returned 39 rows including one extension row for payment #85 with receipt
 context; booking, walk-in, and payment counts stayed at 29/22/50. No persisted
 records were converted or removed, so no historical cleanup was needed.
+
+The follow-up `20261104170000_staff_extension_visit_status.sql` corrects the
+transaction projection: Source remains Booking or Walk-in, Extension is a
+separate record-type label, and Visit Status reflects the linked reservation.
+An extension remains In Progress while its checked-in reservation is active
+and becomes Completed after checkout or the current end time passes. This
+function-only migration was applied to the connected development database.
+Readback for walk-in #91 returned source `walkin`, record type `extension`,
+status `in_progress`, and payment #85; counts remained 29 bookings, 22
+walk-ins, and 50 payments. It changes no stored records or payment meaning,
+so no conversion or cleanup was required. A disposable database integration
+test for paid online and review paths remains outstanding.

@@ -17,6 +17,7 @@ const timeoutMigration = await readFile(new URL('../supabase/migrations/20261101
 const paidWalkinMigration = await readFile(new URL('../supabase/migrations/20261101051738_staff_paid_walkin_auto_timein.sql', import.meta.url), 'utf8');
 const branchWideVisitMigration = await readFile(new URL('../supabase/migrations/20261103223951_staff_branch_wide_visit_transactions.sql', import.meta.url), 'utf8');
 const extensionTransactionMigration = await readFile(new URL('../supabase/migrations/20261104160000_staff_extension_transaction_records.sql', import.meta.url), 'utf8');
+const extensionVisitStatusMigration = await readFile(new URL('../supabase/migrations/20261104170000_staff_extension_visit_status.sql', import.meta.url), 'utf8');
 const walkinAttendanceMigration = await readFile(new URL('../supabase/migrations/20261101051924_staff_walkins_not_unattended.sql', import.meta.url), 'utf8');
 const walkinInvariantMigration = await readFile(new URL('../supabase/migrations/20261101133000_staff_paid_walkin_status_invariant.sql', import.meta.url), 'utf8');
 const transactionPanelStart = html.indexOf('<section class="staff-panel" data-staff-panel="transactions"');
@@ -44,10 +45,12 @@ test('transaction toolbar and table expose the compact visit record fields', () 
     assert.match(transactionPanel, /data-staff-tx-status-choice="completed">Completed/);
     assert.match(transactionPanel, /data-staff-tx-status-menu[^>]*data-value="all"/);
     assert.match(transactionPanel, /data-staff-tx-clear hidden>Clear filters/);
-    assert.match(transactionPanel, /id="staff-tx-source-label">Source/);
-    assert.match(transactionPanel, /id="staff-tx-source-current">All sources/);
+    assert.match(transactionPanel, /id="staff-tx-source-label">Source \/ Type/);
+    assert.match(transactionPanel, /id="staff-tx-source-current">All types/);
+    assert.match(transactionPanel, /data-staff-tx-source-choice="all">All types/);
     assert.match(transactionPanel, /data-staff-tx-source-choice="booking">Booking/);
     assert.match(transactionPanel, /data-staff-tx-source-choice="walkin">Walk-in/);
+    assert.match(transactionPanel, /data-staff-tx-source-choice="extension">Extension/);
     assert.doesNotMatch(transactionPanel, /Clear (?:status|source) filter/);
     assert.doesNotMatch(transactionPanel, /data-staff-filter-group="transactions"|data-staff-chip/);
     assert.match(transactionPanel, /data-staff-tx-sort-current[^>]*aria-labelledby="staff-tx-sort-label staff-tx-sort-current-label"/);
@@ -70,7 +73,11 @@ test('Unattended hides the Source filter without inheriting its Transactions sel
     assert.match(script, /transactionView !== 'unattended' && \(txSourceMenu\?\.dataset\.value \|\| 'all'\) !== 'all'/,
         'a preserved Transactions source choice does not show as an active Unattended filter');
     assert.match(script, /menu\.dataset\.value = choice\?\.dataset\.staffTxSourceChoice \|\| 'all'/,
-        'Transactions keeps its functional Booking / Walk-in source selection');
+        'Transactions keeps its functional Source / Type selection');
+    assert.match(script, /state\.activeFilter === 'extension'[\s\S]*?row\.dataset\.recordType === 'extension'[\s\S]*?row\.dataset\.recordType !== 'extension' && row\.dataset\.status === state\.activeFilter/,
+        'Extension matches extension records independent of source; Booking and Walk-in match only normal visits');
+    assert.match(script, /tr\.dataset\.recordType = isExtension \? 'extension' : 'visit'/,
+        'rendered rows retain the RPC record type for filtering');
     assert.match(styles, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
     assert.match(styles, /\.staff-transaction-toolbar \.staff-search,[\s\S]*?\.staff-transaction-menu-trigger \{[^}]*height: 56px; min-height: 56px; background: var\(--color-bg-elevated\)/);
     assert.match(styles, /\.staff-transaction-toolbar\[data-view="unattended"\] \[data-staff-tx-sort-menu\] \{ grid-column: 3; \}/);
@@ -156,6 +163,8 @@ test('transaction records fit the panel and stack into labeled cards on narrow v
     assert.match(styles, /\.staff-table\[data-staff-table="transactions"\] \{ width: 100%; min-width: 0; table-layout: fixed; \}/);
     assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.staff-table\[data-staff-table="transactions"\] tbody > tr:not\(\[data-staff-empty-state\]\)\s*\{\s*display: grid/);
     assert.match(styles, /\.staff-table\[data-staff-table="transactions"\] tbody > tr > td::before\s*\{\s*content: attr\(data-label\)/);
+    assert.match(styles, /\.staff-tx-record-type\s*\{[^}]*display: block/,
+        'the extension type label stacks beneath the transaction ID without widening Source');
 });
 
 test('visit-date search finds no-show and completed rows by scheduled visit date', () => {
@@ -331,8 +340,28 @@ test('successful paid extensions are distinct transaction rows with payment ackn
     assert.match(extensionTransactionMigration, /'acknowledgment', ack\.payload/);
     assert.match(extensionTransactionMigration, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
     assert.match(script, /row\.record_type === 'extension'/);
-    assert.match(script, /isExtension \? 'Extended'/);
-    assert.match(script, /data-label="Extension window"/);
+    const sourceCell = script.slice(script.indexOf('<td data-label="Source">', script.indexOf('const visitTimeCell')), script.indexOf('</td>', script.indexOf('<td data-label="Source">', script.indexOf('const visitTimeCell'))));
+    assert.match(script, /staff-tx-record-type">Extension/,
+        'extension is identified as a record type under its transaction ID');
+    assert.doesNotMatch(sourceCell, /Extension/,
+        'Source remains only Booking or Walk-in');
+    assert.doesNotMatch(script, /record_type === 'extension'\) return 'completed'/,
+        'extension payment does not override the reservation visit state');
+    assert.match(script, /if \(row\.record_type === 'extension'\) return row\.status;/,
+        'extension rows skip the generic arrived calculation based on their payment window');
+    assert.match(extensionVisitStatusMigration, /case when e\.source = 'booking' then b\.checked_in_at else w\.checked_in_at end as checked_in_at/);
+    assert.match(extensionVisitStatusMigration, /case when e\.source = 'booking' then b\.checked_out_at else w\.checked_out_at end as checked_out_at/);
+    assert.match(extensionVisitStatusMigration, /case when e\.source = 'booking' then b\.end_at else w\.end_at end as reservation_ends_at/,
+        'extension state uses the latest reservation end, not only the payment window');
+    assert.match(extensionVisitStatusMigration, /all_records\.record_type = 'extension' and all_records\.checked_out_at is not null then 'completed'/);
+    assert.match(extensionVisitStatusMigration, /all_records\.record_type = 'extension' and all_records\.checked_in_at is not null\s+and now\(\) >= all_records\.reservation_ends_at then 'completed'/,
+        'an extension becomes completed at the reservation end even if checked_out_at is still null');
+    assert.match(extensionVisitStatusMigration, /when all_records\.record_type = 'extension' then 'in_progress'/,
+        'an active extension reservation remains in progress before its current end');
+    assert.match(extensionVisitStatusMigration, /x\.status = 'paid' and x\.payment_id is not null/,
+        'the forward status fix preserves the successful-only online extension predicate');
+    assert.match(extensionVisitStatusMigration, /a\.action = 'booking_extended'/,
+        'the forward status fix preserves the cash extension source');
 });
 
 test('transaction records refresh while their panel is visible without resetting filters', () => {
