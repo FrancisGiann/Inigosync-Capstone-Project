@@ -62,6 +62,26 @@ test('Extension cards only expose the authoritative contiguous hourly prefix and
     assert.equal(selectContext.select(valid, 60), valid[0], 'choosing an earlier card shortens the selected extension');
 });
 
+test('The extension unavailable card is limited to configured court hours', () => {
+    const helperStart = source.indexOf('    function staffExtensionHasConfiguredNextSlot(lastOption, rules) {');
+    const helperEnd = source.indexOf('\n\n    function renderStaffExtensionHourGrid()', helperStart);
+    assert.ok(helperStart >= 0 && helperEnd > helperStart);
+    const context = { window: { InigoBusinessHours: { TIMEZONE: 'Asia/Manila' } } };
+    runInNewContext(`${source.slice(helperStart, helperEnd)}; globalThis.hasConfigured = staffExtensionHasConfiguredNextSlot;`, context);
+    const rules = { openHour: 8, closeHour: 20, isClosed: false, timezone: 'Asia/Manila' };
+    assert.equal(context.hasConfigured({ new_end_at: '2026-11-04T11:00:00.000Z' }, rules), true,
+        'a configured hour that is unavailable remains visible');
+    assert.equal(context.hasConfigured({ new_end_at: '2026-11-04T12:00:00.000Z' }, rules), false,
+        'the hour beginning at the exclusive closing time is omitted');
+    assert.equal(context.hasConfigured({ new_end_at: '2026-11-04T11:30:00.000Z' }, rules), false,
+        'a non-hour boundary is not rendered as a court slot');
+    assert.equal(context.hasConfigured({ new_end_at: '2026-11-04T11:00:00.000Z' }, { ...rules, isClosed: true }), false);
+    assert.equal(context.hasConfigured({ new_end_at: '2026-11-04T16:00:00.000Z' }, {
+        ...rules, openHour: 22, closeHour: 2,
+    }), true, 'overnight schedules include hours after midnight');
+    assert.match(source, /if \(staffExtensionNextSlotConfigured\) \{[\s\S]*class="staff-hour-slot is-unavailable"/);
+});
+
 test('Extension options use the integer duration contract of authoritative pricing', () => {
     assert.match(durationFixMigration, /create or replace function public\.staff_booking_extension_options/);
     assert.match(durationFixMigration, /extract\(epoch from \(r\.ends_at - r\.starts_at\)\)::integer\s*\/\s*60\)\s*\+\s*v_minutes,\s*1\)/);

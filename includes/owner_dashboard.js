@@ -32,9 +32,12 @@
 // sortable/filterable list over the `feedback` table (C5).
 
 document.addEventListener('DOMContentLoaded', () => {
-    function renderOwnerPageNumbers(container, currentPage, pageCount, onPageChange) {
+    function renderOwnerPageNumbers(container, currentPage, pageCount, onPageChange, compact = false) {
         if (!container) return;
-        const pages = pageCount <= 7
+        const compactStart = Math.min(Math.max(currentPage - 1, 1), Math.max(1, pageCount - 2));
+        const pages = compact
+            ? Array.from({ length: Math.min(3, pageCount) }, (_, index) => compactStart + index)
+            : pageCount <= 7
             ? Array.from({ length: pageCount }, (_, index) => index + 1)
             : [1, ...(currentPage > 3 ? ['gap'] : []),
                 ...Array.from({ length: 3 }, (_, index) => currentPage - 1 + index).filter(page => page > 1 && page < pageCount),
@@ -1446,6 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const query = staffSearch?.value.trim().toLocaleLowerCase() || '';
         const selectedStatus = staffStatusFilter?.value || 'all';
         const selectedPosition = staffPositionFilter?.value || 'all';
+        const statusPriority = { active: 0, pending: 1, disabled: 2 };
         const filtered = staffProfiles.filter((profile) => {
             const searchable = [profile.full_name, profile.email, profile.position]
                 .filter(Boolean).join(' ').toLocaleLowerCase();
@@ -1459,7 +1463,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return (!query || searchable.includes(query))
                 && matchesStatus
                 && (selectedPosition === 'all' || (profile.position || '') === selectedPosition);
-        });
+        }).sort((left, right) => (statusPriority[left.status] ?? 0) - (statusPriority[right.status] ?? 0));
         const pageCount = Math.max(1, Math.ceil(filtered.length / STAFF_PAGE_SIZE));
         staffPage = Math.min(Math.max(1, staffPage), pageCount);
         const start = (staffPage - 1) * STAFF_PAGE_SIZE;
@@ -2866,6 +2870,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const auditPageNumbers = document.querySelector('[data-owner-audit-page-numbers]');
     const AUDIT_PAGE_SIZE = 25;
     let auditPage = 0;
+    let auditPageCount = 1;
+    const compactAuditPages = window.matchMedia('(max-width: 640px)');
+    function renderAuditPageNumbers() {
+        renderOwnerPageNumbers(auditPageNumbers, auditPage + 1, auditPageCount, page => {
+            auditPage = page - 1;
+            loadAuditTrail();
+        }, compactAuditPages.matches);
+    }
+    compactAuditPages.addEventListener('change', renderAuditPageNumbers);
     let auditGeneration = 0;
     let auditSearchTimer = null;
     let auditRefreshTimer = null;
@@ -3157,7 +3170,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (auditPagination) auditPagination.hidden = total <= AUDIT_PAGE_SIZE;
             if (auditPrev) auditPrev.disabled = auditPage <= 0;
             if (auditNext) auditNext.disabled = auditPage + 1 >= pageCount;
-            renderOwnerPageNumbers(auditPageNumbers, auditPage + 1, pageCount, page => { auditPage = page - 1; loadAuditTrail(); });
+            auditPageCount = pageCount;
+            renderAuditPageNumbers();
         } catch (error) {
             if (generation !== auditGeneration) return;
             console.error('[admin] activity logs could not be loaded', error);
@@ -4260,7 +4274,7 @@ document.addEventListener('DOMContentLoaded', () => {
         root.innerHTML = aliases.length ? aliases.map(a => {
             const id = window.escapeHtml(a.alias_id), email = window.escapeHtml(a.email);
             const retry = a.delivery_status && a.delivery_status !== 'sent' ? `<button type="button" class="admin-btn-ghost admin-google-account-action" data-email-notice-retry="${id}">Retry linked notice</button>` : '';
-            return `<div class="admin-google-account"><span class="admin-google-account-check" aria-hidden="true">✓</span><span class="admin-google-account-email">${email}</span><span class="admin-google-account-badge">Linked</span><button type="button" class="admin-btn-ghost admin-google-account-action" data-email-alias-password="${id}" data-email-alias-address="${email}" data-email-alias-has-password="${a.has_password === true}">${a.has_password ? 'Change password' : 'Set password'}</button>${retry}<button type="button" class="admin-btn-chip-danger" data-email-alias-remove="${id}" data-email-alias-address="${email}">Remove</button></div>`;
+            return `<div class="admin-google-account"><span class="admin-google-account-check" aria-hidden="true">✓</span><span class="admin-google-account-email">${email}</span><span class="admin-google-account-badge">Linked</span><div class="admin-google-account-actions"><button type="button" class="admin-btn-ghost admin-google-account-action" data-email-alias-password="${id}" data-email-alias-address="${email}" data-email-alias-has-password="${a.has_password === true}">${a.has_password ? 'Change password' : 'Set password'}</button><button type="button" class="admin-btn-chip-danger" data-email-alias-remove="${id}" data-email-alias-address="${email}">Remove</button>${retry}</div></div>`;
         }).join('') : '<p class="admin-google-accounts-empty">No linked email accounts yet.</p>';
         root.onclick = async e => {
             const pw = e.target.closest('[data-email-alias-password]'); if (pw) { await openExistingAliasPassword(pw.dataset.emailAliasPassword, pw.dataset.emailAliasAddress, pw.dataset.emailAliasHasPassword === 'true'); return; }
@@ -4596,6 +4610,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let ownerReviewBrowserRequest = 0;
     let ownerReviewBrowserLoading = false;
     let ownerReviewBrowserLoaded = false;
+    let ownerReviewBrowserPageCount = 1;
+    const compactOwnerReviewPages = window.matchMedia('(max-width: 640px)');
+    function renderOwnerReviewBrowserPages() {
+        renderOwnerPageNumbers(document.querySelector('[data-owner-review-page-numbers]'), ownerReviewBrowserPage + 1, ownerReviewBrowserPageCount, page => {
+            ownerReviewBrowserPage = page - 1;
+            loadOwnerReviewBrowser(true);
+        }, compactOwnerReviewPages.matches);
+    }
+    compactOwnerReviewPages.addEventListener('change', renderOwnerReviewBrowserPages);
     let featuredSelectionRequest = 0;
     let savedFeaturedReviewIds = [];
     let draftFeaturedReviewIds = [];
@@ -4640,10 +4663,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (ownerReviewBrowserPager) ownerReviewBrowserPager.hidden = (count || 0) <= REVIEW_PAGE_SIZE;
             const prev = document.querySelector('[data-owner-review-prev]');
             const next = document.querySelector('[data-owner-review-next]');
-            const pageNumbers = document.querySelector('[data-owner-review-page-numbers]');
             if (prev) prev.disabled = ownerReviewBrowserPage <= 0;
             if (next) next.disabled = ownerReviewBrowserPage + 1 >= pages;
-            renderOwnerPageNumbers(pageNumbers, ownerReviewBrowserPage + 1, pages, page => { ownerReviewBrowserPage = page - 1; loadOwnerReviewBrowser(true); });
+            ownerReviewBrowserPageCount = pages;
+            renderOwnerReviewBrowserPages();
             ownerReviewBrowserLoaded = true;
         } catch (error) {
             if (request !== ownerReviewBrowserRequest) return;

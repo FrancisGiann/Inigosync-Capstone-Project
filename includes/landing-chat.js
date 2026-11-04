@@ -12,7 +12,8 @@
         },
         phone: { href: 'tel:+639281546876', label: '+63 928 154 6876' },
         email: { href: 'mailto:itsrosem8@gmail.com', label: 'itsrosem8@gmail.com' },
-        terms: { href: 'Pages/terms.html', label: 'Read Terms & Conditions' }
+        terms: { href: 'Pages/terms.html', label: 'Read Terms & Conditions' },
+        houseRules: { href: 'Pages/house-rules.html', label: 'Read House Rules' }
     });
 
     function courtsAnswer(context) {
@@ -47,7 +48,7 @@
         }),
         sports: courtsAnswer,
         cart: () => ({
-            text: 'The landing page handles one sport and court booking at a time. Select its date and one consecutive time range, then log in or create a customer account to continue. Your selection is not a reservation until availability is confirmed after sign-in.',
+            text: 'This page lets you choose one sport and court at a time. After you sign in, you can add multiple court bookings in your customer account and review them together before checkout.',
             links: [LINKS.courts]
         }),
         payment: () => ({
@@ -65,6 +66,10 @@
         location: () => ({
             text: 'Iñigos Sports Center is on Lucena Diversion Road (AH26), Brgy. Bocohan, Lucena City, Quezon, Philippines. Call +63 928 154 6876 or email itsrosem8@gmail.com.',
             links: [LINKS.location, LINKS.directions, LINKS.phone, LINKS.email]
+        }),
+        food: () => ({
+            text: 'Please follow the posted directions about food and drinks in playing areas. If you are unsure whether food is allowed in a specific area, ask the front desk.',
+            links: [LINKS.houseRules]
         })
     });
 

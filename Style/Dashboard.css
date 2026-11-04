@@ -342,22 +342,40 @@ html:root[data-theme] .dash-sidebar-brand .logo-text {
     transform: translateY(-100%);
 }
 
+.dash-topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.dash-topbar-title { min-width: 0; }
+
 :root[data-theme="light"] .dash-topbar {
     background: var(--color-bg-elevated);
 }
 
 .dash-mobile-toggle {
     display: none;
-    background: transparent;
-    border: 1px solid var(--color-line);
-    border-radius: 8px;
-    width: 38px;
-    height: 38px;
+    position: relative;
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    background: var(--color-bg-card);
+    border: 1.5px solid var(--color-primary-dim);
+    border-radius: 13px;
     color: var(--color-ink);
     cursor: pointer;
     align-items: center;
     justify-content: center;
+    transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
+
+.dash-mobile-toggle:hover,
+.dash-mobile-toggle[aria-expanded="true"] { background: var(--color-primary-dim); border-color: var(--color-primary); }
+.dash-mobile-toggle:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
+.dash-toggle-bar { position: absolute; left: 11px; width: 22px; height: 3px; border-radius: 3px; background: currentColor; transition: transform 0.22s ease, opacity 0.18s ease, top 0.22s ease; }
+.dash-toggle-bar:nth-child(1) { top: 14px; }
+.dash-toggle-bar:nth-child(2) { top: 21px; }
+.dash-toggle-bar:nth-child(3) { top: 28px; }
+body.dash-sidebar-open .dash-toggle-bar:nth-child(1) { top: 21px; transform: rotate(45deg); }
+body.dash-sidebar-open .dash-toggle-bar:nth-child(2) { opacity: 0; }
+body.dash-sidebar-open .dash-toggle-bar:nth-child(3) { top: 21px; transform: rotate(-45deg); }
 
 .dash-topbar-title h1 {
     font-family: var(--font-display);
@@ -488,6 +506,9 @@ html:root[data-theme] .dash-sidebar-brand .logo-text {
     .dash-notif-selection { grid-template-columns: minmax(0, 1fr); gap: 7px; }
     .dash-notif-selection select { width: 100%; }
     .dash-notif-selection-actions { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+@media (max-width: 768px) {
+    .dash-notif-selection select { width: min(100%, 116px); padding-inline: 6px; }
 }
 .dash-notif-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .dash-notif-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 3px; border-radius: 8px; }
@@ -2303,8 +2324,11 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     .dash-panel[data-dash-panel="booking"] > .dash-wizard-card .dash-book-flow-actions { padding-top: 10px; }
     .dash-book-court-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 280px)); justify-content: center; gap: 10px; }
     .dash-book-court-card { max-width: 280px; }
-    .dash-book-cart-head-actions { flex-wrap: wrap; gap: 8px; }
-    .dash-book-cart-head-actions > button { width: auto; }
+    .dash-book-cart-head { flex-wrap: nowrap; gap: clamp(3px, 1vw, 7px); }
+    .dash-book-cart-head > strong { flex: 0 0 auto; font-size: clamp(13px, 3.7vw, 18px); line-height: 1.2; white-space: nowrap; }
+    .dash-book-cart-head-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: clamp(3px, 1vw, 6px); }
+    .dash-book-cart-head-actions > span { font-size: clamp(11px, 3vw, 13px); white-space: nowrap; }
+    .dash-book-cart-head-actions > button { flex: 0 0 auto; width: auto; min-height: 36px; padding: 6px clamp(5px, 1.3vw, 8px); font-size: clamp(11px, 3vw, 13px); white-space: nowrap; }
     .dash-book-cart-item-actions { flex-direction: column; }
     .dash-booking-modal { padding: 8px; }
     .dash-booking-dialog { max-height: 96vh; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); border-radius: 14px; }
@@ -2348,6 +2372,17 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     .dash-book-flow-actions [data-dash-book-back] { margin-right: 0; }
     .dash-book-flow-actions button { width: 100%; }
     .dash-book-flow-actions .dash-btn-primary { width: 100%; }
+    .dash-wizard-panel[data-dash-book-step="1"] .dash-book-flow-actions:has([data-dash-book-edit-cancel]:not([hidden])) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .dash-wizard-panel[data-dash-book-step="1"] .dash-book-flow-actions [data-dash-book-edit-cancel]:not([hidden]) { grid-column: 1; grid-row: 1; min-width: 0; margin-right: 0; font-size: clamp(12px, 3.5vw, 14px); }
+    .dash-wizard-panel[data-dash-book-step="1"] .dash-book-flow-actions:has([data-dash-book-edit-cancel]:not([hidden])) .dash-btn-primary { grid-column: 2; grid-row: 1; min-width: 0; }
+    .dash-wizard-panel:has([data-dash-book-back]) .dash-book-flow-actions {
+        grid-template-columns: minmax(0, 3fr) minmax(0, 5fr);
+    }
+    .dash-wizard-panel:has([data-dash-book-back]) .dash-book-flow-actions [data-dash-book-back] { grid-column: 1; grid-row: 1; min-width: 0; }
+    .dash-wizard-panel:has([data-dash-book-back]) .dash-book-flow-actions .dash-btn-primary { grid-column: 2; grid-row: 1; min-width: 0; }
+    .dash-wizard-panel:has([data-dash-book-back]) .dash-book-flow-actions [data-dash-book-edit-cancel]:not([hidden]) { grid-column: 1 / -1; grid-row: 2; }
 }
 
 @media (max-width: 480px) {
@@ -2395,6 +2430,14 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     padding: 12px 20px 16px;
 }
 
+.dash-booking-search-row,
+.dash-booking-advanced { display: contents; }
+.dash-booking-filters > .dash-booking-search-row > .dash-booking-search { grid-column: 1; grid-row: 2; }
+.dash-booking-filters > .dash-booking-search-row > [data-dash-booking-clear] { grid-column: 1 / -1; grid-row: 1; justify-self: end; }
+.dash-booking-advanced > .dash-booking-filter:nth-child(1) { grid-column: 2; grid-row: 2; }
+.dash-booking-advanced > .dash-booking-filter:nth-child(2) { grid-column: 3; grid-row: 2; }
+.dash-booking-advanced > .dash-booking-filter:nth-child(3) { grid-column: 4; grid-row: 2; }
+
 .dash-booking-filter-actions {
     grid-column: 1 / -1;
     display: flex;
@@ -2430,13 +2473,17 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 }
 
 @media (max-width: 720px) {
-    .dash-booking-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .dash-booking-search { grid-column: 1 / -1; }
+    .dash-booking-filters { display: block; padding: 12px 16px; }
+    .dash-booking-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+    .dash-booking-filters > .dash-booking-search-row > .dash-booking-search { grid-column: 1; grid-row: 1; min-width: 0; }
+    .dash-booking-search-row .dash-booking-search input { min-width: 0; }
+    .dash-booking-filters > .dash-booking-search-row > [data-dash-booking-clear] { grid-column: 2; grid-row: 1; min-height: 42px; padding: 8px 10px; white-space: nowrap; }
+    .dash-booking-advanced { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 12px; }
+    .dash-booking-advanced > .dash-booking-filter:nth-child(n) { grid-column: auto; grid-row: auto; }
 }
 
 @media (max-width: 420px) {
-    .dash-booking-filters { grid-template-columns: minmax(0, 1fr); padding: 16px; }
-    .dash-booking-search { grid-column: auto; }
+    .dash-booking-advanced { grid-template-columns: minmax(0, 1fr); }
 }
 
 .dash-table {
@@ -2582,7 +2629,7 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     border-color: var(--color-primary-dim); background: var(--color-primary-dim); color: #14110d;
 }
 .dash-receipt-clear:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.dash-receipt-clear[hidden] { visibility: hidden; pointer-events: none; }
+.dash-receipt-clear[hidden] { display: none; }
 
 .dash-receipt-filter {
     display: grid;
@@ -2694,23 +2741,42 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 
 @media (max-width: 640px) {
     .dash-receipts-group { padding: 16px; }
-    .dash-receipt-filter-actions { flex-direction: column; align-items: stretch; }
-    .dash-receipt-clear { align-self: flex-end; }
-    .dash-receipt-filters { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .dash-receipt-filter-actions { align-items: end; gap: 8px; }
+    .dash-receipt-filter-actions .dash-receipt-filter { flex: 1 1 auto; min-width: 0; }
+    .dash-receipt-clear { flex: 0 0 auto; padding: 8px 10px; }
+    .dash-receipt-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
     .dash-receipt-table-wrap { overflow: visible; }
     .dash-receipt-table,
     .dash-receipt-table tbody,
     .dash-receipt-table tr,
     .dash-receipt-table td { display: block; width: 100%; }
+    .dash-receipt-table tbody tr > td:nth-child(n) { width: 100%; }
     .dash-receipt-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
     .dash-receipt-table tr { margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-bg); }
     .dash-receipt-table tr:last-child { margin-bottom: 0; }
     .dash-receipt-table td,
-    .dash-receipt-table tbody tr:last-child td { display: grid; grid-template-columns: minmax(105px, .8fr) minmax(0, 1.2fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--color-line); }
-    .dash-receipt-table td::before { content: attr(data-label); color: var(--color-ink-dim); font-size: var(--fs-xs); font-weight: 650; }
+    .dash-receipt-table tbody tr:last-child td { display: block; min-width: 0; padding: 8px 0; border-bottom: 1px solid var(--color-line); overflow-wrap: anywhere; }
+    .dash-receipt-table td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--color-ink-dim); font-size: var(--fs-xs); font-weight: 650; }
     .dash-receipt-table td:last-child { border-bottom: 0; }
-    .dash-receipt-table .dash-receipt-reference { min-width: 0; }
+    .dash-receipt-table tbody tr > td:last-child { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .dash-receipt-table tbody tr > td:last-child::before { margin-bottom: 0; }
+    .dash-receipt-table .dash-receipt-reference { min-width: 0; overflow-wrap: anywhere; }
+    .dash-receipt-table .dash-receipt-amount { white-space: nowrap; }
+    .dash-receipt-table .dash-receipt-view-button { min-height: 38px; }
     .dash-receipt-dialog-content { padding: 14px; }
+}
+
+@media (max-width: 420px) {
+    .dash-receipt-filters { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Mobile dashboard typography is slightly tighter while inputs retain a
+   16px font to prevent browser focus zoom. Fine print and utility labels
+   stay at their existing sizes. */
+@media (max-width: 640px) {
+    :where(.dash-panel) :where(p, li, td, dd, .dash-card-head, .dash-stat-label, .dash-form-label, .dash-receipt-filter, .dash-booking-filter) { font-size: .96em; }
+    .dash-panel-head h2 { font-size: calc(var(--fs-2xl) * .96); }
+    .dash-card-head h3 { font-size: calc(var(--fs-base) * .96); }
 }
 
 /* R4-3 (implementation_plan.md, "Revision 4") — brief highlight flashed by
@@ -3742,6 +3808,7 @@ body.customer-faq-open { overflow: hidden; }
     .customer-faq-launcher { right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
     body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: calc(182px + env(safe-area-inset-bottom)); }
     .customer-faq-overlay {
+        place-items: center;
         padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
             max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
     }
@@ -3757,23 +3824,34 @@ body.customer-faq-open { overflow: hidden; }
     .customer-faq-close { flex-basis: 40px; width: 40px; height: 40px; }
     .customer-faq-log { flex: 1 1 0; min-height: 80px; padding: 12px; }
     .customer-faq-questions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        align-content: start;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-items: stretch;
         flex: 0 1 auto;
-        max-height: 38%;
-        gap: 7px;
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+        max-height: 36%;
+        gap: 6px;
         padding: 0 12px 12px;
+        overflow-x: hidden;
         overflow-y: auto;
         overscroll-behavior: contain;
     }
+    .customer-faq-message { max-width: 100%; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
     .customer-faq-questions button {
+        box-sizing: border-box;
         width: 100%;
+        max-width: 100%;
         min-width: 0;
-        min-height: 44px;
-        padding: 8px 10px;
+        flex: 0 0 auto;
+        height: auto;
+        min-height: 42px;
+        padding: 8px 12px;
         border-radius: 12px;
-        font: 600 13px/1.35 var(--font-body, inherit);
+        font: 600 12px/1.35 var(--font-body, inherit);
         text-align: left;
         white-space: normal;
         overflow-wrap: anywhere;
@@ -3791,6 +3869,7 @@ body.customer-faq-open { overflow: hidden; }
     .customer-faq-close { flex-basis: 36px; width: 36px; height: 36px; }
     .customer-faq-log { min-height: 48px; padding: 8px 10px; }
     .customer-faq-questions { max-height: 34%; gap: 5px; padding: 0 10px 8px; }
+    .customer-faq-message { padding: 8px 10px; font-size: 12px; }
     .customer-faq-questions button { min-height: 40px; padding: 6px 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3905,10 +3984,27 @@ body.dash-sidebar-open {
 
 @media (max-width: 640px) {
     .dash-topbar {
+        display: grid;
+        grid-template-columns: 46px minmax(0, 1fr) auto;
+        grid-template-areas: "menu title actions" "subtitle subtitle subtitle";
+        align-items: center;
+        column-gap: 12px;
+        row-gap: 6px;
         padding: 16px 18px;
     }
 
+    .dash-topbar-left { display: contents; }
+    .dash-mobile-toggle { grid-area: menu; }
+    .dash-topbar-title { display: contents; }
+    .dash-topbar-title h1,
+    .dash-topbar-title p { min-width: 0; overflow-wrap: anywhere; }
+    .dash-topbar-title h1 { grid-area: title; line-height: 1.2; }
+    .dash-topbar-title p { grid-area: subtitle; justify-self: center; width: 100%; max-width: 38ch; margin-top: 4px; line-height: 1.4; text-align: left; }
+
     .dash-topbar-actions {
+        grid-area: actions;
+        min-width: 0;
+        justify-content: flex-end;
         gap: 10px;
     }
 

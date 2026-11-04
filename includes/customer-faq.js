@@ -14,7 +14,8 @@
             external: true
         },
         phone: { label: '+63 928 154 6876', href: 'tel:+639281546876' },
-        email: { label: 'itsrosem8@gmail.com', href: 'mailto:itsrosem8@gmail.com' }
+        email: { label: 'itsrosem8@gmail.com', href: 'mailto:itsrosem8@gmail.com' },
+        houseRules: { label: 'Read House Rules', href: 'house-rules.html' }
     });
 
     function courtsAnswer(context) {
@@ -68,6 +69,10 @@
             location: {
                 text: 'Iñigos Sports Center is on Lucena Diversion Road (AH26), Brgy. Bocohan, Lucena City, Quezon, Philippines. Call +63 928 154 6876 or email itsrosem8@gmail.com.',
                 links: [LINKS.directions, LINKS.phone, LINKS.email]
+            },
+            food: {
+                text: 'Please follow the posted directions about food and drinks in playing areas. If you are unsure whether food is allowed in a specific area, ask the front desk.',
+                links: [LINKS.houseRules]
             }
         };
         return answers[key] || {

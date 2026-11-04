@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitleEl = document.querySelector('[data-dash-subtitle]');
 
     const panelMeta = {
-        overview: { title: 'Dashboard', subtitle: "Welcome back, here's what's happening with your bookings." },
+        overview: { title: 'Dashboard', subtitle: 'Welcome to inigosync booking web app' },
         // 'courts' removed (§1/D1) — the standalone Courts panel is gone;
         // its content now lives inside 'overview' (§4/D2), which already has
         // its own entry above.
@@ -1013,8 +1013,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let error = null;
             try {
-                const payload = { customer_id: window.inigosyncProfile.id, rating: feedbackRating, comment: message || null };
-                ({ error } = await window.sb.from('customer_review').upsert(payload, { onConflict: 'customer_id' }));
+                const reviewTable = window.sb.from('customer_review');
+                if (existingFeedbackId) {
+                    const { data, error: updateError } = await reviewTable
+                        .update({ rating: feedbackRating, comment: message || null })
+                        .eq('customer_id', window.inigosyncProfile.id)
+                        .select('id')
+                        .maybeSingle();
+                    error = updateError;
+                    if (!error && !data) error = new Error('Your review could not be found. Reload it and try again.');
+                } else {
+                    const payload = { customer_id: window.inigosyncProfile.id, rating: feedbackRating, comment: message || null };
+                    ({ error } = await reviewTable.insert(payload));
+                }
             } catch (requestError) {
                 error = requestError;
             } finally {
@@ -4033,7 +4044,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (myBookingsClearButton) {
             myBookingsClearButton.hidden = !(query || status || source || date);
         }
-
         myBookingsPageCount = Math.max(1, Math.ceil(visibleCount / MY_BOOKINGS_PAGE_SIZE));
         myBookingsPage = Math.min(myBookingsPage, myBookingsPageCount - 1);
         const pageRows = new Set(filtered.slice(myBookingsPage * MY_BOOKINGS_PAGE_SIZE, (myBookingsPage + 1) * MY_BOOKINGS_PAGE_SIZE));
@@ -4493,8 +4503,8 @@ document.addEventListener('DOMContentLoaded', () => {
             receiptPage = 0;
             receiptPageCriteria = pageCriteria;
         }
-        const hasActiveFilters = query || paymentDate || source !== 'all' || paymentStatus !== 'all';
-        if (receiptClearButton) receiptClearButton.hidden = !(hasActiveFilters || sortOrder !== 'newest');
+        const hasActiveFilters = Boolean(query || paymentDate || source !== 'all' || paymentStatus !== 'all' || sortOrder !== 'newest');
+        if (receiptClearButton) receiptClearButton.hidden = !hasActiveFilters;
         let filtered = window.InigoCustomerReceipts.filterAcknowledgments(receiptAcknowledgments, {
             source, idQuery: query, paymentDate,
         }, paymentDateKey);

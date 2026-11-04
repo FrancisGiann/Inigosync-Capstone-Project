@@ -49,7 +49,9 @@ test('customer review schema permits one editable review per account without req
     assert.match(migration, /create table if not exists public\.public_customer_reviews[\s\S]*is_sample boolean/i);
     assert.match(migration, /drop table if exists public\.booking_review/i);
     assert.doesNotMatch(ownerDashboard, /\.from\('feedback'\)/);
-    assert.match(dashboard, /\.from\('customer_review'\)\.upsert\(payload, \{ onConflict: 'customer_id' \}\)/);
+    assert.match(dashboard, /\.update\(\{ rating: feedbackRating, comment: message \|\| null \}\)[\s\S]*?\.eq\('customer_id', window\.inigosyncProfile\.id\)[\s\S]*?\.select\('id'\)[\s\S]*?\.maybeSingle\(\)/);
+    assert.match(dashboard, /reviewTable\.insert\(payload\)/);
+    assert.match(dashboard, /if \(!error && !data\) error = new Error\('Your review could not be found/);
     assert.match(dashboard, /\.select\('id, rating, comment, is_sample'\)[\s\S]*?\.eq\('customer_id',\s*window\.inigosyncProfile\.id\)[\s\S]*?\.maybeSingle\(\)/);
     assert.doesNotMatch(dashboard, /\.from\('booking_review'\)|my_booking_reviews|data-dash-review-booking/);
     assert.match(dashboard, /loadCustomerFeedback\(\)/);
@@ -164,7 +166,7 @@ function makeConfirmationEscapeHarness(flow) {
     const context = {
         document,
         window: {
-            sb: { from(table) { return { upsert: async payload => { writes.push({ table, payload }); return { error: null }; } }; } },
+            sb: { from(table) { return { insert: async payload => { writes.push({ table, action: 'insert', payload }); return { error: null }; } }; } },
             inigosyncProfile: { id: 'customer-1' },
             InigoToast: { show() {} },
             clearTimeout() {},
@@ -192,6 +194,8 @@ function makeConfirmationEscapeHarness(flow) {
         feedbackClosePending: false,
         feedbackSubmitPending: false,
         existingFeedbackId: null,
+        feedbackLoadGeneration: 0,
+        feedbackActionStateGeneration: 0,
         feedbackHideTimer: null,
         feedbackLastFocused: null,
         feedbackRating: flow === 'feedback' ? 4 : null,
@@ -220,7 +224,7 @@ function makeConfirmationEscapeHarness(flow) {
     return { confirmModal, confirmText, feedbackSubmitBtn, feedbackMessageEl, writes, pressEscapeOnConfirmation };
 }
 
-function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, insertError = null, conflictRow = null } = {}) {
+function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, insertError = null, updateError = null, updateData = { id: 'review-9' } } = {}) {
     const submit = new InteractionElement();
     submit.textContent = 'Loading…';
     const message = new InteractionElement();
@@ -241,15 +245,19 @@ function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, ins
             assert.equal(table, 'customer_review');
             const query = {
                 mode: null,
-                select(columns) { this.mode = 'select'; this.columns = columns; return this; },
+                select(columns) { this.columns = columns; return this; },
                 eq(column, value) { this.filters ||= {}; this.filters[column] = value; return this; },
                 maybeSingle() {
                     assert.equal(this.filters.customer_id, 'customer-1');
                     reviewReads += 1;
                     if (loadError && reviewReads === 1) return Promise.resolve({ data: null, error: loadError });
+                    if (this.operation === 'update') {
+                        return Promise.resolve({ data: updateData, error: updateError });
+                    }
                     return Promise.resolve({ data: existingRow, error: null });
                 },
-                upsert(payload, options) { writes.push({ action: 'upsert', payload, options }); return Promise.resolve({ error: insertError }); },
+                update(payload) { this.operation = 'update'; writes.push({ action: 'update', payload }); return this; },
+                insert(payload) { writes.push({ action: 'insert', payload }); return Promise.resolve({ error: insertError }); },
                 then(resolve, reject) { return Promise.resolve({ error: null }).then(resolve, reject); },
             };
             return query;
@@ -278,11 +286,14 @@ function makeFeedbackBehaviorHarness({ existingRow = null, loadError = null, ins
         feedbackLastFocused: null,
         feedbackRating: null,
         existingFeedbackId: null,
+        feedbackLoadGeneration: 0,
+        feedbackActionStateGeneration: 0,
         feedbackLoadPending: false,
         feedbackLoadFailed: false,
         initialFeedbackSnapshot: null,
         FEEDBACK_CLOSE_DELAY_MS: 0,
         paintFeedbackStars() {},
+        setFeedbackActionLabel() {},
         async confirmSettingsChange(message) { confirmations.push(message); return true; },
         closeFeedbackModal() {},
         isDashboardSchemaMismatch() { return false; },
@@ -310,9 +321,10 @@ test('review form loads the account row and saves edits to that row', async () =
     assert.equal(harness.submit.textContent, 'Save Review');
     harness.message.value = 'Updated';
     await harness.submit.dispatch('click');
-    assert.deepEqual(harness.writes.map(write => write.action), ['upsert']);
+    assert.deepEqual(harness.writes.map(write => write.action), ['update']);
     assert.equal(harness.writes[0].payload.comment, 'Updated');
     assert.equal(harness.writes[0].payload.rating, 3);
+    assert.deepEqual(Object.keys(harness.writes[0].payload).sort(), ['comment', 'rating']);
 });
 
 test('first review submission requires a rating but allows an empty comment', async () => {
@@ -326,10 +338,36 @@ test('first review submission requires a rating but allows an empty comment', as
     harness.context.feedbackRating = 5;
     await harness.submit.dispatch('click');
     assert.equal(harness.writes.length, 1);
-    assert.equal(harness.writes[0].action, 'upsert');
+    assert.equal(harness.writes[0].action, 'insert');
     assert.equal(harness.writes[0].payload.comment, null);
     assert.equal(harness.writes[0].payload.rating, 5);
     assert.deepEqual(harness.confirmations, ['Publish this public review?']);
+});
+
+test('a review that disappeared before save is reported instead of showing success', async () => {
+    const harness = makeFeedbackBehaviorHarness({ existingRow: { id: 'review-9', rating: 3, comment: 'Helpful' }, updateData: null });
+    await harness.read().load();
+    harness.context.feedbackRating = 4;
+    await harness.submit.dispatch('click');
+    assert.deepEqual(harness.writes.map(write => write.action), ['update']);
+    assert.equal(harness.messages.at(-1).isError, true);
+    assert.match(harness.messages.at(-1).text, /could not be found/i);
+    assert.equal(harness.context.feedbackIsOpen, true, 'the editor remains open so the customer can reload');
+});
+
+test('a review update error is shown and keeps the draft available', async () => {
+    const harness = makeFeedbackBehaviorHarness({
+        existingRow: { id: 'review-9', rating: 3, comment: 'Helpful' },
+        updateError: { message: 'permission denied' },
+    });
+    await harness.read().load();
+    harness.context.feedbackRating = 4;
+    harness.message.value = 'Still here';
+    await harness.submit.dispatch('click');
+    assert.equal(harness.messages.at(-1).text, 'permission denied');
+    assert.equal(harness.messages.at(-1).isError, true);
+    assert.equal(harness.message.value, 'Still here');
+    assert.equal(harness.context.feedbackIsOpen, true);
 });
 
 test('a failed review load turns submit into a safe retry without writing', async () => {

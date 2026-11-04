@@ -20,13 +20,19 @@
 @media (max-width: 480px) {
     .admin-panel[data-admin-panel="settings"] .owner-account-card { gap: 18px; padding: 18px 16px; }
     .admin-panel[data-admin-panel="settings"] .owner-profile-summary { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-    .admin-panel[data-admin-panel="settings"] .owner-personal-section > [data-admin-profile-edit] { align-self: stretch; width: 100%; min-height: 44px; }
+    .admin-panel[data-admin-panel="settings"] .owner-personal-section > [data-admin-profile-edit] { align-self: flex-end; width: auto; min-width: 92px; min-height: 44px; padding-inline: 18px; }
 
     .admin-account-modal .phone-field-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
     .admin-account-modal .owner-mobile-verification .admin-form-label { white-space: normal; }
     .admin-account-modal .phone-field-status { flex: none; overflow: visible; text-align: left; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
     .admin-account-modal .admin-modal-google-accounts { padding: 16px; }
     .admin-account-modal .admin-google-link-btn { align-self: stretch; width: 100%; min-height: 44px; }
+    .admin-account-modal .admin-google-account { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 8px 10px; }
+    .admin-account-modal .admin-google-account-email { grid-column: 2; overflow-wrap: anywhere; }
+    .admin-account-modal .admin-google-account-badge,
+    .admin-account-modal .admin-google-account-state { grid-column: 2; justify-self: start; max-width: 100%; margin-left: 0; }
+    .admin-account-modal .admin-google-account-actions { grid-column: 1 / -1; width: 100%; margin-left: 0; }
+    .admin-account-modal .admin-google-account-actions > button { box-sizing: border-box; flex: 0 0 auto; width: auto; min-height: 38px; max-width: 100%; margin-left: 0; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
     .admin-panel[data-admin-panel="settings"] .admin-wizard-nav > button { min-height: 44px; }
 }
 

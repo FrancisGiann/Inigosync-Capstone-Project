@@ -3988,6 +3988,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffExtensionPaymentError = document.querySelector('[data-staff-extension-payment-error]');
     let staffExtensionRow = null;
     let staffExtensionOptions = [];
+    let staffExtensionNextSlotConfigured = false;
     let staffExtensionSelected = null;
     let staffExtensionStep = 'duration';
     let staffExtensionCashTenderMinor = null;
@@ -4006,6 +4007,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffExtensionModal.removeAttribute('data-open');
         staffExtensionRow = null;
         staffExtensionOptions = [];
+        staffExtensionNextSlotConfigured = false;
         staffExtensionSelected = null;
         staffExtensionCashTenderMinor = null;
         updateStaffModalBackground();
@@ -4018,6 +4020,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffExtensionRow = row;
         staffExtensionStep = 'duration';
         staffExtensionOptions = [];
+        staffExtensionNextSlotConfigured = false;
         staffExtensionNext.disabled = true;
         staffExtensionCashTenderMinor = null;
         staffExtensionCashReceived.hidden = true;
@@ -4050,6 +4053,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderStaffExtensionHourGrid();
             return;
         }
+        const lastOption = staffExtensionOptions[staffExtensionOptions.length - 1];
+        const rulesDate = staffExtensionRow.end_at || lastOption.new_end_at;
+        const nextSlotDate = window.InigoBusinessHours?.dateInManila
+            ? window.InigoBusinessHours.dateInManila(rulesDate)
+            : rulesDate;
+        const rules = typeof window.InigoBusinessHours?.getForDate === 'function'
+            ? await window.InigoBusinessHours.getForDate(nextSlotDate).catch(() => null)
+            : null;
+        if (staffExtensionRow !== row) return;
+        staffExtensionNextSlotConfigured = staffExtensionHasConfiguredNextSlot(lastOption, rules);
         staffExtensionAvailability.textContent = 'Available time is checked again when payment is submitted.';
         staffExtensionSelected = staffExtensionOptions[0];
         renderStaffExtensionHourGrid();
@@ -4089,6 +4102,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         return consecutive;
     }
 
+    function staffExtensionHasConfiguredNextSlot(lastOption, rules) {
+        const startAt = Date.parse(lastOption?.new_end_at);
+        if (!Number.isFinite(startAt) || !rules || rules.isClosed) return false;
+        const timezone = rules.timezone || window.InigoBusinessHours?.TIMEZONE || 'Asia/Manila';
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+        }).formatToParts(new Date(startAt));
+        const part = type => Number(parts.find(item => item.type === type)?.value);
+        const hour = part('hour');
+        const minute = part('minute');
+        const second = part('second');
+        const openHour = Number(rules.openHour);
+        const closeHour = Number(rules.closeHour);
+        const isWithinConfiguredHours = closeHour <= openHour
+            ? hour >= openHour || hour < closeHour
+            : hour >= openHour && hour < closeHour;
+        return Number.isInteger(hour) && Number.isInteger(minute) && Number.isInteger(second)
+            && minute === 0 && second === 0
+            && isWithinConfiguredHours;
+    }
+
     function renderStaffExtensionHourGrid() {
         if (!staffExtensionHourGrid) return;
         if (!staffExtensionOptions.length) {
@@ -4106,12 +4140,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <strong>${window.escapeHtml(label)}</strong><span>${state}</span>
             </button>`;
         }).join('');
-        const lastOption = staffExtensionOptions[staffExtensionOptions.length - 1];
-        const unavailableStart = lastOption.new_end_at;
-        const unavailableEnd = new Date(Date.parse(unavailableStart) + 60 * 60 * 1000).toISOString();
-        const unavailableLabel = `${formatIsoTime12h(unavailableStart)} – ${formatIsoTime12h(unavailableEnd)}`;
+        let unavailableCard = '';
+        if (staffExtensionNextSlotConfigured) {
+            const lastOption = staffExtensionOptions[staffExtensionOptions.length - 1];
+            const unavailableStart = lastOption.new_end_at;
+            const unavailableEnd = new Date(Date.parse(unavailableStart) + 60 * 60 * 1000).toISOString();
+            const unavailableLabel = `${formatIsoTime12h(unavailableStart)} – ${formatIsoTime12h(unavailableEnd)}`;
+            unavailableCard = `<button type="button" class="staff-hour-slot is-unavailable" aria-label="${window.escapeHtml(unavailableLabel)}, Unavailable" disabled><strong>${window.escapeHtml(unavailableLabel)}</strong><span>Unavailable</span></button>`;
+        }
         const previousScrollTop = staffExtensionHourGrid.scrollTop;
-        staffExtensionHourGrid.innerHTML = `${availableCards}<button type="button" class="staff-hour-slot is-unavailable" aria-label="${window.escapeHtml(unavailableLabel)}, Unavailable" disabled><strong>${window.escapeHtml(unavailableLabel)}</strong><span>Unavailable</span></button>`;
+        staffExtensionHourGrid.innerHTML = `${availableCards}${unavailableCard}`;
         staffExtensionHourGrid.scrollTop = previousScrollTop;
         staffExtensionHourGrid.querySelectorAll('[data-staff-extension-duration]').forEach((button) => button.addEventListener('click', () => {
             staffExtensionSelected = staffExtensionOptionForDuration(staffExtensionOptions, button.dataset.staffExtensionDuration);
@@ -4948,6 +4986,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const scheduleNextButton = document.querySelector('[data-staff-schedule-page-next]');
     const schedulePageNumbers = document.querySelector('[data-staff-schedule-page-numbers]');
     const scheduleSportFilters = document.querySelector('[data-staff-schedule-sport-filters]');
+    const scheduleSportSelect = document.querySelector('[data-staff-schedule-sport-select]');
     const scheduleHourWindow = document.querySelector('.staff-schedule-window');
     const scheduleHourPrevious = document.querySelector('[data-staff-schedule-hour-prev]');
     const scheduleHourNext = document.querySelector('[data-staff-schedule-hour-next]');
@@ -5162,7 +5201,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const identityColumnWidth = scheduleIdentityColumnWidth(scheduleWidth);
         scheduleHourPageSize = visibleHourCount || 4;
         scheduleHourOffset = Math.min(Math.max(scheduleHourOffset, 0), Math.max(0, allHours.length - visibleHourCount));
-        const hours = allHours.slice(scheduleHourOffset, scheduleHourOffset + visibleHourCount);
+        const isMobileSchedule = window.matchMedia?.('(max-width: 700px)').matches === true;
+        if (isMobileSchedule) scheduleHourOffset = 0;
+        const hours = isMobileSchedule ? allHours : allHours.slice(scheduleHourOffset, scheduleHourOffset + visibleHourCount);
         const dateBase = scheduleDate;
         if (scheduleDayHeading) scheduleDayHeading.textContent = scheduleDateLabel(scheduleDate);
         let rows = scheduleRowsForSport(scheduleActiveSport, courts);
@@ -5203,10 +5244,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             scheduleHourNext.disabled = scheduleHourOffset >= allHours.length - visibleHourCount;
         }
 
-        const pageCount = Math.max(1, Math.ceil(rows.length / SCHEDULE_PAGE_SIZE));
+        const pageSize = SCHEDULE_PAGE_SIZE;
+        const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
         schedulePage = Math.min(Math.max(schedulePage, 1), pageCount);
         if (schedulePagination) {
-            schedulePagination.hidden = !scheduleDataOk || rows.length <= SCHEDULE_PAGE_SIZE;
+            schedulePagination.hidden = !scheduleDataOk || rows.length <= pageSize;
             if (schedulePreviousButton) schedulePreviousButton.disabled = schedulePage <= 1;
             if (scheduleNextButton) scheduleNextButton.disabled = schedulePage >= pageCount;
             renderStaffPageNumbers(schedulePageNumbers, schedulePage, pageCount, page => {
@@ -5227,7 +5269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const pageRows = rows.slice((schedulePage - 1) * SCHEDULE_PAGE_SIZE, schedulePage * SCHEDULE_PAGE_SIZE);
+        const pageRows = rows.slice((schedulePage - 1) * pageSize, schedulePage * pageSize);
         tbody.innerHTML = pageRows.map((row) => {
             const cells = hours.map((hour) => {
                 const info = scheduleCellInfo(row, hour, dateBase, bookings, walkins);
@@ -5259,10 +5301,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sports = await window.InigoCourtsData.getSports();
         if (!sports.some((sport) => sport.slug === scheduleActiveSport)) scheduleActiveSport = 'all';
         if (scheduleSportFilters) {
-            scheduleSportFilters.innerHTML = [
+            const options = [
                 { slug: 'all', name: 'All Sports' },
                 ...sports,
-            ].map((sport) => `<button type="button" class="staff-schedule-sport-chip${sport.slug === scheduleActiveSport ? ' is-active' : ''}" data-staff-schedule-sport-chip="${window.escapeHtml(sport.slug)}" aria-pressed="${sport.slug === scheduleActiveSport}">${window.escapeHtml(sport.name)}</button>`).join('');
+            ];
+            scheduleSportFilters.innerHTML = options.map((sport) => `<button type="button" class="staff-schedule-sport-chip${sport.slug === scheduleActiveSport ? ' is-active' : ''}" data-staff-schedule-sport-chip="${window.escapeHtml(sport.slug)}" aria-pressed="${sport.slug === scheduleActiveSport}">${window.escapeHtml(sport.name)}</button>`).join('');
+            if (scheduleSportSelect) scheduleSportSelect.innerHTML = options.map((sport) => `<option value="${window.escapeHtml(sport.slug)}">${window.escapeHtml(sport.name)}</option>`).join('');
+            if (scheduleSportSelect) scheduleSportSelect.value = scheduleActiveSport;
         }
     }
 
@@ -5270,9 +5315,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         const button = event.target.closest('[data-staff-schedule-sport-chip]');
         if (!button) return;
         scheduleActiveSport = button.dataset.staffScheduleSportChip || 'all';
+        if (scheduleSportSelect) scheduleSportSelect.value = scheduleActiveSport;
         schedulePage = 1;
         renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
         scheduleSportFilters.querySelectorAll('[data-staff-schedule-sport-chip]').forEach((chip) => {
+            const active = chip.dataset.staffScheduleSportChip === scheduleActiveSport;
+            chip.classList.toggle('is-active', active);
+            chip.setAttribute('aria-pressed', String(active));
+        });
+    });
+
+    if (scheduleSportSelect) scheduleSportSelect.addEventListener('change', () => {
+        scheduleActiveSport = scheduleSportSelect.value || 'all';
+        schedulePage = 1;
+        renderCourtSchedule(scheduleCourtsCache, scheduleBookingsCache, scheduleWalkinsCache);
+        scheduleSportFilters?.querySelectorAll('[data-staff-schedule-sport-chip]').forEach((chip) => {
             const active = chip.dataset.staffScheduleSportChip === scheduleActiveSport;
             chip.classList.toggle('is-active', active);
             chip.setAttribute('aria-pressed', String(active));

@@ -293,11 +293,12 @@ html:root[data-theme] .admin-sidebar-brand .admin-logo-text {
 
 .admin-mobile-toggle {
     display: none;
-    background: transparent;
-    border: 1px solid var(--color-line);
-    border-radius: 8px;
-    width: 38px;
-    height: 38px;
+    background: var(--color-bg-card);
+    border: 1.5px solid var(--color-primary-dim);
+    border-radius: 13px;
+    width: 46px;
+    height: 46px;
+    padding: 0;
     color: var(--color-ink);
     cursor: pointer;
     align-items: center;
@@ -308,21 +309,24 @@ html:root[data-theme] .admin-sidebar-brand .admin-logo-text {
 
 .admin-toggle-bar {
     position: absolute;
-    left: 9px;
-    width: 20px;
-    height: 2px;
+    left: 11px;
+    width: 22px;
+    height: 3px;
     border-radius: 2px;
     background: var(--color-ink);
     transition: transform 0.25s ease, opacity 0.2s ease, top 0.25s ease;
 }
 
-.admin-toggle-bar:nth-child(1) { top: 13px; }
-.admin-toggle-bar:nth-child(2) { top: 18px; }
-.admin-toggle-bar:nth-child(3) { top: 23px; }
+.admin-toggle-bar:nth-child(1) { top: 14px; }
+.admin-toggle-bar:nth-child(2) { top: 21px; }
+.admin-toggle-bar:nth-child(3) { top: 28px; }
+.admin-mobile-toggle:hover,
+.admin-mobile-toggle[aria-expanded="true"] { background: var(--color-primary-dim); border-color: var(--color-primary); }
+.admin-mobile-toggle:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 3px; }
 
 /* Morph into an X while the off-canvas sidebar is open. */
 body.admin-sidebar-open .admin-toggle-bar:nth-child(1) {
-    top: 18px;
+    top: 21px;
     transform: rotate(45deg);
 }
 
@@ -331,7 +335,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(2) {
 }
 
 body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
-    top: 18px;
+    top: 21px;
     transform: rotate(-45deg);
 }
 
@@ -1055,6 +1059,8 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-google-account-action + .admin-google-account-action { margin-left: 0; }
 .admin-google-account-state { flex: none; margin-left: auto; color: var(--color-court-green); font-size: var(--fs-xs); font-weight: 700; }
 .admin-google-account-action + .admin-google-account-state { margin-left: 0; }
+.admin-google-account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; margin-left: auto; }
+.admin-google-account-actions .admin-google-account-action { margin-left: 0; }
 .owner-email-alias-dialog .admin-modal-body { display: grid; gap: 15px; }
 .owner-email-alias-dialog .admin-modal-body > * { margin: 0; }
 .owner-email-alias-dialog .admin-modal-body > button { justify-self: start; }
@@ -1574,6 +1580,9 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-audit-caption { padding: 8px 14px; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: left; }
 .owner-audit-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .owner-audit-pagination[hidden] { display: none; }
+@media (max-width: 768px) {
+    .owner-audit-table td:nth-child(6) { text-align: left; }
+}
 
 @media (max-width: 1200px) {
     .owner-audit-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1585,6 +1594,16 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 
 @media (max-width: 600px) {
     .owner-audit-filters { grid-template-columns: 1fr; }
+    .owner-audit-toolbar { display: flex; gap: 8px; }
+    .owner-audit-search { flex: 1 1 auto; max-width: none; }
+    .owner-audit-clear { flex: 0 0 auto; width: auto; min-width: 104px; padding-inline: 8px; }
+    .owner-audit-clear[hidden] { display: none; }
+}
+@media (max-width: 640px) {
+    .owner-audit-pagination { flex-wrap: nowrap; gap: 4px; min-width: 0; }
+    .owner-audit-pagination > .admin-btn-ghost { min-width: 0; padding: 7px 8px; font-size: 12px; white-space: nowrap; }
+    .owner-audit-pagination .owner-page-numbers { flex-wrap: nowrap; gap: 4px; min-width: 0; }
+    .owner-audit-pagination .owner-page-number { min-width: 28px; padding-inline: 5px; }
 }
 
 @media (max-width: 380px) {
@@ -1884,19 +1903,20 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 @media (max-width: 640px) {
     .admin-topbar {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        grid-template-areas: "menu actions" "title title";
+        grid-template-columns: 46px minmax(0, 1fr) auto;
+        grid-template-areas: "menu title actions" "subtitle subtitle subtitle";
         align-items: center;
         column-gap: 12px;
-        row-gap: 12px;
+        row-gap: 6px;
         padding: 12px 18px 16px;
     }
     .admin-topbar-left { display: contents; }
-    .admin-mobile-toggle { grid-area: menu; width: 44px; height: 44px; }
-    .admin-toggle-bar { left: 12px; }
-    .admin-topbar-title { grid-area: title; }
-    .admin-topbar-title h1 { line-height: 1.2; }
-    .admin-topbar-title p { line-height: 1.4; }
+    .admin-mobile-toggle { grid-area: menu; width: 46px; height: 46px; }
+    .admin-topbar-title { display: contents; }
+    .admin-topbar-title h1,
+    .admin-topbar-title p { min-width: 0; overflow-wrap: anywhere; }
+    .admin-topbar-title h1 { grid-area: title; line-height: 1.2; }
+    .admin-topbar-title p { grid-area: subtitle; justify-self: center; width: 100%; max-width: 38ch; margin-top: 4px; line-height: 1.4; text-align: left; }
     .admin-topbar-actions { grid-area: actions; width: auto; gap: 10px; flex-wrap: nowrap; }
     .admin-topbar-actions > .theme-toggle { width: 44px; height: 44px; }
     .admin-profile-trigger { min-height: 44px; }
@@ -1907,10 +1927,29 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
     .admin-toggle-pill { width: 100%; }
     .admin-pill-btn { flex: 1; text-align: center; }
     .admin-chart-total { width: 100%; }
+    .admin-panel[data-admin-panel="media"] .admin-card-head > [data-admin-slide-add] { margin-left: auto; }
+}
+
+/* Slightly tighter content typography on phones. Form controls retain their
+   authored 16px size, and the existing topbar sizing/spacing is untouched. */
+@media (max-width: 640px) {
+    :where(.admin-panel) :where(p, li, td, dd, .admin-card-head, .admin-stat-label, .admin-form-label) { font-size: .96em; }
+    .admin-panel-head h2 { font-size: calc(var(--fs-2xl) * .96); }
+    .admin-card-head h3 { font-size: calc(var(--fs-base) * .96); }
 }
 
 @media (max-width: 520px) {
-    .admin-stat-grid { grid-template-columns: 1fr; }
+    .admin-panel[data-admin-panel="overview"] .admin-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .admin-panel[data-admin-panel="overview"] .admin-stat-card { min-width: 0; padding: 14px; }
+    .admin-panel[data-admin-panel="overview"] .admin-income-topline { display: contents; }
+    .admin-panel[data-admin-panel="overview"] .admin-income-range {
+        order: 1;
+        align-self: center;
+        width: 100%;
+        max-width: 100%;
+        margin: auto 0 0;
+    }
+    .admin-panel[data-admin-panel="overview"] .admin-income-range .admin-pill-btn { min-width: 0; padding-inline: 2px; font-size: clamp(10px, 2.8vw, 11px); }
 }
 
 /* Revision A2 follow-up — a hint paragraph that opens a modal body (the
@@ -1957,7 +1996,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .owner-rules-grace-input .admin-input { max-width: 150px; }
 .owner-rules-grace-input .admin-input[aria-invalid="true"] { border-color: var(--color-alert); }
 .owner-rules-grace-input > span { color: var(--color-ink-dim); font-size: var(--fs-sm); }
-.owner-rules-minute-error-slot { display: block; min-height: 2.8em; }
+.owner-rules-minute-error-slot { display: contents; }
 .owner-rules-minute-error { display: block; color: var(--color-alert); font-size: var(--fs-sm); line-height: 1.4; }
 .owner-rules-minute-error[hidden] { display: none; }
 .owner-rules-timezone { grid-column: 1 / -1; }
@@ -2053,6 +2092,10 @@ html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-ema
 html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-email][data-email-state="available"]:focus-visible { outline-color: var(--color-court-green); }
 
 @media (max-width: 640px) {
+    .owner-rules-modal .admin-modal-header { padding: 20px 56px 14px 20px; }
+    .owner-rules-modal .admin-modal-body { padding: 0 20px 12px; }
+    .owner-rules-modal .admin-modal-footer { padding: 12px 20px max(16px, env(safe-area-inset-bottom)); }
+    .owner-rules-modal .owner-booking-rules-meta { gap: 12px; margin: 8px 0 14px; }
     .owner-staff-email-heading { flex-wrap: wrap; }
     .owner-staff-email-purpose { flex-basis: 100%; }
     .owner-staff-email-feedback { min-height: 3rem; }
@@ -2068,7 +2111,11 @@ html:root[data-theme] body.admin-body .admin-input[data-admin-staff-recovery-ema
     .owner-announcement-row-head,.owner-announcement-row-meta { align-items: flex-start; flex-direction: column; }
     .owner-announcement-card > .admin-card-head { align-items: stretch; }
     .owner-announcement-card > .admin-card-head > .owner-announcement-filters { width: 100%; flex-basis: 100%; }
-    .owner-announcement-card > .admin-card-head > button { width: 100%; }
+    .owner-announcement-card > .admin-card-head > button { order: -1; width: 100%; }
+    .owner-review-browser .admin-review-pagination { flex-wrap: nowrap; gap: 4px; min-width: 0; }
+    .owner-review-browser .admin-review-pagination > .admin-btn-ghost { min-width: 0; padding: 7px 8px; font-size: 12px; white-space: nowrap; }
+    .owner-review-browser .owner-page-numbers { flex-wrap: nowrap; gap: 4px; min-width: 0; }
+    .owner-review-browser .owner-page-number { min-width: 28px; padding-inline: 5px; }
     .owner-announcement-wizard-nav { justify-content: stretch; }
     .owner-announcement-wizard-nav > button:not(.admin-wizard-cancel) { flex: 1 1 auto; }
 }

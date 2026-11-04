@@ -111,7 +111,7 @@
         <!-- TOPBAR -->
         <header class="staff-topbar">
             <div class="staff-topbar-left">
-                <button type="button" class="staff-mobile-toggle" data-staff-mobile-toggle aria-label="Toggle menu" aria-expanded="false">
+                <button type="button" class="staff-mobile-toggle" data-staff-mobile-toggle aria-label="Toggle menu" aria-controls="staffDashboardSidebar" aria-expanded="false">
                     <span class="staff-toggle-bar"></span>
                     <span class="staff-toggle-bar"></span>
                     <span class="staff-toggle-bar"></span>
@@ -233,14 +233,16 @@
                             <h3>Bookings</h3>
                             <p class="staff-card-description">Bookings and walk-ins for today and upcoming dates, including visits currently in play.</p>
                         </div>
-                        <button type="button" class="staff-overview-clear" data-staff-overview-clear hidden>Clear filters</button>
                     </div>
 
                     <div class="staff-overview-filters" aria-label="Filter bookings and walk-ins">
-                        <label class="staff-search-wrap">
-                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                            <input type="search" class="staff-search" placeholder="Search customer or booking ID…" aria-label="Search customer or booking ID" data-staff-overview-search>
-                        </label>
+                        <div class="staff-overview-search-row">
+                            <label class="staff-search-wrap">
+                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                                <input type="search" class="staff-search" placeholder="Search customer or booking ID…" aria-label="Search customer or booking ID" data-staff-overview-search>
+                            </label>
+                            <button type="button" class="staff-overview-clear" data-staff-overview-clear hidden>Clear filters</button>
+                        </div>
                         <label class="staff-overview-filter">
                             <span>Sport</span>
                             <select class="staff-select" aria-label="Filter by sport" data-staff-overview-sport>
@@ -505,6 +507,10 @@
                             </label>
                         </div>
                         <div class="staff-schedule-sport-filters" data-staff-schedule-sport-filters role="group" aria-label="Quick filter by sport"></div>
+                        <label class="staff-form-group staff-schedule-sport-select-wrap">
+                            <span class="staff-form-label">Filter by sport</span>
+                            <select class="staff-select" data-staff-schedule-sport-select aria-label="Filter court schedule by sport"></select>
+                        </label>
                     </div>
 
                     <div class="staff-schedule-day-head">
@@ -550,13 +556,15 @@
                             <button type="button" class="staff-transaction-tab is-active" id="staff-tx-tab-transactions" role="tab" aria-selected="true" aria-controls="staff-tx-records" data-staff-tx-tab="transactions">Transactions</button>
                             <button type="button" class="staff-transaction-tab" id="staff-tx-tab-unattended" role="tab" aria-selected="false" aria-controls="staff-tx-records" data-staff-tx-tab="unattended" tabindex="-1">Unattended</button>
                         </div>
-                        <button type="button" class="staff-overview-clear staff-transaction-clear" data-staff-tx-clear hidden>Clear filters</button>
                         <div class="staff-toolbar staff-transaction-toolbar" data-transaction-toolbar data-view="transactions">
                             <div class="staff-transaction-secondary">
-                                <label class="staff-search-wrap">
-                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                                    <input type="search" class="staff-search" placeholder="Search customer or transaction ID…" aria-label="Search transactions by customer or transaction ID" data-staff-search="transactions">
-                                </label>
+                                <div class="staff-transaction-search-row">
+                                    <label class="staff-search-wrap">
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                                        <input type="search" class="staff-search" placeholder="Search customer or transaction ID…" aria-label="Search transactions by customer or transaction ID" data-staff-search="transactions">
+                                    </label>
+                                    <button type="button" class="staff-overview-clear staff-transaction-clear" data-staff-tx-clear hidden>Clear filters</button>
+                                </div>
                                 <label class="staff-form-group staff-transaction-date"><span class="staff-form-label">Visit date</span><input type="date" class="staff-input" data-staff-tx-date aria-label="Filter records by visit date"></label>
                                 <div class="staff-form-group staff-transaction-menu staff-transaction-source-filter" data-staff-tx-source-menu data-value="all">
                                     <span class="staff-form-label" id="staff-tx-source-label">Source / Type</span>
@@ -801,22 +809,26 @@
 
 <div class="staff-modal-overlay staff-walkin-cash-overlay" data-staff-walkin-cash-modal hidden>
     <section class="staff-modal staff-walkin-cash-modal" role="dialog" aria-modal="true" aria-labelledby="staffWalkinCashTitle" aria-describedby="staffWalkinCashHelp" tabindex="-1" data-staff-walkin-cash-dialog>
-        <button type="button" class="staff-modal-close" data-staff-walkin-cash-close aria-label="Close cash payment">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </button>
-        <h3 id="staffWalkinCashTitle">Cash payment</h3>
-        <p id="staffWalkinCashHelp" class="staff-form-hint">Enter the cash received. Change is calculated automatically.</p>
-        <div class="staff-summary-row staff-walkin-cash-amount"><span>Amount due</span><strong data-staff-walkin-cash-due>—</strong></div>
-        <label class="staff-form-label" for="staffWalkinCashTendered">Amount received</label>
-        <input id="staffWalkinCashTendered" class="staff-input staff-walkin-cash-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="staffWalkinCashValidation" data-staff-walkin-cash-tendered>
-        <div class="staff-summary-row"><span>Change</span><strong data-staff-walkin-cash-change>—</strong></div>
-        <p class="staff-form-hint" id="staffWalkinCashValidation" data-staff-walkin-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
-        <div class="staff-walkin-cash-keypad" role="group" aria-label="Amount received keypad" data-staff-walkin-cash-keypad>
-            <button type="button" data-staff-cash-key="1">1</button><button type="button" data-staff-cash-key="2">2</button><button type="button" data-staff-cash-key="3">3</button>
-            <button type="button" data-staff-cash-key="4">4</button><button type="button" data-staff-cash-key="5">5</button><button type="button" data-staff-cash-key="6">6</button>
-            <button type="button" data-staff-cash-key="7">7</button><button type="button" data-staff-cash-key="8">8</button><button type="button" data-staff-cash-key="9">9</button>
-            <button type="button" data-staff-cash-key=".">.</button><button type="button" data-staff-cash-key="0">0</button><button type="button" data-staff-cash-key="Backspace" aria-label="Delete last digit">⌫</button>
-            <button type="button" class="staff-walkin-cash-enter" data-staff-cash-key="Enter">Enter</button>
+        <header class="staff-walkin-cash-header">
+            <button type="button" class="staff-modal-close" data-staff-walkin-cash-close aria-label="Close cash payment">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <h3 id="staffWalkinCashTitle">Cash payment</h3>
+            <p id="staffWalkinCashHelp" class="staff-form-hint">Enter the cash received. Change is calculated automatically.</p>
+        </header>
+        <div class="staff-walkin-cash-body">
+            <div class="staff-summary-row staff-walkin-cash-amount"><span>Amount due</span><strong data-staff-walkin-cash-due>—</strong></div>
+            <label class="staff-form-label" for="staffWalkinCashTendered">Amount received</label>
+            <input id="staffWalkinCashTendered" class="staff-input staff-walkin-cash-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="staffWalkinCashValidation" data-staff-walkin-cash-tendered>
+            <div class="staff-summary-row"><span>Change</span><strong data-staff-walkin-cash-change>—</strong></div>
+            <p class="staff-form-hint" id="staffWalkinCashValidation" data-staff-walkin-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
+            <div class="staff-walkin-cash-keypad" role="group" aria-label="Amount received keypad" data-staff-walkin-cash-keypad>
+                <button type="button" data-staff-cash-key="1">1</button><button type="button" data-staff-cash-key="2">2</button><button type="button" data-staff-cash-key="3">3</button>
+                <button type="button" data-staff-cash-key="4">4</button><button type="button" data-staff-cash-key="5">5</button><button type="button" data-staff-cash-key="6">6</button>
+                <button type="button" data-staff-cash-key="7">7</button><button type="button" data-staff-cash-key="8">8</button><button type="button" data-staff-cash-key="9">9</button>
+                <button type="button" data-staff-cash-key=".">.</button><button type="button" data-staff-cash-key="0">0</button><button type="button" data-staff-cash-key="Backspace" aria-label="Delete last digit">⌫</button>
+                <button type="button" class="staff-walkin-cash-enter" data-staff-cash-key="Enter">Enter</button>
+            </div>
         </div>
         <footer class="staff-form-actions staff-walkin-cash-footer">
             <button type="button" class="staff-btn-ghost" data-staff-walkin-cash-cancel>Cancel</button>

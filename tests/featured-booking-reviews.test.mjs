@@ -37,7 +37,8 @@ test('account reviews are editable once per customer and publish only safe, samp
     const summaryFunction = migration.match(/create or replace function public\.owner_review_summary\(\)[\s\S]*?\$\$;/i)?.[0] || '';
     assert.match(summaryFunction, /from public\.public_customer_reviews/i);
     assert.doesNotMatch(summaryFunction, /booking_review/i);
-    assert.match(dashboardScript, /from\('customer_review'\)\.upsert\(payload, \{ onConflict: 'customer_id' \}\)/);
+    assert.match(dashboardScript, /\.update\(\{ rating: feedbackRating, comment: message \|\| null \}\)[\s\S]*?\.eq\('customer_id', window\.inigosyncProfile\.id\)/);
+    assert.match(dashboardScript, /const payload = \{ customer_id: window\.inigosyncProfile\.id, rating: feedbackRating, comment: message \|\| null \};[\s\S]*?reviewTable\.insert\(payload\)/);
     assert.doesNotMatch(dashboardScript, /from\('booking_review'\)|my_booking_reviews|data-dash-review-booking/);
 });
 

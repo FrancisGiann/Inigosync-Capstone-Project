@@ -161,6 +161,16 @@
     .ioc-toolbar-actions { flex-wrap:wrap; }
     .ioc-toolbar-actions > .ioc-button { flex:1 0 100%; }
 }
+@media (max-width:640px) {
+    .admin-panel[data-admin-panel="courts"] { gap:14px; }
+    .ioc-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px 8px; margin-bottom:0; }
+    .ioc-toolbar-actions { display:contents; }
+    .ioc-toolbar-tabs { grid-column:1; grid-row:1; width:100%; min-width:0; gap:0; padding:3px; }
+    .ioc-tab { flex:1; min-width:0; padding:8px 3px; font-size:clamp(10px,2.8vw,12px); }
+    .ioc-toolbar-actions > .ioc-button { grid-column:2; grid-row:1; min-width:0; padding-inline:8px; font-size:clamp(11px,3vw,13px); }
+    .ioc-search { grid-column:1/-1; grid-row:2; min-width:0; width:100%; }
+    .ioc-cutoff { margin-bottom:0; }
+}
 @media (prefers-reduced-motion:reduce) {
     .ioc-overlay,.ioc-dialog,.ioc-button,.ioc-savebar,.ioc-action-dock { transition:none; }
     .ioc-button:hover { transform:none; }
