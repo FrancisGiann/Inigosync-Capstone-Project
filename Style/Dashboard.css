@@ -3741,10 +3741,57 @@ body.customer-faq-open { overflow: hidden; }
 @media (max-width: 540px) {
     .customer-faq-launcher { right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
     body:has(.dash-book-cart-bar:not([hidden])) .customer-faq-launcher { bottom: calc(182px + env(safe-area-inset-bottom)); }
-    .customer-faq-dialog { width: 100%; height: min(78dvh, 640px); border-radius: 20px; }
-    .customer-faq-header { padding: 18px 18px 15px; }
-    .customer-faq-log { padding: 15px 14px 12px; }
-    .customer-faq-questions { padding: 0 14px 12px; }
+    .customer-faq-overlay {
+        padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+            max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+    .customer-faq-dialog {
+        justify-self: center;
+        width: min(100%, 440px);
+        height: min(90dvh, 720px);
+        border-radius: 18px;
+    }
+    .customer-faq-header { flex: 0 0 auto; gap: 12px; padding: 16px 16px 13px; }
+    .customer-faq-header > div { min-width: 0; }
+    .customer-faq-header h2 { font-size: clamp(19px, 5vw, 21px); }
+    .customer-faq-close { flex-basis: 40px; width: 40px; height: 40px; }
+    .customer-faq-log { flex: 1 1 0; min-height: 80px; padding: 12px; }
+    .customer-faq-questions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        flex: 0 1 auto;
+        max-height: 38%;
+        gap: 7px;
+        padding: 0 12px 12px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .customer-faq-questions button {
+        width: 100%;
+        min-width: 0;
+        min-height: 44px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        font: 600 13px/1.35 var(--font-body, inherit);
+        text-align: left;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+}
+@media (max-width: 540px) and (max-height: 500px) {
+    .customer-faq-overlay {
+        padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right))
+            max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    }
+    .customer-faq-dialog { height: 100%; border-radius: 14px; }
+    .customer-faq-header { padding: 9px 12px; }
+    .customer-faq-header h2 { font-size: 18px; }
+    .customer-faq-header p { font-size: 12px; }
+    .customer-faq-close { flex-basis: 36px; width: 36px; height: 36px; }
+    .customer-faq-log { min-height: 48px; padding: 8px 10px; }
+    .customer-faq-questions { max-height: 34%; gap: 5px; padding: 0 10px 8px; }
+    .customer-faq-questions button { min-height: 40px; padding: 6px 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
     .customer-faq-launcher { animation: none; }

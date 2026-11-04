@@ -377,7 +377,7 @@
                          ever appears, even before refreshStaffList() replaces
                          these rows with the real, staff-only query result. -->
                     <div class="admin-table-wrap">
-                        <table class="admin-table" data-admin-staff-table>
+                        <table class="admin-table" data-admin-staff-table data-responsive-cards>
                             <thead>
                                 <tr>
                                     <th>Name</th>
@@ -476,7 +476,7 @@
                         <p class="admin-form-hint owner-rules-timezone" data-owner-rules-timezone>Times are shown in Asia/Manila.</p>
                     </div>
                     <div class="owner-rules-table-wrap">
-                        <table class="owner-rules-table">
+                        <table class="owner-rules-table" data-responsive-cards="hours">
                             <thead><tr><th scope="col">Day</th><th scope="col">Opening time</th><th scope="col">Closing time</th><th scope="col">Closed</th></tr></thead>
                             <tbody data-owner-rules-weekdays>
                                 <tr data-owner-rules-day="1"><th scope="row">Monday</th><td><select class="admin-input" aria-label="Monday opening time" data-owner-rules-open disabled></select></td><td><select class="admin-input" aria-label="Monday closing time" data-owner-rules-close disabled></select></td><td><input type="checkbox" aria-label="Closed Monday" data-owner-rules-closed disabled></td></tr>
@@ -662,7 +662,7 @@
                     </div>
                     <p class="owner-audit-status" data-owner-audit-status role="status" aria-live="polite">Open Activity Logs to load events.</p>
                     <div class="owner-audit-table-wrap" role="region" aria-label="Activity log events" tabindex="0">
-                    <table class="admin-table owner-audit-table">
+                    <table class="admin-table owner-audit-table" data-responsive-cards>
                             <caption class="owner-audit-caption">Recorded system events and transactions</caption>
                             <colgroup><col class="owner-audit-col-id"><col class="owner-audit-col-date"><col class="owner-audit-col-event"><col class="owner-audit-col-role"><col class="owner-audit-col-actor"><col class="owner-audit-col-amount"><col class="owner-audit-col-summary"></colgroup>
                             <thead><tr><th scope="col">Event ID</th><th scope="col">Date &amp; Time</th><th scope="col">Event</th><th scope="col">Role</th><th scope="col">Actor</th><th scope="col">Amount</th><th scope="col">Summary</th></tr></thead>
@@ -1188,5 +1188,6 @@
 
 <!-- Chart configuration for the Booking Trends graph (Weekly / Monthly toggle) -->
 <script src="../event/chart.js"></script>
+<script src="../includes/responsive-tables.js"></script>
 </body>
 </html>

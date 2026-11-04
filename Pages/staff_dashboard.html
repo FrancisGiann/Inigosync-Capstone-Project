@@ -262,7 +262,7 @@
                     </div>
 
                     <div class="staff-table-wrap">
-                        <table class="staff-table" data-staff-table="overview">
+                        <table class="staff-table" data-staff-table="overview" data-responsive-cards>
                             <thead>
                                 <tr>
                                     <th>Booking ID</th>
@@ -586,7 +586,7 @@
                     </div>
 
                     <div class="staff-table-wrap" id="staff-tx-records" role="tabpanel" aria-labelledby="staff-tx-tab-transactions">
-                        <table class="staff-table" data-staff-table="transactions">
+                        <table class="staff-table" data-staff-table="transactions" data-responsive-cards>
                             <thead>
                                 <tr data-staff-tx-headers="transactions"><th>Transaction ID</th><th>Customer Name</th><th>Time In / Time Out</th><th>Source</th><th>Visit Status</th><th>Amount</th><th>Receipt</th></tr>
                                 <tr data-staff-tx-headers="unattended" hidden><th>Visit Reference</th><th>Customer Name</th><th>Scheduled Visit</th><th>Source</th><th>Visit Status</th></tr>
@@ -1110,5 +1110,6 @@
      load before staff_dashboard.js. -->
 <script src="../includes/imageTools.js"></script>
 <script src="../includes/staff_dashboard.js"></script>
+<script src="../includes/responsive-tables.js"></script>
 </body>
 </html>
