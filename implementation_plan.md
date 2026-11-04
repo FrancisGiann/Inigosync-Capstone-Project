@@ -1237,6 +1237,13 @@ produce the expected Supabase advisor warning for intentional authenticated
 - A disposable/local database integration test remains necessary for the slot exclusion race, paid-review hold release, duplicate webhook settlement, and the dynamic PayMongo function rewrite. The current Node tests exercise source contracts and UI cash arithmetic only.
 - A read-only check against the connected development database confirmed that the existing PayMongo settlement function has exactly one intended top-level insertion marker and the expected row/variable declarations. This checks integration shape only; it does not validate the new SQL at runtime.
 
+## Staff extension corrective deployment — 2026-11-04
+
+- Walk-in W-91 was confirmed, paid, checked in, and had an open consecutive hour at the time of the report. The extension-options RPC failed because one pricing call passed a numeric duration to an integer-only helper. `20261104143000_fix_staff_booking_extension_price_duration_type.sql` replaces that RPC with integer-minute pricing. It was applied to the connected Inigosync development project; readback confirmed the corrected function body.
+- Live PayMongo logs also showed an ambiguous `x.intent_id` reference in extension settlement. `20261104144500_fix_staff_extension_paymongo_alias.sql` narrowly renames the SQL alias after checking exactly one expected fragment. It was applied after the options fix; readback confirmed the distinct alias.
+- Both migrations replace functions only. They do not convert or delete booking, walk-in, or payment records. A disposable-database paid-extension and conflict/review integration test is still needed; source-contract tests and deployed function readback do not prove the full webhook settlement path. No data cleanup is indicated by these corrections.
+- A walk-in cash extension then exposed `record "new" has no field "booking_id"` in the shared reservation-update trigger. `20261104150000_fix_walkin_extension_guard_record_field.sql` uses separate `TG_TABLE_NAME` branches so each trigger record reads only its own ID field. It was applied to the connected Inigosync development project after the two fixes above; function readback confirmed the new walk-in branch and removal of the old `CASE`. Walk-in #91 retained its original end time and has no extension payment after the failed attempt. This function-only migration changes no stored records and needs no cleanup. A disposable-database cash-extension and open-online-hold regression test remains required; the focused Node test checks source structure rather than executing the trigger.
+
 # Account Customer Reviews — 2026-11-02
 
 ## Implementation and data conversion
@@ -1562,7 +1569,7 @@ follow their declared Auth-user cascades; profile-owned account-session event
 rows also cascade with the profile. Active/deactivated account actions are
 unchanged, and no `cancelled` status is stored.
 
-The forward migration `20261104100000_cancel_pending_staff.sql` adds a
+The forward migration `20261103223857_cancel_pending_staff.sql` adds a
 service-role-only claim function. It locks and rechecks the profile, then
 claims the same ten-minute lease used by pending-staff recovery. This prevents
 recovery and cancellation from claiming the same account and makes the
@@ -1586,15 +1593,12 @@ if present; none are rewritten or removed by this feature.
 
 The latest recorded development verification in this plan (2026-11-02)
 reported zero pending staff and zero onboarding credentials after the sole
-pending account completed setup. No live database was queried for this change,
-and no live records were deleted. No conversion or cleanup is needed for the
-recorded current development state. Before deploying, verify the current
-pending account and dependency counts in the target database; if restrictive
-staff activity exists, review its provenance rather than removing it to force
-cancellation. The Supabase CLI is unavailable in this environment, so the
-forward migration was written locally and not applied. No tests, browser
-checks, database queries, deployments, or emails were performed for this
-change per project instruction.
+pending account completed setup. The connected project was inspected read-only
+and this migration was applied as `20261103223857_cancel_pending_staff` before
+the archive and transaction migrations. This DDL did not delete or rewrite
+live records; no cancellation endpoint was invoked and no staff account was
+deleted. Current pending-account and dependency counts, and the owner-facing
+cancellation flow, remain unverified for that separate feature.
 
 ## Staff archive visibility (2026-11-04)
 
@@ -1611,11 +1615,11 @@ restore. It retains the established bearer-session, verified-email, and active
 owner checks, rejects self-targeting and any non-disabled/non-staff target,
 and performs conditional service-role updates. It no longer calls the Auth
 delete API. The new forward migration
-`20261104110000_archive_disabled_staff.sql` adds a nullable marker (existing
+`20261103223931_archive_disabled_staff.sql` adds a nullable marker (existing
 rows default to unarchived), a check constraint requiring archived staff to
 remain disabled, and a trigger that restricts marker changes to service-role
 requests. `database/schema/020_staff_archive.sql` is aligned with that schema.
-The existing hard-delete guards in `20261104100000_cancel_pending_staff.sql`
+The existing hard-delete guards in `20261103223857_cancel_pending_staff.sql`
 remain unchanged; the pending cancellation endpoint and its guarded delete
 flow are untouched. No transaction, review, audit, or Auth records are
 rewritten or deleted by archive/restore.
@@ -1625,12 +1629,110 @@ development notes. The seed has one demo staff profile and no linked business
 history; the latest recorded development snapshot (2026-11-02) reported four
 completed staff and no pending accounts. The new column is nullable and no
 existing records are converted, so these current-format rows remain visible
-unless explicitly archived. No live database was queried, so current target
-counts and any existing archive marker state cannot be independently
-confirmed; no conversion or cleanup is indicated by the available records.
+unless explicitly archived. The connected project was inspected read-only
+after migration: all 35 profiles had a NULL marker, so none were archived.
+No profile record was changed, and no conversion or cleanup occurred.
 
-Static syntax and diff checks are the requested verification scope. No tests,
-browser/runtime checks, database queries, migrations, deployments, emails, or
-account mutations were performed. The migration must be applied before the
-updated Edge Function and UI are deployed; production behavior and session
-denial remain for project-owner verification.
+The archive migration is applied. The related Edge Function and browser
+archive flow were not deployed or runtime-tested as part of this
+transaction-centralization work.
+
+## Branch-wide staff booking and transaction records (2026-11-04)
+
+Booking Overview already reads the branch-wide `booking` and
+`walk_in_booking` tables. The latest booking SELECT policy grants those rows
+to active staff and admins, and the walk-in SELECT policy uses the same
+active-staff/admin helper. Transaction Records had a separate filter in
+`staff_get_involved_transactions()` that limited time-in audit rows to the
+calling staff member's `actor_id`; this made each staff account see only its
+own time-ins. The forward migration
+`20261103223951_staff_branch_wide_visit_transactions.sql` retains the active
+staff-only RPC gate, including `onboarding_complete is true`, and gathers
+trusted staff/admin time-in events across the branch. The onboarding condition
+matches `inigosync_is_staff_or_admin()` for staff profiles; the RPC continues
+to exclude admins, as before. Receipt acknowledgment joins and unattended
+booking rows are unchanged. Customers cannot retrieve records and anonymous
+execution remains revoked; owners remain outside this staff-only RPC
+contract, and existing customer booking access and owner pages are unchanged.
+
+This is a read-scope correction: no transaction, receipt, booking, or audit
+record is deleted or converted. The latest recorded development snapshot
+found 26 bookings and 18 walk-ins; the November 2 snapshot recorded four
+completed staff accounts. Read-only preflight of the connected `Inigosync`
+project reported 27 bookings, 21 walk-ins, 35 profiles, 122 audit rows, and 44
+payment acknowledgments. Its 19 eligible checked-in audit events were all
+staff-attributed and linked to checked-in visits (7 booking time-ins, 1 booking
+balance-payment/time-in, and 11 walk-in time-ins), so the new staff/admin
+event-role filter retains current transaction events. After migration, those
+aggregate counts remained unchanged and all 35 profiles had a NULL
+`archived_at`. No customer details or session tokens were queried; no business
+or account rows were deleted, rewritten, or converted.
+
+The connected project recorded the three migrations in order as
+`20261103223857_cancel_pending_staff`,
+`20261103223931_archive_disabled_staff`, and
+`20261103223951_staff_branch_wide_visit_transactions`. Local migration
+filenames were aligned to these database-generated version IDs so a later
+deployment will not replay the same DDL. A database-level authenticated-role
+and claim check using all four active, onboarded staff identities returned 35
+transaction rows with identical full-payload hashes for every account.
+Booking Overview still queries branch-wide booking and walk-in rows without a
+staff-id filter, and its RLS policy permits active staff. The direct RLS query
+smoke test lacked the app's verified-email-session claim and returned no
+booking rows, so live Booking Overview equivalence was not verified with real
+browser sessions.
+
+Verification: `node --test tests/staff-transactions-contract.test.mjs` passed
+all 17 tests, including the latest migration's fully-onboarded active-staff
+gate, branch-wide role filter, receipt context, and unattended rules.
+`node scripts/build.cjs` and `git diff --check` passed. The `npm` executable is
+not installed, so the package-manager wrapper could not be run. All three
+migrations were applied through the connected Supabase tool; no browser-based
+two-account session test or frontend deployment was performed.
+
+## Reservation payment settlement gate (2026-11-04)
+
+Customer card/online reservations are created only by the verified PayMongo
+settlement function. Staff walk-in cash is confirmed only inside the server
+cash tender flow; staff online walk-ins remain pending until webhook settlement.
+Those flows use shared physical-resource exclusion holds and the transaction
+advisory lock `87499182034132371`. Customer checkout reserves its physical
+resource before opening provider checkout, and booking/walk-in synchronization
+triggers maintain the same GiST exclusion constraint for all reservation rows.
+That slot-specific constraint is the authoritative cross-source concurrency
+gate; a separate payment-table lock was considered and rejected because it
+would serialize unrelated resources and could turn a transient lock conflict
+into a false captured-payment review. Existing settlement attempt locks and
+webhook idempotency remain unchanged. Customer expiry and review messages are
+now distinct: expired checkout says payment did not complete and invites retry
+after checking availability; review warns the payment may have been received, says not to pay again, and
+directs the customer to arrange a new time or refund. Staff messages similarly
+state when an online walk-in is not booked, and a cash slot conflict instructs
+staff to return the tender and choose another time.
+
+This requires no new schema and rewrites no existing bookings, walk-ins,
+payments, receipts, or checkout attempts, so no historical-record conversion
+or cleanup is indicated. Contract checks cover the shared exclusion constraint
+and reservation synchronization triggers, but database concurrency could not
+be exercised locally: the Supabase CLI and `psql` are unavailable in this
+workspace. A concurrent settlement probe against the connected development
+database remains unverified.
+
+## Visible dashboard refresh cadence and extension transaction records (2026-11-04)
+
+The staff Booking Overview and Transaction Records refresh every 15 seconds
+while their panels and browser tab are visible. Customer My Bookings and the
+owner overview figures and income refresh every 30 seconds under the same
+visibility rule. Panel entry, tab return, profile readiness, and existing
+successful local mutation callbacks still refresh immediately. Transaction
+refreshes coalesce while one RPC is in flight, and the customer/owner loaders
+discard stale responses; dashboard filters are preserved across refreshes.
+
+The staff transaction RPC returns one additional row per successfully paid
+extension, with its payment acknowledgment. Cash rows come from the trusted
+`booking_extended` record; PayMongo rows require a paid extension checkout and
+linked payment. Existing pending/review attempts do not appear. The migration
+was applied to the connected development database. Active-staff readback
+returned 39 rows including one extension row for payment #85 with receipt
+context; booking, walk-in, and payment counts stayed at 29/22/50. No persisted
+records were converted or removed, so no historical cleanup was needed.

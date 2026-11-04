@@ -15,6 +15,8 @@ const deployedVisitMigration = await readFile(new URL('../supabase/migrations/20
 const legacyMigration = await readFile(new URL('../supabase/migrations/20261031134800_staff_transaction_status_and_method.sql', import.meta.url), 'utf8');
 const timeoutMigration = await readFile(new URL('../supabase/migrations/20261101051352_staff_early_checkout_auto_completion.sql', import.meta.url), 'utf8');
 const paidWalkinMigration = await readFile(new URL('../supabase/migrations/20261101051738_staff_paid_walkin_auto_timein.sql', import.meta.url), 'utf8');
+const branchWideVisitMigration = await readFile(new URL('../supabase/migrations/20261103223951_staff_branch_wide_visit_transactions.sql', import.meta.url), 'utf8');
+const extensionTransactionMigration = await readFile(new URL('../supabase/migrations/20261104160000_staff_extension_transaction_records.sql', import.meta.url), 'utf8');
 const walkinAttendanceMigration = await readFile(new URL('../supabase/migrations/20261101051924_staff_walkins_not_unattended.sql', import.meta.url), 'utf8');
 const walkinInvariantMigration = await readFile(new URL('../supabase/migrations/20261101133000_staff_paid_walkin_status_invariant.sql', import.meta.url), 'utf8');
 const transactionPanelStart = html.indexOf('<section class="staff-panel" data-staff-panel="transactions"');
@@ -83,6 +85,13 @@ test('Booking Overview includes both sources, a type filter, and action-priority
     assert.match(overview, /data-staff-overview-type/);
     assert.match(overview, /option value="booking">Booking/);
     assert.match(overview, /option value="walkin">Walk-in/);
+    const overviewFetchStart = script.indexOf('async function fetchOverviewBookings()');
+    const overviewFetchEnd = script.indexOf('function formatOverviewTimeCell()', overviewFetchStart);
+    const overviewFetches = script.slice(overviewFetchStart, overviewFetchEnd);
+    assert.match(overviewFetches, /\.from\('booking'\)[\s\S]*?\.select\('\*'\)/);
+    assert.match(overviewFetches, /\.from\('walk_in_booking'\)[\s\S]*?\.select\('\*'\)/);
+    assert.doesNotMatch(overviewFetches, /\.eq\(['"](?:staff_id|actor_id)['"]/,
+        'Booking Overview loads the shared branch records rather than staff-owned rows');
     assert.doesNotMatch(script.slice(script.indexOf('function overviewEntries()'), script.indexOf('function renderOverviewSportOptions')), /sourceType !== 'booking'/);
     assert.match(script, /const matchesType = !type \|\| row\.sourceType === type/);
     assert.match(script, /if \(staffCanTimeIn\(row, status\)\) return 0;[\s\S]*?if \(status === 'inplay'\) return 1;/);
@@ -290,6 +299,50 @@ test('time-in rows remain visible while waiting and after play starts', () => {
     assert.equal(context.status(waiting), 'arrived');
     assert.equal(context.status({ ...waiting, visits: [{ starts_at: '2026-11-01T08:00:00Z' }] }), 'in_progress');
     assert.equal(context.status({ ...waiting, checked_out_at: '2026-11-01T08:15:00Z' }), 'in_progress');
+});
+
+test('latest transaction RPC shares branch records with fully onboarded active staff only', () => {
+    const functionStart = branchWideVisitMigration.indexOf('create or replace function public.staff_get_involved_transactions()');
+    assert.ok(functionStart >= 0, 'the latest migration replaces the transaction RPC');
+    const functionBody = branchWideVisitMigration.slice(functionStart);
+    assert.match(functionBody, /p\.id = v_actor and p\.role = 'staff' and p\.status = 'active'\s+and p\.onboarding_complete is true/,
+        'the RPC requires an active, fully onboarded staff profile');
+    assert.doesNotMatch(functionBody, /a\.actor_id\s*=\s*v_actor/,
+        'staff receive branch-wide time-in events instead of only their own');
+    assert.match(functionBody, /where a\.actor_role in \('staff', 'admin'\)/,
+        'only trusted staff/admin audit events enter the shared transaction set');
+    assert.match(functionBody, /left join internal\.payment_acknowledgments ack on ack\.payment_id = visits\.payment_id/,
+        'branch-wide rows retain their receipt acknowledgment context');
+    assert.match(functionBody, /'acknowledgment', ack\.payload/);
+    assert.match(functionBody, /where b\.status = 'unattended' and b\.checked_in_at is null/,
+        'unattended bookings remain visible');
+    assert.doesNotMatch(functionBody, /where w\.status = 'unattended'/,
+        'walk-ins remain excluded from unattended rows');
+    assert.match(functionBody, /revoke all on function public\.staff_get_involved_transactions\(\) from public, anon/);
+    assert.match(functionBody, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
+});
+
+test('successful paid extensions are distinct transaction rows with payment acknowledgments', () => {
+    assert.match(extensionTransactionMigration, /x\.status = 'paid' and x\.payment_id is not null/,
+        'online extension rows are included only after verified settlement');
+    assert.match(extensionTransactionMigration, /a\.action = 'booking_extended'/,
+        'cash extension rows use their successful payment audit event');
+    assert.match(extensionTransactionMigration, /'record_type', all_records\.record_type/);
+    assert.match(extensionTransactionMigration, /'acknowledgment', ack\.payload/);
+    assert.match(extensionTransactionMigration, /grant execute on function public\.staff_get_involved_transactions\(\) to authenticated/);
+    assert.match(script, /row\.record_type === 'extension'/);
+    assert.match(script, /isExtension \? 'Extended'/);
+    assert.match(script, /data-label="Extension window"/);
+});
+
+test('transaction records refresh while their panel is visible without resetting filters', () => {
+    const start = script.indexOf('    let transactionRefreshGeneration = 0;');
+    const end = script.indexOf("    if (transactionsTableBody) transactionsTableBody.addEventListener('click'", start);
+    const refresh = script.slice(start, end);
+    assert.match(refresh, /isTransactionsPanelVisible\(\)/);
+    assert.match(refresh, /window\.setInterval\(\(\) => \{[\s\S]*?refreshTransactions\(\);[\s\S]*?\}, 15000\)/);
+    assert.match(refresh, /document\.addEventListener\('visibilitychange'/);
+    assert.match(refresh, /transactionRefreshGeneration/);
 });
 
 test('paid staff walk-ins time in automatically and only bookings can be unattended', () => {

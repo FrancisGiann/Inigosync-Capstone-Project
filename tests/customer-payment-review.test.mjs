@@ -354,13 +354,17 @@ test('verified paid returns open the saved receipt once; failed or pending retur
     assert.equal(celebrations.length, 0, 'failed verification does not open a receipt');
     context.handleStatus(null, { status: 'pending' }, 'attempt-pending', 'success');
     assert.equal(celebrations.length, 0, 'pending status does not celebrate');
+    context.handleStatus(null, { status: 'expired' }, 'attempt-expired', 'success');
+    assert.equal(celebrations.length, 0, 'expired checkout never opens a receipt');
     context.handleStatus(null, { status: 'paid', booking_receipts: [{ booking_id: 101, payment_id: 9001 }] }, 'attempt-paid', 'success');
     assert.deepEqual(celebrations.map(({ attemptId }) => attemptId), ['attempt-paid']);
     assert.deepEqual(pendingStates.map(({ attemptId }) => attemptId), ['attempt-paid'], 'only paid status creates persistent receipt work');
-    assert.equal(refreshes, 1, 'verified payment refreshes bookings');
+    assert.equal(refreshes, 2, 'expired and verified payment statuses refresh bookings');
     assert.match(notices[0], /could not confirm checkout/, 'failed verification asks the customer to check again');
     assert.match(notices[1], /Payment is still processing/, 'pending status remains clearly pending');
-    assert.match(notices[2], /Payment received/, 'only the verified paid response confirms payment');
+    assert.match(notices[2], /Checkout expired or payment did not complete[\s\S]*booking was not confirmed[\s\S]*Check availability[\s\S]*retry checkout/,
+        'expired checkout says payment did not complete, leaves the booking unconfirmed, and gives a retry action');
+    assert.match(notices[3], /Payment received/, 'only the verified paid response confirms payment');
 
     assert.equal(context.claimOnce('attempt-paid'), true);
     assert.equal(context.claimOnce('attempt-paid'), false, 'same tab cannot replay a claimed celebration');

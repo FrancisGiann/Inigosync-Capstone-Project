@@ -109,7 +109,7 @@
         return toastEl;
     }
 
-    function show(message, isError = false, duration = isError ? 5000 : 3500) {
+    function show(message, isError = false, duration = 3000) {
         const el = ensureToast();
         if (dismissTimer) window.clearTimeout(dismissTimer);
         if (hideTimer) window.clearTimeout(hideTimer);
@@ -117,6 +117,7 @@
         el.hidden = false;
         el.textContent = message;
         el.classList.toggle('is-error', isError);
+        el.classList.toggle('is-success', !isError);
         el.classList.add('is-visible');
         // Place only after the toast is visible; placement skips hidden toasts.
         // Native modal dialogs occupy the browser's top layer, above page z-index.

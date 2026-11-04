@@ -5742,6 +5742,17 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshMyBookings();
     }
 
+    function isCustomerBookingsPanelVisible() {
+        return document.visibilityState === 'visible'
+            && document.querySelector('[data-dash-panel="bookings"]')?.classList.contains('is-active');
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (isCustomerBookingsPanelVisible()) refreshMyBookings();
+    });
+    window.setInterval(() => {
+        if (isCustomerBookingsPanelVisible()) refreshMyBookings();
+    }, 30000);
+
     const celebratedPaymentAttempts = new Set();
     const pendingPaymentReceipts = new Map();
     const activePaymentReceiptLoads = new Set();
@@ -5990,15 +6001,15 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshMyBookings();
         } else if (data.status === 'expired') {
             clearPendingPaymentStatusCheck(attemptId);
-            window.InigoToast?.show('Checkout ended. The selected time is available again.', true);
+            window.InigoToast?.show('Checkout expired or payment did not complete, so your booking was not confirmed. Check availability, then retry checkout if you still want this time.', true);
             refreshMyBookings();
         } else if (String(data.status || '').toLowerCase() === 'cancelled') {
             clearPendingPaymentStatusCheck(attemptId);
             window.InigoToast?.show('Checkout was cancelled. Your selected time is available again.', true);
             refreshMyBookings();
-        } else if (['failed', 'review'].includes(String(data.status || '').toLowerCase())) {
+        } else if (String(data.status || '').toLowerCase() === 'review') {
             clearPendingPaymentStatusCheck(attemptId);
-            window.InigoToast?.show('Payment needs staff review. Please contact the sports center before trying again.', true);
+            window.InigoToast?.show('Payment may have been received, but the time was not confirmed. Do not pay again; contact the sports center to arrange another time or a refund.', true);
             refreshMyBookings();
         } else if (returnKind === 'cancelled') {
             window.InigoToast?.show('Checkout cancellation is being confirmed. Your time remains held until cancellation is confirmed.', true);

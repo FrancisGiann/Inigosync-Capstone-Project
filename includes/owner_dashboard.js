@@ -457,6 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const ADMIN_STAT_KEYS = ['customer-accounts', 'sports-listed', 'active-staff'];
+    let adminStatsRequest = 0;
     function setAllAdminStatsUnknown() {
         ADMIN_STAT_KEYS.forEach((key) => setAdminStat(key, '—'));
     }
@@ -466,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // own markup default, which is "—" for exactly this reason (see
         // that file's comment on the admin-stat-grid).
         if (!window.sb) return;
+        const request = ++adminStatsRequest;
 
         let customersRes, staffRes, sports;
         try {
@@ -493,9 +495,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // an individual query resolving with a Postgres error, handled
             // below — means none of the four counts are known.
             console.error('[admin] failed to load the overview stats', err);
-            setAllAdminStatsUnknown();
+            if (request === adminStatsRequest) setAllAdminStatsUnknown();
             return;
         }
+        if (request !== adminStatsRequest) return;
 
         if (customersRes.error) console.error('[admin] failed to load the total-customer-accounts stat', customersRes.error);
         if (staffRes.error) console.error('[admin] failed to load the active-staff stat', staffRes.error);
@@ -558,6 +561,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshOverviewStats();
     document.addEventListener('inigosync:profile-ready', refreshOverviewStats);
+
+    function isOwnerOverviewVisible() {
+        return document.visibilityState === 'visible'
+            && document.querySelector('[data-admin-panel="overview"]')?.classList.contains('is-active');
+    }
+    function refreshVisibleOwnerOverview() {
+        if (!isOwnerOverviewVisible()) return;
+        refreshOverviewStats();
+        refreshOwnerIncome();
+    }
+    document.addEventListener('inigosync:owner-panel', (event) => {
+        if (event.detail === 'overview') refreshVisibleOwnerOverview();
+    });
+    document.addEventListener('visibilitychange', refreshVisibleOwnerOverview);
+    window.setInterval(refreshVisibleOwnerOverview, 30000);
 
     // ------------------------------------------------------------------
     // Staff Management — Add New Staff modal (Revision A2, decision B3).

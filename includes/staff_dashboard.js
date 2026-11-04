@@ -82,6 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (name === 'schedule') refreshCourtSchedule();
         if (name === 'overview') refreshBookingOverview();
+        if (name === 'transactions') refreshTransactions();
         if (name === 'walkin' && walkinWizardWrap && !walkinWizardWrap.hidden && walkinState.court) refreshWalkinTimeSlots(true);
 
         document.querySelectorAll('[data-staff-nav]').forEach((btn) => {
@@ -1117,6 +1118,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffExtensionAvailabilityCache = new Map();
     let overviewPage = 1;
     let overviewRefreshGeneration = 0;
+    let overviewRefreshInFlight = false;
+    let overviewRefreshPending = false;
 
     function isOverviewVisible() {
         return document.visibilityState === 'visible'
@@ -1354,7 +1357,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return staffOverviewIdLabel(a).localeCompare(staffOverviewIdLabel(b), undefined, { numeric: true, sensitivity: 'base' });
     }
 
-    async function refreshBookingOverview() {
+    async function loadBookingOverview() {
         if (!overviewTableBody || !window.sb || !isOverviewVisible()) return;
         const generation = ++overviewRefreshGeneration;
 
@@ -1396,6 +1399,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         const entries = overviewEntries();
         renderOverviewSportOptions(entries);
         renderFilteredOverview(entries);
+    }
+
+    async function refreshBookingOverview() {
+        if (!overviewTableBody || !window.sb || !isOverviewVisible()) return;
+        if (overviewRefreshInFlight) {
+            overviewRefreshPending = true;
+            return;
+        }
+        overviewRefreshInFlight = true;
+        try {
+            await loadBookingOverview();
+        } finally {
+            overviewRefreshInFlight = false;
+            if (overviewRefreshPending && isOverviewVisible()) {
+                overviewRefreshPending = false;
+                refreshBookingOverview();
+            } else if (!isOverviewVisible()) {
+                overviewRefreshPending = false;
+            }
+        }
     }
 
     [overviewSearchInput, overviewSportSelect, overviewTypeSelect, overviewDateInput].forEach((control) => {
@@ -1454,7 +1477,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateOverviewClearButton();
             refreshBookingOverview();
         }
-    }, 60000);
+    }, 15000);
     document.addEventListener('visibilitychange', () => {
         if (isOverviewVisible()) refreshBookingOverview();
     });
@@ -1842,6 +1865,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const message = [error?.message, error?.details, error?.hint]
             .filter((part) => typeof part === 'string').join(' ');
         return /this number is already registered|enter a valid philippine mobile number/i.test(message);
+    }
+
+    function isWalkinSlotConflictError(error) {
+        const message = [error?.message, error?.details, error?.hint]
+            .filter((part) => typeof part === 'string').join(' ');
+        return error?.code === '23P01' || /physical court.*already reserved|slot.*no longer available/i.test(message);
     }
 
     walkinCustomerModeInputs.forEach((input) => input.addEventListener('change', () => {
@@ -3043,12 +3072,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const row = normalizeRpcRow(result?.data);
         if (result?.error) {
             if (pendingQrOrder && result.error.code === 'P0002') {
-                return { pending: true, error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
+                return { pending: true, error: 'Payment has not been confirmed yet, so this reservation is not booked. If PayMongo shows a successful charge, do not collect payment again; ask the owner to verify the charge and arrange another time or a refund.' };
             }
             return { error: result.error.message || 'Could not load the acknowledgment.' };
         }
         if (!row || !Array.isArray(row.items) || !row.items.length || !['paid', 'succeeded', 'completed'].includes(String(row.payment_status || '').toLowerCase())) {
-            return { pending: true, error: 'Payment has not been confirmed yet. The acknowledgment becomes available after PayMongo confirms payment.' };
+            return { pending: true, error: 'Payment has not been confirmed yet, so this reservation is not booked. If PayMongo shows a successful charge, do not collect payment again; ask the owner to verify the charge and arrange another time or a refund.' };
         }
         return { receipt: { ...row, source_id: orderId } };
     }
@@ -3777,6 +3806,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.InigoToast?.show('Guest mobile is no longer available. Check it again before continuing.', true);
                 return;
             }
+            if (isWalkinSlotConflictError(create?.error)) {
+                window.InigoToast?.show(walkinState.payment === 'cash'
+                    ? 'This court time was just reserved. No booking or payment was recorded; return the cash and choose another available time.'
+                    : 'This court time was just reserved. No booking or payment was recorded; refresh availability and choose another time.', true);
+                return;
+            }
             window.InigoToast?.show(create?.error?.message || 'Could not create the walk-in order. No reservation was saved.', true);
             return;
         }
@@ -3918,11 +3953,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const staffExtensionModal = document.querySelector('[data-staff-extension-modal]');
     const staffExtensionDialog = document.querySelector('[data-staff-extension-dialog]');
     const staffExtensionSummary = document.querySelector('[data-staff-extension-summary]');
-    const staffExtensionDuration = document.querySelector('[data-staff-extension-duration]');
+    const staffExtensionHourGrid = document.querySelector('[data-staff-extension-hour-grid]');
+    const staffExtensionSelectedTime = document.querySelector('[data-staff-extension-selected-time]');
+    const staffExtensionSelectedCharge = document.querySelector('[data-staff-extension-selected-charge]');
     const staffExtensionAvailability = document.querySelector('[data-staff-extension-availability]');
     const staffExtensionNext = document.querySelector('[data-staff-extension-next]');
     const staffExtensionCharge = document.querySelector('[data-staff-extension-charge]');
-    const staffExtensionCashOpen = document.querySelector('[data-staff-extension-cash-open]');
     const staffExtensionCashReceived = document.querySelector('[data-staff-extension-cash-received]');
     const staffExtensionCashModal = document.querySelector('[data-staff-extension-cash-modal]');
     const staffExtensionCashDialog = document.querySelector('[data-staff-extension-cash-dialog]');
@@ -3938,9 +3974,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     let staffExtensionSelected = null;
     let staffExtensionStep = 'duration';
     let staffExtensionCashTenderMinor = null;
+    const STAFF_CASH_TENDER_MAX_MINOR = 99999999;
+    let staffExtensionCashInputError = '';
+    let staffExtensionCashLastValidValue = '';
     let staffExtensionCashLastFocus = null;
+    let staffExtensionPaymentInFlight = false;
+    let staffExtensionPaymentControlStates = null;
 
     function closeStaffExtensionModal() {
+        if (staffExtensionPaymentInFlight) return;
         if (!staffExtensionModal) return;
         closeStaffExtensionCashCalculator(false);
         staffExtensionModal.hidden = true;
@@ -3953,6 +3995,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function openStaffExtensionModal(row, trigger) {
+        if (staffExtensionPaymentInFlight) return;
         const target = rowTableTarget(row);
         if (!target.idValue || !staffExtensionModal || !window.sb) return;
         staffExtensionRow = row;
@@ -3960,14 +4003,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffExtensionOptions = [];
         staffExtensionNext.disabled = true;
         staffExtensionCashTenderMinor = null;
-        staffExtensionCashOpen.hidden = true;
         staffExtensionCashReceived.hidden = true;
         document.querySelectorAll('[data-staff-extension-method]').forEach((input) => { input.checked = false; });
         document.querySelector('[data-staff-extension-cash-option]').hidden = !staffCashEnabled;
         document.querySelector('[data-staff-extension-online-option]').hidden = !staffOnlineEnabled;
         staffExtensionCashInput.value = '';
         staffExtensionAvailability.textContent = 'Checking live availability…';
-        staffExtensionDuration.replaceChildren();
+        staffExtensionHourGrid.replaceChildren();
+        staffExtensionSelectedTime.textContent = 'No extension selected';
+        staffExtensionSelectedCharge.textContent = '—';
         document.querySelectorAll('[data-staff-extension-step]').forEach((el) => { el.hidden = el.dataset.staffExtensionStep !== 'duration'; });
         staffExtensionSummary.textContent = `${row.customerName || 'Customer'} · ${row.courts || 'Court'}${row.unit ? ` · ${row.unit}` : ''}`;
         staffExtensionModal.hidden = false;
@@ -3983,26 +4027,112 @@ document.addEventListener('DOMContentLoaded', async () => {
             staffExtensionAvailability.textContent = result?.error?.message || 'Could not check extension availability.';
             return;
         }
-        staffExtensionOptions = result.data.options.filter((option) => Number.isInteger(Number(option.duration_minutes))
-            && Number(option.amount_minor) > 0);
-        staffExtensionOptions.forEach((option) => {
-            const item = document.createElement('option');
-            item.value = String(option.duration_minutes);
-            item.textContent = `${Number(option.duration_minutes) / 60} hour${Number(option.duration_minutes) === 60 ? '' : 's'} · ${formatStaffPeso(Number(option.amount_minor) / 100)}`;
-            item.dataset.amountMinor = String(option.amount_minor);
-            staffExtensionDuration.append(item);
-        });
+        staffExtensionOptions = staffExtensionConsecutiveOptions(result.data.options);
         if (!staffExtensionOptions.length) {
             staffExtensionAvailability.textContent = 'No immediately consecutive time is available.';
+            renderStaffExtensionHourGrid();
             return;
         }
         staffExtensionAvailability.textContent = 'Available time is checked again when payment is submitted.';
         staffExtensionSelected = staffExtensionOptions[0];
+        renderStaffExtensionHourGrid();
+        updateStaffExtensionSelectionSummary();
         staffExtensionNext.disabled = false;
     }
 
+    function setStaffExtensionPaymentBusy(busy) {
+        if (!staffExtensionDialog) return;
+        if (busy) {
+            if (staffExtensionPaymentControlStates) return;
+            staffExtensionPaymentControlStates = [...staffExtensionDialog.querySelectorAll('button, input')]
+                .map((control) => [control, control.disabled]);
+            staffExtensionPaymentControlStates.forEach(([control]) => { control.disabled = true; });
+            return;
+        }
+        if (!staffExtensionPaymentControlStates) return;
+        staffExtensionPaymentControlStates.forEach(([control, wasDisabled]) => { control.disabled = wasDisabled; });
+        staffExtensionPaymentControlStates = null;
+    }
+
+    function staffExtensionConsecutiveOptions(options) {
+        if (!Array.isArray(options)) return [];
+        const ordered = [...options].sort((a, b) => Number(a?.duration_minutes) - Number(b?.duration_minutes));
+        const consecutive = [];
+        const baseEndAtMs = Date.parse(ordered[0]?.new_end_at) - 60 * 60 * 1000;
+        if (!Number.isFinite(baseEndAtMs)) return consecutive;
+        for (const option of ordered) {
+            const duration = Number(option?.duration_minutes);
+            const amount = Number(option?.amount_minor);
+            const endAtMs = Date.parse(option?.new_end_at);
+            if (!Number.isSafeInteger(duration) || duration !== (consecutive.length + 1) * 60
+                || !Number.isSafeInteger(amount) || amount <= 0
+                || !Number.isFinite(endAtMs) || endAtMs !== baseEndAtMs + duration * 60 * 1000) break;
+            consecutive.push(option);
+        }
+        return consecutive;
+    }
+
+    function renderStaffExtensionHourGrid() {
+        if (!staffExtensionHourGrid) return;
+        if (!staffExtensionOptions.length) {
+            staffExtensionHourGrid.innerHTML = '<p class="staff-form-hint">No immediately consecutive time is available.</p>';
+            return;
+        }
+        const selectedMinutes = Number(staffExtensionSelected?.duration_minutes) || 0;
+        const availableCards = staffExtensionOptions.map((option) => {
+            const duration = Number(option.duration_minutes);
+            const range = staffExtensionSlotRange({ ...option, duration_minutes: 60 });
+            const selected = duration <= selectedMinutes;
+            const label = `${range.start} – ${range.end}`;
+            const state = selected ? 'Selected' : 'Available';
+            return `<button type="button" class="staff-hour-slot is-open${selected ? ' is-selected' : ''}" data-staff-extension-duration="${duration}" aria-label="${window.escapeHtml(label)}, ${state}" aria-pressed="${selected}">
+                <strong>${window.escapeHtml(label)}</strong><span>${state}</span>
+            </button>`;
+        }).join('');
+        const lastOption = staffExtensionOptions[staffExtensionOptions.length - 1];
+        const unavailableStart = lastOption.new_end_at;
+        const unavailableEnd = new Date(Date.parse(unavailableStart) + 60 * 60 * 1000).toISOString();
+        const unavailableLabel = `${formatIsoTime12h(unavailableStart)} – ${formatIsoTime12h(unavailableEnd)}`;
+        const previousScrollTop = staffExtensionHourGrid.scrollTop;
+        staffExtensionHourGrid.innerHTML = `${availableCards}<button type="button" class="staff-hour-slot is-unavailable" aria-label="${window.escapeHtml(unavailableLabel)}, Unavailable" disabled><strong>${window.escapeHtml(unavailableLabel)}</strong><span>Unavailable</span></button>`;
+        staffExtensionHourGrid.scrollTop = previousScrollTop;
+        staffExtensionHourGrid.querySelectorAll('[data-staff-extension-duration]').forEach((button) => button.addEventListener('click', () => {
+            staffExtensionSelected = staffExtensionOptionForDuration(staffExtensionOptions, button.dataset.staffExtensionDuration);
+            if (!staffExtensionSelected) return;
+            staffExtensionNext.disabled = false;
+            renderStaffExtensionHourGrid();
+            updateStaffExtensionSelectionSummary();
+            staffExtensionHourGrid.querySelector(`[data-staff-extension-duration="${Number(staffExtensionSelected.duration_minutes)}"]`)?.focus();
+        }));
+    }
+
+    function updateStaffExtensionSelectionSummary() {
+        const range = staffExtensionSlotRange(staffExtensionSelected);
+        if (!range) {
+            staffExtensionSelectedTime.textContent = 'No extension selected';
+            staffExtensionSelectedCharge.textContent = '—';
+            return;
+        }
+        const hours = Number(staffExtensionSelected.duration_minutes) / 60;
+        staffExtensionSelectedTime.textContent = `${range.start} – ${range.end} · ${hours} hour${hours === 1 ? '' : 's'}`;
+        staffExtensionSelectedCharge.textContent = formatStaffPeso(Number(staffExtensionSelected.amount_minor) / 100);
+    }
+
     function selectedStaffExtension() {
-        return staffExtensionOptions.find((option) => Number(option.duration_minutes) === Number(staffExtensionDuration?.value)) || null;
+        return staffExtensionSelected;
+    }
+
+    function staffExtensionOptionForDuration(options, duration) {
+        return options.find((option) => Number(option.duration_minutes) === Number(duration)) || null;
+    }
+
+    function staffExtensionSlotRange(option) {
+        const durationMinutes = Number(option?.duration_minutes);
+        const endAtMs = Date.parse(option?.new_end_at);
+        if (!Number.isSafeInteger(durationMinutes) || durationMinutes < 60 || durationMinutes % 60 !== 0
+            || !Number.isFinite(endAtMs)) return null;
+        const startAt = new Date(endAtMs - durationMinutes * 60 * 1000).toISOString();
+        return { start: formatIsoTime12h(startAt), end: formatIsoTime12h(option.new_end_at) };
     }
 
     function updateStaffExtensionCashCalculator() {
@@ -4011,9 +4141,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const valid = Number.isSafeInteger(due) && due > 0 && tendered !== null && tendered >= due;
         if (staffExtensionCashDue) staffExtensionCashDue.textContent = Number.isSafeInteger(due) ? formatStaffPeso(due / 100) : '—';
         if (staffExtensionCashChange) staffExtensionCashChange.textContent = valid ? formatStaffPeso((tendered - due) / 100) : '—';
-        if (staffExtensionCashValidation) staffExtensionCashValidation.textContent = tendered === null ? 'Enter the cash received to calculate change.'
+        if (staffExtensionCashValidation) staffExtensionCashValidation.textContent = staffExtensionCashInputError || (tendered === null ? 'Enter the cash received to calculate change. Maximum: ₱999,999.99.'
             : tendered < due ? `Enter at least ${formatStaffPeso(due / 100)}.`
-                : `Change due: ${formatStaffPeso((tendered - due) / 100)}.`;
+                : `Change due: ${formatStaffPeso((tendered - due) / 100)}.`);
         if (staffExtensionCashConfirm) staffExtensionCashConfirm.disabled = !valid;
         return valid;
     }
@@ -4022,6 +4152,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!staffExtensionCashModal || !staffExtensionSelected) return;
         staffExtensionCashLastFocus = document.activeElement;
         staffExtensionCashInput.value = staffExtensionCashTenderMinor === null ? '' : (staffExtensionCashTenderMinor / 100).toFixed(2);
+        staffExtensionCashInputError = '';
+        staffExtensionCashLastValidValue = staffExtensionCashInput.value;
         staffExtensionCashModal.hidden = false;
         staffExtensionCashModal.setAttribute('data-open', '');
         updateStaffModalBackground();
@@ -4044,7 +4176,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!/^(?:\d+)(?:\.\d{0,2})?$/.test(raw)) return null;
         const [whole, fraction = ''] = raw.split('.');
         const minor = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
-        return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
+        return Number.isSafeInteger(minor) && minor >= 0 && minor <= STAFF_CASH_TENDER_MAX_MINOR ? minor : null;
+    }
+
+    function isValidStaffExtensionCashInput(value) {
+        const raw = String(value);
+        if (raw === '') return true;
+        if (!/^\d+(?:\.\d{0,2})?$/.test(raw)) return false;
+        return parseCashTenderMinor(raw.endsWith('.') ? raw.slice(0, -1) : raw) !== null;
+    }
+
+    function staffExtensionCashCandidate(input, insertedText) {
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        return input.value.slice(0, start) + insertedText + input.value.slice(end);
+    }
+
+    function nextStaffExtensionCashKeyValue(current, key) {
+        if (key === 'Backspace') return current.slice(0, -1);
+        const next = key === '.' ? (current.includes('.') ? null : current ? `${current}.` : '0.')
+            : /^\d$/.test(key) ? current + key : current;
+        return next !== null && isValidStaffExtensionCashInput(next) ? next : null;
+    }
+
+    function rejectStaffExtensionCashInput(message = 'Use digits and one decimal point, with no more than two decimal places.') {
+        staffExtensionCashInputError = message;
+        updateStaffExtensionCashCalculator();
+    }
+
+    function validateStaffExtensionCashBeforeInput(event) {
+        if (event.inputType?.startsWith('delete')) return true;
+        const insertedText = event.data ?? event.dataTransfer?.getData('text/plain') ?? event.clipboardData?.getData('text');
+        if (insertedText === null || insertedText === undefined) return true;
+        if (isValidStaffExtensionCashInput(staffExtensionCashCandidate(staffExtensionCashInput, insertedText))) return true;
+        event.preventDefault();
+        rejectStaffExtensionCashInput('Use digits, one decimal point, and at most two decimal places. Maximum: ₱999,999.99.');
+        return false;
     }
 
     const TIMEIN_MODAL_CLOSE_DELAY_MS = 250;
@@ -4267,7 +4434,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelector('[data-staff-extension-close]')?.addEventListener('click', closeStaffExtensionModal);
     document.querySelector('[data-staff-extension-cash-close]')?.addEventListener('click', () => closeStaffExtensionCashCalculator());
     document.querySelector('[data-staff-extension-cash-cancel]')?.addEventListener('click', () => closeStaffExtensionCashCalculator());
-    document.querySelector('[data-staff-extension-cash-open]')?.addEventListener('click', openStaffExtensionCashCalculator);
     staffExtensionModal?.addEventListener('click', (event) => {
         if (event.target === staffExtensionModal) closeStaffExtensionModal();
     });
@@ -4280,6 +4446,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         else if (staffExtensionModal && !staffExtensionModal.hidden) closeStaffExtensionModal();
     });
     document.querySelector('[data-staff-extension-back]')?.addEventListener('click', () => {
+        if (staffExtensionPaymentInFlight) return;
         staffExtensionStep = 'duration';
         document.querySelectorAll('[data-staff-extension-step]').forEach((el) => { el.hidden = el.dataset.staffExtensionStep !== 'duration'; });
     });
@@ -4288,38 +4455,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!staffExtensionSelected) return;
         document.querySelectorAll('[data-staff-extension-method]').forEach((input) => { input.checked = false; });
         staffExtensionCashTenderMinor = null;
-        staffExtensionCashOpen.hidden = true;
         staffExtensionCashReceived.hidden = true;
         staffExtensionStep = 'payment';
         staffExtensionCharge.textContent = formatStaffPeso(Number(staffExtensionSelected.amount_minor) / 100);
         document.querySelectorAll('[data-staff-extension-step]').forEach((el) => { el.hidden = el.dataset.staffExtensionStep !== 'payment'; });
         staffExtensionPay.disabled = true;
     });
-    staffExtensionDuration?.addEventListener('change', () => { staffExtensionSelected = selectedStaffExtension(); });
     document.querySelectorAll('[data-staff-extension-method]').forEach((radio) => radio.addEventListener('change', () => {
         if (!radio.checked) return;
         if (radio.value === 'cash') {
-            staffExtensionCashOpen.hidden = false;
             staffExtensionCashReceived.hidden = staffExtensionCashTenderMinor === null;
             staffExtensionCashReceived.textContent = staffExtensionCashTenderMinor === null
                 ? '' : `Cash received: ${formatStaffPeso(staffExtensionCashTenderMinor / 100)}.`;
-            staffExtensionPay.disabled = staffExtensionCashTenderMinor === null
-                || staffExtensionCashTenderMinor < Number(staffExtensionSelected?.amount_minor);
-            openStaffExtensionCashCalculator();
         } else {
-            staffExtensionCashOpen.hidden = true;
             staffExtensionCashReceived.hidden = true;
-            staffExtensionPay.disabled = false;
         }
+        staffExtensionPay.disabled = false;
     }));
-    staffExtensionCashInput?.addEventListener('input', updateStaffExtensionCashCalculator);
-    staffExtensionCashConfirm?.addEventListener('click', () => {
+    staffExtensionCashInput?.addEventListener('beforeinput', validateStaffExtensionCashBeforeInput);
+    staffExtensionCashInput?.addEventListener('input', () => {
+        if (!isValidStaffExtensionCashInput(staffExtensionCashInput.value)) {
+            staffExtensionCashInput.value = staffExtensionCashLastValidValue;
+            rejectStaffExtensionCashInput('Use digits, one decimal point, and at most two decimal places. Maximum: ₱999,999.99.');
+            return;
+        }
+        staffExtensionCashLastValidValue = staffExtensionCashInput.value;
+        staffExtensionCashInputError = '';
+        updateStaffExtensionCashCalculator();
+    });
+    staffExtensionCashConfirm?.addEventListener('click', async () => {
         if (!updateStaffExtensionCashCalculator()) return;
         staffExtensionCashTenderMinor = parseCashTenderMinor(staffExtensionCashInput.value);
         staffExtensionCashReceived.hidden = false;
         staffExtensionCashReceived.textContent = `Cash received: ${formatStaffPeso(staffExtensionCashTenderMinor / 100)}.`;
-        staffExtensionPay.disabled = false;
         closeStaffExtensionCashCalculator();
+        await submitStaffExtensionPayment();
     });
     staffExtensionCashDialog?.addEventListener('click', (event) => {
         const key = event.target.closest('[data-staff-extension-cash-key]')?.dataset.staffExtensionCashKey;
@@ -4327,9 +4497,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         event.preventDefault();
         const current = staffExtensionCashInput.value;
         if (key === 'Enter') { if (!staffExtensionCashConfirm.disabled) staffExtensionCashConfirm.click(); return; }
-        if (key === 'Backspace') staffExtensionCashInput.value = current.slice(0, -1);
-        else if (key === '.') { if (!current.includes('.')) staffExtensionCashInput.value = current ? `${current}.` : '0.'; }
-        else if (/^\d$/.test(key) && current.replace('.', '').length < 12) staffExtensionCashInput.value = current + key;
+        const nextValue = nextStaffExtensionCashKeyValue(current, key);
+        if (nextValue === null || !isValidStaffExtensionCashInput(nextValue)) {
+            staffExtensionCashInput.value = current;
+            rejectStaffExtensionCashInput('Maximum: ₱999,999.99.');
+            staffExtensionCashInput.focus();
+            return;
+        }
+        staffExtensionCashInput.value = nextValue;
+        staffExtensionCashLastValidValue = staffExtensionCashInput.value;
+        staffExtensionCashInputError = '';
         updateStaffExtensionCashCalculator();
         staffExtensionCashInput.focus();
     });
@@ -4338,12 +4515,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             event.preventDefault(); staffExtensionCashConfirm.click();
         }
     });
-    staffExtensionPay?.addEventListener('click', async () => {
+    async function submitStaffExtensionPayment() {
+        if (staffExtensionPaymentInFlight) return;
         const row = staffExtensionRow;
         const option = selectedStaffExtension();
         const method = document.querySelector('[data-staff-extension-method]:checked')?.value;
         const target = row && rowTableTarget(row);
         if (!row || !option || !target?.idValue || !['cash', 'online'].includes(method)) return;
+        if (method === 'cash' && (staffExtensionCashTenderMinor === null
+            || staffExtensionCashTenderMinor < Number(option.amount_minor))) {
+            openStaffExtensionCashCalculator();
+            return;
+        }
+        staffExtensionPaymentInFlight = true;
+        setStaffExtensionPaymentBusy(true);
         staffExtensionPay.disabled = true;
         staffExtensionPay.textContent = 'Processing…';
         if (staffExtensionPaymentError) staffExtensionPaymentError.hidden = true;
@@ -4365,6 +4550,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!result?.error && /^https:\/\/checkout\.paymongo\.com\//.test(String(checkoutUrl || ''))) {
                     if (popup) popup.location.replace(checkoutUrl); else window.location.assign(checkoutUrl);
                     window.InigoToast?.show('Complete payment in PayMongo. The booking extends after payment is verified.');
+                    staffExtensionPaymentInFlight = false;
+                    setStaffExtensionPaymentBusy(false);
                     closeStaffExtensionModal();
                     return;
                 }
@@ -4372,6 +4559,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (error) { result = { error }; }
         if (popup && !popup.closed) popup.close();
+        staffExtensionPaymentInFlight = false;
+        setStaffExtensionPaymentBusy(false);
         staffExtensionPay.disabled = false;
         staffExtensionPay.textContent = 'Pay and extend';
         if (result?.error || (method === 'cash' && result?.data?.ok !== true)) {
@@ -4383,11 +4572,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const ack = result?.data?.receipt;
         if (ack && showImmediatePaymentAcknowledgment(ack, row.sourceType === 'booking' ? 'booking' : 'walkin')
-            && claimStaffPaymentCelebration(ack)) showStaffPaymentConfetti();
+            && claimStaffPaymentCelebration(ack)) {
+            playStaffPaymentSuccessSound();
+            showStaffPaymentConfetti();
+        }
         closeStaffExtensionModal();
         window.InigoToast?.show('Booking extended and cash payment recorded.');
         refreshBookingOverview(); refreshCourtSchedule(); refreshTransactions();
-    });
+    }
+    staffExtensionPay?.addEventListener('click', submitStaffExtensionPayment);
 
     if (timeInCloseBtn) timeInCloseBtn.addEventListener('click', closeTimeInModal);
     if (timeInCancelBtn) timeInCancelBtn.addEventListener('click', closeTimeInModal);
@@ -5191,6 +5384,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         unattended: 'Unattended',
     };
     function transactionDisplayStatus(row) {
+        if (row.record_type === 'extension') return 'completed';
         if (row.status !== 'in_progress' || !row.checked_in_at || row.checked_out_at) return row.status;
         const start = Date.parse(Array.isArray(row.visits) ? row.visits[0]?.starts_at : '');
         return Number.isFinite(start) && Date.now() < start ? 'arrived' : row.status;
@@ -5264,7 +5458,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const source = row.source === 'walkin' ? 'Walk-in' : 'Booking';
             const displayStatus = transactionDisplayStatus(row);
             const visitStatus = Object.hasOwn(transactionStatusLabels, displayStatus) ? displayStatus : 'unattended';
-            const visitStatusText = transactionStatusLabels[visitStatus];
+            const isExtension = row.record_type === 'extension';
+            const visitStatusText = isExtension ? 'Extended' : transactionStatusLabels[visitStatus];
             const checkedInAt = row.checked_in_at && Number.isFinite(Date.parse(row.checked_in_at)) ? row.checked_in_at : null;
             const checkedOutAt = row.checked_out_at && Number.isFinite(Date.parse(row.checked_out_at)) ? row.checked_out_at : null;
             const minorAmount = row.status === 'unattended' ? 0 : row.amount_minor;
@@ -5282,6 +5477,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : row.transaction_id
                     ? `<button type="button" class="staff-tx-receipt-btn" data-staff-visit-record="${index}">View receipt</button>`
                     : '<span aria-label="Receipt unavailable">—</span>';
+            const visitTimeCell = isExtension
+                ? `<td data-label="Extension window"><div class="staff-tx-visit-times"><span>Extended ${window.escapeHtml(formatIsoTime12h(Array.isArray(row.visits) ? row.visits[0]?.starts_at : null))}–${window.escapeHtml(formatIsoTime12h(Array.isArray(row.visits) ? row.visits[0]?.ends_at : null))}</span></div></td>`
+                : `<td data-label="Time in / time out"><div class="staff-tx-visit-times"><span>${checkedInAt ? `In ${window.escapeHtml(formatIsoTime12h(checkedInAt))}` : '—'}</span><span>${checkedOutAt ? `Out ${window.escapeHtml(formatIsoTime12h(checkedOutAt))}` : 'Out —'}</span></div></td>`;
             if (transactionView === 'unattended') {
                 const visitReference = `${source} #${row.visit_id || '—'}`;
                 const scheduled = Array.isArray(row.visits) ? row.visits[0]?.starts_at : null;
@@ -5302,9 +5500,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 tr.innerHTML = `
                     <td data-label="Transaction ID"><span class="staff-tx-truncate" title="${window.escapeHtml(transactionId)}">${window.escapeHtml(transactionId)}</span></td>
                     <td data-label="Customer name" class="staff-cell-main"><span class="staff-tx-truncate" title="${window.escapeHtml(row.customer_name || '—')}">${window.escapeHtml(row.customer_name || '—')}</span></td>
-                    <td data-label="Time in / time out"><div class="staff-tx-visit-times"><span>${checkedInAt ? `In ${window.escapeHtml(formatIsoTime12h(checkedInAt))}` : '—'}</span><span>${checkedOutAt ? `Out ${window.escapeHtml(formatIsoTime12h(checkedOutAt))}` : 'Out —'}</span></div></td>
-                    <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}</span></td>
-                    <td data-label="Visit status"><span class="staff-status ${visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
+                    ${visitTimeCell}
+                    <td data-label="Source"><span class="staff-status ${row.source === 'walkin' ? 'walkin' : 'booking'}">${source}${isExtension ? ' · Extension' : ''}</span></td>
+                    <td data-label="Visit status"><span class="staff-status ${isExtension ? 'extended' : visitStatus}">${window.escapeHtml(visitStatusText)}</span></td>
                     <td data-label="Amount">${window.escapeHtml(amountText)}${amountHint}</td>
                     <td data-label="Receipt"><div class="staff-tx-actions">${receiptControl}</div></td>
                 `;
@@ -5441,33 +5639,62 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateTransactionClearButton();
         renderTransactionRows();
     });
+    let transactionRefreshGeneration = 0;
+    let transactionRefreshInFlight = false;
+    let transactionRefreshPending = false;
     async function refreshTransactions() {
         if (!transactionsTableBody || !window.sb) return;
-        let result;
-        try { result = await window.sb.rpc('staff_get_involved_transactions'); }
-        catch (error) { result = { error }; }
-        if (result?.error) {
-            console.error('[staff] failed to load visit records', result.error);
-            transactionLoadError = 'Could not load visit records right now.';
-            renderTransactionRows();
+        if (transactionRefreshInFlight) {
+            transactionRefreshPending = true;
             return;
         }
-        const payload = normalizeRpcRow(result?.data) || {};
-        if (payload.schema_version !== 'visit_transactions_v1') {
-            transactionLoadError = 'Transaction records need a server update. Refresh this page after the update is applied.';
+        transactionRefreshInFlight = true;
+        const generation = ++transactionRefreshGeneration;
+        try {
+            let result;
+            try { result = await window.sb.rpc('staff_get_involved_transactions'); }
+            catch (error) { result = { error }; }
+            if (generation !== transactionRefreshGeneration) return;
+            if (result?.error) {
+                console.error('[staff] failed to load visit records', result.error);
+                transactionLoadError = 'Could not load visit records right now.';
+                renderTransactionRows();
+                return;
+            }
+            const payload = normalizeRpcRow(result?.data) || {};
+            if (payload.schema_version !== 'visit_transactions_v1') {
+                transactionLoadError = 'Transaction records need a server update. Refresh this page after the update is applied.';
+                renderTransactionRows();
+                return;
+            }
+            const receivedRows = Array.isArray(payload.transactions) ? payload.transactions : [];
+            transactionRows = receivedRows.filter((row) => row && Object.hasOwn(transactionStatusLabels, row.status));
+            if (receivedRows.length && !transactionRows.length) {
+                transactionLoadError = 'Transaction records need a server update. Refresh this page after the update is applied.';
+                renderTransactionRows();
+                return;
+            }
+            transactionLoadError = null;
             renderTransactionRows();
-            return;
+        } finally {
+            transactionRefreshInFlight = false;
+            if (transactionRefreshPending) {
+                transactionRefreshPending = false;
+                refreshTransactions();
+            }
         }
-        const receivedRows = Array.isArray(payload.transactions) ? payload.transactions : [];
-        transactionRows = receivedRows.filter((row) => row && Object.hasOwn(transactionStatusLabels, row.status));
-        if (receivedRows.length && !transactionRows.length) {
-            transactionLoadError = 'Transaction records need a server update. Refresh this page after the update is applied.';
-            renderTransactionRows();
-            return;
-        }
-        transactionLoadError = null;
-        renderTransactionRows();
     }
+
+    function isTransactionsPanelVisible() {
+        return document.visibilityState === 'visible'
+            && document.querySelector('[data-staff-panel="transactions"]')?.classList.contains('is-active');
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (isTransactionsPanelVisible()) refreshTransactions();
+    });
+    window.setInterval(() => {
+        if (isTransactionsPanelVisible()) refreshTransactions();
+    }, 15000);
 
     if (transactionsTableBody) transactionsTableBody.addEventListener('click', async (event) => {
         const receiptButton = event.target.closest('[data-staff-payment-ack]');
@@ -6671,7 +6898,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(attemptId || '')) || !window.sb) {
             window.InigoToast?.show('Could not identify the extension checkout returned from PayMongo.', true);
         } else if (extensionReturnKind === 'cancel') {
-            window.InigoToast?.show('PayMongo checkout was cancelled. The booking was not extended.');
+            window.InigoToast?.show('PayMongo checkout was cancelled. The booking was not extended.', true);
         } else if (extensionReturnKind === 'return') {
             let result = null;
             for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -6682,7 +6909,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (result?.status === 'paid' && result.receipt) {
                 if (showImmediatePaymentAcknowledgment(result.receipt, result.source)
-                    && claimStaffPaymentCelebration(result.receipt)) showStaffPaymentConfetti();
+                    && claimStaffPaymentCelebration(result.receipt)) {
+                    playStaffPaymentSuccessSound();
+                    showStaffPaymentConfetti();
+                }
                 window.InigoToast?.show('PayMongo confirmed payment and the booking was extended.');
             } else if (result?.status === 'review') {
                 window.InigoToast?.show('PayMongo reports payment after the original booking ended. The booking was not extended; contact the owner to reconcile or refund the payment.', true);

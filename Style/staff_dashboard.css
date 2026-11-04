@@ -866,12 +866,24 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
     box-sizing: border-box; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0;
     border: 1px solid var(--color-line); border-radius: 50%; background: transparent; color: var(--color-ink-dim);
     font: 600 19px/1 var(--font-body); cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
 .staff-extension-plus:hover, .staff-extension-plus:focus-visible { border-color: var(--color-primary); color: var(--color-ink); }
-.staff-extension-dialog { position: relative; width: min(520px, calc(100vw - 32px)); }
+.staff-modal.staff-extension-dialog { position: relative; display: flex; flex-direction: column; width: min(550px, calc(100vw - 32px)); height: auto; max-height: calc(100dvh - 32px); overflow: hidden; }
 .staff-extension-dialog > h3 { margin: 0 40px 10px 0; }
 .staff-extension-dialog .staff-form-actions { margin-top: 16px; }
-.staff-extension-dialog [data-staff-extension-step="duration"] > .staff-btn-primary { margin-top: 12px; }
+.staff-extension-dialog > [data-staff-extension-step="duration"] { display: flex; flex-direction: column; min-height: 0; }
+.staff-extension-dialog > [data-staff-extension-step="duration"][hidden], .staff-extension-dialog > [data-staff-extension-step="payment"][hidden] { display: none; }
+.staff-extension-dialog > [data-staff-extension-step="payment"] { flex: 1; min-height: 0; overflow-y: auto; }
+.staff-extension-slot-legend { flex: none; margin: 8px 0 12px; }
+.staff-extension-hour-grid { max-height: min(330px, 42dvh); min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; align-content: start; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 2px 3px 2px 0; }
+.staff-extension-slot-footer { flex: none; padding-top: 12px; }
+.staff-extension-hour-grid .staff-hour-slot { min-height: 76px; }
+.staff-extension-dialog [data-staff-extension-step="duration"] .staff-btn-primary { margin-top: 12px; }
+@media (max-width: 440px) {
+    .staff-extension-hour-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .staff-extension-hour-grid .staff-hour-slot { min-height: 68px; padding: 10px; }
+}
 
 /* Status badges — Revision S1 replaces the old pending/confirmed/cancelled/
    no_show/paid trio (booking.status as-written) with the 4 CLIENT-DERIVED
@@ -893,6 +905,7 @@ body.staff-sidebar-open .staff-toggle-bar:nth-child(3) {
 .staff-status.pending { background: rgba(255, 97, 21, 0.16); color: var(--color-primary); }
 .staff-status.confirmed { background: rgba(62, 122, 94, 0.2); color: var(--color-court-green); }
 .staff-status.completed { background: rgba(244, 239, 230, 0.12); color: var(--color-ink-dim); }
+.staff-status.extended { background: rgba(255, 97, 21, 0.16); color: var(--color-primary); }
 .staff-status.in_progress { background: rgba(255, 193, 7, 0.14); color: #f0c55c; }
 .staff-status.cancelled { background: rgba(214, 72, 47, 0.16); color: var(--color-alert); }
 .staff-status.no_show { background: rgba(214, 72, 47, 0.16); color: var(--color-alert); }

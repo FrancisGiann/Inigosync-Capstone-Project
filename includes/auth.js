@@ -2598,7 +2598,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 250);
     }
 
-    function setAuthNotice(message, isError = false, duration = isError ? 5000 : 3500) {
+    function setAuthNotice(message, isError = false, duration = 3000) {
         const notice = getAuthNoticeEl();
         if (authNoticeDismissTimer) {
             window.clearTimeout(authNoticeDismissTimer);
@@ -2618,6 +2618,7 @@ document.addEventListener('DOMContentLoaded', () => {
         syncAuthNoticeLayer();
         notice.querySelector('[data-auth-notice-message]').textContent = message;
         notice.classList.toggle('is-error', isError);
+        notice.classList.toggle('is-success', !isError);
         const closeButton = notice.querySelector('[data-auth-notice-close]');
         closeButton.hidden = !isError;
         notice.setAttribute('role', isError ? 'alert' : 'status');

@@ -999,18 +999,21 @@
         <h3 id="staffExtensionTitle">Extend booking</h3>
         <p class="staff-form-hint" data-staff-extension-summary></p>
         <div data-staff-extension-step="duration">
-            <label class="staff-form-label" for="staffExtensionDuration">Available extension</label>
-            <select class="staff-input" id="staffExtensionDuration" data-staff-extension-duration></select>
-            <p class="staff-form-hint" data-staff-extension-availability role="status" aria-live="polite">Checking live availability…</p>
-            <button type="button" class="staff-btn-primary" data-staff-extension-next disabled>Continue to payment</button>
+            <p class="staff-form-label" id="staffExtensionSlotsLabel">Select consecutive available hours</p>
+            <div class="staff-hour-slot-legend staff-extension-slot-legend" aria-label="Time slot key"><span><i class="is-available" aria-hidden="true"></i>Available</span><span><i class="is-selected" aria-hidden="true"></i>Selected</span><span><i class="is-unavailable" aria-hidden="true"></i>Unavailable</span></div>
+            <div class="staff-hour-grid staff-extension-hour-grid" data-staff-extension-hour-grid role="group" aria-labelledby="staffExtensionSlotsLabel"></div>
+            <div class="staff-extension-slot-footer">
+                <div class="staff-summary-row"><span data-staff-extension-selected-time>No extension selected</span><strong data-staff-extension-selected-charge>—</strong></div>
+                <p class="staff-form-hint" data-staff-extension-availability role="status" aria-live="polite">Checking live availability…</p>
+                <button type="button" class="staff-btn-primary" data-staff-extension-next disabled>Continue to payment</button>
+            </div>
         </div>
         <div data-staff-extension-step="payment" hidden>
             <div class="staff-summary-row"><span>Extension charge</span><strong data-staff-extension-charge>—</strong></div>
             <div class="staff-payment-options">
                 <label class="staff-payment-option" data-staff-extension-cash-option><span class="staff-payment-option-head"><input type="radio" name="staff-extension-payment" value="cash" data-staff-extension-method> Cash</span></label>
-                <label class="staff-payment-option" data-staff-extension-online-option><span class="staff-payment-option-head"><input type="radio" name="staff-extension-payment" value="online" data-staff-extension-method> PayMongo</span><p>Open secure online checkout. The booking extends after PayMongo confirms payment.</p></label>
+                <label class="staff-payment-option" data-staff-extension-online-option><span class="staff-payment-option-head"><input type="radio" name="staff-extension-payment" value="online" data-staff-extension-method> Online Payment</span><p>Open secure PayMongo checkout. The booking extends after payment is confirmed.</p></label>
             </div>
-            <button type="button" class="staff-btn-ghost" data-staff-extension-cash-open hidden>Open cash calculator</button>
             <p class="staff-form-hint" data-staff-extension-cash-received hidden></p>
             <p class="staff-form-hint" data-staff-extension-payment-error hidden role="alert"></p>
             <footer class="staff-form-actions"><button type="button" class="staff-btn-ghost" data-staff-extension-back>Back</button><button type="button" class="staff-btn-primary" data-staff-extension-pay disabled>Pay and extend</button></footer>
@@ -1027,7 +1030,7 @@
         <label class="staff-form-label" for="staffExtensionCashTendered">Amount received</label>
         <input id="staffExtensionCashTendered" class="staff-input staff-walkin-cash-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="staffExtensionCashValidation" data-staff-extension-cash-tendered>
         <div class="staff-summary-row"><span>Change</span><strong data-staff-extension-cash-change>—</strong></div>
-        <p class="staff-form-hint" id="staffExtensionCashValidation" data-staff-extension-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change.</p>
+        <p class="staff-form-hint" id="staffExtensionCashValidation" data-staff-extension-cash-validation role="status" aria-live="polite">Enter the cash received to calculate change. Maximum: ₱999,999.99.</p>
         <div class="staff-walkin-cash-keypad" role="group" aria-label="Amount received keypad" data-staff-extension-cash-keypad>
             <button type="button" data-staff-extension-cash-key="1">1</button><button type="button" data-staff-extension-cash-key="2">2</button><button type="button" data-staff-extension-cash-key="3">3</button>
             <button type="button" data-staff-extension-cash-key="4">4</button><button type="button" data-staff-extension-cash-key="5">5</button><button type="button" data-staff-extension-cash-key="6">6</button>

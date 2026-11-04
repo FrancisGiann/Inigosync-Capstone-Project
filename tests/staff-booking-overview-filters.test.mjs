@@ -294,12 +294,14 @@ test('Overview sorts actionable Time-In, actionable Time-Out, then no-action row
     assert.deepEqual(rows.map(row => row.id), [10, 1, 4, 8, 7, 2, 3], 'Time-In rows precede Time-Out rows; waiting/no-action rows follow chronologically');
 });
 
-test('Overview only fetches while active and ignores stale refresh results', async () => {
+test('Overview only fetches while active and coalesces overlapping refreshes', async () => {
     const visibleStart = source.indexOf('    function isOverviewVisible() {');
     const visibleEnd = source.indexOf('\n\n    function overviewEntries()', visibleStart);
-    const refreshStart = source.indexOf('    async function refreshBookingOverview() {');
+    const loadStart = source.indexOf('    async function loadBookingOverview() {');
+    const refreshStart = source.indexOf('    async function refreshBookingOverview() {', loadStart);
     const refreshEnd = source.indexOf('\n\n    [overviewSearchInput', refreshStart);
     assert.ok(visibleStart >= 0 && visibleEnd > visibleStart);
+    assert.ok(loadStart >= 0 && refreshStart > loadStart);
     assert.ok(refreshStart >= 0 && refreshEnd > refreshStart);
 
     const pending = [];
@@ -317,6 +319,8 @@ test('Overview only fetches while active and ignores stale refresh results', asy
         overviewPagination: {},
         overviewPage: 1,
         overviewRows: [],
+        overviewRefreshInFlight: false,
+        overviewRefreshPending: false,
         staffExtensionAvailabilityCache: new Map(),
         staffDerivedStatus: row => row.status || 'booked',
         overviewRefreshGeneration: 0,
@@ -333,17 +337,19 @@ test('Overview only fetches while active and ignores stale refresh results', asy
         renderStaffTablePagination() {},
         console: { error() {} },
     };
-    runInNewContext(`${source.slice(visibleStart, visibleEnd)}\n${source.slice(refreshStart, refreshEnd)}\nglobalThis.refresh = refreshBookingOverview;`, context);
+    runInNewContext(`${source.slice(visibleStart, visibleEnd)}\n${source.slice(loadStart, refreshStart)}\n${source.slice(refreshStart, refreshEnd)}\nglobalThis.refresh = refreshBookingOverview;`, context);
 
     const first = context.refresh();
     const second = context.refresh();
-    assert.equal(bookingFetches, 2);
-    pending[1]({ ok: true, rows: [{ id: 'new' }] });
-    await second;
+    assert.equal(bookingFetches, 1, 'concurrent refresh calls share the active read');
     pending[0]({ ok: true, rows: [{ id: 'old' }] });
     await first;
+    await second;
+    assert.equal(pending.length, 2, 'concurrent refresh calls coalesce into one follow-up load');
+    pending[1]({ ok: true, rows: [{ id: 'new' }] });
+    await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(context.overviewRows.map(row => row.id), ['new']);
-    assert.equal(renderCount, 1, 'only the latest refresh updates the table');
+    assert.equal(renderCount, 2, 'the coalesced follow-up replaces the previous result');
 
     context.document.visibilityState = 'hidden';
     await context.refresh();

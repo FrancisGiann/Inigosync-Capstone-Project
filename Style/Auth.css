@@ -1077,23 +1077,23 @@ body.auth-lock {
    include a keyboard accessible dismiss control and remain until dismissed. */
 .auth-status {
     position: fixed;
-    top: 12px;
+    top: 16px;
     left: 50%;
     /* The notice is portaled to body so Terms and other overlays cannot cover it. */
     z-index: 2147483647;
     display: flex;
     align-items: center;
     gap: 8px;
-    width: min(420px, calc(100% - 24px));
+    width: min(360px, calc(100% - 24px));
     box-sizing: border-box;
     margin: 0;
-    padding: 10px 10px 10px 16px;
-    border-radius: 14px;
+    padding: 8px 8px 8px 12px;
+    border-radius: 12px;
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-line);
     color: var(--color-ink);
     font-family: var(--font-body);
-    font-size: var(--fs-md);
+    font-size: var(--fs-sm);
     font-weight: 600;
     text-align: left;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
@@ -1132,6 +1132,10 @@ body.auth-lock {
 .auth-status.is-error {
     border-color: var(--color-alert);
     color: var(--color-alert-text);
+}
+
+.auth-status.is-success {
+    border-color: var(--color-court-green);
 }
 
 .auth-status-close {
