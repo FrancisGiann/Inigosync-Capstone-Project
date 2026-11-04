@@ -40,15 +40,17 @@ Deno.serve(async (req: Request) => {
   const secretKey = Deno.env.get("PAYMONGO_SECRET_KEY") || "";
   const publicKey = Deno.env.get("PAYMONGO_PUBLIC_KEY") || "";
   const webhookSecret = Deno.env.get("PAYMONGO_WEBHOOK_SECRET") || "";
-  if (!url || !serviceKey || !secretKey || !webhookSecret || !appBaseUrl)
+  if (!url || !serviceKey || !secretKey || !appBaseUrl)
     return json({ message: "Online checkout is not configured yet." }, 503, origin);
   const base = new URL(appBaseUrl);
   if (base.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname))
     return json({ message: "Online checkout return URL is not secure." }, 503, origin);
 
-  let body: { order_id?: unknown; customer_id?: unknown; guest_name?: unknown;
+  let body: { action?: unknown; order_id?: unknown; customer_id?: unknown; guest_name?: unknown;
     guest_mobile?: unknown; items?: unknown; channel?: unknown };
   try { body = await req.json(); } catch { return json({ message: "Invalid request." }, 400, origin); }
+  if (body.action != null && body.action !== "cancel" && body.action !== "cancel_qr")
+    return json({ message: "Unsupported walk-in checkout action." }, 400, origin);
   if (body.channel != null && body.channel !== "qrph")
     return json({ message: "Unsupported walk-in payment channel." }, 400, origin);
   const qrPhCheckout = body.channel === "qrph";
@@ -71,6 +73,104 @@ Deno.serve(async (req: Request) => {
     .select("role,status").eq("id", authData.user.id).maybeSingle();
   if (profileError || !profile || !["staff", "admin"].includes(profile.role) || profile.status !== "active")
     return json({ message: "Active staff access is required." }, 403, origin);
+
+  if (body.action === "cancel") {
+    if (!retry) return json({ message: "Invalid walk-in order." }, 400, origin);
+    const { data: cancellation, error: cancellationError } = await admin.rpc("get_staff_walkin_checkout_cancellation", {
+      p_order_id: body.order_id, p_staff_id: authData.user.id,
+    });
+    if (cancellationError || !cancellation?.attempt_id)
+      return json({ message: "This walk-in checkout is no longer open. Check its payment status before retrying." }, 409, origin);
+    if (cancellation.status === "expired" && typeof cancellation.session_id === "string"
+        && /^cs_[A-Za-z0-9]+$/.test(cancellation.session_id))
+      return json({ status: "expired", message: "PayMongo checkout expiry was already confirmed. The held time is available again." }, 200, origin);
+    if (cancellation.status !== "ready" || typeof cancellation.session_id !== "string"
+        || !/^cs_[A-Za-z0-9]+$/.test(cancellation.session_id))
+      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked." }, 202, origin);
+
+    let expireResponse: Response;
+    try {
+      expireResponse = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(cancellation.session_id)}/expire`, {
+        method: "POST", headers: { authorization: `Basic ${btoa(`${secretKey}:`)}`, "content-type": "application/json" },
+        signal: AbortSignal.timeout(12000),
+      });
+    } catch (error) {
+      console.error("PayMongo walk-in cancellation expiry uncertain", error instanceof Error ? error.message : "network error");
+      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked." }, 202, origin);
+    }
+    let expiryPayload: any = null;
+    try { expiryPayload = await expireResponse.json(); } catch { /* An unreadable response cannot release the hold. */ }
+    const expiredSession = expiryPayload?.data;
+    if (!expireResponse.ok || expiredSession?.id !== cancellation.session_id
+        || expiredSession?.attributes?.status !== "expired"
+        || expiredSession?.attributes?.livemode !== secretKey.startsWith("sk_live_")) {
+      const providerStatus = typeof expiredSession?.attributes?.status === "string"
+        ? expiredSession.attributes.status : "unknown";
+      return json({ status: providerStatus === "paid" || providerStatus === "processing" ? providerStatus : "pending",
+        message: "PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked." }, 202, origin);
+    }
+    const { data: markedExpired, error: markError } = await admin.rpc("mark_paymongo_checkout_expired", {
+      p_attempt_id: cancellation.attempt_id, p_session_id: cancellation.session_id,
+    });
+    if (markError || markedExpired !== true)
+      return json({ status: "pending", message: "PayMongo expired the checkout, but its reservation status changed during reconciliation. Check payment status before retrying." }, 202, origin);
+    return json({ status: "expired", message: "PayMongo confirmed checkout expiry. The held time is available again." }, 200, origin);
+  }
+
+  if (body.action === "cancel_qr") {
+    if (!retry) return json({ message: "Invalid walk-in order." }, 400, origin);
+    const { data: cancellation, error: cancellationError } = await admin.rpc("get_staff_walkin_qr_cancellation", {
+      p_order_id: body.order_id, p_staff_id: authData.user.id,
+    });
+    if (cancellationError || !cancellation?.attempt_id)
+      return json({ status: "pending", message: "This QR checkout has no cancellable PayMongo intent. Its time remains held while payment status is checked." }, 202, origin);
+    const expectedQrLivemode = secretKey.startsWith("sk_live_");
+    if (!/^pi_[A-Za-z0-9]+$/.test(String(cancellation.intent_id || ""))
+        || (cancellation.livemode != null && cancellation.livemode !== expectedQrLivemode))
+      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+    // An expired row with the exact saved pi_ reference is already terminal
+    // work from a trusted provider-mode check. Legacy intents may not have a
+    // persisted qr_livemode value, so do not call the provider again.
+    if (cancellation.status === "expired")
+      return json({ status: "expired", message: "PayMongo QR intent expiry was already recorded. The held time is available again." }, 200, origin);
+    if (!["creating", "ready", "review"].includes(cancellation.status))
+      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+
+    let cancelResponse: Response;
+    try {
+      const cancelUrl = `https://orders-api.paymongo.com/v1/payment_intents/${encodeURIComponent(cancellation.intent_id)}/cancel`;
+      cancelResponse = await fetch(cancelUrl, {
+        method: "POST", headers: { authorization: `Basic ${btoa(`${secretKey}:`)}`, "content-type": "application/json" },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (cancelResponse.status === 404) {
+        cancelResponse = await fetch(`https://api.paymongo.com/v1/payment_intents/${encodeURIComponent(cancellation.intent_id)}/cancel`, {
+          method: "POST", headers: { authorization: `Basic ${btoa(`${secretKey}:`)}`, "content-type": "application/json" },
+          signal: AbortSignal.timeout(12000),
+        });
+      }
+    } catch (error) {
+      console.error("PayMongo QR intent cancellation uncertain", error instanceof Error ? error.message : "network error");
+      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+    }
+    const cancelPayload = await cancelResponse.json().catch(() => null);
+    const cancelledIntent = cancelPayload?.data;
+    if (!cancelResponse.ok || cancelledIntent?.id !== cancellation.intent_id
+        || cancelledIntent?.attributes?.status !== "cancelled"
+        || cancelledIntent?.attributes?.livemode !== secretKey.startsWith("sk_live_")) {
+      const providerStatus = typeof cancelledIntent?.attributes?.status === "string"
+        ? cancelledIntent.attributes.status : "unknown";
+      return json({ status: providerStatus === "succeeded" || providerStatus === "processing" ? providerStatus : "pending",
+        message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+    }
+    const { data: markedExpired, error: markError } = await admin.rpc("mark_staff_walkin_qr_intent_expired", {
+      p_attempt_id: cancellation.attempt_id, p_intent_id: cancellation.intent_id, p_livemode: expectedQrLivemode,
+    });
+    if (markError || markedExpired !== true)
+      return json({ status: "pending", message: "PayMongo cancelled the QR intent, but its reservation status changed during reconciliation. Check payment status before retrying." }, 202, origin);
+    return json({ status: "expired", message: "PayMongo confirmed QR intent cancellation. The held time is available again." }, 200, origin);
+  }
+
   const { data: settings, error: settingsError } = await admin.from("app_settings")
     .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const testMode = secretKey.startsWith("sk_test_");
@@ -186,8 +286,9 @@ Deno.serve(async (req: Request) => {
       request = { ...intentRequest, client_key: attrs.client_key,
         qr_expiry_seconds: Math.min(9000, expirySeconds) };
       qrStage = "saving PayMongo payment intent";
-      const { data: registered, error: registerError } = await admin.rpc("register_paymongo_qrph_intent", {
+      const { data: registered, error: registerError } = await admin.rpc("register_staff_walkin_qr_intent", {
         p_attempt_id: prepared.attempt_id, p_request: request, p_intent_id: intentId,
+        p_livemode: attrs.livemode,
       });
       if (registerError || registered !== true)
         return json({ message: "The QR Ph intent was created but needs reconciliation. Contact the owner with this order reference.", order_id: orderId }, 503, origin);

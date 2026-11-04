@@ -3917,6 +3917,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             if (resetBtn) {
+                const qrOrderId = activeWalkinQr?.orderId;
+                if (qrOrderId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(qrOrderId))) {
+                    resetBtn.disabled = true;
+                    let cancellationConfirmed = false;
+                    const pendingMessage = 'PayMongo has not confirmed QR cancellation. The time remains held. Check payment status or retry cancellation before starting another walk-in.';
+                    try {
+                        const { data, error } = await window.sb.functions.invoke('staff-walkin-checkout', {
+                            body: { action: 'cancel_qr', order_id: String(qrOrderId) },
+                        });
+                        if (!error && data?.status === 'expired') {
+                            cancellationConfirmed = true;
+                            window.InigoToast?.show(data?.message || 'PayMongo confirmed QR intent cancellation. The held time is available again.');
+                        } else {
+                            const message = data?.message || pendingMessage;
+                            setWalkinQrStatus(message, true);
+                            const fallbackMessage = walkinReceiptEl?.querySelector('.staff-receipt-pending p');
+                            if (fallbackMessage) fallbackMessage.textContent = message;
+                            window.InigoToast?.show(message, true);
+                        }
+                    } catch (error) {
+                        console.error('[staff] QR intent cancellation could not be confirmed', error);
+                        setWalkinQrStatus(pendingMessage, true);
+                        const fallbackMessage = walkinReceiptEl?.querySelector('.staff-receipt-pending p');
+                        if (fallbackMessage) fallbackMessage.textContent = pendingMessage;
+                        window.InigoToast?.show(pendingMessage, true);
+                    }
+                    if (!cancellationConfirmed) {
+                        if (resetBtn.isConnected) resetBtn.disabled = false;
+                        return;
+                    }
+                }
                 if (walkinWizardWrap) walkinWizardWrap.hidden = false;
                 if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
                 resetWalkinWizard();
@@ -4590,16 +4621,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         let popup = null;
         if (method === 'online') popup = window.open('about:blank', '_blank', 'noopener');
         let result;
+        const expectedEndAt = new Date(Date.parse(option.new_end_at)
+            - Number(option.duration_minutes) * 60 * 1000).toISOString();
         try {
             if (method === 'cash') {
                 result = await window.sb.rpc('staff_collect_cash_for_booking_extension', {
                     p_source: row.sourceType === 'booking' ? 'booking' : 'walkin', p_id: String(target.idValue),
                     p_duration_minutes: Number(option.duration_minutes), p_cash_tendered_minor: staffExtensionCashTenderMinor,
+                    p_expected_end_at: expectedEndAt,
                 });
             } else {
                 result = await window.sb.functions.invoke('staff-booking-extension-checkout', { body: {
                     source: row.sourceType === 'booking' ? 'booking' : 'walkin', id: String(target.idValue),
-                    duration_minutes: Number(option.duration_minutes),
+                    duration_minutes: Number(option.duration_minutes), expected_end_at: expectedEndAt,
                 } });
                 const checkoutUrl = result?.data?.checkout_url;
                 if (!result?.error && /^https:\/\/checkout\.paymongo\.com\//.test(String(checkoutUrl || ''))) {
@@ -6973,7 +7007,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(attemptId || '')) || !window.sb) {
             window.InigoToast?.show('Could not identify the extension checkout returned from PayMongo.', true);
         } else if (extensionReturnKind === 'cancel') {
-            window.InigoToast?.show('PayMongo checkout was cancelled. The booking was not extended.', true);
+            try {
+                const { data, error } = await window.sb.functions.invoke('staff-booking-extension-checkout', {
+                    body: { action: 'cancel', attempt_id: attemptId },
+                });
+                if (error) {
+                    window.InigoToast?.show('PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked.', true);
+                } else {
+                    window.InigoToast?.show(data?.message || 'PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked.',
+                        data?.status !== 'expired');
+                }
+            } catch (error) {
+                console.error('[staff] extension checkout cancellation could not be confirmed', error);
+                window.InigoToast?.show('PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked.', true);
+            }
         } else if (extensionReturnKind === 'return') {
             let result = null;
             for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -7045,7 +7092,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!orderId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId) || !window.sb) {
             window.InigoToast?.show('Could not identify the walk-in order returned from checkout.', true);
         } else if (walkinReturnKind === 'cancel') {
-            window.InigoToast?.show('PayMongo checkout was cancelled. The order remains pending until checkout expires or payment is confirmed.', true);
+            try {
+                const { data, error } = await window.sb.functions.invoke('staff-walkin-checkout', {
+                    body: { action: 'cancel', order_id: orderId },
+                });
+                if (error) {
+                    window.InigoToast?.show('PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked.', true);
+                } else {
+                    window.InigoToast?.show(data?.message || 'PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked.',
+                        data?.status !== 'expired');
+                }
+            } catch (error) {
+                console.error('[staff] walk-in checkout cancellation could not be confirmed', error);
+                window.InigoToast?.show('PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked.', true);
+            }
         } else if (walkinReturnKind === 'return') {
             setActivePanel('walkin');
             const confirmed = await showWalkinAcknowledgment(orderId);
