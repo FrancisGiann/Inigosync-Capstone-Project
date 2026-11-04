@@ -85,15 +85,20 @@ test('Pay Online redirects only to the verified hosted PayMongo checkout URL wit
     assert.ok(start >= 0 && end > start, 'Pay Online checkout handler is present');
     let invoked = null;
     let destination = null;
+    const toasts = [];
+    const sequence = [];
     const context = {
         window: {
             sb: { functions: { async invoke(name, options) {
                 invoked = { name, options };
                 return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', checkout_url: 'https://checkout.paymongo.com/session' } };
             } } },
-            location: { assign(url) { destination = url; } },
+            location: { assign(url) { destination = url; sequence.push('navigate'); } },
+            setTimeout(callback, duration) { sequence.push(`wait:${duration}`); callback(); return 1; },
+            InigoToast: { show(message, isError = false) { toasts.push({ message, isError }); sequence.push('toast'); } },
             escapeHtml: value => String(value),
         },
+        URL,
     };
     runInNewContext(`${source.slice(start, end)}\nglobalThis.startCheckout = createWalkinPayOnlineCheckout;`, context);
     const result = await context.startCheckout({ guest_name: 'Walk-in Guest', items: [{ quoted_minor: 12000 }] });
@@ -101,20 +106,25 @@ test('Pay Online redirects only to the verified hosted PayMongo checkout URL wit
     assert.equal(invoked.name, 'staff-walkin-checkout');
     assert.equal(Object.hasOwn(invoked.options.body, 'channel'), false, 'PayMongo chooses from the server-enabled method list');
     assert.equal(destination, 'https://checkout.paymongo.com/session');
+    assert.deepEqual(toasts, [{ message: 'PayMongo checkout is ready. Complete payment to confirm this walk-in.', isError: false }]);
+    assert.deepEqual(sequence, ['toast', 'wait:500', 'navigate'], 'show the success toast before navigating away');
 });
 
 test('Pay Online rejects lookalike checkout hosts and offers a safe order retry', async () => {
     const start = source.indexOf('    function renderWalkinOnlineCheckoutError(orderId, message) {');
     const end = source.indexOf('\n\n    async function showWalkinAcknowledgment', start);
     let receiptHtml = '';
+    const toasts = [];
     const context = {
         window: {
             sb: { functions: { async invoke() {
                 return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', checkout_url: 'https://checkout.paymongo.com.attacker.test/session' } };
             } } },
             location: { assign() { assert.fail('an untrusted hosted checkout URL must never redirect'); } },
+            InigoToast: { show(message, isError = false) { toasts.push({ message, isError }); } },
             escapeHtml: value => String(value),
         },
+        URL,
         walkinWizardWrap: { hidden: false }, walkinReceiptWrap: { hidden: true }, walkinReceiptEl: { set innerHTML(value) { receiptHtml = value; } },
     };
     runInNewContext(`${source.slice(start, end)}\nglobalThis.startCheckout = createWalkinPayOnlineCheckout;`, context);
@@ -123,6 +133,97 @@ test('Pay Online rejects lookalike checkout hosts and offers a safe order retry'
     assert.match(receiptHtml, /data-staff-walkin-online-checkout-retry="a25dc45b-40ba-4b5b-96d6-4487dbe7a526"/);
     assert.equal(context.walkinWizardWrap.hidden, true);
     assert.equal(context.walkinReceiptWrap.hidden, false);
+    assert.equal(toasts.length, 1);
+    assert.equal(toasts[0].isError, true, 'checkout errors use the red error toast');
+    assert.match(toasts[0].message, /valid PayMongo checkout link/);
+});
+
+test('Pay Online rejects checkout URLs that use PayMongo text as credentials for another host', async () => {
+    const start = source.indexOf('    function renderWalkinOnlineCheckoutError(orderId, message) {');
+    const end = source.indexOf('\n\n    async function showWalkinAcknowledgment', start);
+    const context = {
+        window: {
+            sb: { functions: { async invoke() {
+                return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', checkout_url: 'https://checkout.paymongo.com@attacker.test/session' } };
+            } } },
+            location: { assign() { assert.fail('a URL with an untrusted parsed hostname must never redirect'); } },
+            escapeHtml: value => String(value),
+        },
+        URL,
+        walkinWizardWrap: { hidden: false }, walkinReceiptWrap: { hidden: true }, walkinReceiptEl: { innerHTML: '' },
+    };
+    runInNewContext(`${source.slice(start, end)}\nglobalThis.startCheckout = createWalkinPayOnlineCheckout;`, context);
+    assert.equal(await context.startCheckout({ order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526' }), false);
+});
+
+test('Pay Online rejects non-default ports and shows the red error toast', async () => {
+    const start = source.indexOf('    function renderWalkinOnlineCheckoutError(orderId, message) {');
+    const end = source.indexOf('\n\n    async function showWalkinAcknowledgment', start);
+    const toasts = [];
+    const context = {
+        window: {
+            sb: { functions: { async invoke() {
+                return { data: { order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526', checkout_url: 'https://checkout.paymongo.com:444/session' } };
+            } } },
+            location: { assign() { assert.fail('a non-default PayMongo port must never redirect'); } },
+            InigoToast: { show(message, isError = false) { toasts.push({ message, isError }); } },
+            escapeHtml: value => String(value),
+        },
+        URL,
+        walkinWizardWrap: { hidden: false }, walkinReceiptWrap: { hidden: true }, walkinReceiptEl: { innerHTML: '' },
+    };
+    runInNewContext(`${source.slice(start, end)}\nglobalThis.startCheckout = createWalkinPayOnlineCheckout;`, context);
+    assert.equal(await context.startCheckout({ order_id: 'a25dc45b-40ba-4b5b-96d6-4487dbe7a526' }), false);
+    assert.equal(toasts.length, 1);
+    assert.equal(toasts[0].isError, true, 'non-default ports use the red error toast');
+    assert.match(toasts[0].message, /valid PayMongo checkout link/);
+});
+
+test('Pay Online surfaces the server readiness error in both the red toast and retry card', async () => {
+    const start = source.indexOf('    function renderWalkinOnlineCheckoutError(orderId, message) {');
+    const end = source.indexOf('\n\n    async function showWalkinAcknowledgment', start);
+    const toasts = [];
+    let receiptHtml = '';
+    const context = {
+        window: {
+            sb: { functions: { async invoke() {
+                return { error: { context: { async json() {
+                    return { message: 'Online checkout is unavailable. No new order was saved.' };
+                } } } };
+            } } },
+            InigoToast: { show(message, isError = false) { toasts.push({ message, isError }); } },
+            escapeHtml: value => String(value),
+        },
+        walkinWizardWrap: { hidden: false }, walkinReceiptWrap: { hidden: true },
+        walkinReceiptEl: { set innerHTML(value) { receiptHtml = value; } },
+    };
+    runInNewContext(`${source.slice(start, end)}\nglobalThis.startCheckout = createWalkinPayOnlineCheckout;`, context);
+    assert.equal(await context.startCheckout({ guest_name: 'Walk-in Guest', items: [] }), false);
+    assert.deepEqual(toasts, [{ message: 'Online checkout is unavailable. No new order was saved.', isError: true }]);
+    assert.match(receiptHtml, /Online checkout is unavailable\. No new order was saved\./);
+    assert.match(receiptHtml, /data-staff-walkin-online-review-retry/);
+});
+
+test('Pay Online surfaces a thrown network error in the red toast and retry card', async () => {
+    const start = source.indexOf('    function renderWalkinOnlineCheckoutError(orderId, message) {');
+    const end = source.indexOf('\n\n    async function showWalkinAcknowledgment', start);
+    const toasts = [];
+    let receiptHtml = '';
+    const context = {
+        window: {
+            sb: { functions: { async invoke() { throw new Error('Network request failed.'); } } },
+            location: { assign() { assert.fail('a failed checkout must never redirect'); } },
+            InigoToast: { show(message, isError = false) { toasts.push({ message, isError }); } },
+            escapeHtml: value => String(value),
+        },
+        walkinWizardWrap: { hidden: false }, walkinReceiptWrap: { hidden: true },
+        walkinReceiptEl: { set innerHTML(value) { receiptHtml = value; } },
+    };
+    runInNewContext(`${source.slice(start, end)}\nglobalThis.startCheckout = createWalkinPayOnlineCheckout;`, context);
+    assert.equal(await context.startCheckout({ guest_name: 'Walk-in Guest', items: [] }), false);
+    assert.deepEqual(toasts, [{ message: 'Network request failed.', isError: true }]);
+    assert.match(receiptHtml, /Network request failed\./);
+    assert.match(receiptHtml, /data-staff-walkin-online-review-retry/);
 });
 
 test('walk-in navigation adds a scheduled line, reaches payment, and returns to summary', async () => {

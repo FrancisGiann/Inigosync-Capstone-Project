@@ -3335,6 +3335,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function renderWalkinOnlineCheckoutError(orderId, message) {
+        const errorMessage = message || 'Could not prepare the PayMongo checkout.';
+        window.InigoToast?.show(errorMessage, true);
         if (walkinWizardWrap) walkinWizardWrap.hidden = true;
         if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
         const safeOrderId = typeof orderId === 'string'
@@ -3342,7 +3344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const retry = safeOrderId
             ? `<button type="button" class="staff-btn-primary" data-staff-walkin-online-checkout-retry="${window.escapeHtml(safeOrderId)}">Retry PayMongo checkout</button>`
             : '<button type="button" class="staff-btn-primary" data-staff-walkin-online-review-retry>Review and try again</button>';
-        if (walkinReceiptEl) walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending"><h3>Online checkout not ready</h3><p>${window.escapeHtml(message || 'Could not prepare the PayMongo checkout.')}</p>${retry}<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button></div>`;
+        if (walkinReceiptEl) walkinReceiptEl.innerHTML = `<div class="staff-card staff-receipt-pending"><h3>Online checkout not ready</h3><p>${window.escapeHtml(errorMessage)}</p>${retry}<button type="button" class="staff-btn-ghost" data-staff-walkin-reset>New walk-in</button></div>`;
     }
 
     async function createWalkinPayOnlineCheckout(details) {
@@ -3365,12 +3367,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const orderId = checkout?.data?.order_id;
         const checkoutUrl = checkout?.data?.checkout_url;
-        if (typeof orderId !== 'string' || !orderId
-            || typeof checkoutUrl !== 'string' || !checkoutUrl.startsWith('https://checkout.paymongo.com/')) {
+        let safeCheckoutUrl = false;
+        if (typeof checkoutUrl === 'string') {
+            try {
+                const parsedCheckoutUrl = new URL(checkoutUrl);
+                safeCheckoutUrl = parsedCheckoutUrl.origin === 'https://checkout.paymongo.com'
+                    && !parsedCheckoutUrl.username && !parsedCheckoutUrl.password;
+            } catch { /* Reject malformed checkout URLs without navigating. */ }
+        }
+        if (typeof orderId !== 'string' || !orderId || !safeCheckoutUrl) {
             renderWalkinOnlineCheckoutError(typeof orderId === 'string' ? orderId : null,
                 checkout?.data?.message || 'The verified checkout service did not return a valid PayMongo checkout link.');
             return false;
         }
+        window.InigoToast?.show('PayMongo checkout is ready. Complete payment to confirm this walk-in.');
+        await new Promise(resolve => window.setTimeout(resolve, 500));
         window.location.assign(checkoutUrl);
         return true;
     }
