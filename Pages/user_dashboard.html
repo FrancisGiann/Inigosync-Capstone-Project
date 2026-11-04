@@ -368,7 +368,7 @@
                                 <h3 class="dash-wizard-panel-title">Booking summary</h3>
                                 <p class="dash-form-hint">Review the selected times and payment preference before secure checkout.</p>
                                 <div class="dash-book-cart" data-dash-book-cart>
-                                    <div class="dash-book-cart-head"><strong>Your bookings</strong><div class="dash-book-cart-head-actions"><span data-dash-book-cart-count>0 items</span><button type="button" class="dash-btn-primary" data-dash-book-new>Add more</button></div></div>
+                                    <div class="dash-book-cart-head"><strong>Your bookings</strong><div class="dash-book-cart-head-actions"><span data-dash-book-cart-count>0 items</span><button type="button" class="dash-btn-primary" data-dash-book-new>Add more</button><button type="button" class="dash-btn-ghost" data-dash-book-delete-all aria-label="Delete all bookings from summary" disabled>Delete all</button></div></div>
                                     <p class="dash-form-hint dash-book-cart-empty" data-dash-book-cart-empty>Your summary is empty. Choose a time to continue.</p>
                                     <ul data-dash-book-cart-items></ul>
                                     <p class="dash-form-hint">Edit a booking to change its court, date, or times.</p>
@@ -503,7 +503,6 @@
                      MY BOOKINGS PANEL
                      ============================================================ -->
                 <section class="dash-panel" data-dash-panel="bookings">
-                    <div class="dash-panel-head"><h2>My Bookings &amp; Visits</h2><p>Your online bookings and account-linked walk-in visits.</p></div>
                     <!-- Venue booking policy; the date-specific grace period
                          is populated from the current admin rule. -->
                     <div class="dash-notice">
@@ -513,6 +512,9 @@
 
                     <div class="dash-card">
                         <div class="dash-booking-filters" role="search" aria-label="Search your bookings and visits">
+                            <div class="dash-booking-filter-actions">
+                                <button type="button" class="dash-receipt-clear" data-dash-booking-clear hidden>Clear filters</button>
+                            </div>
                             <label class="dash-booking-filter dash-booking-search" for="customerBookingSearch">
                                 Search activity
                                 <input id="customerBookingSearch" type="search" data-dash-booking-search maxlength="200" placeholder="Court, sport, date, amount, or status" autocomplete="off">
@@ -522,30 +524,28 @@
                                 Status
                                 <select id="customerBookingStatus" data-dash-booking-status>
                                     <option value="">All statuses</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="confirmed">Confirmed</option>
                                     <option value="completed">Completed</option>
-                                    <option value="cancelled">Cancelled</option>
                                     <option value="unattended">Unattended</option>
+                                    <option value="booked">Booked</option>
+                                    <option value="inplay">Ongoing</option>
                                 </select>
                             </label>
                             <label class="dash-booking-filter" for="customerBookingDate">
                                 Booking date
                                 <input id="customerBookingDate" type="date" data-dash-booking-date>
                             </label>
-                            <p class="dash-booking-filter-count" data-dash-booking-count role="status" aria-live="polite"></p>
                         </div>
                         <div class="dash-table-wrap">
                             <table class="dash-table">
                                 <thead>
                                     <tr>
+                                        <th>ID</th>
                                         <th>Source</th>
-                                        <th>Court / visit</th>
+                                        <th>Court / Visit</th>
                                         <th>Date</th>
                                         <th>Time</th>
                                         <th>Amount</th>
                                         <th>Status</th>
-                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <!-- These 5 rows
@@ -554,68 +554,48 @@
                                      customer's profile is ready. -->
                                 <tbody>
                                     <tr>
-                                        <td>Online booking</td><td class="dash-cell-main">Basketball — Full Court</td>
+                                        <td>B-1042</td><td>Online booking</td><td class="dash-cell-main">Basketball — Full Court</td>
                                         <td>Jul 12, 2026</td>
                                         <td>6:00 PM – 7:00 PM</td>
                                         <td>₱300.00</td>
-                                        <td><span class="dash-status confirmed">Confirmed</span></td>
-                                        <td>
-                                            <div class="dash-table-actions">
-                                            <span>—</span>
-                                            </div>
-                                        </td>
+                                        <td><span class="dash-status booked">Booked</span></td>
                                     </tr>
                                     <tr>
-                                        <td>Online booking</td><td class="dash-cell-main">Badminton — Court 2</td>
+                                        <td>B-1043</td><td>Online booking</td><td class="dash-cell-main">Badminton — Court 2</td>
                                         <td>Jul 14, 2026</td>
                                         <td>5:00 PM – 6:00 PM</td>
                                         <td>₱100.00</td>
-                                        <td><span class="dash-status pending">Pending</span></td>
-                                        <td>
-                                            <div class="dash-table-actions">
-                                            <span>—</span>
-                                            </div>
-                                        </td>
+                                        <td><span class="dash-status booked">Booked</span></td>
                                     </tr>
                                     <tr>
-                                        <td>Online booking</td><td class="dash-cell-main">Pickleball — Court 1</td>
+                                        <td>B-1044</td><td>Online booking</td><td class="dash-cell-main">Pickleball — Court 1</td>
                                         <td>Jul 16, 2026</td>
                                         <td>3:00 PM – 4:00 PM</td>
                                         <td>₱220.00</td>
-                                        <td><span class="dash-status confirmed">Confirmed</span></td>
-                                        <td>
-                                            <div class="dash-table-actions">
-                                            <span>—</span>
-                                            </div>
-                                        </td>
+                                        <td><span class="dash-status inplay">Ongoing</span></td>
                                     </tr>
                                     <tr>
-                                        <td>Online booking</td><td class="dash-cell-main">Volleyball</td>
+                                        <td>B-1045</td><td>Online booking</td><td class="dash-cell-main">Volleyball</td>
                                         <td>Jul 3, 2026</td>
                                         <td>4:00 PM – 5:00 PM</td>
                                         <td>₱250.00</td>
                                         <td><span class="dash-status completed">Completed</span></td>
-                                        <td>
-                                            <div class="dash-table-actions">
-                                            <span>—</span>
-                                            </div>
-                                        </td>
                                     </tr>
                                     <tr>
-                                        <td>Online booking</td><td class="dash-cell-main">Bowling — Lane 2</td>
+                                        <td>B-1046</td><td>Online booking</td><td class="dash-cell-main">Bowling — Lane 2</td>
                                         <td>Jun 28, 2026</td>
                                         <td>6:00 PM – 7:00 PM</td>
                                         <td>₱150.00</td>
-                                        <td><span class="dash-status cancelled">Cancelled</span></td>
-                                        <td>
-                                            <div class="dash-table-actions">
-                                            <span>—</span>
-                                            </div>
-                                        </td>
+                                        <td><span class="dash-status cancelled">Canceled</span></td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
+                        <nav class="dash-booking-pagination" data-dash-booking-pagination aria-label="Booking and visit pages" hidden>
+                            <button type="button" class="dash-mini-btn" data-dash-booking-prev>Previous</button>
+                            <span class="dash-page-numbers" data-dash-booking-page-numbers></span>
+                            <button type="button" class="dash-mini-btn" data-dash-booking-next>Next</button>
+                        </nav>
                     </div>
                 </section>
 
@@ -631,9 +611,15 @@
                         <div class="dash-receipt-filters">
                             <label class="dash-receipt-filter" for="customerReceiptDate">Payment date<input id="customerReceiptDate" type="date" data-dash-receipt-date></label>
                             <label class="dash-receipt-filter" for="customerReceiptSource">Payment source<select id="customerReceiptSource" data-dash-receipt-source><option value="all">All payments</option><option value="booking">Online bookings</option><option value="walkin">Walk-ins</option></select></label>
+                            <label class="dash-receipt-filter" for="customerReceiptStatus">Payment status<select id="customerReceiptStatus" data-dash-receipt-status><option value="all">All statuses</option><option value="full">Full payment</option><option value="down">Down payment</option></select></label>
                             <label class="dash-receipt-filter" for="customerReceiptSort">Sort receipts<select id="customerReceiptSort" data-dash-receipt-sort><option value="newest" selected>Payment date: newest first</option><option value="oldest">Payment date: oldest first</option><option value="receipt-asc">Receipt number: A–Z</option><option value="receipt-desc">Receipt number: Z–A</option><option value="amount-asc">Amount: low to high</option><option value="amount-desc">Amount: high to low</option></select></label>
                         </div>
                         <div class="dash-receipt-grid" data-dash-receipts aria-live="polite"><p class="dash-notif-empty">Loading payment acknowledgments…</p></div>
+                        <nav class="dash-receipt-pagination" data-dash-receipt-pagination aria-label="Receipt pages" hidden>
+                            <button type="button" class="dash-mini-btn" data-dash-receipt-prev>Previous</button>
+                            <span class="dash-page-numbers" data-dash-receipt-page-numbers></span>
+                            <button type="button" class="dash-mini-btn" data-dash-receipt-next>Next</button>
+                        </nav>
                     </div>
                 </section>
 
@@ -650,6 +636,20 @@
                             <button type="button" class="dash-btn-primary" data-dash-receipt-download>Download acknowledgment</button>
                             <button type="button" class="dash-btn-ghost payment-ack-print-button" data-dash-receipt-print>Print</button>
                         </footer>
+                    </div>
+                </dialog>
+
+                <dialog class="dash-announcement-dialog" data-dash-announcement-dialog aria-labelledby="dashAnnouncementDialogTitle" aria-describedby="dashAnnouncementDialogBody">
+                    <div class="dash-announcement-dialog-head">
+                        <p>InigoSync announcement</p>
+                        <button type="button" data-dash-announcement-close aria-label="Close announcement">×</button>
+                    </div>
+                    <div class="dash-announcement-dialog-content">
+                        <h2 id="dashAnnouncementDialogTitle" data-dash-announcement-title></h2>
+                        <p id="dashAnnouncementDialogBody" data-dash-announcement-body></p>
+                    </div>
+                    <div class="dash-announcement-dialog-footer">
+                        <button type="button" data-dash-announcement-close>Close</button>
                     </div>
                 </dialog>
 
@@ -728,7 +728,7 @@
                                 <h3>Profile Photo</h3>
                             </div>
                             <div class="dash-avatar-upload-row">
-                                <div class="dash-avatar dash-avatar-upload-preview">JD</div>
+                                <div class="dash-avatar dash-avatar-upload-preview" role="img" aria-live="polite" aria-label="No profile photo; initials placeholder: JD">JD</div>
                                 <div class="dash-avatar-upload-controls">
                                     <div class="dash-avatar-upload-actions">
                                         <button type="button" class="dash-btn-save" data-dash-avatar-upload-trigger>Upload Photo</button>

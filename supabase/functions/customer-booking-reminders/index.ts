@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
   });
   if (authorizationError || authorized !== true) return json({ message: "Unauthorized." }, 401);
 
-  const { data: due, error: listError } = await admin.rpc("claim_customer_booking_reminders");
+  const { data: due, error: listError } = await admin.rpc("claim_customer_visit_reminders");
   if (listError) {
     console.error("Could not claim customer booking reminders", "database_error");
     return json({ message: "Could not claim reminders." }, 503);
@@ -48,9 +48,12 @@ Deno.serve(async (req: Request) => {
   }
   if (missingSettings.length) {
     for (const reminder of Array.isArray(due) ? due : []) {
-      if (Number.isSafeInteger(Number(reminder?.booking_id)) && typeof reminder?.claim_token === "string") {
-        await admin.rpc("release_customer_booking_reminder", {
-          p_booking_id: Number(reminder.booking_id), p_claim_token: reminder.claim_token,
+      if (Number.isSafeInteger(Number(reminder?.visit_id)) && typeof reminder?.claim_token === "string"
+        && typeof reminder?.event_at === "string" && Number.isFinite(Date.parse(reminder.event_at))) {
+        await admin.rpc("release_customer_visit_reminder", {
+          p_visit_type: reminder.visit_type, p_visit_id: Number(reminder.visit_id),
+          p_event_type: reminder.event_type, p_event_at: reminder.event_at,
+          p_claim_token: reminder.claim_token,
         });
       }
     }
@@ -60,19 +63,27 @@ Deno.serve(async (req: Request) => {
   let sent = 0;
   let deferred = 0;
   for (const reminder of Array.isArray(due) ? due : []) {
-    const bookingId = Number(reminder?.booking_id);
+    const visitId = Number(reminder?.visit_id);
+    const visitType = reminder?.visit_type;
+    const eventType = reminder?.event_type;
+    const eventAt = reminder?.event_at;
     const claimToken = reminder?.claim_token;
-    if (!Number.isSafeInteger(bookingId) || typeof claimToken !== "string") {
+    if (!Number.isSafeInteger(visitId) || !["booking", "walkin"].includes(visitType)
+      || !["starting_soon", "ending_soon"].includes(eventType)
+      || typeof eventAt !== "string" || !Number.isFinite(Date.parse(eventAt))
+      || typeof claimToken !== "string") {
       deferred++;
       continue;
     }
-    const { data: refreshed, error: refreshError } = await admin.rpc("refresh_customer_booking_reminder", {
-      p_booking_id: bookingId, p_claim_token: claimToken,
+    const { data: refreshed, error: refreshError } = await admin.rpc("refresh_customer_visit_reminder", {
+      p_visit_type: visitType, p_visit_id: visitId, p_event_type: eventType,
+      p_event_at: eventAt, p_claim_token: claimToken,
     });
     const current = Array.isArray(refreshed) ? refreshed[0] : null;
     if (refreshError || !current || typeof current.email !== "string" || !current.email.trim()) {
-      await admin.rpc("release_customer_booking_reminder", {
-        p_booking_id: bookingId, p_claim_token: claimToken,
+      await admin.rpc("release_customer_visit_reminder", {
+        p_visit_type: visitType, p_visit_id: visitId, p_event_type: eventType,
+        p_event_at: eventAt, p_claim_token: claimToken,
       });
       if (refreshError) console.error("Could not refresh customer booking reminder", "database_error");
       deferred++;
@@ -80,17 +91,18 @@ Deno.serve(async (req: Request) => {
     }
     try {
       const email = buildCustomerBookingReminderEmail({
-        bookingId, sport: current.sport, court: current.court,
-        startsAt: current.starts_at, amountDue: current.amount_due,
+        visitId, visitType, eventType, sport: current.sport, court: current.court,
+        courtUnit: current.court_unit, startsAt: current.starts_at, endsAt: current.ends_at,
+        amountDue: current.amount_due,
         dashboardUrl: safeDashboardUrl, email: current.email,
       });
       await deliverCustomerBookingReminder({
         connectTls: () => Deno.connectTls({ hostname: "smtp.gmail.com", port: 465 }),
         smtpUsername, smtpAppPassword, from, email,
       });
-      const { data: completed, error: completeError } = await admin.rpc("complete_customer_booking_reminder", {
-        p_booking_id: bookingId,
-        p_claim_token: claimToken,
+      const { data: completed, error: completeError } = await admin.rpc("complete_customer_visit_reminder", {
+        p_visit_type: visitType, p_visit_id: visitId, p_event_type: eventType,
+        p_event_at: eventAt, p_claim_token: claimToken,
       });
       if (completeError || completed !== true) {
         // SMTP offers no idempotency key: timeout after DATA or a lost completion update can duplicate accepted mail on retry.
@@ -100,9 +112,9 @@ Deno.serve(async (req: Request) => {
         sent++;
       }
     } catch (error) {
-      await admin.rpc("release_customer_booking_reminder", {
-        p_booking_id: bookingId,
-        p_claim_token: claimToken,
+      await admin.rpc("release_customer_visit_reminder", {
+        p_visit_type: visitType, p_visit_id: visitId, p_event_type: eventType,
+        p_event_at: eventAt, p_claim_token: claimToken,
       });
       console.error("Customer booking reminder delivery deferred", error instanceof Error && "reason" in error ? error.reason : "smtp_error");
       deferred++;

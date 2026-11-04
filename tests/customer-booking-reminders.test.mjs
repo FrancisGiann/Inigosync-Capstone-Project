@@ -4,53 +4,64 @@ import { readFile } from 'node:fs/promises';
 import { buildCustomerBookingReminderEmail } from '../supabase/functions/_shared/customer-booking-reminder-email.mjs';
 import { buildCustomerBookingReminderMimeMessage, deliverCustomerBookingReminder, missingCustomerBookingReminderSettings, parseReminderMailbox, SmtpDeliveryError } from '../supabase/functions/_shared/customer-booking-reminder-smtp.mjs';
 
-const migration = await readFile(new URL('../supabase/migrations/20261027142608_create_customer_booking_reminders.sql', import.meta.url), 'utf8');
+const baseMigration = await readFile(new URL('../supabase/migrations/20261027142608_create_customer_booking_reminders.sql', import.meta.url), 'utf8');
 const forwardMigration = await readFile(new URL('../supabase/migrations/20261027145158_harden_customer_booking_reminder_leases.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../supabase/migrations/20261104070412_customer_visit_reminders.sql', import.meta.url), 'utf8');
 const feed = migration.match(/create or replace function internal\.notification_feed\([\s\S]*?\$\$;/i)?.[0] || '';
-const claim = migration.match(/create or replace function public\.claim_customer_booking_reminders\([\s\S]*?\$\$;/i)?.[0] || '';
-const forwardClaim = forwardMigration.match(/create or replace function public\.claim_customer_booking_reminders\([\s\S]*?\$\$;/i)?.[0] || '';
-const forwardRefresh = forwardMigration.match(/create or replace function public\.refresh_customer_booking_reminder\([\s\S]*?\$\$;/i)?.[0] || '';
+const claim = migration.match(/create or replace function public\.claim_customer_visit_reminders\([\s\S]*?\$\$;/i)?.[0] || '';
+const forwardClaim = claim;
+const forwardRefresh = migration.match(/create or replace function public\.refresh_customer_visit_reminder\([\s\S]*?\$\$;/i)?.[0] || '';
 const forwardInvoke = forwardMigration.match(/create or replace function internal\.invoke_customer_booking_reminder_worker\([\s\S]*?\$\$;/i)?.[0] || '';
 const worker = await readFile(new URL('../supabase/functions/customer-booking-reminders/index.ts', import.meta.url), 'utf8');
 const emailHelper = await readFile(new URL('../supabase/functions/_shared/customer-booking-reminder-email.mjs', import.meta.url), 'utf8');
 const smtpHelper = await readFile(new URL('../supabase/functions/_shared/customer-booking-reminder-smtp.mjs', import.meta.url), 'utf8');
 const config = await readFile(new URL('../supabase/config.toml', import.meta.url), 'utf8');
 
-test('customer feed is restricted to announcements, scoped maintenance, and booking reminders', () => {
+test('customer feed is restricted to announcements, scoped maintenance, and timestamped visit reminders', () => {
   assert.ok(feed, 'customer feed replacement exists');
   assert.match(feed, /p_role='customer' and a\.audience in \('both','customers'\) and creator\.role='admin'/i);
   assert.match(feed, /from internal\.customer_maintenance_notices n[\s\S]*?n\.customer_id=p_user_id/i);
-  assert.match(feed, /booking-reminder:/i);
+  assert.match(feed, /visit-reminder:[\s\S]*?to_char\(r\.event_at at time zone 'UTC'/i);
   assert.match(feed, /r\.customer_id=p_user_id/i);
-  assert.doesNotMatch(feed, /customer_operational_events|booking_created|payment_recorded|unattended/i);
+  assert.match(feed, /r\.event_at=v\.time_date[\s\S]*?v\.time_date<=now\(\)\+interval '30 minutes'/i);
+  assert.match(feed, /r\.event_at=v\.end_at[\s\S]*?v\.end_at<=now\(\)\+interval '10 minutes'/i);
+  assert.doesNotMatch(feed, /booking-reminder:|r\.created_at,'#bookings'.*5 hours/i);
 });
 
 test('private reminder tables enable RLS without client policies or grants', () => {
-  assert.match(migration, /alter table internal\.customer_booking_reminders enable row level security/i);
-  assert.match(migration, /alter table internal\.customer_maintenance_notices enable row level security/i);
-  assert.match(migration, /revoke all on internal\.customer_booking_reminders from public, anon, authenticated/i);
-  assert.match(migration, /revoke all on internal\.customer_maintenance_notices from public,anon,authenticated/i);
-  assert.doesNotMatch(migration, /create policy .*customer_booking_reminders|create policy .*customer_maintenance_notices/i);
+  assert.match(migration, /alter table internal\.customer_visit_reminders enable row level security/i);
+  assert.match(baseMigration, /alter table internal\.customer_booking_reminders enable row level security/i);
+  assert.match(baseMigration, /alter table internal\.customer_maintenance_notices enable row level security/i);
+  assert.match(migration, /revoke all on internal\.customer_visit_reminders from public,anon,authenticated/i);
+  assert.match(baseMigration, /revoke all on internal\.customer_booking_reminders from public, anon, authenticated/i);
+  assert.match(baseMigration, /revoke all on internal\.customer_maintenance_notices from public,anon,authenticated/i);
+  assert.doesNotMatch(`${migration}\n${baseMigration}`, /create policy .*customer_visit_reminders|create policy .*customer_booking_reminders|create policy .*customer_maintenance_notices/i);
 });
 
 test('maintenance notifications only target confirmed bookings overlapping their court unit', () => {
-  assert.match(migration, /insert into internal\.customer_maintenance_notices[\s\S]*?join public\.booking b on b\.court_unit_inventory_id=m\.court_unit_id/i);
-  assert.match(migration, /b\.status='confirmed' and b\.time_date>now\(\)/i);
-  assert.match(migration, /b\.time_date<m\.ends_at and b\.end_at>m\.starts_at/i);
-  assert.match(migration, /b\.customer_id,b\.booking_id,[\s\S]*?'Maintenance affects your booking'/i);
+  assert.match(baseMigration, /insert into internal\.customer_maintenance_notices[\s\S]*?join public\.booking b on b\.court_unit_inventory_id=m\.court_unit_id/i);
+  assert.match(baseMigration, /b\.status='confirmed' and b\.time_date>now\(\)/i);
+  assert.match(baseMigration, /b\.time_date<m\.ends_at and b\.end_at>m\.starts_at/i);
+  assert.match(baseMigration, /b\.customer_id,b\.booking_id,[\s\S]*?'Maintenance affects your booking'/i);
 });
 
-test('reminder claims use a strict under-five-hour window and skip cancelled or started bookings', () => {
+test('reminder claims use schedule-versioned 30-minute start and 10-minute active end windows', () => {
   assert.ok(claim, 'service-only claim RPC exists');
-  assert.match(claim, /b\.status='confirmed' and b\.time_date>now\(\)/i);
-  assert.match(claim, /b\.time_date<now\(\)\+interval '5 hours'/i);
+  assert.match(claim, /b\.status='confirmed' and b\.checked_in_at is null and b\.time_date>now\(\)/i);
+  assert.match(claim, /b\.time_date<=now\(\)\+interval '30 minutes'/i);
+  assert.match(claim, /b\.status='confirmed' and b\.checked_in_at is not null and b\.checked_out_at is null/i);
+  assert.match(claim, /b\.end_at>now\(\) and b\.end_at<=now\(\)\+interval '10 minutes'/i);
+  assert.match(claim, /w\.status='confirmed' and w\.checked_in_at is not null and w\.checked_out_at is null/i);
+  assert.match(claim, /w\.end_at>now\(\) and w\.end_at<=now\(\)\+interval '10 minutes'/i);
+  assert.match(migration, /primary key\(visit_type,visit_id,event_type,event_at\)/i);
+  assert.match(claim, /r\.event_at=v\.starts_at[\s\S]*?r\.event_at=v\.end_at/i);
   assert.match(claim, /on conflict do nothing/i);
   assert.match(claim, /for update of r skip locked/i);
   assert.match(claim, /email_claim_token=gen_random_uuid\(\)/i);
-  assert.match(claim, /email_snapshot=jsonb_build_object/i);
-  assert.match(migration, /refresh_customer_booking_reminder[\s\S]*?b\.status='confirmed' and b\.time_date>now\(\)[\s\S]*?b\.time_date<now\(\)\+interval '5 hours'/i);
-  assert.match(migration, /complete_customer_booking_reminder[\s\S]*?email_claim_token=p_claim_token/i);
-  assert.match(migration, /release_customer_booking_reminder[\s\S]*?email_claim_token=p_claim_token/i);
+  assert.match(migration, /refresh_customer_visit_reminder[\s\S]*?r\.event_at=p_event_at[\s\S]*?v\.time_date=p_event_at[\s\S]*?v\.end_at=p_event_at/i);
+  assert.match(migration, /complete_customer_visit_reminder[\s\S]*?event_at=p_event_at[\s\S]*?email_claim_token=p_claim_token/i);
+  assert.match(migration, /release_customer_visit_reminder[\s\S]*?event_at=p_event_at[\s\S]*?email_claim_token=p_claim_token/i);
+  assert.match(migration, /claim_customer_booking_reminders\(\)[\s\S]*?begin\s+return;/i);
 });
 
 test('bounded SMTP batches and per-item lease renewal prevent overlapping slow sends', () => {
@@ -70,7 +81,7 @@ test('bounded SMTP batches and per-item lease renewal prevent overlapping slow s
   let now = 0;
   const claimedAt = Array(5).fill(0);
   for (let index = 0; index < sendDurations.length; index++) {
-    claimedAt[index] = now; // refresh_customer_booking_reminder renews ownership before each send
+    claimedAt[index] = now; // refresh_customer_visit_reminder renews ownership before each send
     assert.ok(now - claimedAt[index] < lease, 'the refreshed item remains owned while its SMTP send is in flight');
     now += sendDurations[index];
   }
@@ -80,7 +91,7 @@ test('bounded SMTP batches and per-item lease renewal prevent overlapping slow s
 });
 
 test('scheduled invocation uses a validated per-environment Vault endpoint', () => {
-  const originalInvoke = migration.match(/create or replace function internal\.invoke_customer_booking_reminder_worker\([\s\S]*?\$\$;/i)?.[0] || '';
+  const originalInvoke = baseMigration.match(/create or replace function internal\.invoke_customer_booking_reminder_worker\([\s\S]*?\$\$;/i)?.[0] || '';
   assert.ok(forwardInvoke);
   for (const definition of [originalInvoke, forwardInvoke]) {
     assert.match(definition, /v\.name='customer_booking_reminder_function_url'/);
@@ -92,8 +103,8 @@ test('scheduled invocation uses a validated per-environment Vault endpoint', () 
 });
 
 test('reminder includes booking details and only renders a positive remaining balance', () => {
-  assert.match(feed, /coalesce\(b\.sports,'Sport'\)\|\|' · '\|\|coalesce\(b\.courts,'Court'\)/i);
-  assert.match(feed, /coalesce\(b\.amount_total,0\)>coalesce\(b\.amount_paid,0\)/i);
+  assert.match(feed, /coalesce\(v\.sports,'Sport'\)\|\|' · '\|\|coalesce\(v\.courts,'Court'\)/i);
+  assert.match(feed, /coalesce\(v\.amount_total,0\)>coalesce\(v\.amount_paid,0\)/i);
   assert.match(worker, /buildCustomerBookingReminderEmail/);
   assert.match(emailHelper, /Asia\/Manila/);
 });
@@ -108,8 +119,11 @@ test('worker is secret-authenticated and configured for scheduled invocation', (
   assert.match(worker, /https:\/\/inigossportcenter\.com\/Pages\/user_dashboard\.html/);
   assert.match(worker, /parsed\.protocol !== "https:"/);
   assert.match(worker, /parsed\.hash = "bookings"/);
-  assert.match(worker, /release_customer_booking_reminder/);
-  assert.match(worker, /refresh_customer_booking_reminder/);
+  assert.match(worker, /release_customer_visit_reminder/);
+  assert.match(worker, /refresh_customer_visit_reminder/);
+  assert.match(worker, /p_event_at: eventAt/);
+  assert.match(worker, /p_event_type: eventType/);
+  assert.match(worker, /const eventAt = reminder\?\.event_at/);
   assert.match(worker, /email: current\.email/);
   assert.match(worker, /if \(refreshError \|\| !current[\s\S]*?continue;/i);
   assert.match(config, /\[functions\.customer-booking-reminders\][\s\S]*?verify_jwt = false/i);
@@ -117,7 +131,7 @@ test('worker is secret-authenticated and configured for scheduled invocation', (
 
 test('SMTP delivery uses authenticated implicit TLS and keeps the authorized reminder lifecycle', () => {
   const auth = worker.indexOf('if (authorizationError || authorized !== true)');
-  const claimIndex = worker.indexOf('claim_customer_booking_reminders');
+  const claimIndex = worker.indexOf('claim_customer_visit_reminders');
   const send = worker.indexOf('await deliverCustomerBookingReminder({');
   assert.ok(auth >= 0 && claimIndex > auth && send > claimIndex);
   assert.match(worker, /connectTls: \(\) => Deno\.connectTls\(\{ hostname: "smtp\.gmail\.com", port: 465 \}\)/);
@@ -126,9 +140,9 @@ test('SMTP delivery uses authenticated implicit TLS and keeps the authorized rem
   assert.match(smtpHelper, /RCPT TO:<\$\{mime\.recipient\}>/);
   assert.match(smtpHelper, /DATA\\r\\n/);
   assert.match(smtpHelper, /timeoutMs = 15000/);
-  assert.match(worker, /refresh_customer_booking_reminder/);
-  assert.match(worker, /complete_customer_booking_reminder/);
-  assert.match(worker, /release_customer_booking_reminder/);
+  assert.match(worker, /refresh_customer_visit_reminder/);
+  assert.match(worker, /complete_customer_visit_reminder/);
+  assert.match(worker, /release_customer_visit_reminder/);
   assert.match(worker, /SMTP offers no idempotency key/);
   assert.doesNotMatch(worker, /RESEND_API_KEY|api\.resend\.com|Idempotency-Key/);
   assert.doesNotMatch(worker, /console\.(?:log|error)\([^\n]*(?:smtpAppPassword|smtpUsername|current\.email)/i);
@@ -353,11 +367,13 @@ test('empty cron runs stay successful while reporting missing setting names only
 
 test('email content refreshes after rescheduling and uses current balance without provider idempotency', () => {
   const original = buildCustomerBookingReminderEmail({
-    bookingId: 52, sport: 'Basketball', court: 'Court A', startsAt: '2026-10-28T04:00:00Z',
+    visitId: 52, visitType: 'booking', eventType: 'starting_soon',
+    sport: 'Basketball', court: 'Court A', startsAt: '2026-10-28T04:00:00Z', endsAt: '2026-10-28T05:00:00Z',
     amountDue: 400, dashboardUrl: 'https://example.test/Pages/user_dashboard.html#bookings', email: 'old@example.test',
   });
   const refreshed = buildCustomerBookingReminderEmail({
-    bookingId: 52, sport: 'Badminton', court: 'Court B', startsAt: '2026-10-28T07:00:00Z',
+    visitId: 52, visitType: 'booking', eventType: 'starting_soon',
+    sport: 'Badminton', court: 'Court B', startsAt: '2026-10-28T07:00:00Z', endsAt: '2026-10-28T08:00:00Z',
     amountDue: 0, dashboardUrl: 'https://example.test/Pages/user_dashboard.html#bookings', email: 'current@example.test',
   });
   assert.notEqual(original.text, refreshed.text);
@@ -371,8 +387,9 @@ test('email content refreshes after rescheduling and uses current balance withou
 
 test('SMTP MIME is multipart, UTF-8 encoded, and rejects header or address injection', () => {
   const content = buildCustomerBookingReminderEmail({
-    bookingId: 7, sport: '<img src=x>', court: 'Court & One', startsAt: '2026-10-28T04:00:00Z',
-    amountDue: 0, dashboardUrl: 'https://example.test/dashboard#bookings', email: 'customer@example.test',
+    visitId: 7, visitType: 'walkin', eventType: 'ending_soon',
+    sport: '<img src=x>', court: 'Court & One', startsAt: '2026-10-28T04:00:00Z', endsAt: '2026-10-28T05:00:00Z',
+    amountDue: 400, dashboardUrl: 'https://example.test/dashboard#bookings', email: 'customer@example.test',
   });
   assert.match(content.html, /&lt;img src=x&gt;/);
   assert.match(content.html, /Court &amp; One/);

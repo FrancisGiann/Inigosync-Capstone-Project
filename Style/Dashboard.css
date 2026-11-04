@@ -1244,8 +1244,13 @@ html:root[data-theme] .dash-sidebar-brand .logo-text {
     background: rgba(255, 106, 44, 0.16);
     color: var(--color-primary);
 }
+.dash-status.booked {
+    background: rgba(255, 106, 44, 0.16);
+    color: var(--color-primary);
+}
 
-.dash-status.confirmed {
+.dash-status.confirmed,
+.dash-status.inplay {
     background: rgba(62, 122, 94, 0.2);
     color: var(--color-court-green);
 }
@@ -2119,6 +2124,7 @@ html:root[data-theme] .dash-sidebar-brand .logo-text {
 .dash-book-slot-legend i.is-unavailable { background: repeating-linear-gradient(135deg, var(--color-bg-elevated), var(--color-bg-elevated) 3px, var(--color-line) 3px, var(--color-line) 4px); }
 .dash-book-flow-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 .dash-book-flow-actions [data-dash-book-back] { margin-right: auto; }
+.dash-book-flow-actions [data-dash-book-edit-cancel]:not([hidden]) { margin-right: auto; }
 .dash-book-flow-actions button { min-height: 44px; }
 .dash-book-flow-actions [data-dash-book-edit-cancel][hidden] { display: none !important; }
 .dash-book-flow-actions .dash-btn-primary { flex: 0 0 auto; width: auto; min-width: 160px; }
@@ -2382,10 +2388,18 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 
 .dash-booking-filters {
     display: grid;
-    grid-template-columns: minmax(220px, 1.7fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(160px, 0.8fr) auto;
+    grid-template-columns: minmax(220px, 1.7fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(160px, 0.8fr);
     align-items: end;
-    gap: 14px;
-    padding: 20px 20px 16px;
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 12px 20px 16px;
+}
+
+.dash-booking-filter-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    min-height: 44px;
 }
 
 .dash-booking-filter {
@@ -2409,13 +2423,6 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     font: 400 var(--fs-base) var(--font-body);
 }
 
-.dash-booking-filter-count {
-    margin: 0 0 11px;
-    color: var(--color-ink-faint);
-    font-size: var(--fs-xs);
-    white-space: nowrap;
-}
-
 .dash-booking-no-results {
     padding: 24px 14px !important;
     color: var(--color-ink-faint) !important;
@@ -2425,18 +2432,17 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 @media (max-width: 720px) {
     .dash-booking-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .dash-booking-search { grid-column: 1 / -1; }
-    .dash-booking-filter-count { grid-column: 1 / -1; margin: 0; }
 }
 
 @media (max-width: 420px) {
     .dash-booking-filters { grid-template-columns: minmax(0, 1fr); padding: 16px; }
-    .dash-booking-search, .dash-booking-filter-count { grid-column: auto; }
+    .dash-booking-search { grid-column: auto; }
 }
 
 .dash-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 640px;
+    min-width: 780px;
 }
 
 .dash-table th {
@@ -2449,7 +2455,7 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--color-ink-dim);
-    padding: 0 14px 12px;
+    padding: 8px 14px 4px;
     border-bottom: 1px solid var(--color-line);
 }
 
@@ -2555,7 +2561,7 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-payment-ack-card .dash-receipt-actions button { width: 100%; }
 .dash-receipt-filters {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 14px;
     margin-bottom: 18px;
 }
@@ -2620,17 +2626,41 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-receipt-table th, .dash-receipt-table td { box-sizing: border-box; }
 .dash-receipt-table th { color: var(--color-ink-dim); font-size: var(--fs-xs); font-weight: 700; white-space: nowrap; }
 .dash-receipt-table td { color: var(--color-ink); font-size: var(--fs-sm); }
-.dash-receipt-table th:nth-child(1), .dash-receipt-table td:nth-child(1) { width: 19%; }
-.dash-receipt-table th:nth-child(2), .dash-receipt-table td:nth-child(2) { width: 16%; }
-.dash-receipt-table th:nth-child(3), .dash-receipt-table td:nth-child(3) { width: 23%; }
-.dash-receipt-table th:nth-child(4), .dash-receipt-table td:nth-child(4) { width: 18%; }
-.dash-receipt-table th:nth-child(5), .dash-receipt-table td:nth-child(5) { width: 24%; }
+.dash-receipt-table th:nth-child(1), .dash-receipt-table td:nth-child(1) { width: 23%; }
+.dash-receipt-table th:nth-child(2), .dash-receipt-table td:nth-child(2) { width: 14%; }
+.dash-receipt-table th:nth-child(3), .dash-receipt-table td:nth-child(3) { width: 18%; }
+.dash-receipt-table th:nth-child(4), .dash-receipt-table td:nth-child(4) { width: 13%; }
+.dash-receipt-table th:nth-child(5), .dash-receipt-table td:nth-child(5) { width: 14%; }
+.dash-receipt-table th:nth-child(6), .dash-receipt-table td:nth-child(6) { width: 18%; }
 .dash-receipt-table tbody tr:last-child td { border-bottom: 0; }
 .dash-receipt-table .dash-receipt-reference { overflow-wrap: anywhere; }
 .dash-receipt-table .dash-receipt-amount { font-family: var(--font-numeric); font-weight: 700; white-space: nowrap; }
 .dash-receipt-table td:last-child { white-space: nowrap; }
 .dash-receipt-table th:last-child { text-align: left; }
 .dash-receipt-table td:last-child { text-align: left; }
+.dash-receipt-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 12px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.dash-receipt-pagination[hidden] { display: none; }
+.dash-receipt-pagination .dash-page-number { min-width: 32px; min-height: 32px; padding: 4px 8px; }
+.dash-receipt-pagination .dash-mini-btn { min-height: 32px; padding: 5px 9px; }
+.dash-booking-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 12px 10px 2px; border-top: 1px solid var(--color-line); color: var(--color-ink-faint); font-size: var(--fs-xs); }
+.dash-booking-pagination[hidden] { display: none; }
+.dash-booking-pagination .dash-page-number { min-width: 32px; min-height: 32px; padding: 4px 8px; }
+.dash-booking-pagination .dash-mini-btn { min-height: 32px; padding: 5px 9px; }
+.dash-receipt-table .dash-receipt-view-button {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: #14110d;
+    transition: background-color .2s, border-color .2s, transform .2s;
+}
+.dash-receipt-table .dash-receipt-view-button:hover {
+    border-color: var(--color-primary-dim);
+    background: var(--color-primary-dim);
+    color: #14110d;
+}
+.dash-receipt-table .dash-receipt-view-button:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+}
 .dash-receipt-status { display: inline-flex; padding: 4px 9px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-bg); font-size: var(--fs-xs); font-weight: 650; }
 .dash-receipt-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box; width: min(410px, calc(100vw - 24px)); max-width: none; height: min(88dvh, 820px); max-height: min(88dvh, 820px); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: 16px; color: var(--color-ink); background: var(--color-bg-elevated); }
 .dash-receipt-dialog::backdrop { background: rgb(12 18 28 / 62%); }
@@ -2645,6 +2675,17 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
 .dash-receipt-dialog-head .dash-receipt-dialog-close { flex: 0 0 36px; width: 36px; height: 36px; min-height: 36px; padding: 0; color: var(--color-ink); }
 .dash-receipt-dialog-close span { font-size: 26px; line-height: 1; }
 .dash-receipt-dialog :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.dash-announcement-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: border-box; width: min(560px, calc(100vw - 24px)); max-width: none; max-height: min(82dvh, 680px); margin: 0; padding: 0; overflow: auto; border: 1px solid var(--color-line); border-radius: 16px; color: var(--color-ink); background: var(--color-bg-elevated); }
+.dash-announcement-dialog::backdrop { background: rgb(12 18 28 / 62%); }
+.dash-announcement-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--color-line); }
+.dash-announcement-dialog-head p { margin: 0; color: var(--color-primary); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.dash-announcement-dialog-head button { width: 36px; height: 36px; border: 0; border-radius: 8px; color: var(--color-ink); background: transparent; font-size: 26px; cursor: pointer; }
+.dash-announcement-dialog-content { padding: 22px 24px; }
+.dash-announcement-dialog-content h2 { margin: 0 0 14px; font: 650 var(--fs-lg)/1.3 var(--font-display, inherit); overflow-wrap: anywhere; }
+.dash-announcement-dialog-content p { margin: 0; color: var(--color-ink-muted, var(--color-ink)); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dash-announcement-dialog-footer { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--color-line); }
+.dash-announcement-dialog-footer button { min-height: 38px; padding: 7px 16px; border: 0; border-radius: 8px; color: #fff; background: var(--color-primary-dim); font: 650 var(--fs-sm) var(--font-body); cursor: pointer; }
+.dash-announcement-dialog :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 
 @media (max-width: 900px) {
     .dash-receipt-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2967,6 +3008,8 @@ body.dash-book-payment-open, body.dash-book-cart-details-open { overflow: hidden
     padding-left: 14px;
     padding-right: 14px;
 }
+
+.dash-account-photo [data-dash-avatar-remove][hidden] { display: none; }
 
 .dash-account-personal {
     display: flex;

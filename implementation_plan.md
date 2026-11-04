@@ -1748,3 +1748,52 @@ status `in_progress`, and payment #85; counts remained 29 bookings, 22
 walk-ins, and 50 payments. It changes no stored records or payment meaning,
 so no conversion or cleanup was required. A disposable database integration
 test for paid online and review paths remains outstanding.
+## Customer booking and visit reminders (2026-11-04)
+
+Customer bell reminders now use a new event-keyed
+`internal.customer_visit_reminders` table. It separates the online booking
+start event (within 30 minutes) from the ending event (within 10 minutes) for
+checked-in, confirmed bookings and walk-ins that have not been checked out.
+Start reminders require a confirmed online booking that has not been checked
+in. End reminders use the current active/check-in state, so pending, cancelled,
+unattended, completed, and checked-out visits do not produce an end alert.
+The new events use the existing customer notification read-state RPC and the
+existing SMTP transport/secrets. Announcement selection now opens a native,
+keyboard-operable dialog with escaped text while keeping its per-user
+mark-as-read call; other notification links keep their current routing.
+
+The old `internal.customer_booking_reminders` table is deliberately retained.
+Its rows, including sent timestamps, snapshots, attempts, and any leases, are
+not reset or deleted. The feed no longer projects those rows, so their old
+five-hour wording cannot render as a current notification. The old claim RPC
+returns no new work, which prevents an already-deployed old worker from
+continuing five-hour deliveries after the migration. New reminder state uses a
+composite `(visit_type, visit_id, event_type, event_at)` identity, where
+`event_at` snapshots the scheduled start or end. Timestamp-versioned
+reschedules and extensions create distinct events and may trigger a reminder at the new time;
+old timestamped events remain as history but are hidden unless their timestamp
+still matches the current schedule and the event is within its upcoming
+window. The batch claim limit is five to stay within the existing five-minute
+lease during sequential SMTP delivery. This avoids collisions between
+separate start/end/schedule revisions while preserving the legacy booking history.
+No development-record cleanup is included: old rows remain useful as delivery
+history, while their prior event semantics cannot be safely converted into
+the new event keys. If physical cleanup is later desired, first compare counts
+of sent, unsent, and currently leased legacy rows and retain an audit export;
+then verify customer read-state and email history before deleting anything.
+
+The migration was applied to the connected live Supabase project `Inigosync`
+as remote version `20261104070412`; the local filename now matches that remote
+history entry. The updated `customer-booking-reminders` Edge Function is
+deployed as version 12 with `verify_jwt=false`. The existing per-minute Cron
+job and SMTP secrets were reused; no secrets or schedules were changed.
+
+Before migration, the legacy reminder table contained 11 rows, all sent, with
+zero pending and zero claimed. A post-migration readback confirmed the same
+11/11/0/0 counts, so legacy delivery history was preserved. The new reminder
+table had zero rows at verification because no visit was inside a reminder
+window then. The expected private-table state was confirmed: RLS enabled and
+table access revoked from public client roles; the customer feed index and
+four reminder RPCs are present. The existing minute Cron remains active. The
+function was not invoked manually, so this rollout did not send a test email.
+No tests or browser/runtime checks were run.

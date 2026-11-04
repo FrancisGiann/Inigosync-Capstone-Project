@@ -16,8 +16,9 @@ test('staff transaction records refresh on panel entry and poll only while visib
     assert.match(staff, /let transactionRefreshPending = false/);
 });
 
-test('customer bookings poll only on their active panel and retain stale-response protection', () => {
-    assert.match(customer, /function isCustomerBookingsPanelVisible\(\)[\s\S]*?data-dash-panel="bookings"/);
+test('customer bookings and receipts refresh on entry and poll only while either panel is active', () => {
+    assert.match(customer, /function isCustomerBookingsPanelVisible\(\)[\s\S]*?data-dash-panel="bookings"[\s\S]*?data-dash-panel="receipts"/);
+    assert.match(customer, /if \(name === 'bookings' \|\| name === 'receipts'\) \{\s*refreshMyBookings/);
     assert.match(customer, /window\.setInterval\(\(\) => \{\s*if \(isCustomerBookingsPanelVisible\(\)\) refreshMyBookings\(\);\s*\}, 30000\)/);
     assert.match(customer, /let bookingFetchGeneration = 0/);
 });
