@@ -3079,6 +3079,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof data?.checkout_url !== 'string' || !data.checkout_url.startsWith('https://checkout.paymongo.com/')) {
                 throw new Error(data?.message || 'Secure checkout could not start. Please retry shortly.');
             }
+            if (typeof data?.attempt_id === 'string') {
+                try { window.sessionStorage?.setItem('inigosync:customer-checkout-active-attempt', data.attempt_id); } catch { /* Return handling can still use PayMongo's redirect parameters. */ }
+            }
             window.location.assign(data.checkout_url);
         } catch (error) {
             console.error('[dashboard] checkout could not start', error);
@@ -6013,6 +6016,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const activePaymentStatusChecks = new Set();
     const PENDING_PAYMENT_RECEIPT_PREFIX = 'inigosync:pending-payment-receipt:';
     const PENDING_PAYMENT_STATUS_PREFIX = 'inigosync:pending-payment-status:';
+    const ACTIVE_CUSTOMER_CHECKOUT_KEY = 'inigosync:customer-checkout-active-attempt';
     const PAYMENT_STATUS_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000];
     function normalizePaymentReceiptReferences(receipts) {
         if (!Array.isArray(receipts)) return [];
@@ -6063,7 +6067,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function persistPendingPaymentStatusCheck(attemptId, returnKind) {
         const id = String(attemptId || '');
         if (!id) return false;
-        const pending = { attemptId: id, returnKind: returnKind === 'cancelled' ? 'cancelled' : 'success' };
+        const pending = { attemptId: id, returnKind: ['cancelled', 'reconcile'].includes(returnKind) ? returnKind : 'success' };
         pendingPaymentStatusChecks.set(id, pending);
         try { window.sessionStorage?.setItem(`${PENDING_PAYMENT_STATUS_PREFIX}${id}`, JSON.stringify(pending)); } catch { /* Keep an in-memory retry when storage is unavailable. */ }
         return true;
@@ -6084,7 +6088,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!key?.startsWith(PENDING_PAYMENT_STATUS_PREFIX)) continue;
                 const saved = JSON.parse(storage.getItem(key) || 'null');
                 if (saved?.attemptId && saved.attemptId === key.slice(PENDING_PAYMENT_STATUS_PREFIX.length)) {
-                    pending.set(saved.attemptId, { attemptId: saved.attemptId, returnKind: saved.returnKind === 'cancelled' ? 'cancelled' : 'success' });
+                    pending.set(saved.attemptId, { attemptId: saved.attemptId,
+                        returnKind: ['cancelled', 'reconcile'].includes(saved.returnKind) ? saved.returnKind : 'success' });
                 }
             }
         } catch { /* The in-memory pending map remains available for this page. */ }
@@ -6233,6 +6238,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handlePaymentReturnStatus(error, data, attemptId, returnKind, retryIndex = 0) {
+        const clearActiveCheckout = () => {
+            try {
+                const key = 'inigosync:customer-checkout-active-attempt';
+                if (window.sessionStorage?.getItem(key) === String(attemptId || '')) window.sessionStorage.removeItem(key);
+            } catch { /* A stale reference is harmless; server actions remain owner-scoped. */ }
+        };
         if (error || !data) {
             window.InigoToast?.show('We could not confirm checkout yet. Please check again shortly.', true);
             persistPendingPaymentStatusCheck(attemptId, returnKind);
@@ -6240,6 +6251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (data.status === 'paid') {
+            clearActiveCheckout();
             window.InigoToast?.show('Payment received. Your booking is confirmed.');
             if (!persistPendingPaymentReceipt(attemptId, data.booking_receipts)) {
                 // The paid status is verified, but keep checking until the
@@ -6253,19 +6265,22 @@ document.addEventListener('DOMContentLoaded', () => {
             showVerifiedPaymentReceipt(attemptId, data.booking_receipts);
             refreshMyBookings();
         } else if (data.status === 'expired') {
+            clearActiveCheckout();
             clearPendingPaymentStatusCheck(attemptId);
             window.InigoToast?.show('Checkout expired or payment did not complete, so your booking was not confirmed. Check availability, then retry checkout if you still want this time.', true);
             refreshMyBookings();
         } else if (String(data.status || '').toLowerCase() === 'cancelled') {
+            clearActiveCheckout();
             clearPendingPaymentStatusCheck(attemptId);
             window.InigoToast?.show('Checkout was cancelled. Your selected time is available again.', true);
             refreshMyBookings();
         } else if (String(data.status || '').toLowerCase() === 'review') {
+            clearActiveCheckout();
             clearPendingPaymentStatusCheck(attemptId);
             window.InigoToast?.show('Payment may have been received, but the time was not confirmed. Do not pay again; contact the sports center to arrange another time or a refund.', true);
             refreshMyBookings();
         } else if (returnKind === 'cancelled') {
-            window.InigoToast?.show('Checkout cancellation is being confirmed. Your time remains held until cancellation is confirmed.', true);
+            window.InigoToast?.show('PayMongo has not confirmed that checkout can close. Your time remains held while payment status is checked.', true);
             persistPendingPaymentStatusCheck(attemptId, returnKind);
             schedulePaymentStatusRetry(attemptId, returnKind, retryIndex);
         } else {
@@ -6280,7 +6295,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!id || activePaymentStatusChecks.has(id) || !window.sb) return;
         activePaymentStatusChecks.add(id);
         try {
-            const action = retryIndex === 0 && returnKind === 'cancelled' ? 'cancel' : 'status';
+            const action = returnKind === 'cancelled' ? 'cancel' : 'status';
             const { data, error } = await window.sb.functions.invoke('paymongo-checkout', {
                 body: { action, attempt_id: id },
             });
@@ -6307,14 +6322,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const paymentReturnAttempt = paymentReturn.get('attempt');
     if (paymentReturnKind && paymentReturnAttempt && window.sb) {
         window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
-        persistPendingPaymentStatusCheck(paymentReturnAttempt, paymentReturnKind);
-        checkPaymentReturnStatus(paymentReturnAttempt, paymentReturnKind);
+        try { window.sessionStorage?.removeItem(ACTIVE_CUSTOMER_CHECKOUT_KEY); } catch { /* The provider return identifies the attempt. */ }
+        const verifiedReturnKind = paymentReturnKind === 'cancelled' ? 'cancelled' : 'success';
+        persistPendingPaymentStatusCheck(paymentReturnAttempt, verifiedReturnKind);
+        checkPaymentReturnStatus(paymentReturnAttempt, verifiedReturnKind);
         resumePendingPaymentReceiptRenders();
         resumePendingPaymentStatusChecks();
     } else {
         resumePendingPaymentReceiptRenders();
         resumePendingPaymentStatusChecks();
     }
+
+    // Browser Back can restore the dashboard without visiting PayMongo's
+    // cancel_url. Ask the owner-scoped Edge Function to expire the provider
+    // session; it retains the hold unless PayMongo confirms terminal expiry.
+    window.addEventListener('pageshow', (event) => {
+        let navigationType = '';
+        try { navigationType = performance.getEntriesByType('navigation')[0]?.type || ''; } catch { /* Older browsers still support bfcache's persisted flag. */ }
+        if (!event.persisted && navigationType !== 'back_forward') return;
+        let attemptId = '';
+        try { attemptId = window.sessionStorage?.getItem(ACTIVE_CUSTOMER_CHECKOUT_KEY) || ''; } catch { /* No safe attempt reference is available. */ }
+        if (!attemptId || !window.sb) return;
+        persistPendingPaymentStatusCheck(attemptId, 'cancelled');
+        checkPaymentReturnStatus(attemptId, 'cancelled');
+    });
 
     // ------------------------------------------------------------------
     // Account Settings — password visibility toggles (same pattern as

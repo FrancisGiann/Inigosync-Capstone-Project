@@ -16,7 +16,7 @@ async function providerCheckout(sessionId: string, key: string) {
   const response = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
     headers: { authorization: `Basic ${btoa(`${key}:`)}` }, signal: AbortSignal.timeout(10000),
   });
-  return response.ok ? (await response.json())?.data?.attributes : null;
+  return response.ok ? (await response.json())?.data : null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -52,15 +52,20 @@ Deno.serve(async (req: Request) => {
     if (error || !attempt) return json({ message: "Checkout not found." }, 404, origin);
     if (body.action === "cancel" && attempt.status === "ready" && attempt.paymongo_session_id) {
       try {
-        let attrs = await providerCheckout(attempt.paymongo_session_id, secretKey);
-        if (attrs?.status === "active") {
+        const expectedLivemode = secretKey.startsWith("sk_live_");
+        let providerSession = await providerCheckout(attempt.paymongo_session_id, secretKey);
+        if (providerSession?.id !== attempt.paymongo_session_id
+            || providerSession?.attributes?.livemode !== expectedLivemode) providerSession = null;
+        if (providerSession?.attributes?.status === "active") {
           const response = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(attempt.paymongo_session_id)}/expire`, {
             method: "POST", headers: { authorization: `Basic ${btoa(`${secretKey}:`)}`, "content-type": "application/json" },
             body: "{}", signal: AbortSignal.timeout(10000),
           });
-          attrs = response.ok ? (await response.json())?.data?.attributes : null;
+          const expirySession = response.ok ? (await response.json())?.data : null;
+          providerSession = expirySession?.id === attempt.paymongo_session_id
+            && expirySession?.attributes?.livemode === expectedLivemode ? expirySession : null;
         }
-        if (attrs?.status === "expired") await admin.rpc("mark_paymongo_checkout_expired", {
+        if (providerSession?.attributes?.status === "expired") await admin.rpc("mark_paymongo_checkout_expired", {
           p_attempt_id: attempt.id, p_session_id: attempt.paymongo_session_id,
         });
       } catch (error) { console.error("Checkout cancellation deferred", error instanceof Error ? error.message : "provider error"); }
