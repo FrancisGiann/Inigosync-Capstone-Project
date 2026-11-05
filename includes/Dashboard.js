@@ -5293,7 +5293,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     emailOtpResendBtn?.addEventListener('click', async () => {
-        if (emailOtpResendBtn.disabled || !pendingOtpEmail || !window.sb?.auth?.resend) return;
+        if (emailOtpResendBtn.disabled || !pendingOtpCurrentEmail || !pendingOtpEmail || !window.sb?.auth?.resend) return;
         const operationGeneration = ++emailOtpOperationGeneration;
         emailOtpResendBtn.disabled = true;
         if (emailOtpVerifyBtn) emailOtpVerifyBtn.disabled = true;
@@ -5302,7 +5302,9 @@ document.addEventListener('DOMContentLoaded', () => {
             emailOtpStatus.classList.remove('is-error');
         }
         try {
-            const { error } = await window.sb.auth.resend({ type: 'email_change', email: pendingOtpEmail });
+            // Auth resolves an email-change resend by the account's current
+            // email; passing the proposed address can succeed without sending.
+            const { error } = await window.sb.auth.resend({ type: 'email_change', email: pendingOtpCurrentEmail });
             if (operationGeneration !== emailOtpOperationGeneration) return;
             if (error) throw error;
             // Supabase resends both recipient-specific codes and resets both

@@ -1098,7 +1098,7 @@ function mockClient(options) {
             await dashboard.waitForFunction(() => document.querySelector('[data-dash-email-otp-title]').textContent === 'Verify your current email');
             assert.equal(await dashboard.locator('[data-dash-settings-email]').inputValue(), 'customer@example.test', 'late verification cannot advance the UI after a concurrent resend resets codes');
             const resendCall = (await calls(dashboard)).find(c => c.kind === 'resend');
-            assert.deepEqual(resendCall.data, { type: 'email_change', email: 'new-customer@example.test' });
+            assert.deepEqual(resendCall.data, { type: 'email_change', email: 'customer@example.test' });
             await fillCode('333333');
             await dashboard.locator('[data-dash-email-otp-verify]').click();
             await dashboard.locator('[data-dash-confirm-modal]').waitFor({ state: 'visible' });
