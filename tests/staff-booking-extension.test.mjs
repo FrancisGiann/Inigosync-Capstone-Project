@@ -7,9 +7,10 @@ const html = (await readFile(new URL('../Pages/staff_dashboard.html', import.met
 const css = (await readFile(new URL('../Style/staff_dashboard.css', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const source = (await readFile(new URL('../includes/staff_dashboard.js', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const migration = (await readFile(new URL('../supabase/migrations/20261101210000_staff_booking_extension_payments.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
-const durationFixMigration = (await readFile(new URL('../supabase/migrations/20261104143000_fix_staff_booking_extension_price_duration_type.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
-const paymongoAliasMigration = (await readFile(new URL('../supabase/migrations/20261104144500_fix_staff_extension_paymongo_alias.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+const durationFixMigration = (await readFile(new URL('../supabase/migrations/20261105002836_fix_staff_booking_extension_price_duration_type.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+const paymongoAliasMigration = (await readFile(new URL('../supabase/migrations/20261104032046_fix_staff_extension_paymongo_alias.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const edge = (await readFile(new URL('../supabase/functions/staff-booking-extension-checkout/index.ts', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+const nonblockingMigration = (await readFile(new URL('../supabase/migrations/20261105024336_nonblocking_paymongo_checkouts.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 test('Overview extension control is labeled and adjacent to Time-Out only for eligible in-play hourly rows', () => {
     assert.match(source, /data-staff-action="timeout"[^<]*<\/button>\$\{canOfferExtension \? '<button type="button" class="staff-extension-plus" data-staff-action="extend" aria-label="Extend booking" title="Extend booking">\+<\/button>'/);
@@ -60,6 +61,19 @@ test('Extension cards only expose the authoritative contiguous hourly prefix and
     runInNewContext(`${source.slice(selectStart, selectEnd)}; globalThis.select = staffExtensionOptionForDuration;`, selectContext);
     assert.equal(selectContext.select(valid, 120), valid[1]);
     assert.equal(selectContext.select(valid, 60), valid[0], 'choosing an earlier card shortens the selected extension');
+});
+
+test('Extension checkout surfaces the server conflict message from a non-2xx Edge Function response', async () => {
+    const start = source.indexOf('    async function staffExtensionPaymentErrorMessage(error) {');
+    const end = source.indexOf('\n\n    function staffExtensionConsecutiveOptions', start);
+    assert.ok(start >= 0 && end > start);
+    const context = {};
+    runInNewContext(`${source.slice(start, end)}; globalThis.getErrorMessage = staffExtensionPaymentErrorMessage;`, context);
+    assert.equal(await context.getErrorMessage({
+        message: 'Edge Function returned a non-2xx status code.',
+        context: { clone: () => ({ json: async () => ({ message: 'Reservation changed. Refresh extension availability and try again.' }) }) },
+    }), 'Reservation changed. Refresh extension availability and try again.');
+    assert.equal(await context.getErrorMessage({ message: 'Network unavailable' }), 'Network unavailable');
 });
 
 test('The extension unavailable card is limited to configured court hours', () => {
@@ -229,7 +243,8 @@ test('Cash confirmation submits once and keeps its modal session intact through 
     let resolveRpc;
     const rpcPromise = new Promise((resolve) => { resolveRpc = resolve; });
     const originalRow = { id: 41, sourceType: 'booking' };
-    const paymentOption = { duration_minutes: 60, amount_minor: 5000 };
+    const paymentOption = { duration_minutes: 60, amount_minor: 5000,
+        new_end_at: new Date(Date.UTC(2026, 10, 4, 11)).toISOString() };
     const paymentError = { hidden: true, textContent: '' };
     const modal = { hidden: false, removeAttribute() {} };
     const methodInput = { value: 'cash', checked: true };
@@ -291,13 +306,15 @@ test('Cash confirmation submits once and keeps its modal session intact through 
     assert.equal(context.staffExtensionRow, originalRow);
 });
 
-test('Online extension holds the physical slot and only extends from verified PayMongo settlement', () => {
+test('Online extension does not hold availability and applies only after verified PayMongo settlement', () => {
     assert.match(edge, /hasVerifiedEmailSession/);
     assert.match(edge, /p_staff_id:\s*authData\.user\.id/);
     assert.match(edge, /register_paymongo_checkout_request/);
     assert.match(edge, /mark_staff_booking_extension_ready/);
     assert.match(edge, /send_email_receipt:\s*false/);
-    assert.match(migration, /insert into internal\.reservation_resource_slots\(hold_item_id,resource_id,during\)/);
+    assert.match(nonblockingMigration, /Extension checkout hold insertion changed[\s\S]*?execute replace\(v_definition, v_old, ''\)/);
+    assert.match(nonblockingMigration, /delete from internal\.reservation_resource_slots\s+where hold_item_id is not null or walkin_order_id is not null/);
+    assert.match(nonblockingMigration, /exception when exclusion_violation then[\s\S]*paid_extension_slot_conflict[\s\S]*refund_review_required',true/);
     assert.match(migration, /public\.record_paymongo_paid/);
     assert.match(migration, /v_marker:=E'\\n  if a\.intent_id is not null then'/);
     assert.match(migration, /if x\.starts_at<=now\(\) then[\s\S]*refund_review_required',true/);
@@ -316,7 +333,7 @@ test('Online extension holds the physical slot and only extends from verified Pa
     assert.ok(paidReturnStart >= 0 && paidReturnEnd > paidReturnStart);
     const paidReturn = source.slice(paidReturnStart, paidReturnEnd);
     assert.match(paidReturn, /showImmediatePaymentAcknowledgment\(result\.receipt, result\.source\)[\s\S]*claimStaffPaymentCelebration\(result\.receipt\)\) \{[\s\S]*playStaffPaymentSuccessSound\(\);[\s\S]*showStaffPaymentConfetti\(\);/);
-    assert.match(source, /PayMongo checkout was cancelled\. The booking was not extended\.', true\)/);
+    assert.match(source, /PayMongo reports payment after the original booking ended\. The booking was not extended/);
     assert.match(source, /PayMongo did not return a valid checkout link/);
     assert.match(source, /method === 'cash' && result\?\.data\?\.ok !== true/);
 });

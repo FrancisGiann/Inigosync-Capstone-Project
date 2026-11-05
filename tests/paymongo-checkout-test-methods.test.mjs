@@ -72,7 +72,8 @@ async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor 
             payment_option: paymentOption, items: [{}],
         }),
     }));
-    assert.equal(response.status, 200);
+    assert.equal(response.status, legacy ? 409 : 200);
+    if (legacy) return response.json();
     return requestAttributes;
 }
 
@@ -101,9 +102,7 @@ test('test QR Ph is owner-controlled and available for full and deposit customer
         ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
 });
 
-test('legacy booking retries add owner-enabled QR Ph only when creating a new test session', async () => {
-    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { legacy: true })).payment_method_types,
-        ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
-    assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { legacy: true, qrphEnabled: false }))
-        .payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
+test('legacy public pending-booking checkout is rejected so it cannot keep blocking availability', async () => {
+    const result = await createCheckoutForKey('sk_test_fixture', { legacy: true });
+    assert.match(result.message, /Refresh Book a Court/);
 });

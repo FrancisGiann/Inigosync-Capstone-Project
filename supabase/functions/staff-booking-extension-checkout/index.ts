@@ -64,10 +64,10 @@ Deno.serve(async (req: Request) => {
       return json({ status: "pending", message: "This extension checkout is no longer open. Check its payment status before retrying." }, 202, origin);
     if (cancellation.status === "expired" && typeof cancellation.session_id === "string"
         && /^cs_[A-Za-z0-9]+$/.test(cancellation.session_id))
-      return json({ status: "expired", message: "PayMongo checkout expiry was already confirmed. The extension time is available again." }, 200, origin);
+      return json({ status: "expired", message: "PayMongo checkout expiry was confirmed. No extension was applied; check current availability before retrying." }, 200, origin);
     if (cancellation.status !== "ready" || typeof cancellation.session_id !== "string"
         || !/^cs_[A-Za-z0-9]+$/.test(cancellation.session_id))
-      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The extension has not been applied; verify payment status before retrying." }, 202, origin);
 
     let expireResponse: Response;
     try {
@@ -77,7 +77,7 @@ Deno.serve(async (req: Request) => {
       });
     } catch (error) {
       console.error("PayMongo extension cancellation expiry uncertain", error instanceof Error ? error.message : "network error");
-      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The extension has not been applied; verify payment status before retrying." }, 202, origin);
     }
     const expiryPayload = await expireResponse.json().catch(() => null);
     const expiredSession = expiryPayload?.data;
@@ -87,14 +87,14 @@ Deno.serve(async (req: Request) => {
       const providerStatus = typeof expiredSession?.attributes?.status === "string"
         ? expiredSession.attributes.status : "unknown";
       return json({ status: providerStatus === "paid" || providerStatus === "processing" ? providerStatus : "pending",
-        message: "PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked." }, 202, origin);
+        message: "PayMongo has not confirmed checkout expiry. The extension has not been applied; verify payment status before retrying." }, 202, origin);
     }
     const { data: markedExpired, error: markError } = await admin.rpc("mark_paymongo_checkout_expired", {
       p_attempt_id: attemptId, p_session_id: cancellation.session_id,
     });
     if (markError || markedExpired !== true)
       return json({ status: "pending", message: "PayMongo expired the checkout, but its reservation status changed during reconciliation. Check payment status before retrying." }, 202, origin);
-    return json({ status: "expired", message: "PayMongo confirmed checkout expiry. The extension time is available again." }, 200, origin);
+    return json({ status: "expired", message: "PayMongo confirmed checkout expiry. No extension was applied; check current availability before retrying." }, 200, origin);
   }
   if (!await hasPaymongoPaidWebhook({ secretKey, webhookSecret: Deno.env.get("PAYMONGO_WEBHOOK_SECRET"), supabaseUrl: url }))
     return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);

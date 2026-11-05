@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const migration = (await readFile(new URL('../supabase/migrations/20261104150000_fix_walkin_extension_guard_record_field.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+const migration = (await readFile(new URL('../supabase/migrations/20261104034413_fix_walkin_extension_guard_record_field.sql', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 test('extension guard reads only the identifier present on the triggering reservation table', () => {
     const functionStart = migration.indexOf('create or replace function internal.guard_open_booking_extension()');

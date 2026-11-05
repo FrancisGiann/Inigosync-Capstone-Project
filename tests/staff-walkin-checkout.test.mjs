@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
+import { enabledPaymongoMethods } from '../supabase/functions/_shared/paymongo-methods.mjs';
 
 const source = (await readFile(new URL('../supabase/functions/staff-walkin-checkout/index.ts', import.meta.url), 'utf8'))
     .replace(/^import .*;\r?\n/gm, '');
@@ -25,7 +26,7 @@ function checkoutFixture({ channel, requestBody, settings = { card_enabled: true
             if (name === 'prepare_staff_walkin_checkout') return { data: preparedOverride || { status: 'creating', attempt_id: attemptId, base_minor: 12000, expires_at: expiresAt, checkout_request: savedRequest, ...(existingIntent ? { paymongo_session_id: 'pi_fixture' } : {}) }, error: null };
             if (name === 'register_paymongo_checkout_request') return { data: true, error: null };
             if (name === 'attach_paymongo_checkout') return { data: true, error: null };
-            if (name === 'register_paymongo_qrph_intent') return { data: true, error: null };
+            if (name === 'register_staff_walkin_qr_intent') return { data: true, error: null };
             if (name === 'attach_paymongo_qrph_intent') { fixtureAttachedArgs = args; return { data: true, error: null }; }
             throw new Error(`Unexpected RPC: ${name}`);
         },
@@ -37,7 +38,7 @@ function checkoutFixture({ channel, requestBody, settings = { card_enabled: true
         hasVerifiedEmailSession: async () => true,
         hasPaymongoPaidWebhook: async () => true,
         hasPaymongoWebhook: async () => webhookReady,
-        enabledPaymongoMethods: settings => [ ...(settings?.card_enabled === true ? ['card'] : []), ...(settings?.gcash_enabled === true ? ['gcash'] : []), ...(settings?.qrph_enabled === true ? ['qrph'] : []) ],
+        enabledPaymongoMethods,
         fetch: async (url, options) => {
             apiRequests.push({ url, options });
             if (url.endsWith('/v1/payment_intents')) {
@@ -77,7 +78,7 @@ test('direct QR Ph flow makes an amount-specific PayMongo intent with GCash disa
     assert.match(fixture.apiRequests.find(call => call.url.endsWith('/v1/payment_methods')).options.headers['Idempotency-Key'], /:qrph-method$/);
     assert.match(fixture.apiRequests.find(call => call.url.includes('/attach')).options.headers['Idempotency-Key'], /:qrph-attach$/);
     assert.deepEqual(fixture.rpcCalls.map(call => call.name), [
-        'prepare_staff_walkin_checkout', 'register_paymongo_qrph_intent', 'attach_paymongo_qrph_intent',
+        'prepare_staff_walkin_checkout', 'register_staff_walkin_qr_intent', 'attach_paymongo_qrph_intent',
     ]);
     const result = await response.json();
     assert.equal(result.expires_at, '2031-01-01T00:15:00Z');
@@ -97,7 +98,7 @@ test('unexpected QR Ph setup errors return a retryable pending-order response in
     const result = await response.json();
     assert.equal(result.order_id, orderId);
     assert.match(result.message, /unexpected error while saving QR Ph image/i);
-    assert.ok(fixture.rpcCalls.some(call => call.name === 'register_paymongo_qrph_intent'), 'the created intent remains registered for idempotent retry');
+    assert.ok(fixture.rpcCalls.some(call => call.name === 'register_staff_walkin_qr_intent'), 'the created intent remains registered for idempotent retry');
 });
 
 test('fresh live QR Ph intent and attachment return a live QR without test metadata', async () => {
@@ -114,7 +115,7 @@ test('fresh live QR Ph intent and attachment return a live QR without test metad
     assert.equal(fixture.attachedArgs().p_qr_livemode, true);
     assert.equal(fixture.attachedArgs().p_qr_test_url, null);
     assert.deepEqual(fixture.rpcCalls.map(call => call.name), [
-        'prepare_staff_walkin_checkout', 'register_paymongo_qrph_intent', 'attach_paymongo_qrph_intent',
+        'prepare_staff_walkin_checkout', 'register_staff_walkin_qr_intent', 'attach_paymongo_qrph_intent',
     ]);
 });
 
@@ -126,7 +127,7 @@ test('fresh live intent rejects a test-mode attachment before persisting the QR'
     const response = await fixture.handler()(fixture.request);
     assert.equal(response.status, 502);
     assert.equal((await response.json()).qr_image_url, undefined);
-    assert.equal(fixture.rpcCalls.some(call => call.name === 'register_paymongo_qrph_intent'), true,
+    assert.equal(fixture.rpcCalls.some(call => call.name === 'register_staff_walkin_qr_intent'), true,
         'the provider intent reference is registered for safe recovery');
     assert.equal(fixture.rpcCalls.some(call => call.name === 'attach_paymongo_qrph_intent'), false,
         'the QR image and livemode are not persisted after an attachment mode mismatch');
@@ -147,7 +148,7 @@ test('new QR Ph order is created through the verified service path with the revi
     assert.equal(result.qr_test_url, 'https://test.paymongo.com/qrph/fixture');
     assert.deepEqual(fixture.rpcCalls.map(call => call.name), [
         'staff_create_walkin_order_service', 'prepare_staff_walkin_checkout',
-        'register_paymongo_qrph_intent', 'attach_paymongo_qrph_intent',
+        'register_staff_walkin_qr_intent', 'attach_paymongo_qrph_intent',
     ]);
     assert.deepEqual(JSON.parse(JSON.stringify(fixture.rpcCalls[0].args)), {
         p_staff_id: 'staff-1', p_customer_id: null, p_guest_name: 'QR Guest',
@@ -308,6 +309,16 @@ test('live Pay Online hosted checkout uses only the online methods enabled by th
     const response = await fixture.handler()(fixture.request);
     assert.equal(response.status, 200);
     assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['card', 'qrph']);
+});
+
+test('Pay Online supports every enabled hosted method, including wallet-only settings', async () => {
+    const fixture = checkoutFixture({ settings: {
+        card_enabled: false, gcash_enabled: false, maya_enabled: true,
+        grab_pay_enabled: true, qrph_enabled: true,
+    } });
+    const response = await fixture.handler()(fixture.request);
+    assert.equal(response.status, 200);
+    assert.deepEqual(Array.from(fixture.checkoutRequest().payment_method_types), ['paymaya', 'grab_pay', 'qrph']);
 });
 
 test('direct QR Ph flow fails closed without the payment.paid webhook', async () => {

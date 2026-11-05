@@ -13,8 +13,7 @@ test('customer Edge Function errors show the response message and preserve the r
 
   assert.equal(await getFunctionErrorMessage(error, 'Please retry.'), 'Checkout is unavailable.');
   assert.deepEqual(await response.json(), { message: 'Checkout is unavailable.' }, 'reading the error uses a response clone');
-  assert.match(source, /getFunctionErrorMessage\(error, 'Secure checkout could not start/);
-  assert.match(source, /getFunctionErrorMessage\(error, 'Could not reopen online checkout/);
+  assert.match(source, /getFunctionErrorMessage\(error, 'Secure checkout could not start\. Please retry shortly\.'/);
 });
 
 test('customer Edge Function error falls back safely when the response body is not JSON', async () => {

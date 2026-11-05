@@ -2245,7 +2245,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.InigoBusinessHours.getForDate(date, { force: forceRules }),
                 ]);
                 return [date, { rules: rulesForDate, bookings: { ok: occupancy.ok, rows: occupancy.rows.filter((row) => row.source === 'online') },
-                    walkins: { ok: occupancy.ok, rows: occupancy.rows.filter((row) => ['walkin', 'maintenance', 'checkout_hold'].includes(row.source)) } }];
+                    walkins: { ok: occupancy.ok, rows: occupancy.rows.filter((row) => ['walkin', 'maintenance'].includes(row.source)) } }];
             }));
             if (mySeq !== slotGridRequestSeq) return;
             results.forEach(([date, data]) => bookingAvailabilityByDate.set(date, data));
@@ -2470,7 +2470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             availabilityStatus.textContent = 'There are no future bookable hours on this date. Use Change date to choose another date.';
             return;
         }
-        const rows = occupancy.rows;
+        const rows = occupancy.rows.filter((row) => row.source !== 'checkout_hold');
         const slotRows = hours.map((hour) => {
             const start = new Date(window.InigoBookingSlots.localDateHourToIso(date, hour));
             const end = new Date(start.getTime() + 60 * 60 * 1000);
@@ -6272,7 +6272,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (String(data.status || '').toLowerCase() === 'cancelled') {
             clearActiveCheckout();
             clearPendingPaymentStatusCheck(attemptId);
-            window.InigoToast?.show('Checkout was cancelled. Your selected time is available again.', true);
+            window.InigoToast?.show('Checkout was cancelled. Check current availability before retrying.', true);
             refreshMyBookings();
         } else if (String(data.status || '').toLowerCase() === 'review') {
             clearActiveCheckout();
@@ -6280,7 +6280,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.InigoToast?.show('Payment may have been received, but the time was not confirmed. Do not pay again; contact the sports center to arrange another time or a refund.', true);
             refreshMyBookings();
         } else if (returnKind === 'cancelled') {
-            window.InigoToast?.show('PayMongo has not confirmed that checkout can close. Your time remains held while payment status is checked.', true);
+            window.InigoToast?.show('PayMongo has not confirmed that checkout can close. Your booking is not confirmed; verify payment status before retrying.', true);
             persistPendingPaymentStatusCheck(attemptId, returnKind);
             schedulePaymentStatusRetry(attemptId, returnKind, retryIndex);
         } else {

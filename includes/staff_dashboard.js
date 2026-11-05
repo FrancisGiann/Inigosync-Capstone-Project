@@ -2303,12 +2303,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         if (inCart) return 'in-cart';
         const overlap = [...walkinBookings.rows, ...walkinWalkins.rows].filter((row) => {
+            if (['hold', 'checkout_hold', 'payment_hold', 'temporary_hold'].includes(String(row.source || '').toLowerCase())) return false;
             if (!sameCourtName(row.courts, walkinState.court?.name || '')) return false;
             if (!courtUnitsOverlap(row.court_unit, walkinState.unit || '')) return false;
             return windowsOverlap(rowWindow(row), { start, end });
         });
         if (overlap.some((row) => row.source === 'maintenance')) return 'maintenance';
-        if (overlap.some((row) => ['hold', 'checkout_hold', 'payment_hold', 'temporary_hold'].includes(String(row.source || '').toLowerCase()))) return 'held';
         if (overlap.length) return 'unavailable';
         return 'open';
     }
@@ -2368,7 +2368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         walkinState.endHour = currentSelection.length ? currentSelection[currentSelection.length - 1] : null;
         const fmt = window.InigoBusinessHours.formatHourLabel;
         const rangeLabel = window.InigoBusinessHours.formatHourRangeLabelShort;
-        const labels = { open: 'Available', 'in-cart': 'In summary', unavailable: 'Unavailable', held: 'Temporarily held', maintenance: 'Maintenance', past: 'Unavailable' };
+        const labels = { open: 'Available', 'in-cart': 'In summary', unavailable: 'Unavailable', maintenance: 'Maintenance', past: 'Unavailable' };
         const openHours = walkinHoursForDay.filter((hour) => walkinSlotStatus(hour) === 'open');
         const earliestBlock = [];
         for (const hour of openHours) {
@@ -3928,11 +3928,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (qrOrderId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(qrOrderId))) {
                     resetBtn.disabled = true;
                     let cancellationConfirmed = false;
-                    const pendingMessage = 'PayMongo has not confirmed QR cancellation. The time remains held. Check payment status or retry cancellation before starting another walk-in.';
+                    const pendingMessage = 'PayMongo has not confirmed QR cancellation. No reservation was confirmed. Check payment status before starting another walk-in.';
                     const cancellation = await retryStaffWalkinQrCancellation(String(qrOrderId));
                     if (!cancellation?.error && cancellation?.data?.status === 'expired') {
                         cancellationConfirmed = true;
-                        window.InigoToast?.show(cancellation.data.message || 'PayMongo confirmed QR intent cancellation. The held time is available again.');
+                        window.InigoToast?.show(cancellation.data.message || 'PayMongo confirmed QR intent cancellation. No reservation was created; check current availability before retrying.');
                     } else {
                         const message = cancellation?.data?.message || pendingMessage;
                         setWalkinQrStatus(message, true);
@@ -4111,6 +4111,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!staffExtensionPaymentControlStates) return;
         staffExtensionPaymentControlStates.forEach(([control, wasDisabled]) => { control.disabled = wasDisabled; });
         staffExtensionPaymentControlStates = null;
+    }
+
+    async function staffExtensionPaymentErrorMessage(error) {
+        const response = error?.context;
+        if (response && typeof response.clone === 'function') {
+            try {
+                const payload = await response.clone().json();
+                if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message;
+            } catch { /* Fall back to the SDK error when the response is not JSON. */ }
+        }
+        return error?.message || 'Could not complete the extension payment.';
     }
 
     function staffExtensionConsecutiveOptions(options) {
@@ -4679,7 +4690,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         staffExtensionPay.disabled = false;
         staffExtensionPay.textContent = 'Pay and extend';
         if (result?.error || (method === 'cash' && result?.data?.ok !== true)) {
-            const message = result?.error?.message || result?.data?.message || 'Could not complete the extension payment.';
+            const message = result?.error
+                ? await staffExtensionPaymentErrorMessage(result.error)
+                : result?.data?.message || 'Could not complete the extension payment.';
             staffExtensionPaymentError.textContent = message;
             staffExtensionPaymentError.hidden = false;
             window.InigoToast?.show(message, true);
@@ -5214,11 +5227,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             return { cls: 'is-maintenance', label: 'Maintenance', title: `${maintenanceMatch.note || 'Court maintenance'} · ${formatIsoTime12h(start.toISOString())}–${formatIsoTime12h(end.toISOString())}` };
         }
 
-        const heldMatch = walkins.find((h) => ['hold', 'checkout_hold', 'payment_hold', 'temporary_hold'].includes(String(h.source || '').toLowerCase())
-            && sameCourtName(h.courts, row.court.name)
-            && courtUnitsOverlap(h.court_unit, row.unitValue)
-            && windowsOverlap(rowWindow(h), slot));
-        if (heldMatch) return { cls: 'is-unavailable', label: 'Booked', title: scheduleTooltipFor(heldMatch, 'Checkout hold') };
         if (bookingMatch) return { cls: 'is-unavailable', label: 'Booked', title: scheduleTooltipFor(bookingMatch, 'Online booking') };
 
         const walkinMatch = walkins.find((w) => {
@@ -7133,9 +7141,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (extensionReturnKind === 'cancel') {
             const result = await retryStaffExtensionCancellation(attemptId);
             if (result?.error) {
-                window.InigoToast?.show('PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked.', true);
+                window.InigoToast?.show('PayMongo has not confirmed checkout expiry. The extension has not been applied; verify payment status before retrying.', true);
             } else {
-                window.InigoToast?.show(result?.data?.message || 'PayMongo has not confirmed checkout expiry. The extension time remains held while payment status is checked.',
+                window.InigoToast?.show(result?.data?.message || 'PayMongo has not confirmed checkout expiry. The extension has not been applied; verify payment status before retrying.',
                     result?.data?.status !== 'expired');
             }
         } else if (extensionReturnKind === 'return') {
@@ -7211,7 +7219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.InigoToast?.show('Could not identify the walk-in order returned from checkout.', true);
         } else if (walkinReturnKind === 'cancel') {
             const result = await retryStaffWalkinCancellation(orderId);
-            window.InigoToast?.show(result?.data?.message || 'PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked.',
+            window.InigoToast?.show(result?.data?.message || 'PayMongo has not confirmed checkout expiry. No reservation was confirmed; verify payment status before retrying.',
                 result?.error || result?.data?.status !== 'expired');
         } else if (walkinReturnKind === 'return') {
             setActivePanel('walkin');

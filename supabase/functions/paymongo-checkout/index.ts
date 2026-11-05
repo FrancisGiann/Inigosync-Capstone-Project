@@ -98,6 +98,12 @@ Deno.serve(async (req: Request) => {
     const acceptance = body.terms_acceptance as { accepted?: unknown; version?: unknown } | null;
     if (acceptance?.accepted !== true || acceptance.version !== "customer-booking-v1")
       return json({ message: "Review and accept the booking and payment terms before proceeding." }, 400, origin);
+  } else {
+    // Old clients created a public pending booking before starting PayMongo.
+    // That row blocked availability without a verified payment, so the legacy
+    // checkout path is closed; current Book a Court always sends a cart.
+    return json({ message: "Refresh Book a Court to review availability and start a new checkout." },
+      body.booking_id != null ? 409 : 400, origin);
   }
 
   if (!await hasPaymongoPaidWebhook({ secretKey,
@@ -119,19 +125,9 @@ Deno.serve(async (req: Request) => {
     });
     if (error || !data) return json({ message: error?.code === "23P01"
       ? "That court or lane was just reserved. Refresh availability and choose another time."
-      : "Could not hold these court times. Check the selections and try again." }, 409, origin);
+      : "Could not check these court times for checkout. Check the selections and try again." }, 409, origin);
     prepared = data;
     label = `${data.item_count} court reservation${data.item_count === 1 ? "" : "s"}`;
-  } else {
-    // Legacy pending bookings retain their saved amount on retry.
-    const bookingId = Number(body.booking_id);
-    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) return json({ message: "Invalid booking." }, 400, origin);
-    const { data, error } = await admin.rpc("prepare_paymongo_checkout", {
-      p_booking_id: bookingId, p_customer_id: authData.user.id,
-    });
-    if (error || !Array.isArray(data) || !data[0]) return json({ message: "This booking is not eligible for online payment." }, 409, origin);
-    prepared = data[0];
-    label = `${data[0].courts} court reservation`;
   }
 
   const id = prepared.attempt_id as string;
@@ -172,7 +168,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("PayMongo checkout creation uncertain", error instanceof Error ? error.message : "network error");
-    return json({ message: "Secure online payment could not be reached. Your court is held temporarily; contact staff before trying again." }, 503, origin);
+    return json({ message: "Secure online payment could not be reached. No booking was confirmed; check availability before trying again." }, 503, origin);
   }
   const payload = await response.json().catch(() => null);
   const session = payload?.data;
@@ -185,7 +181,7 @@ Deno.serve(async (req: Request) => {
     if (response.status >= 400 && response.status < 500 && !sessionId) {
       await admin.rpc("abort_failed_paymongo_checkout", { p_attempt_id: id });
     }
-    return json({ message: "Secure online payment could not start. Your court is held temporarily; contact staff if this continues." }, 502, origin);
+    return json({ message: "Secure online payment could not start. No booking was confirmed; check availability before trying again." }, 502, origin);
   }
   const { data: attached, error: attachError } = await admin.rpc("attach_paymongo_checkout", {
     p_attempt_id: id, p_session_id: sessionId, p_checkout_url: checkoutUrl,

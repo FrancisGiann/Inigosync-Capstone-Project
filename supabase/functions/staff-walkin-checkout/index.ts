@@ -83,10 +83,10 @@ Deno.serve(async (req: Request) => {
       return json({ message: "This walk-in checkout is no longer open. Check its payment status before retrying." }, 409, origin);
     if (cancellation.status === "expired" && typeof cancellation.session_id === "string"
         && /^cs_[A-Za-z0-9]+$/.test(cancellation.session_id))
-      return json({ status: "expired", message: "PayMongo checkout expiry was already confirmed. The held time is available again." }, 200, origin);
+      return json({ status: "expired", message: "PayMongo checkout expiry was confirmed. No reservation was created; check current availability before retrying." }, 200, origin);
     if (cancellation.status !== "ready" || typeof cancellation.session_id !== "string"
         || !/^cs_[A-Za-z0-9]+$/.test(cancellation.session_id))
-      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
 
     let expireResponse: Response;
     try {
@@ -96,7 +96,7 @@ Deno.serve(async (req: Request) => {
       });
     } catch (error) {
       console.error("PayMongo walk-in cancellation expiry uncertain", error instanceof Error ? error.message : "network error");
-      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed checkout expiry. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
     }
     let expiryPayload: any = null;
     try { expiryPayload = await expireResponse.json(); } catch { /* An unreadable response cannot release the hold. */ }
@@ -107,14 +107,14 @@ Deno.serve(async (req: Request) => {
       const providerStatus = typeof expiredSession?.attributes?.status === "string"
         ? expiredSession.attributes.status : "unknown";
       return json({ status: providerStatus === "paid" || providerStatus === "processing" ? providerStatus : "pending",
-        message: "PayMongo has not confirmed checkout expiry. The time remains held while payment status is checked." }, 202, origin);
+        message: "PayMongo has not confirmed checkout expiry. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
     }
     const { data: markedExpired, error: markError } = await admin.rpc("mark_paymongo_checkout_expired", {
       p_attempt_id: cancellation.attempt_id, p_session_id: cancellation.session_id,
     });
     if (markError || markedExpired !== true)
       return json({ status: "pending", message: "PayMongo expired the checkout, but its reservation status changed during reconciliation. Check payment status before retrying." }, 202, origin);
-    return json({ status: "expired", message: "PayMongo confirmed checkout expiry. The held time is available again." }, 200, origin);
+    return json({ status: "expired", message: "PayMongo confirmed checkout expiry. No reservation was created; check current availability before retrying." }, 200, origin);
   }
 
   if (body.action === "cancel_qr") {
@@ -123,18 +123,18 @@ Deno.serve(async (req: Request) => {
       p_order_id: body.order_id, p_staff_id: authData.user.id,
     });
     if (cancellationError || !cancellation?.attempt_id)
-      return json({ status: "pending", message: "This QR checkout has no cancellable PayMongo intent. Its time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "This QR checkout has no cancellable PayMongo intent. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
     const expectedQrLivemode = secretKey.startsWith("sk_live_");
     if (!/^pi_[A-Za-z0-9]+$/.test(String(cancellation.intent_id || ""))
         || (cancellation.livemode != null && cancellation.livemode !== expectedQrLivemode))
-      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
     // An expired row with the exact saved pi_ reference is already terminal
     // work from a trusted provider-mode check. Legacy intents may not have a
     // persisted qr_livemode value, so do not call the provider again.
     if (cancellation.status === "expired")
-      return json({ status: "expired", message: "PayMongo QR intent expiry was already recorded. The held time is available again." }, 200, origin);
+      return json({ status: "expired", message: "PayMongo QR intent expiry was recorded. No reservation was created; check current availability before retrying." }, 200, origin);
     if (!["creating", "ready", "review"].includes(cancellation.status))
-      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
 
     let cancelResponse: Response;
     try {
@@ -151,7 +151,7 @@ Deno.serve(async (req: Request) => {
       }
     } catch (error) {
       console.error("PayMongo QR intent cancellation uncertain", error instanceof Error ? error.message : "network error");
-      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+      return json({ status: "pending", message: "PayMongo has not confirmed QR intent cancellation. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
     }
     const cancelPayload = await cancelResponse.json().catch(() => null);
     const cancelledIntent = cancelPayload?.data;
@@ -161,14 +161,14 @@ Deno.serve(async (req: Request) => {
       const providerStatus = typeof cancelledIntent?.attributes?.status === "string"
         ? cancelledIntent.attributes.status : "unknown";
       return json({ status: providerStatus === "succeeded" || providerStatus === "processing" ? providerStatus : "pending",
-        message: "PayMongo has not confirmed QR intent cancellation. The time remains held while payment status is checked." }, 202, origin);
+        message: "PayMongo has not confirmed QR intent cancellation. No reservation was confirmed; verify payment status before retrying." }, 202, origin);
     }
     const { data: markedExpired, error: markError } = await admin.rpc("mark_staff_walkin_qr_intent_expired", {
       p_attempt_id: cancellation.attempt_id, p_intent_id: cancellation.intent_id, p_livemode: expectedQrLivemode,
     });
     if (markError || markedExpired !== true)
       return json({ status: "pending", message: "PayMongo cancelled the QR intent, but its reservation status changed during reconciliation. Check payment status before retrying." }, 202, origin);
-    return json({ status: "expired", message: "PayMongo confirmed QR intent cancellation. The held time is available again." }, 200, origin);
+    return json({ status: "expired", message: "PayMongo confirmed QR intent cancellation. No reservation was created; check current availability before retrying." }, 200, origin);
   }
 
   const { data: settings, error: settingsError } = await admin.from("app_settings")
@@ -443,7 +443,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("PayMongo walk-in checkout creation uncertain", error instanceof Error ? error.message : "network error");
-    return json({ message: "PayMongo could not be reached. The courts remain held temporarily; verify this checkout before retrying.", order_id: orderId }, 503, origin);
+    return json({ message: "PayMongo could not be reached. No reservation was confirmed; verify this checkout before retrying.", order_id: orderId }, 503, origin);
   }
   const payload = await response.json().catch(() => null);
   const session = payload?.data;

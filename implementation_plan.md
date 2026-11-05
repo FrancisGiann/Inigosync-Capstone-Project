@@ -1797,3 +1797,79 @@ table access revoked from public client roles; the customer feed index and
 four reminder RPCs are present. The existing minute Cron remains active. The
 function was not invoked manually, so this rollout did not send a test email.
 No tests or browser/runtime checks were run.
+
+## PayMongo checkouts only occupy slots after verified payment (2026-11-05)
+
+The project manager clarified that customer Book a Court, staff booking
+extensions, and staff online walk-ins must leave availability open while a
+PayMongo checkout is merely created, active, pending, failed, or expired. Only
+the signed, amount-verified `payment.paid` settlement may create/confirm a
+booking or extend an existing one. Settlement rechecks the actual physical
+resource under the existing exclusion constraint; concurrent paid conflicts
+remain in review with an audit record directing staff to arrange another time
+or refund. The staff walk-in hosted checkout accepts all enabled methods:
+QR Ph, card, GCash, Maya, and GrabPay. No layout or styling changes were made.
+
+Migration `20261105022742_paymongo_wallet_method_guards.sql` aligns the owner
+settings constraint and customer/walk-in RPC gates with all enabled PayMongo
+methods. Migration `20261105024336_nonblocking_paymongo_checkouts.sql` removes
+provisional customer, extension, and walk-in occupancy while keeping checkout,
+attempt, and staged reservation metadata. It preserves actual booking,
+walk-in, payment, receipt, and audit records. Staff walk-in staging performs a
+read-only overlap check against actual mapped bookings/walk-ins/maintenance and
+earlier items in the same order, then settlement uses the exclusion constraint
+to resolve races without a provisional hold.
+
+Read-only development-data review on Nov 5, 2026 first found 6 booking-linked
+resource rows and one active `hold_item` occupancy row (its checkout intent was
+`ready` and unexpired); there were no `walkin_order` hold rows, no extension
+checkout rows, and no unpaid pending/confirmed legacy public bookings with or
+without PayMongo attempts. Eight private walk-in order quote rows belonged to
+expired orders and remain preserved as history. A later read-only recheck found
+zero checkout hold rows (zero active and zero stale/terminal), zero walk-in
+order hold rows, and six real booking/walk-in/maintenance occupancy rows. Thus
+no existing resource-slot rows were in the migration's cleanup set at that
+later snapshot. The migration deletes only provisional resource-slot mappings
+with `hold_item_id` or `walkin_order_id`; checkout, attempt, staged quote,
+booking, payment, receipt, and audit records remain intact. Live edge logs
+showed 9 HTTP 409 and 3 HTTP 200 responses for extension checkout during the
+preceding 24-hour window. Correlated function logs contained only boot/shutdown
+events, so they did not identify the 409 branch; the staff page now shows the
+function's JSON error message for future diagnosis.
+
+The initial focused Node suite passed 59/59. Follow-up verification against the
+current worktree passed 50/50 tests across seven payment/checkout files and
+39/39 tests across webhook, QR reconciliation, and walk-in flow files. The
+browser UI smoke test `staff-walkin-order-ui.cjs` could not start because
+`playwright` is unavailable; no dependency was installed. Scoped
+`git diff --check` passes. SQL function-body replacements have static
+regression tests, and read-only `pg_get_functiondef` checks against the
+connected development database matched the five hold/item/extension/refresh
+anchors plus the active checkout-hold integrity clause. They also confirmed
+the existing online-method constraint name and both database gates that the
+wallet migration patches; the walk-in checkout status RPC has no method gate
+and is intentionally not rewritten. The live rollout on Nov 5, 2026 applied
+migrations `20261105022742` (`paymongo_wallet_method_guards`) and
+`20261105024336` (`nonblocking_paymongo_checkouts`). Immediately before the
+nonblocking migration, the read-only check found zero `hold_item` rows and zero
+`walkin_order_id` rows; an earlier real-occupancy snapshot contained six
+physical resource rows. The migration deletes only provisional mappings
+carrying those IDs and does not delete booking, walk-in, payment, receipt, or
+audit records. The latest readback has zero provisional mappings, three
+confirmed bookings with three source occupancy rows, and five booking-mapped
+physical resource slots; there are no active walk-ins or maintenance occupancy
+rows. The active source rows therefore match current confirmed bookings. The
+one-row change between historical physical-resource snapshots cannot be
+attributed from the retained data; no additional data cleanup was performed.
+Keep this discrepancy noted for any future occupancy audit rather than
+deleting or rewriting records.
+
+Preflight found no open checkout intents, payment attempts, extension attempts,
+or online walk-in orders. The deployed Edge Functions are `paymongo-checkout`
+v27, `staff-booking-extension-checkout` v3, and `staff-walkin-checkout` v21.
+Read-only function retrieval confirmed each deployed entrypoint and shared
+dependency matches the local source after ignoring the final newline. Live
+function checks confirm customer and extension checkout no longer create
+provisional holds, slot refresh no longer rebuilds customer/walk-in holds, and
+paid slot conflicts remain routed to review. The web app was not deployed; the
+project manager will push the remaining GitHub changes.

@@ -95,5 +95,7 @@ test('customer cart checkout requires the current explicit terms acknowledgment 
         headers: { authorization: 'Bearer customer-token', origin: 'https://inigos.example' },
         body: JSON.stringify({ booking_id: 123 }),
     }));
-    assert.equal(legacyRetry.status, 503, 'legacy booking retry does not use the new-cart acceptance contract');
+    assert.equal(legacyRetry.status, 409, 'legacy booking retries are closed so unpaid public bookings cannot keep reserving slots');
+    assert.match((await legacyRetry.json()).message, /refresh Book a Court/i);
+    assert.deepEqual(rpcCalls, [], 'legacy booking retries do not reach the database checkout RPC');
 });
