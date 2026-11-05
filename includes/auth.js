@@ -2169,17 +2169,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (mode === 'admin') {
                     const rememberDevice = data.remember === 'on';
                     if (window.InigoLoading) window.InigoLoading.show('Signing you in…');
-                    const { data: signInData, error } = await window.sb.auth.signInWithPassword({
-                        email: data['admin-email'],
-                        password: data['admin-password']
-                    });
-                    if (error && error.code === 'invalid_credentials' && window.InigoOwnerLinkedAuth) {
+                    let broker = null;
+                    if (window.InigoOwnerLinkedAuth) {
+                        try {
+                            broker = await window.InigoOwnerLinkedAuth.login(data['admin-email'], data['admin-password']);
+                        } catch (_) { /* Native Auth remains the fallback. */ }
+                    }
+                    if (broker) {
                         // A secondary email alias has no separate Supabase Auth
                         // user. The server verifies its separate password and
                         // returns a one-use token for the canonical owner user.
                         // Access stays blocked until an OTP sent to the alias
                         // is verified against that exact Auth session.
-                        const broker = await window.InigoOwnerLinkedAuth.login(data['admin-email'], data['admin-password']);
                         const { data: brokerSession, error: brokerError } = await window.sb.auth.verifyOtp({
                             token_hash: broker.token_hash,
                             type: 'magiclink',
@@ -2217,6 +2218,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             : `A code was sent recently or delivery could not be confirmed. Check ${pendingLoginOtp.email} before requesting another.`, false);
                         return;
                     }
+                    // Native Auth remains available for canonical owner and
+                    // staff accounts even if the broker is throttled or
+                    // temporarily unavailable. The broker was attempted first
+                    // so a valid linked password takes precedence.
+                    const { data: signInData, error } = await window.sb.auth.signInWithPassword({
+                        email: data['admin-email'],
+                        password: data['admin-password']
+                    });
                     if (error) throw error;
                     window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);

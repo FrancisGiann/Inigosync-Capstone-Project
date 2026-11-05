@@ -5,8 +5,8 @@ export function enabledPaymongoMethods(settings, { testMode = false } = {}) {
   const methods = [];
   if (settings.card_enabled === true) methods.push("card");
   if (settings.gcash_enabled === true) methods.push("gcash");
-  if (testMode && settings.maya_enabled === true) methods.push("paymaya");
-  if (testMode && settings.grab_pay_enabled === true) methods.push("grab_pay");
+  if (settings.maya_enabled === true) methods.push("paymaya");
+  if (settings.grab_pay_enabled === true) methods.push("grab_pay");
   if (!testMode && settings.qrph_enabled === true) methods.push("qrph");
   return methods;
 }

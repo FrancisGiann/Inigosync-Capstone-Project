@@ -181,7 +181,7 @@ Deno.serve(async (req: Request) => {
       webhookSecret: Deno.env.get("PAYMONGO_WEBHOOK_SECRET"), supabaseUrl: url }))
     return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,maya_enabled,grab_pay_enabled,qrph_enabled").eq("id", true).maybeSingle();
   if (qrPhCheckout && (settingsError || settings?.qrph_enabled !== true))
     return json({ message: "QR Ph checkout is disabled or unavailable in Payment Configuration." }, 409, origin);
   const methods = settingsError ? [] : enabledPaymongoMethods(settings);

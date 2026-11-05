@@ -74,7 +74,7 @@ function fixture() {
             { id: 'qa-customer', role: 'customer', full_name: 'QA Customer', email: 'customer@example.test', status: 'active', created_at: '2026-02-01T00:00:00Z' },
         ],
         owner_private_details: [{ user_id: 'qa-owner', civil_status: 'Single' }],
-        app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true, qrph_enabled: true }],
+        app_settings: [{ id: true, downpayment_pct: 50, cash_enabled: true, card_enabled: false, gcash_enabled: true, maya_enabled: true, grab_pay_enabled: true, qrph_enabled: true }],
         court: Array.from({ length: 24 }, (_, index) => ({ id: `court-${index + 1}`, sport_id: `sport-${index + 1}`, slug: `sport-${index + 1}`, name: index === 0 ? 'A long court listing title that must wrap without shifting other actions' : `Sport ${index + 1}`, quantity: index + 1, unit: 'courts', description: 'Responsive fixture', image_url: null, is_active: index !== 23, display_order: index + 1, sport: { id: `sport-${index + 1}`, name: `Sport ${index + 1}`, slug: `sport-${index + 1}` } })),
     };
     if (window.__ownerQaPendingStaffRecovery) data.profiles.push({ id: '00000000-0000-4000-8000-000000000123', role: 'staff', full_name: '', email: 'wrong-address@example.test', position: 'Secretary', status: 'pending', onboarding_complete: false, created_at: '2026-10-01T00:00:00Z' });

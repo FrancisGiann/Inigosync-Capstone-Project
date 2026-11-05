@@ -35,7 +35,7 @@ Deno.serve(async (req: Request) => {
   const { data: last } = await admin.from("payment").select("created_at").eq("payment_method", "PayMongo")
     .gt("paid", 0).order("created_at", { ascending: false }).limit(1).maybeSingle();
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,maya_enabled,grab_pay_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const methods = settingsError ? [] : enabledPaymongoMethods(settings);
   const key = Deno.env.get("PAYMONGO_SECRET_KEY") || "";
   const keyMode = key.startsWith("sk_test_") ? "test" : key.startsWith("sk_live_") ? "live" : "unknown";

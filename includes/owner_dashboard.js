@@ -2082,8 +2082,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 grab_pay_enabled: Boolean(ownerPaymentWalletFlags.grabPayEnabled),
             } : {}),
         };
-        if (!settings.card_enabled && !settings.gcash_enabled && !settings.qrph_enabled) {
-            setOwnerPaymentMessage('Enable at least one live online payment method (Card, GCash, or QR Ph) for customer bookings.', true, ownerPaymentEditorMessage);
+        if (!settings.card_enabled && !settings.gcash_enabled && !settings.maya_enabled
+            && !settings.grab_pay_enabled && !settings.qrph_enabled) {
+            setOwnerPaymentMessage('Enable at least one online payment method (Card, GCash, Maya, GrabPay, or QR Ph) for customer bookings.', true, ownerPaymentEditorMessage);
             ownerPaymentInputs.card?.focus();
             return;
         }

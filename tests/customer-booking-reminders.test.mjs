@@ -19,7 +19,7 @@ const config = await readFile(new URL('../supabase/config.toml', import.meta.url
 
 test('customer feed is restricted to announcements, scoped maintenance, and timestamped visit reminders', () => {
   assert.ok(feed, 'customer feed replacement exists');
-  assert.match(feed, /p_role='customer' and a\.audience in \('both','customers'\) and creator\.role='admin'/i);
+  assert.match(feed, /where a\.publish_at<=now\(\) and creator\.role='admin'[\s\S]*?p_role='customer' and a\.audience in \('both','customers'\)/i);
   assert.match(feed, /from internal\.customer_maintenance_notices n[\s\S]*?n\.customer_id=p_user_id/i);
   assert.match(feed, /visit-reminder:[\s\S]*?to_char\(r\.event_at at time zone 'UTC'/i);
   assert.match(feed, /r\.customer_id=p_user_id/i);

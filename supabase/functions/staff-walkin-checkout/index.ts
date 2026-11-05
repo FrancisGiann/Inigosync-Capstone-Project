@@ -172,7 +172,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,maya_enabled,grab_pay_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const testMode = secretKey.startsWith("sk_test_");
   // Walk-in Pay Online is governed by the owner's configured methods in both
   // test and live mode. The customer checkout sandbox expansion must not

@@ -9,12 +9,13 @@ const edgeSource = (await readFile(new URL('../supabase/functions/paymongo-check
     .replace(/^import .*;\r?\n/gm, '');
 const executable = stripTypeScriptTypes(edgeSource, { mode: 'strip' });
 
-test('only customer checkout expands to the PayMongo sandbox method set', () => {
-    const settings = { card_enabled: true, gcash_enabled: true, qrph_enabled: false };
-    assert.deepEqual(enabledPaymongoMethods(settings), ['card', 'gcash']);
-    assert.deepEqual(enabledPaymongoMethods(settings, { testMode: false }), ['card', 'gcash']);
-    assert.deepEqual(enabledPaymongoMethods({ card_enabled: false, gcash_enabled: true, qrph_enabled: true }),
-        ['gcash', 'qrph'], 'live channels remain owner-controlled');
+test('owner-enabled e-wallet methods are available in both PayMongo modes', () => {
+    const settings = { card_enabled: true, gcash_enabled: true, maya_enabled: true, grab_pay_enabled: true, qrph_enabled: false };
+    assert.deepEqual(enabledPaymongoMethods(settings), ['card', 'gcash', 'paymaya', 'grab_pay']);
+    assert.deepEqual(enabledPaymongoMethods(settings, { testMode: false }), ['card', 'gcash', 'paymaya', 'grab_pay']);
+    assert.deepEqual(enabledPaymongoMethods({ card_enabled: false, gcash_enabled: true, maya_enabled: true,
+        grab_pay_enabled: true, qrph_enabled: true }),
+        ['gcash', 'paymaya', 'grab_pay', 'qrph'], 'configured methods remain owner-controlled');
     assert.deepEqual(enabledPaymongoMethods(settings, { testMode: true }),
         ['card', 'gcash', 'paymaya', 'grab_pay']);
     assert.deepEqual(enabledPaymongoMethods(null, { testMode: true }), [], 'missing settings still fail closed');
@@ -28,7 +29,8 @@ async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor 
     const admin = {
         auth: { getUser: async () => ({ data: { user: { id: 'customer-1' } }, error: null }) },
         from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({
-            data: { card_enabled: true, gcash_enabled: true, qrph_enabled: qrphEnabled }, error: null,
+            data: { card_enabled: true, gcash_enabled: true, maya_enabled: true, grab_pay_enabled: true,
+                qrph_enabled: qrphEnabled }, error: null,
         }) }) }) }),
         rpc: async (name) => {
             if (name === 'prepare_paid_checkout_cart') return { data: { attempt_id: checkoutId, item_count: 1 }, error: null };
@@ -74,11 +76,11 @@ async function createCheckoutForKey(secretKey, { amountMinor = 5000, totalMinor 
     return requestAttributes;
 }
 
-test('test secret enables requested hosted options and live secret keeps configured methods exactly', async () => {
+test('test and live secrets include the owner-enabled hosted methods', async () => {
     assert.deepEqual((await createCheckoutForKey('sk_test_fixture')).payment_method_types,
         ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
     assert.deepEqual((await createCheckoutForKey('sk_live_fixture', { qrphEnabled: false })).payment_method_types,
-        ['card', 'gcash']);
+        ['card', 'gcash', 'paymaya', 'grab_pay']);
 });
 
 test('test QR Ph is owner-controlled and available for full and deposit customer carts', async () => {
@@ -96,7 +98,7 @@ test('test QR Ph is owner-controlled and available for full and deposit customer
     assert.deepEqual((await createCheckoutForKey('sk_test_fixture', { amountMinor: 200,
         qrphEnabled: false })).payment_method_types, ['card', 'gcash', 'paymaya', 'grab_pay']);
     assert.deepEqual((await createCheckoutForKey('sk_live_fixture', { amountMinor: 100 })).payment_method_types,
-        ['card', 'gcash', 'qrph']);
+        ['card', 'gcash', 'paymaya', 'grab_pay', 'qrph']);
 });
 
 test('legacy booking retries add owner-enabled QR Ph only when creating a new test session', async () => {

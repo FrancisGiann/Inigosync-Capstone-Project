@@ -6,6 +6,15 @@ import { enabledPaymongoMethods } from "../_shared/paymongo-methods.mjs";
 
 const appBaseUrl = Deno.env.get("APP_BASE_URL") || "";
 const allowedOrigin = (() => { try { return new URL(appBaseUrl).origin; } catch { return ""; } })();
+const isPaymongoCheckoutUrl = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.origin === "https://checkout.paymongo.com" && url.protocol === "https:"
+      && url.hostname === "checkout.paymongo.com" && url.pathname.length > 1
+      && !url.username && !url.password;
+  } catch { return false; }
+};
 const json = (body: unknown, status = 200, origin = "") => new Response(JSON.stringify(body), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store",
     ...(origin === allowedOrigin && allowedOrigin ? { "access-control-allow-origin": allowedOrigin, vary: "Origin" } : {}) },
@@ -90,7 +99,7 @@ Deno.serve(async (req: Request) => {
   if (!await hasPaymongoPaidWebhook({ secretKey, webhookSecret: Deno.env.get("PAYMONGO_WEBHOOK_SECRET"), supabaseUrl: url }))
     return json({ message: "Online checkout is unavailable until payment confirmation is configured." }, 503, origin);
   const { data: settings, error: settingsError } = await admin.from("app_settings")
-    .select("card_enabled,gcash_enabled,qrph_enabled").eq("id", true).maybeSingle();
+    .select("card_enabled,gcash_enabled,maya_enabled,grab_pay_enabled,qrph_enabled").eq("id", true).maybeSingle();
   const methods = settingsError ? [] : enabledPaymongoMethods(settings);
   const { data: prepared, error: prepareError } = await admin.rpc("prepare_staff_booking_extension_checkout", {
     p_source: source, p_id: id, p_duration_minutes: duration, p_staff_id: authData.user.id,
@@ -99,12 +108,8 @@ Deno.serve(async (req: Request) => {
   if (prepareError || !prepared?.attempt_id)
     return json({ message: prepareError?.message || "This extension is no longer available." }, 409, origin);
   if (prepared.status === "ready" && typeof prepared.checkout_url === "string") {
-    try {
-      const checkoutUrl = new URL(prepared.checkout_url);
-      if (checkoutUrl.protocol === "https:" && checkoutUrl.hostname === "checkout.paymongo.com"
-          && !checkoutUrl.username && !checkoutUrl.password)
-        return json({ attempt_id: prepared.attempt_id, checkout_url: checkoutUrl.toString() }, 200, origin);
-    } catch { /* A saved malformed URL must not be opened by the browser. */ }
+    if (isPaymongoCheckoutUrl(prepared.checkout_url))
+      return json({ attempt_id: prepared.attempt_id, checkout_url: new URL(prepared.checkout_url).toString() }, 200, origin);
     return json({ message: "The saved PayMongo checkout link is invalid. Contact the owner to reconcile this attempt." }, 409, origin);
   }
   const hasSavedRequest = prepared.status === "creating" && prepared.checkout_request
@@ -146,7 +151,7 @@ Deno.serve(async (req: Request) => {
   }
   const payload = await response.json().catch(() => null);
   const session = payload?.data; const checkoutUrl = session?.attributes?.checkout_url;
-  if (!response.ok || typeof session?.id !== "string" || typeof checkoutUrl !== "string"
+  if (!response.ok || typeof session?.id !== "string" || !isPaymongoCheckoutUrl(checkoutUrl)
       || session?.attributes?.livemode !== !secretKey.startsWith("sk_test_")) {
     if (response.status >= 400 && response.status < 500 && !session?.id)
       await admin.rpc("abort_failed_paymongo_checkout", { p_attempt_id: prepared.attempt_id });
