@@ -1809,6 +1809,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'This is a customer account. Please use the customer Log In tab instead of admin/staff login.';
         }
 
+        if (code === 'owner_linked_auth_unavailable') {
+            return err?.status === 429
+                ? 'Too many linked email sign-in attempts. Wait 15 minutes and try again.'
+                : 'Linked email sign-in is temporarily unavailable. Please try again shortly.';
+        }
+
         return 'We could not complete that request. Please try again shortly.';
     }
 
@@ -2170,10 +2176,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     const rememberDevice = data.remember === 'on';
                     if (window.InigoLoading) window.InigoLoading.show('Signing you in…');
                     let broker = null;
+                    let brokerError = null;
                     if (window.InigoOwnerLinkedAuth) {
                         try {
                             broker = await window.InigoOwnerLinkedAuth.login(data['admin-email'], data['admin-password']);
-                        } catch (_) { /* Native Auth remains the fallback. */ }
+                        } catch (err) { brokerError = err; }
                     }
                     if (broker) {
                         // A secondary email alias has no separate Supabase Auth
@@ -2226,7 +2233,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         email: data['admin-email'],
                         password: data['admin-password']
                     });
-                    if (error) throw error;
+                    if (error) {
+                        // Keep native sign-in available for canonical owner and
+                        // staff accounts, but don't turn a broker outage or
+                        // rate limit into a misleading invalid-password error
+                        // for linked addresses when native auth also rejects them.
+                        if (brokerError && (brokerError.status === 429 || brokerError.status >= 500)) {
+                            brokerError.code = 'owner_linked_auth_unavailable';
+                            throw brokerError;
+                        }
+                        throw error;
+                    }
                     window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);
                     await gateOtpThenCompleteLogin(signInData.user, ['staff', 'admin'], data['admin-email'], rememberDevice);

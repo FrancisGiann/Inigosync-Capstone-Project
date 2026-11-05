@@ -9,6 +9,7 @@ const edge = await readFile(new URL('../supabase/functions/owner-linked-auth/ind
 const dashboard = await readFile(new URL('../includes/owner_dashboard.js', import.meta.url), 'utf8');
 const page = await readFile(new URL('../Pages/owner_dashboard.html', import.meta.url), 'utf8');
 const auth = await readFile(new URL('../includes/auth.js', import.meta.url), 'utf8');
+const linkedAuthClient = await readFile(new URL('../includes/ownerLinkedAuth.js', import.meta.url), 'utf8');
 const plan = await readFile(new URL('../implementation_plan.md', import.meta.url), 'utf8');
 
 function functionBody(source, name, nextName) {
@@ -86,6 +87,9 @@ test('alias-password login brokers the canonical user and waits for OTP to the a
   assert.match(migration, /owner_email_session_is_verified\(p_user_id,p_session_id\)/);
   assert.match(migration, /s\.not_after is null or s\.not_after>now\(\)/);
   assert.match(migration, /auth\.mfa_amr_claims m where m\.session_id=p_session_id and m\.authentication_method='magiclink'/);
+  assert.match(linkedAuthClient, /linkedError\.status = status/);
+  assert.match(auth, /brokerError\.status === 429 \|\| brokerError\.status >= 500/);
+  assert.match(auth, /code = 'owner_linked_auth_unavailable'/);
 });
 
 test('expired enrollment challenges are independently pruned after their expiry', () => {

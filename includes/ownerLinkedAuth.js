@@ -6,12 +6,15 @@
         const { data, error } = await window.sb.functions.invoke('owner-linked-auth', { body: { action, ...body } });
         if (error) {
             let message = error.message || 'Linked account sign-in is temporarily unavailable.';
+            const status = Number(error.context?.status) || 0;
             try {
                 const response = error.context;
                 const payload = response && typeof response.json === 'function' ? await response.json() : null;
                 if (payload?.message) message = payload.message;
             } catch (_) { /* use the SDK message */ }
-            throw new Error(message);
+            const linkedError = new Error(message);
+            linkedError.status = status;
+            throw linkedError;
         }
         if (!data || data.error) throw new Error(data?.message || 'Linked email sign-in is temporarily unavailable.');
         return data;

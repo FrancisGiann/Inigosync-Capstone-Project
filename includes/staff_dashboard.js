@@ -1603,7 +1603,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     function applyStaffPaymentSettings(settings) {
         staffCashEnabled = settings?.cashEnabled !== false;
         staffQrphEnabled = settings?.qrphEnabled === true;
-        staffOnlineEnabled = settings?.cardEnabled === true || settings?.gcashEnabled === true || staffQrphEnabled;
+        staffOnlineEnabled = settings?.cardEnabled === true || settings?.gcashEnabled === true
+            || settings?.mayaEnabled === true || settings?.grabPayEnabled === true || staffQrphEnabled;
         document.querySelectorAll('[data-staff-walkin-cash-option], [data-staff-timein-cash-option]').forEach((option) => {
             option.hidden = !staffCashEnabled;
             if (!staffCashEnabled) {
