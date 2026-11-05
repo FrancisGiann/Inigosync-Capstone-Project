@@ -3393,12 +3393,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         return true;
     }
 
-    async function showWalkinAcknowledgment(orderId) {
+    async function showWalkinAcknowledgment(orderId, { showPendingCard = true } = {}) {
         walkinLastOrderId = orderId;
         const result = await loadWalkinAcknowledgment(orderId);
         if (result.receipt) {
             showWalkinOrderReceipt(result.receipt);
             return true;
+        }
+        if (!showPendingCard) {
+            if (walkinWizardWrap) walkinWizardWrap.hidden = false;
+            if (walkinReceiptWrap) walkinReceiptWrap.hidden = true;
+            if (walkinReceiptEl) walkinReceiptEl.replaceChildren();
+            return false;
         }
         if (walkinWizardWrap) walkinWizardWrap.hidden = true;
         if (walkinReceiptWrap) walkinReceiptWrap.hidden = false;
@@ -7225,7 +7231,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             setActivePanel('walkin');
             let confirmed = false;
             for (let attempt = 0; attempt < 5; attempt += 1) {
-                confirmed = await showWalkinAcknowledgment(orderId);
+                confirmed = await showWalkinAcknowledgment(orderId, { showPendingCard: false });
                 if (confirmed) break;
                 if (attempt < 4) await new Promise(resolve => window.setTimeout(resolve, 1500));
             }
