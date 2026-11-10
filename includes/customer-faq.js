@@ -13,8 +13,8 @@
             href: 'https://www.google.com/maps/dir/?api=1&destination=Inigo%27s%20Sports%20Center%20Lucena&destination_place_id=ChIJYWSThmFMvTMRnoWVEJzixOY',
             external: true
         },
-        phone: { label: '+63 928 154 6876', href: 'tel:+639281546876' },
-        email: { label: 'itsrosem8@gmail.com', href: 'mailto:itsrosem8@gmail.com' },
+        phone: { label: '0961 265 4203', href: 'tel:+639612654203' },
+        email: { label: 'christianOborza@gmail.com', href: 'mailto:christianOborza@gmail.com' },
         houseRules: { label: 'Read House Rules', href: 'house-rules.html' }
     });
 
@@ -67,7 +67,7 @@
                 links: [LINKS.terms, LINKS.bookings]
             },
             location: {
-                text: 'Iñigos Sports Center is on Lucena Diversion Road (AH26), Brgy. Bocohan, Lucena City, Quezon, Philippines. Call +63 928 154 6876 or email itsrosem8@gmail.com.',
+                text: 'Iñigos Sports Center is on Lucena Diversion Road (AH26), Brgy. Bocohan, Lucena City, Quezon, Philippines. Call 0961 265 4203 or email christianOborza@gmail.com.',
                 links: [LINKS.directions, LINKS.phone, LINKS.email]
             },
             food: {

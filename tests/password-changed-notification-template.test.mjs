@@ -15,7 +15,7 @@ test('password changed notification gives clear recovery and support steps', () 
   const destinations = [...template.matchAll(/\bhref="([^"]+)"/g)].map(([, href]) => href);
   assert.deepEqual(destinations, [
     'https://inigossportcenter.com/',
-    'mailto:itsrosem8@gmail.com',
+    'mailto:christianOborza@gmail.com',
     'https://inigossportcenter.com/',
   ]);
   assert.match(template, /<a href="https:\/\/inigossportcenter\.com\/"[^>]*>\s*Open I&ntilde;igoSync\s*<\/a>/);

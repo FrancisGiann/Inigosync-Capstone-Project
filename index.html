@@ -88,6 +88,108 @@
             border-radius: 50%;
             animation: inigo-auth-return-spin .9s linear infinite;
         }
+
+        /* Test-site notice — kept in index.html so it appears before the
+           landing page can be used, without relying on application scripts. */
+        .test-account-warning {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            max-width: none;
+            height: 100%;
+            max-height: none;
+            margin: 0;
+            padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+            border: 0;
+            background: #0a0806;
+            color: #f4efe6;
+            display: grid;
+            place-items: center;
+            backdrop-filter: blur(9px);
+            -webkit-backdrop-filter: blur(9px);
+        }
+        .test-account-warning:not([open]) { display: none; }
+        .test-account-warning::backdrop { background: transparent; }
+        .test-account-warning-card {
+            width: min(100%, 540px);
+            padding: clamp(26px, 6vw, 42px);
+            border: 1px solid rgba(255, 255, 255, .14);
+            border-radius: 24px;
+            background: #1b1713;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, .5);
+            text-align: left;
+        }
+        .test-account-warning-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            margin-bottom: 18px;
+            color: #ffb06b;
+            font: 700 12px/1.4 Inter, sans-serif;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+        }
+        .test-account-warning-label::before {
+            content: '';
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #ff8a35;
+            box-shadow: 0 0 0 4px rgba(255, 138, 53, .15);
+        }
+        .test-account-warning-title {
+            margin: 0 0 14px;
+            color: #fffaf2;
+            font: 700 clamp(25px, 6vw, 34px)/1.18 Sora, Inter, sans-serif;
+            letter-spacing: -.04em;
+        }
+        .test-account-warning-copy {
+            margin: 0;
+            color: #d4cabe;
+            font: 400 15px/1.7 Inter, sans-serif;
+        }
+        .test-account-warning-copy + .test-account-warning-copy { margin-top: 10px; }
+        .test-account-warning-actions {
+            display: flex;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 28px;
+        }
+        .test-account-warning-button {
+            min-height: 48px;
+            padding: 0 20px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            font: 700 14px/1 Inter, sans-serif;
+            cursor: pointer;
+            transition: background-color .18s ease, border-color .18s ease, transform .18s ease;
+        }
+        .test-account-warning-button:hover { transform: translateY(-1px); }
+        .test-account-warning-exit {
+            border-color: rgba(255, 255, 255, .22);
+            background: transparent;
+            color: #f4efe6;
+        }
+        .test-account-warning-exit:hover { background: rgba(255, 255, 255, .08); }
+        .test-account-warning-continue {
+            background: #ff741f;
+            color: #21140b;
+        }
+        .test-account-warning-continue:hover { background: #ff8a3f; }
+        .test-account-warning-button:focus-visible {
+            outline: 3px solid #ffd0a8;
+            outline-offset: 3px;
+        }
+        @media (max-width: 480px) {
+            .test-account-warning-card { border-radius: 20px; }
+            .test-account-warning-actions { flex-direction: column-reverse; }
+            .test-account-warning-button { width: 100%; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .test-account-warning-button { transition: none; }
+            .test-account-warning-button:hover { transform: none; }
+        }
     </style>
     <script>
         // Paint a lightweight return state before the landing page can flash
@@ -100,6 +202,67 @@
     </script>
 </head>
 <body class="landing-night">
+    <dialog class="test-account-warning" id="testAccountWarning" open
+            aria-labelledby="testAccountWarningTitle" aria-describedby="testAccountWarningDescription">
+        <section class="test-account-warning-card">
+            <p class="test-account-warning-label">Test account</p>
+            <h1 class="test-account-warning-title" id="testAccountWarningTitle">This website is for testing only</h1>
+            <p class="test-account-warning-copy" id="testAccountWarningDescription">
+                This is not the live Iñigos Sports Center booking system. Please do not make reservations or submit payments here.
+            </p>
+            <p class="test-account-warning-copy">Bookings made on this site are not confirmed reservations with the business.</p>
+            <div class="test-account-warning-actions">
+                <button class="test-account-warning-button test-account-warning-exit" id="testAccountWarningExit" type="button">Exit website</button>
+                <button class="test-account-warning-button test-account-warning-continue" id="testAccountWarningContinue" type="button" autofocus>Continue to test site</button>
+            </div>
+        </section>
+    </dialog>
+    <dialog class="test-account-warning" id="testSessionConfirm"
+            aria-labelledby="testSessionConfirmTitle" aria-describedby="testSessionConfirmDescription">
+        <section class="test-account-warning-card">
+            <p class="test-account-warning-label">Test session</p>
+            <h2 class="test-account-warning-title" id="testSessionConfirmTitle">Do you want to proceed?</h2>
+            <p class="test-account-warning-copy" id="testSessionConfirmDescription">
+                You are about to enter a test session. This website is not for live bookings or payments. Continue only if you understand this is for testing.
+            </p>
+            <div class="test-account-warning-actions">
+                <button class="test-account-warning-button test-account-warning-exit" id="testSessionGoBack" type="button">Go back</button>
+                <button class="test-account-warning-button test-account-warning-continue" id="testSessionProceed" type="button" autofocus>Proceed to test site</button>
+            </div>
+        </section>
+    </dialog>
+    <script>
+        (function () {
+            const warning = document.getElementById('testAccountWarning');
+            const sessionConfirm = document.getElementById('testSessionConfirm');
+            const continueButton = document.getElementById('testAccountWarningContinue');
+            const exitButton = document.getElementById('testAccountWarningExit');
+            const goBackButton = document.getElementById('testSessionGoBack');
+            const proceedButton = document.getElementById('testSessionProceed');
+
+            // The open attribute paints the warning immediately; convert it to
+            // a modal before the rest of the page is parsed and can be used.
+            warning.removeAttribute('open');
+            warning.showModal();
+            warning.addEventListener('cancel', function (event) {
+                event.preventDefault();
+            });
+            continueButton.addEventListener('click', function () {
+                sessionConfirm.showModal();
+            });
+            goBackButton.addEventListener('click', function () {
+                sessionConfirm.close();
+            });
+            proceedButton.addEventListener('click', function () {
+                sessionConfirm.close();
+                warning.close();
+            });
+            exitButton.addEventListener('click', function () {
+                window.location.replace('about:blank');
+            });
+        })();
+    </script>
+
     <a class="landing-skip" href="#courts">Skip to courts</a>
 
     <header class="site-nav">
@@ -360,8 +523,8 @@
 
                 <div class="footer-card">
                     <h3>Contact</h3>
-                    <a href="tel:+639281546876">+63 928 154 6876</a>
-                    <a href="mailto:itsrosem8@gmail.com">itsrosem8@gmail.com</a>
+                    <a href="tel:+639612654203">0961 265 4203</a>
+                    <a href="mailto:christianOborza@gmail.com">christianOborza@gmail.com</a>
                 </div>
 
                 <div class="footer-card">
@@ -1111,8 +1274,8 @@
       "url": "https://inigossportcenter.com/",
       "logo": "https://inigossportcenter.com/assets/Logo/InigoSync-Emblem.png",
       "image": "https://inigossportcenter.com/assets/Logo/InigoSync-Emblem.png",
-      "telephone": "+639281546876",
-      "email": "itsrosem8@gmail.com",
+      "telephone": "+639612654203",
+      "email": "christianOborza@gmail.com",
       "address": {
         "@type": "PostalAddress",
         "streetAddress": "Lucena Diversion Road (AH26), Brgy. Bocohan",
