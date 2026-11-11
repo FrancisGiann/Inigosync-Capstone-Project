@@ -14,19 +14,24 @@ let CHART_DATA = {
 };
 const chartRangeNames = { week: 'Weekly', month: 'Monthly', year: 'Yearly' };
 
+function chartBarMeaning(range) {
+    return range === 'week' ? 'Each bar shows bookings on one day.' : range === 'month' ? 'Each bar shows bookings in one month.' : 'Each bar shows bookings in one year.';
+}
+
 function bookingTakeaway(source, range) {
-    if (!source || source.total === 0) return 'No bookings this period.';
+    const periodName = { week: 'this week', month: 'this calendar year', year: 'this calendar decade' }[range] || 'this period';
+    if (!source || source.total === 0) return `There were no bookings ${periodName}.`;
     const busiest = Math.max(...source.values);
     const periods = source.labels.filter((_, index) => source.values[index] === busiest);
     const unit = range === 'month' ? 'month' : range === 'year' ? 'year' : 'day';
-    const label = periods.length > 3
-        ? `${periods.length} ${unit}s tied`
-        : periods.length === 2
-            ? periods.join(' and ')
-            : periods.length === 3
-                ? `${periods[0]}, ${periods[1]} + ${periods[2]}`
-                : periods[0];
-    return `Busiest ${unit}${periods.length === 1 ? '' : 's'}: ${label} · ${periods.length === 1 ? `${busiest} booking${busiest === 1 ? '' : 's'}` : `${busiest} each`}.`;
+    const label = periods.length > 1
+        ? `${periods.slice(0, -1).join(', ')}${periods.length > 2 ? ',' : ''} and ${periods[periods.length - 1]}`
+        : periods[0];
+    const busiestShare = Math.round((busiest / source.total) * 100);
+    const busiestSentence = periods.length === 1
+        ? `${label} was the busiest ${unit}, with ${busiest} booking${busiest === 1 ? '' : 's'} (${busiestShare}% of the period total).`
+        : `${label} tied for the highest booking count at ${busiest} each; each ${unit} accounted for ${busiestShare}% of the period total.`;
+    return `There were ${source.total} bookings ${periodName}. ${busiestSentence}`;
 }
 
 function bookingChartAccessibleLabel(source, range) {
@@ -119,20 +124,15 @@ function buildStatusReport(source) {
     const counts = source.status;
     const keys = Object.keys(ADMIN_STATUS_LABELS);
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-    if (!total) return { counts, total, summary: 'No bookings this period.' };
-    const highest = Math.max(...keys.map(key => counts[key]));
-    const leaders = keys.filter(key => counts[key] === highest);
-    const onlyStatus = leaders.length === 1 && counts[leaders[0]] === total ? leaders[0] : null;
-    const allStatusText = {
-        booked: total === 1 ? 'This booking is confirmed.' : `All ${total} bookings are confirmed.`,
-        completed: total === 1 ? 'This booking is complete.' : `All ${total} bookings are complete.`,
-        no_show: total === 1 ? 'This booking was a no-show.' : `All ${total} bookings were no-shows.`,
-    };
-    const summary = onlyStatus
-        ? allStatusText[onlyStatus]
-        : leaders.length > 1
-            ? 'Even split across the top statuses.'
-            : `Most: ${ADMIN_STATUS_LABELS[leaders[0]]}.`;
+    if (!total) return { counts, total, summary: 'There were no bookings in this period.' };
+    const statusParts = keys.map(key => {
+        const count = counts[key];
+        const share = Math.round((count / total) * 100);
+        if (key === 'no_show') return count === 1 ? `1 was a no-show (${share}%)` : `${count} were no-shows (${share}%)`;
+        return count === 1 ? `1 was ${ADMIN_STATUS_LABELS[key]} (${share}%)` : `${count} were ${ADMIN_STATUS_LABELS[key]} (${share}%)`;
+    });
+    const statusBreakdown = `${statusParts.slice(0, -1).join(', ')}, and ${statusParts[statusParts.length - 1]}`;
+    const summary = `There ${total === 1 ? 'was' : 'were'} ${total} booking${total === 1 ? '' : 's'} in this period: ${statusBreakdown}.`;
     return { counts, total, summary };
 }
 
@@ -249,7 +249,8 @@ function buildBookingReport(range, now = new Date()) {
         status: buildStatusReport(source),
         takeaway: bookingTakeaway(source, range),
         scopeNote: 'Includes paid confirmed, completed, and no-show reservations (including automatically canceled no-shows). Pending and canceled reservations are excluded. Future paid confirmed reservations count in their scheduled calendar period.',
-        barMeaning: range === 'week' ? 'Each bar shows bookings on one day.' : range === 'month' ? 'Each bar shows bookings in one month.' : 'Each bar shows bookings in one year.',
+        barMeaning: chartBarMeaning(range),
+        dateMeaning: 'Booking counts use reservation date; sales use payment date.',
         rows: source.periods.map((period, index) => ({
             period,
             bookings: source.values[index],
@@ -345,6 +346,9 @@ function performBookingReportExport(format) {
                 ['Period', report.periodLabel],
                 ['Generated (Manila)', report.generatedDate],
                 [],
+                ['Trend insight', report.takeaway],
+                ['Chart meaning', `${report.barMeaning} ${report.dateMeaning}`],
+                [],
                 ['Period', 'Bookings', 'Received (PHP, payment date)'],
                 ...report.rows.map(row => [row.period, row.bookings, row.paid]),
                 ['Total eligible bookings', report.total, report.totalPaid],
@@ -352,6 +356,9 @@ function performBookingReportExport(format) {
                 ['Booking status', 'Count'],
                 ...Object.keys(ADMIN_STATUS_LABELS).map(key => [ADMIN_STATUS_LABELS[key], report.status.counts[key]]),
                 ['Total bookings', report.status.total],
+                ['Status insight', report.status.summary],
+                [],
+                ['Booking scope', report.scopeNote],
             ];
             const sheet = window.XLSX.utils.aoa_to_sheet(rows);
             sheet['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 30 }];
@@ -373,18 +380,24 @@ function performBookingReportExport(format) {
             pdf.setFontSize(16); pdf.text(`${report.title} - ${report.rangeName}`, 16, 18);
             pdf.setFontSize(10); pdf.text(report.periodLabel.replace(/–/g, '-'), 16, 26);
             pdf.text(`Bookings: ${report.total}     Received: ${pdfMoney(report.totalPaid)}`, 16, 32);
-            pdf.text(pdf.splitTextToSize(report.takeaway, 176), 16, 39);
-            pdf.text(pdf.splitTextToSize(`${report.barMeaning} Sales use payment date; booking counts use reservation date.`, 176), 16, 46);
-            pdf.setFont(undefined, 'bold'); pdf.text('Booking graph', 16, 56); pdf.setFont(undefined, 'normal');
+            let contentY = 39;
+            const takeawayLines = pdf.splitTextToSize(report.takeaway, 176);
+            pdf.text(takeawayLines, 16, contentY);
+            contentY += (Array.isArray(takeawayLines) ? takeawayLines.length : 1) * 4 + 2;
+            const meaningLines = pdf.splitTextToSize(`${report.barMeaning} ${report.dateMeaning}`, 176);
+            pdf.text(meaningLines, 16, contentY);
+            contentY += (Array.isArray(meaningLines) ? meaningLines.length : 1) * 4 + 4;
+            pdf.setFont(undefined, 'bold'); pdf.text('Booking graph', 16, contentY); pdf.setFont(undefined, 'normal');
+            const graphStartY = contentY + 7;
             const max = Math.max(0, ...report.rows.map(row => row.bookings));
             report.rows.forEach((row, index) => {
-                const y = 63 + index * 5.5;
+                const y = graphStartY + index * 5.5;
                 pdf.text(row.period, 16, y);
                 if (max) pdf.setFillColor(193, 148, 72);
                 pdf.rect?.(77, y - 3, max ? Math.max(0.8, row.bookings / max * 48) : 0.8, 3, 'F');
                 pdf.text(`${row.bookings} bookings`, 130, y);
             });
-            let y = 63 + report.rows.length * 5.5 + 6;
+            let y = graphStartY + report.rows.length * 5.5 + 6;
             pdf.setFont(undefined, 'bold'); pdf.text('Period', 16, y); pdf.text('Bookings', 91, y); pdf.text('Received (PHP)', 170, y, { align: 'right' });
             pdf.setFont(undefined, 'normal'); y += 6;
             report.rows.forEach(row => { pdf.text(row.period, 16, y); pdf.text(String(row.bookings), 91, y); pdf.text(pdfMoney(row.paid), 170, y, { align: 'right' }); y += 6; });
@@ -568,6 +581,8 @@ function renderChartMeta() {
     const takeaway = document.querySelector('[data-admin-chart-takeaway]');
     const chartSummary = bookingTakeaway(source, currentChartRange);
     if (takeaway) takeaway.textContent = chartSummary;
+    const meaning = document.querySelector('[data-admin-chart-meaning]');
+    if (meaning) meaning.textContent = `${chartBarMeaning(currentChartRange)} Booking counts use reservation date.`;
     const canvas = document.getElementById('adminBookingChart');
     if (canvas) {
         canvas.setAttribute('role', 'img');

@@ -602,6 +602,7 @@ body.admin-sidebar-open .admin-toggle-bar:nth-child(3) {
 .admin-chart-export-menu button:hover, .admin-chart-export-menu button:focus-visible { background: var(--color-bg-elevated); outline: none; }
 .admin-chart-export-menu button:disabled { color: var(--color-ink-faint); cursor: not-allowed; }
 .admin-chart-export-status { position: absolute; top: calc(100% + 5px); right: 0; z-index: 21; color: var(--color-ink-faint); font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
+.admin-chart-meaning { margin: 10px 0 0; color: var(--color-ink-faint); font-size: var(--fs-xs); line-height: 1.45; text-align: center; }
 .admin-chart-takeaway { margin: 12px 0 0; color: var(--color-primary); font-size: var(--fs-sm); font-weight: 700; line-height: 1.45; text-align: center; }
 .admin-chart-total {
     /* Revision A2 (implementation_plan.md) — a booking count, so it takes
