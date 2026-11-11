@@ -67,14 +67,15 @@ credentials into a file that gets committed.
 
 | Role | Email | Password | Redirects to |
 |---|---|---|---|
-| Customer | `<your-customer-email>` | `<your-password>` | `user_dashboard.html` (via the "Log In" panel) |
-| Staff | `<your-staff-email>` | `<your-password>` | `staff_dashboard.html` (via "Log in as Admin") |
-| Admin | `<your-admin-email>` | `<your-password>` | `owner_dashboard.html` (via "Log in as Admin") |
+| Customer | `<your-customer-email>` | `<your-password>` | `user_dashboard.html` (via the shared Log In form) |
+| Staff | `<your-staff-email>` | `<your-password>` | `staff_dashboard.html` (via the shared Log In form) |
+| Admin | `<your-admin-email>` | `<your-password>` | `owner_dashboard.html` (via the shared Log In form) |
 
-The customer account only works from the regular Log In tab; staff/admin
-only work from the "Log in as Admin" panel (`includes/auth.js` rejects a
-role on the wrong panel either way — e.g. staff credentials on the customer
-panel are refused with "This is a staff/owner account…").
+All three roles use the same Log In form. After password sign-in and the existing
+email MFA check, `includes/auth.js` loads the protected profile role and routes
+customers to `user_dashboard.html`, staff to `staff_dashboard.html`, and admins
+to `owner_dashboard.html`. Signup remains customer-only. No records need
+migration or cleanup for this UI/auth-flow-only change.
 
 **If you've run `003_update_user_emails.sql`,** the table above shows the
 *shape* of what to expect, not literal values — your real email addresses

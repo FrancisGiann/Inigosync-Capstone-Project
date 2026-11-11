@@ -743,7 +743,7 @@
                 </div>
             </div>
 
-            <!-- Log In / Sign Up tabs — hidden automatically while the Admin or Verify panel is active -->
+            <!-- Log In / Sign Up tabs — hidden automatically while Verify is active -->
             <div class="auth-tabs" data-auth-tabs role="tablist">
                 <button type="button" class="auth-tab is-active" data-auth-tab="login" role="tab" aria-selected="true">Log In</button>
                 <button type="button" class="auth-tab" data-auth-tab="signup" role="tab" aria-selected="false">Sign Up</button>
@@ -761,7 +761,7 @@
                  instead of being padded out to a stack of sign-up fields. Adding
                  a field to a signup step is fine; adding enough of them to make a
                  step taller than Log In would start growing the card again.
-                 Only these two panels are stacked — Verify, Admin, Forgot and
+                 Only these two panels are stacked — Verify, Forgot and
                  Reset are one-off steps and still shrink-wrap their own content,
                  so includes/auth.js hides this whole wrapper while one of them is
                  active (otherwise it would pad the card to sign-up height).
@@ -804,7 +804,6 @@
 
                 <div class="auth-google-btn" id="google-signin-login" data-google-btn></div>
 
-                <p class="auth-switch">Are you a staff member or the owner? <button type="button" class="auth-link" data-auth-tab="admin">Log in as Admin</button></p>
             </form>
 
             <!-- SIGN UP FORM — a two-step flow inside exactly ONE <form>.
@@ -872,9 +871,7 @@
                          There is deliberately NO "Already have an account?
                          Log in" line: the Log In / Sign Up pill above the form
                          already switches panels, so it was a second control for
-                         the same job. Log In's own switch line stays, because
-                         "Log in as Admin" has no equivalent control anywhere
-                         else on that panel.
+                         the same job.
 
                          TWO error lines, not one: each sits directly under the
                          field it is about, so a password message never renders
@@ -1011,7 +1008,7 @@
                              enforcement. -->
                         <div class="auth-field">
                             <div class="phone-field-heading signup-phone-label"><label class="auth-label" for="signupMobile">Mobile number (optional)</label><span id="signup-phone-status" class="phone-field-status" data-signup-phone-availability-status role="status" aria-live="polite"></span></div>
-                            <input id="signupMobile" type="tel" name="mobile" placeholder="09XX XXX XXXX" autocomplete="tel"
+                            <input id="signupMobile" type="tel" name="mobile" placeholder="+63 9*********" autocomplete="tel"
                                    inputmode="numeric" maxlength="11" data-digits-only aria-describedby="signup-phone-status">
                         </div>
 
@@ -1079,42 +1076,7 @@
                 <p class="auth-switch"><button type="button" class="auth-link" data-auth-tab="signup" data-otp-back-link>← Back to sign up</button></p>
             </form>
 
-            <!-- ADMIN LOGIN FORM — intentionally has no Sign Up / registration option -->
-            <form class="auth-form" data-auth-panel="admin" novalidate>
-                <h2 class="auth-heading">Admin Login</h2>
-                <p class="auth-tagline" style="margin-bottom: 18px;">For Iñigos Sports Center staff and management only.</p>
-
-                <label class="auth-field">
-                    <span class="auth-label">Admin email address</span>
-                    <input type="email" name="admin-email" placeholder="admin@inigossportscenter.com" autocomplete="username" required>
-                </label>
-
-                <label class="auth-field">
-                    <span class="auth-label">Password</span>
-                    <div class="auth-input-wrap">
-                        <input type="password" name="admin-password" placeholder="Enter your password" autocomplete="current-password" required>
-                        <button type="button" class="auth-toggle-visibility" data-toggle-password aria-label="Show password">
-                            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-                        </button>
-                    </div>
-                </label>
-
-                <div class="auth-row">
-                    <label class="auth-checkbox">
-                        <input type="checkbox" name="remember">
-                        <span>Remember me</span>
-                    </label>
-                    <button type="button" class="auth-link" data-auth-tab="forgot">Forgot password?</button>
-                </div>
-
-                <p class="auth-login-lockout" data-login-lockout role="status" aria-live="polite" aria-atomic="true" hidden></p>
-
-                <button type="submit" class="auth-submit">Log In as Admin</button>
-
-                <p class="auth-switch"><button type="button" class="auth-link" data-auth-tab="login">← Back to customer login</button></p>
-            </form>
-
-            <!-- FORGOT PASSWORD PANEL — shared by customer and admin login.
+            <!-- FORGOT PASSWORD PANEL — shared by all account roles.
                  Sending hands off to the shared Verify panel above with
                  otpPurpose === 'recovery' (see includes/auth.js), so the copy
                  says CODE, not link: docs/email_templates/reset_password.html
@@ -1301,5 +1263,6 @@
       }
     }
     </script>
+    <script src="./includes/passwordClipboardGuard.js"></script>
 </body>
 </html>

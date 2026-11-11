@@ -1,12 +1,12 @@
-// IñigoSync — Login / Sign up / OTP Verify / Admin modal controller
+// IñigoSync — Shared Login / Sign up / OTP Verify modal controller
 // Handles: opening the modal from any [data-auth-open] trigger,
 // closing via backdrop/close button/Escape, switching between
-// the Log In, Sign Up, Verify (OTP), and Admin panels, and password
+// the Log In, Sign Up, and Verify (OTP) panels, and password
 // show/hide toggles.
 //
-// Note: the Admin panel is login-only — the Log In / Sign Up tab bar is
-// automatically hidden whenever the Admin or Verify panel is active. The
-// Verify panel has no tab of its own and is only reached programmatically.
+// The Log In / Sign Up tab bar is automatically hidden while Verify is
+// active. The Verify panel has no tab of its own and is only reached
+// programmatically.
 // ONE panel serves all three code flows, switched by `otpPurpose`: after
 // Sign Up ('signup'), on a first log-in from an untrusted device ('login'),
 // and after a password-reset request ('recovery'). Everything it owns — the
@@ -64,7 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // always set explicitly right before the Verify panel is shown, so a
     // leftover value can never be verified against by accident.
     let pendingRecoveryEmail = '';
-    let recoveryLoginPanel = 'login';
     // Which verifyOtp() call — and which follow-up action — the Verify
     // panel's submit handler should perform: 'signup' (default, existing
     // post-sign-up behavior), 'login' (new-device gate) or 'recovery'
@@ -230,12 +229,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginErrorByForm = new WeakMap();
 
     function loginEmailForForm(form) {
-        const fieldName = form.dataset.authPanel === 'admin' ? 'admin-email' : 'email';
-        return normalizeLoginEmail(form.elements[fieldName]?.value);
+        return normalizeLoginEmail(form.elements.email?.value);
     }
 
     function refreshLoginLockout(form) {
-        if (!['login', 'admin'].includes(form.dataset.authPanel)) return false;
+        if (form.dataset.authPanel !== 'login') return false;
         const seconds = loginLockoutSeconds(loginEmailForForm(form));
         const status = form.querySelector('[data-login-lockout]');
         const submit = form.querySelector('button[type="submit"].auth-submit');
@@ -297,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
     //
     // Enforced in the two places a password is chosen: Sign Up step 1 and
     // the Reset Password panel. Deliberately NOT enforced on Log In or
-    // Admin login: accounts created before this rule existed have weaker
+    // Login: accounts created before this rule existed have weaker
     // passwords and must keep signing in. Reset carries the same rule as
     // signup on purpose — otherwise "forgot password" would be a way to
     // set a password that signup itself would have refused.
@@ -358,11 +356,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!allowedRoles.includes(profile.role)) {
             await window.sb.auth.signOut({ scope: 'local' });
-            const customerLogin = allowedRoles.includes('customer');
-            const error = new Error(customerLogin
-                ? 'This account belongs to an admin or staff member and cannot be used for customer login or sign-up. Choose “Log in as Admin”, or use a different Google account for customer access.'
-                : 'This is a customer account. Please use the customer Log In tab instead of admin/staff login.');
-            error.code = customerLogin ? 'login_customer_role_mismatch' : 'login_staff_role_mismatch';
+            const error = new Error('This account cannot use this sign-in method.');
+            error.code = 'login_role_mismatch';
             throw error;
         }
 
@@ -485,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ------------------------------------------------------------------
     // Single Session (spec) — upsert this browser's session id as the
     // signed-in user's one active session, on every successful login of
-    // every kind (customer, Google, admin/staff panel). Deliberately
+    // every kind (customer, staff, owner, or Google). Deliberately
     // swallows every failure (missing table, RLS, network) instead of
     // surfacing it: this is defense-in-depth layered on top of a login
     // that has already succeeded, never a precondition for one. On
@@ -539,9 +534,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (heading) heading.textContent = copy.heading;
         const backLink = overlay.querySelector('[data-otp-back-link]');
         if (backLink) {
-            const isAdminLogin = purpose === 'login' && pendingLoginOtp?.allowedRoles.includes('admin');
-            backLink.dataset.authTab = isAdminLogin ? 'admin' : copy.backTab;
-            backLink.textContent = isAdminLogin ? '← Back to admin login' : copy.backLabel;
+            backLink.dataset.authTab = purpose === 'login' ? 'login' : copy.backTab;
+            backLink.textContent = purpose === 'login' ? '← Back to log in' : copy.backLabel;
         }
     }
 
@@ -589,7 +583,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ['authIsOpen', () => authIsOpen],
             ['lastFocusedEl', () => lastFocusedEl],
             ['pendingLoginOtp', () => pendingLoginOtp],
-            ['recoveryLoginPanel', () => recoveryLoginPanel],
             ['otpPurpose', () => otpPurpose],
             ['signupStep', () => signupStep],
             // resetSignupFlow() -> clearSignupStepErrors() reads this one
@@ -870,17 +863,15 @@ document.addEventListener('DOMContentLoaded', () => {
         panels.forEach((panel) => setLoginFormError(panel));
         if (name === 'forgot') {
             const previousPanel = overlay.querySelector('[data-auth-panel].is-active');
-            const previousName = previousPanel?.dataset.authPanel;
-            if (previousName === 'admin' || previousName === 'login') {
-                recoveryLoginPanel = previousName;
+            if (previousPanel?.dataset.authPanel === 'login') {
                 const email = previousPanel.querySelector('input[type="email"]');
                 const recoveryEmail = overlay.querySelector('[data-auth-panel="forgot"] input[name="email"]');
                 if (recoveryEmail) recoveryEmail.value = email?.value.trim() || '';
             }
             const backLink = overlay.querySelector('[data-recovery-back]');
             if (backLink) {
-                backLink.dataset.authTab = recoveryLoginPanel;
-                backLink.textContent = recoveryLoginPanel === 'admin' ? '← Back to admin login' : '← Back to log in';
+                backLink.dataset.authTab = 'login';
+                backLink.textContent = '← Back to log in';
             }
         }
         // Switching to any panel OTHER than 'verify' while a login-OTP gate
@@ -944,7 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Clear every panel's form, not only the one being shown — a
         // trigger always opens straight to Log In (panelName is always
-        // 'login' or 'reset', never 'signup'/'admin'), so resetting just the
+        // 'login' or 'reset', never 'signup'), so resetting just the
         // active one would still leave a stale value (and, for Sign Up, a
         // checklist still showing old "met" ticks) sitting in another panel
         // for the next time someone tabs over to it. This is what let a
@@ -1019,7 +1010,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // time. That is not defensiveness — in this modal it is required. The Log
     // In / Sign Up panels share one grid cell and the sign-up steps share
     // another, and in both cases the inactive member stays laid out and is
-    // merely `visibility: hidden`; the one-off panels (Verify / Admin /
+    // merely `visibility: hidden`; the one-off panels (Verify /
     // Forgot / Reset), the tab bar and the whole panel stack go
     // `display: none`. So which controls are tabbable changes on every tab
     // switch and every Continue / Back, and a set captured at open time would
@@ -1801,12 +1792,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return 'We could not load your account. Please try again shortly.';
         }
 
-        if (code === 'login_customer_role_mismatch') {
-            return 'This account belongs to staff or management and cannot be used for customer login or sign-up. Choose “Log in as Admin”, or use a different account for customer access.';
-        }
-
-        if (code === 'login_staff_role_mismatch') {
-            return 'This is a customer account. Please use the customer Log In tab instead of admin/staff login.';
+        if (code === 'login_role_mismatch' || code === 'login_customer_role_mismatch' || code === 'login_staff_role_mismatch') {
+            return 'This account cannot use this sign-in method. Try signing in with your email and password.';
         }
 
         if (code === 'owner_linked_auth_unavailable') {
@@ -1818,11 +1805,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'We could not complete that request. Please try again shortly.';
     }
 
-    // Keep both password-login panels in sync with the persisted per-email
+    // Keep the shared password-login form in sync with the persisted per-email
     // cooldown. Changing the address immediately switches to that address's
     // own state; a lockout in another tab is reflected through `storage`.
     panels.forEach((form) => {
-        if (!['login', 'admin'].includes(form.dataset.authPanel)) return;
+        if (form.dataset.authPanel !== 'login') return;
         form.addEventListener('input', (event) => {
             if (!event.target.matches('input')) return;
             if (refreshLoginLockout(form)) startLoginLockoutCountdown();
@@ -1837,9 +1824,8 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshAllLoginLockouts();
 
     // Wired to real Supabase Auth. Public signup always creates a customer
-    // account (role is never client-settable — see the DB trigger); the
-    // Admin panel logs into the same auth.users but only accepts an
-    // account whose profiles.role is staff/admin.
+    // account (role is never client-settable — see the DB trigger). The shared
+    // login accepts every existing role and routes from the protected profile.
     panels.forEach((form) => {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1900,22 +1886,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const invalidField = Array.from(form.elements).find((field) => field.willValidate && !field.checkValidity());
                 if (invalidField) invalidField.focus();
                 const validationMessage = invalidField?.validationMessage || 'Please check the information you entered and try again.';
-                if (['login', 'admin'].includes(form.dataset.authPanel)) setLoginFormError(form, validationMessage);
+                if (form.dataset.authPanel === 'login') setLoginFormError(form, validationMessage);
                 else setAuthNotice(validationMessage, true);
                 return;
             }
 
             if (!window.sb) {
-                if (['login', 'admin'].includes(form.dataset.authPanel)) setLoginFormError(form, 'Unable to reach the server right now. Please try again shortly.');
+                if (form.dataset.authPanel === 'login') setLoginFormError(form, 'Unable to reach the server right now. Please try again shortly.');
                 else setAuthNotice('Unable to reach the server right now. Please try again shortly.', true);
                 return;
             }
 
             const mode = form.dataset.authPanel;
             const data = Object.fromEntries(new FormData(form));
-            const loginEmail = mode === 'admin'
-                ? normalizeLoginEmail(data['admin-email'])
-                : (mode === 'login' ? normalizeLoginEmail(data.email) : '');
+            const loginEmail = mode === 'login' ? normalizeLoginEmail(data.email) : '';
             if (loginEmail && refreshLoginLockout(form)) {
                 startLoginLockoutCountdown();
                 return;
@@ -1947,21 +1931,75 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             setAuthNotice('');
-            if (['login', 'admin'].includes(mode)) setLoginFormError(form);
+            if (mode === 'login') setLoginFormError(form);
             setBusy(true);
 
             try {
                 if (mode === 'login') {
                     const rememberDevice = data.remember === 'on';
                     if (window.InigoLoading) window.InigoLoading.show('Signing you in…');
+                    let broker = null;
+                    let brokerError = null;
+                    if (window.InigoOwnerLinkedAuth) {
+                        try {
+                            broker = await window.InigoOwnerLinkedAuth.login(data.email, data.password);
+                        } catch (err) { brokerError = err; }
+                    }
+                    if (broker) {
+                        // Linked owner aliases have no separate Auth user. The
+                        // broker establishes the canonical owner session, then
+                        // requires its alias-bound OTP before dashboard access.
+                        const { data: brokerSession, error: verifyError } = await window.sb.auth.verifyOtp({
+                            token_hash: broker.token_hash,
+                            type: 'magiclink',
+                        });
+                        if (verifyError || brokerSession?.user?.id !== broker.owner_id) {
+                            await window.sb.auth.signOut({ scope: 'local' });
+                            throw verifyError || new Error('Linked account sign-in was not accepted.');
+                        }
+                        let challenge;
+                        try {
+                            challenge = await window.InigoOwnerLinkedAuth.beginLoginCode(broker.broker_ticket);
+                        } catch (brokerChallengeError) {
+                            await window.sb.auth.signOut({ scope: 'local' });
+                            throw brokerChallengeError;
+                        }
+                        window.InigoAuthStorage.setRememberSession(rememberDevice);
+                        clearLoginAttempts(loginEmail);
+                        pendingLoginOtp = {
+                            userId: brokerSession.user.id,
+                            email: challenge.email || broker.linked_email,
+                            allowedRoles: ['customer', 'staff', 'admin'],
+                            rememberDevice,
+                            challengeId: challenge.challenge_id,
+                            linkedEmailBroker: true,
+                            codeSent: challenge.sent === true,
+                        };
+                        setOtpPurpose('login');
+                        if (window.InigoLoading) window.InigoLoading.hide();
+                        const emailLabel = overlay.querySelector('[data-verify-email]');
+                        if (emailLabel) emailLabel.textContent = pendingLoginOtp.email;
+                        setActivePanel('verify');
+                        startOtpFlow();
+                        setAuthNotice(challenge.sent === true
+                            ? `Enter the 6-digit sign-in code we sent to ${pendingLoginOtp.email}.`
+                            : `A code was sent recently or delivery could not be confirmed. Check ${pendingLoginOtp.email} before requesting another.`, false);
+                        return;
+                    }
                     const { data: signInData, error } = await window.sb.auth.signInWithPassword({
                         email: data.email,
                         password: data.password
                     });
-                    if (error) throw error;
+                    if (error) {
+                        if (brokerError && (brokerError.status === 429 || brokerError.status >= 500)) {
+                            brokerError.code = 'owner_linked_auth_unavailable';
+                            throw brokerError;
+                        }
+                        throw error;
+                    }
                     window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);
-                    await gateOtpThenCompleteLogin(signInData.user, ['customer'], data.email, rememberDevice);
+                    await gateOtpThenCompleteLogin(signInData.user, ['customer', 'staff', 'admin'], data.email, rememberDevice);
                     return;
                 }
 
@@ -2172,83 +2210,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                if (mode === 'admin') {
-                    const rememberDevice = data.remember === 'on';
-                    if (window.InigoLoading) window.InigoLoading.show('Signing you in…');
-                    let broker = null;
-                    let brokerError = null;
-                    if (window.InigoOwnerLinkedAuth) {
-                        try {
-                            broker = await window.InigoOwnerLinkedAuth.login(data['admin-email'], data['admin-password']);
-                        } catch (err) { brokerError = err; }
-                    }
-                    if (broker) {
-                        // A secondary email alias has no separate Supabase Auth
-                        // user. The server verifies its separate password and
-                        // returns a one-use token for the canonical owner user.
-                        // Access stays blocked until an OTP sent to the alias
-                        // is verified against that exact Auth session.
-                        const { data: brokerSession, error: brokerError } = await window.sb.auth.verifyOtp({
-                            token_hash: broker.token_hash,
-                            type: 'magiclink',
-                        });
-                        if (brokerError || brokerSession?.user?.id !== broker.owner_id) {
-                            await window.sb.auth.signOut({ scope: 'local' });
-                            throw brokerError || new Error('Linked account sign-in was not accepted.');
-                        }
-                        let challenge;
-                        try {
-                            challenge = await window.InigoOwnerLinkedAuth.beginLoginCode(broker.broker_ticket);
-                        } catch (brokerChallengeError) {
-                            await window.sb.auth.signOut({ scope: 'local' });
-                            throw brokerChallengeError;
-                        }
-                        window.InigoAuthStorage.setRememberSession(rememberDevice);
-                        clearLoginAttempts(loginEmail);
-                        pendingLoginOtp = {
-                            userId: brokerSession.user.id,
-                            email: challenge.email || broker.linked_email,
-                            allowedRoles: ['staff', 'admin'],
-                            rememberDevice,
-                            challengeId: challenge.challenge_id,
-                            linkedEmailBroker: true,
-                            codeSent: challenge.sent === true,
-                        };
-                        setOtpPurpose('login');
-                        if (window.InigoLoading) window.InigoLoading.hide();
-                        const emailLabel = overlay.querySelector('[data-verify-email]');
-                        if (emailLabel) emailLabel.textContent = pendingLoginOtp.email;
-                        setActivePanel('verify');
-                        startOtpFlow();
-                        setAuthNotice(challenge.sent === true
-                            ? `Enter the 6-digit sign-in code we sent to ${pendingLoginOtp.email}.`
-                            : `A code was sent recently or delivery could not be confirmed. Check ${pendingLoginOtp.email} before requesting another.`, false);
-                        return;
-                    }
-                    // Native Auth remains available for canonical owner and
-                    // staff accounts even if the broker is throttled or
-                    // temporarily unavailable. The broker was attempted first
-                    // so a valid linked password takes precedence.
-                    const { data: signInData, error } = await window.sb.auth.signInWithPassword({
-                        email: data['admin-email'],
-                        password: data['admin-password']
-                    });
-                    if (error) {
-                        // Keep native sign-in available for canonical owner and
-                        // staff accounts, but don't turn a broker outage or
-                        // rate limit into a misleading invalid-password error
-                        // for linked addresses when native auth also rejects them.
-                        if (brokerError && (brokerError.status === 429 || brokerError.status >= 500)) {
-                            brokerError.code = 'owner_linked_auth_unavailable';
-                            throw brokerError;
-                        }
-                        throw error;
-                    }
-                    window.InigoAuthStorage.setRememberSession(rememberDevice);
-                    clearLoginAttempts(loginEmail);
-                    await gateOtpThenCompleteLogin(signInData.user, ['staff', 'admin'], data['admin-email'], rememberDevice);
-                    return;
-                }
 
                 if (mode === 'forgot') {
                     // Deliberately vague success message regardless of
@@ -2340,7 +2301,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // form.reset() fires no input event, so the checklist
                     // would otherwise stay ticked over an emptied field.
                     syncPasswordRules();
-                    setActivePanel(recoveryLoginPanel);
+                    setActivePanel('login');
                     overlay.querySelector('[data-auth-panel].is-active input')?.focus();
                     setAuthNotice('Password updated — please log in with your new password.', false);
                     return;
@@ -2356,7 +2317,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const remaining = LOGIN_MAX_FAILURES - attempt.failures;
                         setLoginFormError(form, `Incorrect email or password. ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining before a 1-minute timeout.`);
                     }
-                } else if (['login', 'admin'].includes(mode)) {
+                } else if (mode === 'login') {
                     setLoginFormError(form, friendlyAuthError(err));
                 } else if (err.code === 'account_role_mismatch') {
                     setAuthNotice(friendlyAuthError(err), true);

@@ -1082,7 +1082,7 @@
         <div class="admin-settings-grid">
             <label class="admin-form-group"><span class="admin-form-label">Full name</span><input type="text" class="admin-input" autocomplete="name" data-admin-settings-name></label>
             <div class="admin-form-group"><span class="admin-form-label">Email address</span><p class="admin-input admin-readonly-email" data-admin-settings-email>—</p><span class="admin-form-hint">Your sign-in email cannot be changed.</span></div>
-            <div class="admin-form-group owner-mobile-verification"><div class="phone-field-heading"><label class="admin-form-label" for="adminOwnerMobileInput">Mobile number · optional</label><span class="phone-field-status" id="adminOwnerMobileStatus" data-admin-mobile-message role="status" aria-live="polite">Format and availability check</span></div><input id="adminOwnerMobileInput" type="tel" class="admin-input" inputmode="tel" autocomplete="tel" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile></div>
+            <div class="admin-form-group owner-mobile-verification"><div class="phone-field-heading"><label class="admin-form-label" for="adminOwnerMobileInput">Mobile number · optional</label><span class="phone-field-status" id="adminOwnerMobileStatus" data-admin-mobile-message role="status" aria-live="polite">Format and availability check</span></div><input id="adminOwnerMobileInput" type="tel" class="admin-input" inputmode="tel" autocomplete="tel" placeholder="+63 9*********" aria-describedby="adminOwnerMobileStatus" data-admin-settings-mobile></div>
             <label class="admin-form-group"><span class="admin-form-label">Address</span><input type="text" class="admin-input" autocomplete="street-address" data-admin-settings-address></label>
             <label class="admin-form-group"><span class="admin-form-label">Date of birth</span><input type="date" class="admin-input" data-admin-settings-birthdate></label>
             <label class="admin-form-group"><span class="admin-form-label">Gender</span><select class="admin-input" data-admin-settings-gender><option value="">Prefer not to say</option><option value="Male">Male</option><option value="Female">Female</option></select></label>
@@ -1189,5 +1189,6 @@
 <!-- Chart configuration for the Booking Trends graph (Weekly / Monthly toggle) -->
 <script src="../event/chart.js"></script>
 <script src="../includes/responsive-tables.js"></script>
+<script src="../includes/passwordClipboardGuard.js"></script>
 </body>
 </html>

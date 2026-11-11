@@ -143,6 +143,28 @@ html:root[data-theme] .staff-onboarding-field textarea:focus-visible {
     outline: none;
     box-shadow: 0 0 0 3px rgba(255, 121, 0, .18);
 }
+.staff-onboarding-password-wrap { position: relative; display: flex; align-items: center; width: 100%; }
+.staff-onboarding-field .staff-onboarding-password-wrap > input { padding-right: 48px; }
+.staff-onboarding-password-toggle {
+    position: absolute;
+    right: 9px;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-ink-faint);
+    cursor: pointer;
+    transition: color .15s ease, background .15s ease;
+}
+.staff-onboarding-eye-closed { display: none; }
+.staff-onboarding-password-toggle[data-password-visible="true"] .staff-onboarding-eye-open { display: none; }
+.staff-onboarding-password-toggle[data-password-visible="true"] .staff-onboarding-eye-closed { display: block; }
+.staff-onboarding-password-toggle:hover { background: rgba(244, 239, 230, .08); color: var(--color-ink); }
+.staff-onboarding-password-toggle:focus-visible { outline: 3px solid rgba(255, 121, 0, .45); outline-offset: 2px; }
 .staff-onboarding-field input[readonly] {
     background: var(--surface-band);
     color: var(--color-ink-dim);

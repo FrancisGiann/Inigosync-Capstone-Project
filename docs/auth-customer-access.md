@@ -27,12 +27,23 @@ applied to the connected project. Live rollback-only SQL assertions verified
 existing-email matching, case/space normalization, invalid input, rate limiting
 and absence of anonymous table access. An anonymous HTTP RPC check also passed.
 
-Google buttons on customer Log In and Sign Up accept only an active `customer`
-profile. Authenticated `staff`/`admin` profiles are signed out locally and see a
-persistent explanation directing them to **Log in as Admin**. The existing role
-is never changed. Password logins check the same profile before sending a
-first-device email OTP. Existing remembered staff/admin sessions still resume
-their own dashboard.
+The single Log In form accepts customer, staff, and admin email/password accounts.
+After native sign-in, the app reads the protected `profiles.role` and `status`;
+active accounts continue through the existing email MFA and open their role's
+existing dashboard. Missing profiles and disabled accounts are signed out and
+denied. The frontend never assigns or changes a role. Sign Up remains
+customer-only. Google OAuth initiated from Log In remains customer-only, while
+existing remembered sessions continue to resume their role's dashboard.
+
+The separate Admin login panel and its role-switch link were removed. Login OTP
+back links return to the shared Log In form, while password-recovery codes can
+return to the reset-email form to correct the address. Linked owner email aliases
+continue through the owner broker and alias-bound OTP before the canonical owner
+session can reach its dashboard.
+
+This auth change affects only the sign-in interface and flow. It does not alter
+persisted records or their meaning, and no account/profile data migration or
+cleanup is required.
 
 The signup phone field is optional. Blank numbers are submitted as `null`;
 entered numbers must pass the local PH mobile format check. The signup

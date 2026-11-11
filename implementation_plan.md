@@ -4,6 +4,15 @@
 
 The connected project is still in development. A feature or schema change must include a data-impact review: identify existing rows and stored snapshots that no longer match the current contract, then migrate or remove only the proven obsolete records in the same work when safe. Preserve valid current-format test bookings, payments, accounts, configuration, and their required history. Before destructive cleanup, count the exact candidates, inspect foreign keys and application/reporting references, establish a recovery path, and review the proposed row set. Afterward, verify referential integrity and the affected staff, customer, and owner views or RPCs. Never use record age alone as a deletion rule. Document any deferred cleanup with the reason and the validation still needed.
 
+## Unified sign-in (2026-11-12)
+
+Customer, staff, and admin email/password accounts now use the same Log In
+form. Dashboard routing still comes from the protected profile role; signup
+remains customer-only, and the linked owner-email broker plus alias OTP remain
+in the shared login path. This is a UI/auth-flow-only change: persisted account
+and profile data keeps the same meaning, so no records need migration or
+cleanup.
+
 ---
 
 > **Current phone decision:** The 2026-09-29 amendment at the end of this

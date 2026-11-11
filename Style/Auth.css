@@ -1,5 +1,5 @@
 /* ==========================================================================
-   IñigoSync — Auth Modal (Login / Sign Up / Verify OTP / Admin)
+   IñigoSync — Auth Modal (Login / Sign Up / Verify OTP)
    Uses the same design tokens defined in LandingPage.css :root
 
    Revision A2 (implementation_plan.md) — fonts/sizes/weights come from
@@ -111,7 +111,7 @@ body.auth-lock {
    viewport, so a taller header would have cost it internal scrolling.
 
    Everything here is scoped to .auth-brand, so the .auth-tagline reused by the
-   Verify / Admin / Forgot / Reset panels keeps its existing look.
+   Verify / Forgot / Reset panels keeps its existing look.
    -------------------------------------------------------------------------- */
 .auth-brand {
     position: relative;
@@ -201,8 +201,8 @@ body.auth-lock {
     margin-bottom: 14px;
 }
 
-/* Log In / Sign Up tabs are hidden while the Admin or Verify panel is active
-   (Admin login is login-only; Verify is a one-off step after Sign Up). */
+/* Log In / Sign Up tabs are hidden while Verify is active (Verify is a
+   one-off step after Sign Up or during login and recovery). */
 .auth-tabs[hidden] {
     display: none;
 }
@@ -283,7 +283,7 @@ body.auth-lock {
    These rules must come AFTER `.auth-form.is-active` above: both selectors
    have the same specificity (0,2,0), so source order decides `display`.
 
-   Only Log In and Sign Up live here. Verify / Admin / Forgot / Reset are
+   Only Log In and Sign Up live here. Verify / Forgot / Reset are
    one-off panels that still shrink-wrap their own content, which is why
    includes/auth.js sets [hidden] on this wrapper whenever one of them is
    active — the stack's hidden child still occupies its grid cell, so leaving

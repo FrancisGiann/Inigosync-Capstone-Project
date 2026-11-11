@@ -147,6 +147,17 @@
         });
     }
     password?.addEventListener('input', paintPasswordRules);
+    form.querySelectorAll('[data-staff-onboarding-password-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const input = button.previousElementSibling;
+            if (!input) return;
+            const isHidden = input.type === 'password';
+            input.type = isHidden ? 'text' : 'password';
+            button.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+            button.setAttribute('aria-pressed', String(isHidden));
+            button.dataset.passwordVisible = String(isHidden);
+        });
+    });
 
     function paintPhone(message, state = '') {
         if (!phoneStatus) return;

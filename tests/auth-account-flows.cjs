@@ -141,6 +141,18 @@ function mockClient(options) {
         functions: {
             invoke: async (name, args) => {
                 record('function', { name, body: args?.body });
+                if (name === 'owner-linked-auth') {
+                    return {
+                        data: null,
+                        error: {
+                            message: 'Email or password was not accepted.',
+                            context: new Response(JSON.stringify({ message: 'Email or password was not accepted.' }), {
+                                status: 401,
+                                headers: { 'content-type': 'application/json' }
+                            })
+                        }
+                    };
+                }
                 if (name === 'email-mfa') {
                     const action = args?.body?.action;
                     if (action === 'begin') {
@@ -378,9 +390,7 @@ function mockClient(options) {
             for (const role of ['customer', 'staff', 'admin']) {
                 const page = await setup({ role, guardDashboard: true, missingOnboardingColumn: true });
                 await page.locator('.cta-buttons [data-auth-open]').click();
-                if (role !== 'customer') await page.locator('[data-auth-tab="admin"]').click();
-                const panel = role === 'customer' ? 'login' : 'admin';
-                const form = page.locator(`[data-auth-panel="${panel}"]`);
+                const form = page.locator('[data-auth-panel="login"]');
                 await form.locator('input[type="email"]').fill('account@example.test');
                 await form.locator('input[type="password"]').fill('Fixture2026!');
                 await form.locator('button[type="submit"]').click();
@@ -398,8 +408,7 @@ function mockClient(options) {
             }
             const pendingStaff = await setup({ role: 'staff', status: 'pending', guardDashboard: true, missingOnboardingColumn: true });
             await pendingStaff.locator('.cta-buttons [data-auth-open]').click();
-            await pendingStaff.locator('[data-auth-tab="admin"]').click();
-            const pendingForm = pendingStaff.locator('[data-auth-panel="admin"]');
+            const pendingForm = pendingStaff.locator('[data-auth-panel="login"]');
             await pendingForm.locator('input[type="email"]').fill('account@example.test');
             await pendingForm.locator('input[type="password"]').fill('Fixture2026!');
             await pendingForm.locator('button[type="submit"]').click();
@@ -490,21 +499,12 @@ function mockClient(options) {
             for (const role of ['staff', 'admin', 'customer']) {
                 const page = await setup({ role });
                 await page.locator('.cta-buttons [data-auth-open]').click();
-                const panel = role === 'customer' ? 'admin' : 'login';
-                if (panel === 'admin') await page.locator('[data-auth-tab="admin"]').click();
-                const form = page.locator(`[data-auth-panel="${panel}"]`);
+                const form = page.locator('[data-auth-panel="login"]');
                 await form.locator('input[type="email"]').fill('account@example.test');
                 await form.locator('input[type="password"]').fill('Fixture2026!');
                 await form.locator('button[type="submit"]').click();
-                const roleError = page.locator('[data-auth-notice]');
-                await roleError.waitFor({ state: 'visible' });
-                if (role === 'customer') {
-                    assert.match(await roleError.innerText(), /customer account.*customer Log In tab/i);
-                } else {
-                    assert.match(await roleError.innerText(), /cannot be used for customer.*Log in as Admin/i);
-                }
-                assert.equal(await roleError.getAttribute('role'), 'alert');
-                assert((await calls(page)).some(call => call.kind === 'signOut'));
+                await page.locator('[data-auth-panel="verify"].is-active').waitFor();
+                assert(!(await calls(page)).some(call => call.kind === 'signOut'), `${role} uses the shared login without role-based sign-out`);
                 await page.close();
             }
             console.log('PASS disabled/profile errors remain actionable, unknown Auth errors stay generic in OAuth/password flows, and persisted lockout uses a floating alert');
@@ -878,10 +878,9 @@ function mockClient(options) {
                     await failedAdminPassword.setViewportSize(viewport);
                     await failedAdminPassword.addStyleTag({ content: '.auth-modal, .auth-modal * { animation:none!important; transition:none!important; }' });
                     await failedAdminPassword.locator('.cta-buttons [data-auth-open]').click();
-                    await failedAdminPassword.locator('[data-auth-tab="admin"]').click();
-                    const adminForm = failedAdminPassword.locator('[data-auth-panel="admin"]');
-                    await adminForm.locator('[name="admin-email"]').fill('account@example.test');
-                    await adminForm.locator('[name="admin-password"]').fill('wrong-password');
+                    const adminForm = failedAdminPassword.locator('[data-auth-panel="login"]');
+                    await adminForm.locator('[name="email"]').fill('account@example.test');
+                    await adminForm.locator('[name="password"]').fill('wrong-password');
                     const headerOffsetBefore = await failedAdminPassword.locator('.auth-modal h2').evaluate(el => el.getBoundingClientRect().top - el.closest('.auth-modal').getBoundingClientRect().top);
                     const naturalCardTopBefore = await failedAdminPassword.locator('.auth-modal').evaluate(el => el.getBoundingClientRect().top);
                     await adminForm.locator('button[type="submit"]').click();
@@ -918,7 +917,6 @@ function mockClient(options) {
                             `${viewport.width}x${viewport.height}: alert/card separation survives resize ${i + 1}`);
                         assert.equal(resizedLayout.reserved, shouldReserveSpace, 'resize does not oscillate the clearance class');
                     }
-                    await failedAdminPassword.locator('[data-auth-tab="login"]').click();
                     await adminError.waitFor({ state: 'hidden' });
                     await failedAdminPassword.waitForFunction(() => !document.querySelector('.auth-overlay').classList.contains('has-floating-auth-notice'));
                     await failedAdminPassword.close();
@@ -948,10 +946,9 @@ function mockClient(options) {
             for (const role of ['staff', 'admin']) {
                 const rolePage = await setup({ role });
                 await rolePage.locator('.cta-buttons [data-auth-open]').click();
-                await rolePage.locator('[data-auth-tab="admin"]').click();
-                const roleForm = rolePage.locator('[data-auth-panel="admin"]');
-                await roleForm.locator('[name="admin-email"]').fill('account@example.test');
-                await roleForm.locator('[name="admin-password"]').fill('Fixture2026!');
+                const roleForm = rolePage.locator('[data-auth-panel="login"]');
+                await roleForm.locator('[name="email"]').fill('account@example.test');
+                await roleForm.locator('[name="password"]').fill('Fixture2026!');
                 await roleForm.locator('[name="remember"]').check();
                 await roleForm.locator('button[type="submit"]').click();
                 await rolePage.locator('[data-auth-panel="verify"].is-active').waitFor();
@@ -1324,7 +1321,7 @@ function mockClient(options) {
             const page = await setup({ oauth: true, role });
             const notice = page.locator('[data-auth-notice]');
             await notice.waitFor({ state: 'visible' });
-            assert.match(await notice.innerText(), /cannot be used for customer/);
+            assert.match(await notice.innerText(), /signing in with your email and password/i);
             assert.equal(await notice.getAttribute('role'), 'alert');
             assert.equal(await notice.locator('[data-auth-notice-close]').getAttribute('aria-label'), 'Dismiss message');
             assert((await calls(page)).some(c => c.kind === 'signOut'));
@@ -1425,29 +1422,18 @@ function mockClient(options) {
         for (const role of ['staff', 'admin', 'customer']) {
             const page = await setup({ role });
             await page.locator('.cta-buttons [data-auth-open]').click();
-            const panel = role === 'customer' ? 'admin' : 'login';
-            if (panel === 'admin') await page.locator('[data-auth-tab="admin"]').click();
-            const form = page.locator(`[data-auth-panel="${panel}"]`);
+            const form = page.locator('[data-auth-panel="login"]');
             await form.locator('input[type="email"]').fill('account@example.test');
             await form.locator('input[type="password"]').fill('Fixture2026!');
             await form.locator('button[type="submit"]').click();
-            const roleError = page.locator('[data-auth-notice]');
-            await roleError.waitFor({ state: 'visible' });
-            if (role === 'customer') {
-                assert.match(await roleError.innerText(), /customer account.*customer Log In tab/i);
-            } else {
-                assert.match(await roleError.innerText(), /cannot be used for customer.*Log in as Admin/i);
-            }
-            assert.equal(await roleError.getAttribute('role'), 'alert');
-            assert(!(await calls(page)).some(c => ['emailOtp', 'sessionWrite'].includes(c.kind)));
-            assert((await calls(page)).some(c => c.kind === 'signOut'));
+            await page.locator('[data-auth-panel="verify"].is-active').waitFor();
+            assert(!(await calls(page)).some(c => ['signOut', 'sessionWrite'].includes(c.kind)));
             await page.close();
         }
 
         async function passwordLogin(page, panel = 'login', remember = false) {
             await page.locator('.cta-buttons [data-auth-open]').click();
-            if (panel === 'admin') await page.locator('[data-auth-tab="admin"]').click();
-            const form = page.locator(`[data-auth-panel="${panel}"]`);
+            const form = page.locator('[data-auth-panel="login"]');
             await form.locator('input[type="email"]').fill('account@example.test');
             await form.locator('input[type="password"]').fill('Fixture2026!');
             if (remember) await form.locator('[name="remember"]').check();
@@ -1500,7 +1486,7 @@ function mockClient(options) {
 
         for (const role of ['staff', 'admin']) {
             const page = await setup({ role });
-            await passwordLogin(page, 'admin', true);
+            await passwordLogin(page, 'login', true);
             await page.locator('[data-auth-panel="verify"].is-active').waitFor();
             for (let i = 0; i < 6; i++) await page.locator('[data-otp-box]').nth(i).fill(String(i + 1));
             await page.locator('[data-auth-panel="verify"] button[type="submit"]').click();
