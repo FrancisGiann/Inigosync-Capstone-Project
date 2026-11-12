@@ -1271,8 +1271,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             return t >= startMs && t < endMs;
         });
 
-        const bookingsToday = todayRows.filter((r) => r.sourceType === 'booking'
-            && String(r.status || '').toLowerCase() !== 'cancelled').length;
+        const bookingsToday = rows.filter((r) => {
+            if (r.sourceType !== 'booking' || String(r.status || '').toLowerCase() === 'cancelled') return false;
+            const completionEnd = staffDerivedStatus(r) === 'completed' ? rowWindow(r).end : null;
+            const completionTime = r.checked_out_at
+                || (completionEnd && Number.isFinite(completionEnd.getTime()) ? completionEnd : null);
+            return [r.checked_in_at, completionTime].some((timestamp) => {
+                if (!timestamp) return false;
+                const instant = new Date(timestamp);
+                return Number.isFinite(instant.getTime())
+                    && instant.getTime() >= startMs && instant.getTime() < endMs;
+            });
+        }).length;
         const walkinsToday = todayRows.filter((r) => r.sourceType === 'walkin').length;
         const inPlayNow = todayRows.filter((r) => staffDerivedStatus(r) === 'inplay').length;
         const unattendedToday = todayRows.filter((r) => r.sourceType === 'booking' && staffDerivedStatus(r) === 'unattended').length;
