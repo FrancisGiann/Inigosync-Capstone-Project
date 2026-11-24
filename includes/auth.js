@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let lastFocusedEl = null;
     let pendingSignupEmail = '';
+    let pendingSignupUserId = '';
     let pendingSignupPhone = '';
     let signupStepAdvancing = false;
     // Set while a password login is gated behind a first-login-per-device
@@ -546,6 +547,47 @@ document.addEventListener('DOMContentLoaded', () => {
         await completeLogin(allowedRoles, false, rememberDevice);
     }
 
+    function cancelPendingUnverifiedSignup() {
+        const emailToCancel = pendingSignupEmail;
+        const userIdToCancel = pendingSignupUserId || window.InigoSignupEmail?.getUnverifiedUserId?.(emailToCancel) || '';
+        pendingSignupEmail = '';
+        pendingSignupUserId = '';
+        pendingSignupPhone = '';
+        if (!emailToCancel) return;
+        // Best-effort server cleanup of the unconfirmed Auth row when the
+        // database migration is applied. Uses fetch directly so test fixtures
+        // that mock window.sb.rpc are unaffected.
+        if (window.SUPABASE_URL && typeof window.fetch === 'function') {
+            const anonKey = window.sb?.supabaseKey || 'sb_publishable_Q4GdiCyw7ne6mn8ZY4K8hA_whVQXkqq';
+            const headers = {
+                'Content-Type': 'application/json',
+                apikey: anonKey
+            };
+            if (anonKey.startsWith('eyJ')) {
+                headers.Authorization = `Bearer ${anonKey}`;
+            }
+            window.fetch(`${window.SUPABASE_URL}/rest/v1/rpc/cancel_unverified_signup`, {
+                method: 'POST',
+                headers,
+                keepalive: true,
+                body: JSON.stringify({
+                    p_user_id: userIdToCancel || null,
+                    p_email: emailToCancel
+                })
+            }).then(async (res) => {
+                if (res.ok && (await res.json().catch(() => false)) === true) {
+                    window.InigoSignupEmail?.clearUnverified?.(emailToCancel);
+                }
+            }).catch(() => {});
+        }
+    }
+
+    window.addEventListener('pagehide', () => {
+        if (pendingSignupEmail && otpPurpose === 'signup') {
+            cancelPendingUnverifiedSignup();
+        }
+    });
+
     // ------------------------------------------------------------------
     // Early-setup binding guard  (regression guard for the TDZ defect)
     //
@@ -582,6 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ['authNoticeHideTimer', () => authNoticeHideTimer],
             ['authIsOpen', () => authIsOpen],
             ['lastFocusedEl', () => lastFocusedEl],
+            ['pendingSignupEmail', () => pendingSignupEmail],
+            ['pendingSignupUserId', () => pendingSignupUserId],
             ['pendingLoginOtp', () => pendingLoginOtp],
             ['otpPurpose', () => otpPurpose],
             ['signupStep', () => signupStep],
@@ -886,6 +930,9 @@ document.addEventListener('DOMContentLoaded', () => {
             window.sb.auth.signOut().catch(() => {});
             pendingLoginOtp = null;
         }
+        if (pendingSignupEmail && otpPurpose === 'signup' && name !== 'verify') {
+            cancelPendingUnverifiedSignup();
+        }
 
         tabs.forEach((tab) => {
             const isMatch = tab.dataset.authTab === name;
@@ -970,6 +1017,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // access, but clearing it avoids leaving an unfinished login open.
             window.sb.auth.signOut().catch(() => {});
             pendingLoginOtp = null;
+        }
+        if (pendingSignupEmail && otpPurpose === 'signup') {
+            cancelPendingUnverifiedSignup();
         }
         authIsOpen = false;
         overlay.removeAttribute('data-open');
@@ -1777,7 +1827,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (code === 'email_not_confirmed') {
-            return 'Please verify your email before logging in — check your inbox to confirm your account.';
+            return 'This account has not been created yet because the 6-digit verification code was not completed. Please complete Sign Up and verify your email code.';
+        }
+
+        if (code === 'otp_expired' || /token has expired or is invalid|invalid.*otp/i.test(err?.message || '')) {
+            return 'That verification code is invalid or has expired. Your account has not been created yet — check the 6-digit code and try again.';
         }
 
         if (code === 'invalid_credentials') {
@@ -1991,12 +2045,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         password: data.password
                     });
                     if (error) {
+                        if (error.code === 'email_not_confirmed') {
+                            window.InigoSignupEmail?.markUnverified?.(data.email);
+                        }
                         if (brokerError && (brokerError.status === 429 || brokerError.status >= 500)) {
                             brokerError.code = 'owner_linked_auth_unavailable';
                             throw brokerError;
                         }
                         throw error;
                     }
+                    window.InigoSignupEmail?.clearUnverified?.(data.email);
                     window.InigoAuthStorage.setRememberSession(rememberDevice);
                     clearLoginAttempts(loginEmail);
                     await gateOtpThenCompleteLogin(signInData.user, ['customer', 'staff', 'admin'], data.email, rememberDevice);
@@ -2046,7 +2104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    if (window.InigoLoading) window.InigoLoading.show('Creating your account…');
+                    if (window.InigoLoading) window.InigoLoading.show('Sending verification code…');
                     const { data: signUpData, error } = await window.sb.auth.signUp({
                         email: data.email,
                         password: data.password,
@@ -2058,8 +2116,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     if (window.InigoLoading) window.InigoLoading.hide();
                     if (error && ['user_already_exists', 'email_exists'].includes(error.code)) {
+                        window.InigoSignupEmail?.clearUnverified?.(data.email);
                         setSignupStep(1);
                         showSignupStepIssues([{ step: 1, field: 'email', message: 'This email is already registered. Log in or use a different email address.' }]);
+                        return;
+                    }
+                    if (error && error.code === 'over_email_send_rate_limit' && window.InigoSignupEmail?.isUnverified?.(data.email)) {
+                        pendingSignupPhone = mobileCheck.normalized || '';
+                        pendingSignupEmail = data.email;
+                        pendingSignupUserId = window.InigoSignupEmail?.getUnverifiedUserId?.(data.email) || '';
+                        setOtpPurpose('signup');
+                        const emailLabel = overlay.querySelector('[data-verify-email]');
+                        if (emailLabel) emailLabel.textContent = data.email || 'your email';
+                        setActivePanel('verify');
+                        startOtpFlow();
                         return;
                     }
                     if (error) throw error;
@@ -2069,22 +2139,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     // behavior) instead of throwing. An empty identities array is the
                     // one signal that distinguishes this from a genuine new signup.
                     if (signUpData.user && signUpData.user.identities && signUpData.user.identities.length === 0) {
+                        window.InigoSignupEmail?.clearUnverified?.(data.email);
                         setSignupStep(1);
                         showSignupStepIssues([{ step: 1, field: 'email', message: 'This email is already registered. Log in or use a different email address.' }]);
                         return;
                     }
 
-                    // Do not move an existing session or change its storage
-                    // policy until Supabase confirms this signup succeeded.
-                    window.InigoAuthStorage.setRememberSession(rememberDevice);
-
                     pendingSignupPhone = mobileCheck.normalized || '';
                     if (signUpData.session) {
+                        window.InigoSignupEmail?.clearUnverified?.(data.email);
+                        window.InigoAuthStorage.setRememberSession(rememberDevice);
                         await completeLogin(['customer'], true, rememberDevice, false, false, true);
                         return;
                     }
 
+                    window.InigoSignupEmail?.markUnverified?.(data.email, signUpData?.user?.id || '');
                     pendingSignupEmail = data.email;
+                    pendingSignupUserId = signUpData?.user?.id || '';
                     setOtpPurpose('signup');
                     const emailLabel = overlay.querySelector('[data-verify-email]');
                     if (emailLabel) emailLabel.textContent = data.email || 'your email';
@@ -2203,9 +2274,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw error;
                     }
 
+                    const verifiedEmail = pendingSignupEmail;
+                    const rememberChoice = signupForm?.elements.remember?.checked === true;
+                    window.InigoSignupEmail?.clearUnverified?.(verifiedEmail);
+                    window.InigoAuthStorage.setRememberSession(rememberChoice);
                     pendingSignupEmail = '';
+                    pendingSignupUserId = '';
                     setAuthNotice('Email confirmed. Finishing sign-in…', false);
-                    await completeLogin(['customer'], true, signupForm?.elements.remember?.checked === true, false, true, true);
+                    await completeLogin(['customer'], true, rememberChoice, false, true, true);
 
                     return;
                 }

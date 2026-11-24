@@ -94,30 +94,47 @@
         .test-account-warning {
             position: fixed;
             inset: 0;
+            z-index: 120;
             width: 100%;
             max-width: none;
             height: 100%;
             max-height: none;
             margin: 0;
-            padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+            padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
             border: 0;
-            background: #0a0806;
+            background: rgba(10, 8, 6, 0.72);
             color: #f4efe6;
             display: grid;
             place-items: center;
-            backdrop-filter: blur(9px);
-            -webkit-backdrop-filter: blur(9px);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .25s ease;
         }
         .test-account-warning:not([open]) { display: none; }
+        .test-account-warning[open][data-open] {
+            opacity: 1;
+            pointer-events: auto;
+        }
         .test-account-warning::backdrop { background: transparent; }
         .test-account-warning-card {
             width: min(100%, 540px);
+            max-height: calc(100vh - 48px);
+            overflow-y: auto;
             padding: clamp(26px, 6vw, 42px);
             border: 1px solid rgba(255, 255, 255, .14);
-            border-radius: 24px;
+            border-radius: 20px;
             background: #1b1713;
-            box-shadow: 0 24px 80px rgba(0, 0, 0, .5);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
             text-align: left;
+            transform: translateY(16px) scale(.98);
+            opacity: 0;
+            transition: transform .28s cubic-bezier(.16, 1, .3, 1), opacity .22s ease;
+        }
+        .test-account-warning[open][data-open] .test-account-warning-card {
+            transform: translateY(0) scale(1);
+            opacity: 1;
         }
         .test-account-warning-label {
             display: inline-flex;
@@ -166,12 +183,6 @@
             transition: background-color .18s ease, border-color .18s ease, transform .18s ease;
         }
         .test-account-warning-button:hover { transform: translateY(-1px); }
-        .test-account-warning-exit {
-            border-color: rgba(255, 255, 255, .22);
-            background: transparent;
-            color: #f4efe6;
-        }
-        .test-account-warning-exit:hover { background: rgba(255, 255, 255, .08); }
         .test-account-warning-continue {
             background: #ff741f;
             color: #21140b;
@@ -187,6 +198,8 @@
             .test-account-warning-button { width: 100%; }
         }
         @media (prefers-reduced-motion: reduce) {
+            .test-account-warning,
+            .test-account-warning-card,
             .test-account-warning-button { transition: none; }
             .test-account-warning-button:hover { transform: none; }
         }
@@ -202,7 +215,7 @@
     </script>
 </head>
 <body class="landing-night">
-    <dialog class="test-account-warning" id="testAccountWarning" open
+    <dialog class="test-account-warning" id="testAccountWarning"
             aria-labelledby="testAccountWarningTitle" aria-describedby="testAccountWarningDescription">
         <section class="test-account-warning-card">
             <p class="test-account-warning-label">Test account</p>
@@ -212,54 +225,53 @@
             </p>
             <p class="test-account-warning-copy">Bookings made on this site are not confirmed reservations with the business.</p>
             <div class="test-account-warning-actions">
-                <button class="test-account-warning-button test-account-warning-exit" id="testAccountWarningExit" type="button">Exit website</button>
                 <button class="test-account-warning-button test-account-warning-continue" id="testAccountWarningContinue" type="button" autofocus>Continue to test site</button>
-            </div>
-        </section>
-    </dialog>
-    <dialog class="test-account-warning" id="testSessionConfirm"
-            aria-labelledby="testSessionConfirmTitle" aria-describedby="testSessionConfirmDescription">
-        <section class="test-account-warning-card">
-            <p class="test-account-warning-label">Test session</p>
-            <h2 class="test-account-warning-title" id="testSessionConfirmTitle">Do you want to proceed?</h2>
-            <p class="test-account-warning-copy" id="testSessionConfirmDescription">
-                You are about to enter a test session. This website is not for live bookings or payments. Continue only if you understand this is for testing.
-            </p>
-            <div class="test-account-warning-actions">
-                <button class="test-account-warning-button test-account-warning-exit" id="testSessionGoBack" type="button">Go back</button>
-                <button class="test-account-warning-button test-account-warning-continue" id="testSessionProceed" type="button" autofocus>Proceed to test site</button>
             </div>
         </section>
     </dialog>
     <script>
         (function () {
             const warning = document.getElementById('testAccountWarning');
-            const sessionConfirm = document.getElementById('testSessionConfirm');
             const continueButton = document.getElementById('testAccountWarningContinue');
-            const exitButton = document.getElementById('testAccountWarningExit');
-            const goBackButton = document.getElementById('testSessionGoBack');
-            const proceedButton = document.getElementById('testSessionProceed');
+            if (!warning || !continueButton) return;
 
-            // The open attribute paints the warning immediately; convert it to
-            // a modal before the rest of the page is parsed and can be used.
-            warning.removeAttribute('open');
-            warning.showModal();
+            function openWarning() {
+                if (warning.open) return;
+                warning.showModal();
+                void warning.offsetWidth;
+                document.body.classList.add('auth-lock');
+                requestAnimationFrame(function () {
+                    warning.setAttribute('data-open', '');
+                    continueButton.focus();
+                });
+            }
+
+            function closeWarning() {
+                if (!warning.open) return;
+                warning.removeAttribute('data-open');
+                if (!document.querySelector('[data-auth-overlay][data-open]')) {
+                    document.body.classList.remove('auth-lock');
+                }
+                const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if (reducedMotion) {
+                    warning.close();
+                    return;
+                }
+                window.setTimeout(function () {
+                    if (warning.open) warning.close();
+                }, 250);
+            }
+
             warning.addEventListener('cancel', function (event) {
                 event.preventDefault();
             });
-            continueButton.addEventListener('click', function () {
-                sessionConfirm.showModal();
-            });
-            goBackButton.addEventListener('click', function () {
-                sessionConfirm.close();
-            });
-            proceedButton.addEventListener('click', function () {
-                sessionConfirm.close();
-                warning.close();
-            });
-            exitButton.addEventListener('click', function () {
-                window.location.replace('about:blank');
-            });
+            continueButton.addEventListener('click', closeWarning);
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', openWarning, { once: true });
+            } else {
+                openWarning();
+            }
         })();
     </script>
 

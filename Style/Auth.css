@@ -116,8 +116,8 @@ body.auth-lock {
 .auth-brand {
     position: relative;
     text-align: center;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
+    margin-bottom: 10px;
+    padding-bottom: 4px;
 }
 
 /* inline-flex inside a text-align:center parent = a centred block that is only
@@ -168,7 +168,7 @@ body.auth-lock {
 .auth-brand .logo-text {
     display: block;
     width: auto;
-    height: 64px;
+    height: 44px;
     max-width: min(165px, 42vw);
     object-fit: contain;
 }
@@ -290,24 +290,19 @@ body.auth-lock {
    the wrapper laid out would pad those panels to sign-up height.
    -------------------------------------------------------------------------- */
 .auth-panel-stack {
-    display: grid;
-    align-items: start;
+    display: block;
 }
 
-/* `display: grid` above is an author declaration and would beat the UA
-   `[hidden] { display: none }`, exactly like .auth-overlay/.court-viewer. */
 .auth-panel-stack[hidden] {
     display: none;
 }
 
 .auth-panel-stack > .auth-form {
-    grid-area: 1 / 1;
-    display: flex;
-    visibility: hidden;
+    display: none;
 }
 
 .auth-panel-stack > .auth-form.is-active {
-    visibility: visible;
+    display: flex;
 }
 
 /* --------------------------------------------------------------------------
@@ -384,20 +379,17 @@ body.auth-lock {
 }
 
 .auth-step-stack {
-    display: grid;
-    align-items: start;
+    display: block;
 }
 
 .auth-step {
-    grid-area: 1 / 1;
-    display: flex;
+    display: none;
     flex-direction: column;
     gap: 14px;
-    visibility: hidden;
 }
 
 .auth-form.is-active .auth-step.is-active {
-    visibility: visible;
+    display: flex;
 }
 
 /* Inline, per-step validation message. Deliberately NOT toggled with
@@ -421,6 +413,10 @@ body.auth-lock {
     /* Not --color-alert: that measures 4.20:1 on the dark modal surface.
        See the token's comment in LandingPage.css. */
     color: var(--color-alert-text);
+}
+
+.auth-step-error:empty {
+    display: none;
 }
 
 .auth-step-nav {
@@ -1488,8 +1484,8 @@ body.auth-lock {
     }
 
     .auth-brand {
-        margin-bottom: 12px;
-        padding-bottom: 10px;
+        margin-bottom: 10px;
+        padding-bottom: 4px;
     }
 
     .auth-brand-mark {
